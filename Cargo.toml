@@ -69,6 +69,7 @@ members = [
     "crates/vyna-hl7-redact",
     "crates/vyna-hl7-convert",
     "crates/vyna-hl7-queue",
+    "crates/vyna-hl7-batch",
     "crates/vyna-hl7-fhir",
     "crates/vyna-hl7-custom",
     "crates/vyna-hl7-conformance",
@@ -152,10 +153,16 @@ vyna-hl7-codegen = { version = "0.1.0", path = "crates/vyna-hl7-codegen" }
 vyna-hl7-redact = { version = "0.1.0", path = "crates/vyna-hl7-redact" }
 vyna-hl7-convert = { version = "0.1.0", path = "crates/vyna-hl7-convert" }
 vyna-hl7-queue = { version = "0.1.0", path = "crates/vyna-hl7-queue" }
+vyna-hl7-batch = { version = "0.1.0", path = "crates/vyna-hl7-batch" }
 vyna-hl7-xml = { version = "0.1.0", path = "crates/vyna-hl7-xml" }
 
 # XML
 quick-xml = "0.42"
+
+# File transfer (batch exchange)
+suppaftp = { version = "12", features = ["tokio"] }
+russh = { version = "0.64" }
+russh-sftp = { version = "3" }
 
 [profile.release]
 opt-level = 3

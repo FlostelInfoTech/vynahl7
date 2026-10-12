@@ -1,0 +1,35 @@
+[package]
+name = "vyna-hl7-batch"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "HL7 v2.x batch file building, lenient intake parsing, and file-drop transports (filesystem, FTP, SFTP)"
+
+[features]
+default = []
+ftp = ["dep:suppaftp"]
+sftp = ["dep:russh", "dep:russh-sftp"]
+testing = []
+
+[dependencies]
+vyna-hl7-core.workspace = true
+vyna-hl7-parser.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+tokio.workspace = true
+suppaftp = { workspace = true, optional = true }
+russh = { workspace = true, optional = true }
+russh-sftp = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio.workspace = true
+libunftp = "0.23"
+unftp-sbe-fs = "0.4"
+rand = "0.10"
