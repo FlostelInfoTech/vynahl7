@@ -33,6 +33,7 @@
 //! - Table 0085: Observation Result Status
 //! - And many more standard HL7 tables
 
+pub mod context;
 pub mod datatype;
 pub mod rules;
 pub mod schema_loader;
@@ -49,6 +50,7 @@ use vyna_hl7_core::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub use context::{Severity, ValidationContext};
 pub use datatype::{validate_data_type, DataTypeValidation};
 pub use rules::{BuiltinRules, CrossFieldValidator, RulesEngine, RulesValidationResult, RuleSeverity, RuleViolation, ValidationRule, RuleConfig, RuleDefinition, ConditionConfig, DeclarativeError};
 pub use schema_loader::{load_schema, list_available_schemas};
@@ -143,6 +145,7 @@ pub struct Validator {
     schema: Option<MessageSchema>,
     table_registry: TableRegistry,
     rules_engine: Option<RulesEngine>,
+    context: ValidationContext,
 }
 
 impl Validator {
@@ -153,6 +156,7 @@ impl Validator {
             schema: None,
             table_registry: TableRegistry::new(),
             rules_engine: None,
+            context: ValidationContext::standard(),
         }
     }
 
@@ -163,6 +167,7 @@ impl Validator {
             schema: Some(schema),
             table_registry: TableRegistry::new(),
             rules_engine: None,
+            context: ValidationContext::standard(),
         }
     }
 
@@ -174,7 +179,24 @@ impl Validator {
             schema: Some(schema),
             table_registry: TableRegistry::new(),
             rules_engine: None,
+            context: ValidationContext::standard(),
         })
+    }
+
+    /// Set the severity context (see [`ValidationContext`]).
+    pub fn with_context(mut self, context: ValidationContext) -> Self {
+        self.context = context;
+        self
+    }
+
+    /// Replace the severity context on a borrowed validator.
+    pub fn set_context(&mut self, context: ValidationContext) {
+        self.context = context;
+    }
+
+    /// The active severity context.
+    pub fn context(&self) -> &ValidationContext {
+        &self.context
     }
 
     /// Get a reference to the table registry
@@ -196,6 +218,49 @@ impl Validator {
     /// Get a reference to the rules engine
     pub fn rules_engine(&self) -> Option<&RulesEngine> {
         self.rules_engine.as_ref()
+    }
+
+    /// Record a finding at the severity the context assigns to its class.
+    fn emit(
+        &self,
+        result: &mut ValidationResult,
+        location: String,
+        message: String,
+        error_type: ValidationErrorType,
+    ) {
+        let severity = match error_type {
+            ValidationErrorType::MissingRequiredField => self.context.missing_required,
+            ValidationErrorType::InvalidDataType => self.context.invalid_datatype,
+            ValidationErrorType::InvalidLength => self.context.invalid_length,
+            ValidationErrorType::InvalidCardinality => self.context.invalid_cardinality,
+            ValidationErrorType::InvalidValue => self.context.invalid_value,
+            ValidationErrorType::StructuralError => self.context.structural,
+        };
+        match severity {
+            Severity::Error => {
+                result.add_error(ValidationError::new(location, message, error_type))
+            }
+            Severity::Warning => result.add_warning(ValidationWarning::new(location, message)),
+            Severity::Ignore => {}
+        }
+    }
+
+    /// Record a version-drift finding at the context's version severity.
+    fn emit_version_mismatch(
+        &self,
+        result: &mut ValidationResult,
+        location: String,
+        message: String,
+    ) {
+        match self.context.version_mismatch {
+            Severity::Error => result.add_error(ValidationError::new(
+                location,
+                message,
+                ValidationErrorType::InvalidValue,
+            )),
+            Severity::Warning => result.add_warning(ValidationWarning::new(location, message)),
+            Severity::Ignore => {}
+        }
     }
 
     /// Get a mutable reference to the rules engine
@@ -252,45 +317,49 @@ impl Validator {
     fn validate_structure(&self, message: &Message, result: &mut ValidationResult) {
         // Must have at least one segment (MSH)
         if message.segments.is_empty() {
-            result.add_error(ValidationError::new(
+            self.emit(
+                result,
                 "Message".to_string(),
                 "Message must contain at least one segment".to_string(),
                 ValidationErrorType::StructuralError,
-            ));
+            );
             return;
         }
 
         // First segment must be MSH
         if message.segments[0].id != "MSH" {
-            result.add_error(ValidationError::new(
+            self.emit(
+                result,
                 "Segment[0]".to_string(),
                 "First segment must be MSH".to_string(),
                 ValidationErrorType::StructuralError,
-            ));
+            );
         }
 
         // Validate segment IDs
         for (i, segment) in message.segments.iter().enumerate() {
             if let Err(e) = segment.validate_id() {
-                result.add_error(ValidationError::new(
+                self.emit(
+                    result,
                     format!("Segment[{}]", i),
                     e.to_string(),
                     ValidationErrorType::StructuralError,
-                ));
+                );
             }
         }
 
         // Check version matches
         if let Some(msg_version) = message.get_version()
             && msg_version != self.version {
-                result.add_warning(ValidationWarning::new(
+                self.emit_version_mismatch(
+                    result,
                     "MSH-12".to_string(),
                     format!(
                         "Message version ({}) differs from validator version ({})",
                         msg_version.as_str(),
                         self.version.as_str()
                     ),
-                ));
+                );
             }
     }
 
@@ -310,11 +379,12 @@ impl Validator {
         let charset = match CharacterSet::from_msh18(declared) {
             Ok(charset) => charset,
             Err(e) => {
-                result.add_error(ValidationError::new(
+                self.emit(
+                    result,
                     "MSH-18".to_string(),
                     e.to_string(),
                     ValidationErrorType::InvalidValue,
-                ));
+                );
                 return;
             }
         };
@@ -329,7 +399,8 @@ impl Validator {
                             if let Some(offender) =
                                 charset.find_unmappable(&subcomponent.value)
                             {
-                                result.add_error(ValidationError::new(
+                                self.emit(
+                                    result,
                                     format!("{}-{}", segment.id, field_index + 1),
                                     format!(
                                         "character '{offender}' (U+{:04X}) cannot be represented in the declared character set {}",
@@ -337,7 +408,7 @@ impl Validator {
                                         charset.msh18()
                                     ),
                                     ValidationErrorType::InvalidValue,
-                                ));
+                                );
                                 return;
                             }
                         }
@@ -366,11 +437,12 @@ impl Validator {
             if seg_def.required {
                 let found = message.segments.iter().any(|s| &s.id == seg_id);
                 if !found {
-                    result.add_error(ValidationError::new(
+                    self.emit(
+                        result,
                         "Message".to_string(),
                         format!("Required segment {} is missing", seg_id),
                         ValidationErrorType::MissingRequiredField,
-                    ));
+                    );
                 }
             }
         }
@@ -392,11 +464,12 @@ impl Validator {
             let field = segment.get_field(*field_idx);
 
             if field_def.required && (field.is_none() || field.unwrap().is_empty()) {
-                result.add_error(ValidationError::new(
+                self.emit(
+                    result,
                     format!("{}-{}", location_prefix, field_idx),
                     format!("Required field {} is missing or empty", field_idx),
                     ValidationErrorType::MissingRequiredField,
-                ));
+                );
             }
 
             // Validate field if it exists
@@ -416,7 +489,8 @@ impl Validator {
                     };
 
                     if field_length > max_len {
-                        result.add_error(ValidationError::new(
+                        self.emit(
+                            result,
                             field_location.clone(),
                             format!(
                                 "Field exceeds maximum length ({} > {})",
@@ -424,7 +498,7 @@ impl Validator {
                                 max_len
                             ),
                             ValidationErrorType::InvalidLength,
-                        ));
+                        );
                     }
                 }
 
@@ -433,7 +507,8 @@ impl Validator {
                     if let Some(data_type) = DataType::from_str(&field_def.data_type) {
                         let validation = datatype::validate_data_type(value, data_type);
                         if !validation.is_valid() {
-                            result.add_error(ValidationError::new(
+                            self.emit(
+                                result,
                                 field_location.clone(),
                                 format!(
                                     "Invalid {} format: {}",
@@ -441,7 +516,7 @@ impl Validator {
                                     validation.error_message().unwrap_or("unknown error")
                                 ),
                                 ValidationErrorType::InvalidDataType,
-                            ));
+                            );
                         }
                     }
 
@@ -453,11 +528,12 @@ impl Validator {
                         if !vocab_validation.is_valid()
                             && let Some(err_msg) = vocab_validation.error_message()
                         {
-                            result.add_error(ValidationError::new(
+                            self.emit(
+                                result,
                                 field_location.clone(),
                                 err_msg.to_string(),
                                 ValidationErrorType::InvalidValue,
-                            ));
+                            );
                         }
                     }
                 }
@@ -492,14 +568,15 @@ impl Validator {
                 let comp_empty = component.is_none()
                     || component.unwrap().is_empty();
                 if comp_def.required && comp_empty {
-                    result.add_error(ValidationError::new(
+                    self.emit(
+                        result,
                         comp_location.clone(),
                         format!(
                             "Required component {} ({}) is missing or empty",
                             comp_idx, comp_def.name
                         ),
                         ValidationErrorType::MissingRequiredField,
-                    ));
+                    );
                 }
 
                 if let Some(comp) = component {
@@ -512,21 +589,23 @@ impl Validator {
                     // Validate component max length
                     if let Some(max_len) = comp_def.max_length
                         && comp_value.len() > max_len {
-                            result.add_error(ValidationError::new(
+                            self.emit(
+                                result,
                                 comp_location.clone(),
                                 format!(
                                     "Component {} ({}) exceeds maximum length ({} > {})",
                                     comp_idx, comp_def.name, comp_value.len(), max_len
                                 ),
                                 ValidationErrorType::InvalidLength,
-                            ));
+                            );
                         }
 
                     // Validate component data type
                     if let Some(data_type) = DataType::from_str(&comp_def.data_type) {
                         let validation = datatype::validate_data_type(comp_value, data_type);
                         if !validation.is_valid() {
-                            result.add_error(ValidationError::new(
+                            self.emit(
+                                result,
                                 comp_location.clone(),
                                 format!(
                                     "Invalid {} format in component {} ({}): {}",
@@ -536,7 +615,7 @@ impl Validator {
                                     validation.error_message().unwrap_or("unknown error")
                                 ),
                                 ValidationErrorType::InvalidDataType,
-                            ));
+                            );
                         }
                     }
 
@@ -547,11 +626,12 @@ impl Validator {
                         if !vocab_validation.is_valid()
                             && let Some(err_msg) = vocab_validation.error_message()
                         {
-                            result.add_error(ValidationError::new(
+                            self.emit(
+                                result,
                                 comp_location.clone(),
                                 err_msg.to_string(),
                                 ValidationErrorType::InvalidValue,
-                            ));
+                            );
                         }
                     }
                 }
@@ -572,11 +652,12 @@ impl Validator {
         for violation in rules_result.violations {
             match violation.severity {
                 RuleSeverity::Error => {
-                    result.add_error(ValidationError::new(
+                    self.emit(
+                        result,
                         violation.location.unwrap_or_else(|| "Message".to_string()),
                         violation.message,
                         ValidationErrorType::InvalidValue,
-                    ));
+                    );
                 }
                 RuleSeverity::Warning | RuleSeverity::Info => {
                     result.add_warning(ValidationWarning::new(
@@ -1259,6 +1340,67 @@ mod tests {
         assert!(table_errors.iter().any(|e| e.location.starts_with("RXR")
             && e.message.contains("'XX'")
             && e.message.contains("0162")));
+    }
+
+    #[test]
+    fn test_strict_context_escalates_version_drift() {
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.3\rPID|1||7\r",
+        )
+        .unwrap();
+
+        let standard = Validator::for_message_type(Version::V2_5, "ADT", "A01").unwrap();
+        let result = standard.validate(&message);
+        assert!(result.errors.iter().all(|e| e.location != "MSH-12"));
+        assert!(result.warnings.iter().any(|w| w.location == "MSH-12"));
+
+        let strict = Validator::for_message_type(Version::V2_5, "ADT", "A01")
+            .unwrap()
+            .with_context(ValidationContext::strict());
+        let result = strict.validate(&message);
+        assert!(result.errors.iter().any(|e| e.location == "MSH-12"));
+
+        let ignored = Validator::for_message_type(Version::V2_5, "ADT", "A01")
+            .unwrap()
+            .with_context(ValidationContext::standard().with_version_mismatch(Severity::Ignore));
+        let result = ignored.validate(&message);
+        assert!(
+            result.errors.iter().all(|e| e.location != "MSH-12")
+                && result.warnings.iter().all(|w| w.location != "MSH-12")
+        );
+    }
+
+    #[test]
+    fn test_lenient_context_warns_instead_of_failing() {
+        // PID-8 "X" is not a valid administrative sex (table 0001).
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\rPID|1||7||DOE^JOHN|||X\r",
+        )
+        .unwrap();
+
+        let standard = Validator::for_message_type(Version::V2_5, "ADT", "A01").unwrap();
+        let result = standard.validate(&message);
+        assert!(!result.is_valid());
+        assert!(result.errors.iter().any(|e| e.location.starts_with("PID")));
+
+        let lenient = Validator::for_message_type(Version::V2_5, "ADT", "A01")
+            .unwrap()
+            .with_context(ValidationContext::lenient());
+        let result = lenient.validate(&message);
+        assert!(result.is_valid());
+        assert!(!result.warnings.is_empty());
+
+        // Structural problems still fail under lenient.
+        let mut no_msh = vyna_hl7_core::Message::new();
+        no_msh.segments.push(vyna_hl7_core::Segment::new("PID"));
+        let result = lenient.validate(&no_msh);
+        assert!(!result.is_valid());
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.error_type == ValidationErrorType::StructuralError)
+        );
     }
 
     #[test]

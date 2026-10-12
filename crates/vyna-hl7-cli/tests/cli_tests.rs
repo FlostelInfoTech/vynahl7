@@ -221,6 +221,47 @@ async fn send_http_with_auth_returns_ack() {
     std::fs::remove_file(file).unwrap();
 }
 
+#[test]
+fn validate_profiles_change_severity() {
+    // MSH-12 2.3 validated against 2.5: drift warns by default, fails strict.
+    let drift = write_temp(
+        "drift.hl7",
+        "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.3\rPID|1||7\r",
+    );
+    let file = drift.to_str().unwrap().to_string();
+    let run = |extra: &[&str]| {
+        let mut args = vec![file.as_str(), "--hl7-version", "2.5", "--format", "json"];
+        args.extend_from_slice(extra);
+        let output = vynahl7().args(["validate"]).args(&args).output().unwrap();
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()
+    };
+
+    let json = run(&[]);
+    assert_eq!(json["valid"], true);
+    assert!(
+        json["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w["location"] == "MSH-12")
+    );
+
+    let json = run(&["--strict"]);
+    assert_eq!(json["valid"], false);
+    assert!(
+        json["errors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["location"] == "MSH-12")
+    );
+
+    let json = run(&["--lenient"]);
+    assert_eq!(json["valid"], true);
+
+    std::fs::remove_file(drift).unwrap();
+}
+
 #[tokio::test]
 async fn send_rejects_bad_scheme_and_refused_ports() {
     let file = write_temp("send.hl7", ADT_A);

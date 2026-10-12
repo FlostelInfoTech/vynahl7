@@ -54,6 +54,14 @@ enum Commands {
         /// Output format: text, json
         #[arg(short, long, default_value = "text")]
         format: String,
+
+        /// Strict profile: version drift and all findings fail
+        #[arg(long, conflicts_with = "lenient")]
+        strict: bool,
+
+        /// Lenient profile: only structural problems fail, rest warns
+        #[arg(long, conflicts_with = "strict")]
+        lenient: bool,
     },
 
     /// Extract field values using Terser paths
@@ -176,7 +184,16 @@ async fn main() -> Result<()> {
             input,
             hl7_version,
             format,
-        } => validate_command(&input, hl7_version.as_deref(), &format, charset)?,
+            strict,
+            lenient,
+        } => validate_command(
+            &input,
+            hl7_version.as_deref(),
+            &format,
+            strict,
+            lenient,
+            charset,
+        )?,
         Commands::Extract {
             input,
             paths,
@@ -454,6 +471,8 @@ fn validate_command(
     input: &str,
     version: Option<&str>,
     format: &str,
+    strict: bool,
+    lenient: bool,
     charset: Option<CharacterSet>,
 ) -> Result<()> {
     let content = read_input(input, charset)?;
@@ -481,7 +500,14 @@ fn validate_command(
         message.get_version().unwrap_or(Version::V2_5)
     };
 
-    let validator = Validator::new(hl7_version);
+    let context = if strict {
+        vyna_hl7_validator::ValidationContext::strict()
+    } else if lenient {
+        vyna_hl7_validator::ValidationContext::lenient()
+    } else {
+        vyna_hl7_validator::ValidationContext::standard()
+    };
+    let validator = Validator::new(hl7_version).with_context(context);
     let result = validator.validate(&message);
 
     match format {
