@@ -12,6 +12,7 @@ use crate::field::{Component, Field, Repetition};
 ///
 /// Note: For MSH segments, the encoding is special:
 /// - MSH|^~\&|... (field separator and encoding characters come first)
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Segment {
     /// Segment ID (3 characters, e.g., "MSH", "PID")

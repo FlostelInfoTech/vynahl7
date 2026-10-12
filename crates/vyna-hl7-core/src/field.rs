@@ -8,6 +8,7 @@ use crate::error::Result;
 ///
 /// This is the smallest unit in HL7 message hierarchy.
 /// Example: In "Smith&John", "Smith" and "John" are subcomponents
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubComponent {
     pub value: String,
@@ -60,6 +61,7 @@ impl From<&str> for SubComponent {
 ///
 /// Components can contain subcomponents separated by the subcomponent separator (&).
 /// Example: In "Smith&John^MD", "Smith&John" is a component with two subcomponents
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Component {
     pub subcomponents: Vec<SubComponent>,
@@ -129,6 +131,7 @@ impl Default for Component {
 ///
 /// Fields can repeat, with each repetition containing components.
 /// Example: In "Value1~Value2~Value3", there are 3 repetitions
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Repetition {
     pub components: Vec<Component>,
@@ -222,6 +225,7 @@ impl Default for Repetition {
 ///
 /// Fields can contain multiple repetitions, each with components and subcomponents.
 /// The hierarchy is: Field -> Repetitions -> Components -> Subcomponents
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Field {
     pub repetitions: Vec<Repetition>,

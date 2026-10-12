@@ -10,6 +10,7 @@ use crate::Version;
 ///
 /// A message consists of multiple segments, starting with an MSH segment.
 /// The message structure follows HL7 v2.x specifications.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
     /// Message segments

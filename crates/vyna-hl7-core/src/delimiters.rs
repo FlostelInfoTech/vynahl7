@@ -17,6 +17,7 @@ pub const DEFAULT_SUBCOMPONENT_SEPARATOR: char = '&';
 /// - Repetition separator: `~` (separates repeated fields)
 /// - Escape character: `\` (used for escape sequences)
 /// - Subcomponent separator: `&` (separates subcomponents within a component)
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Delimiters {
     pub field_separator: char,
