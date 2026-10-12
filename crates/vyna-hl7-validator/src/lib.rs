@@ -446,16 +446,19 @@ impl Validator {
                     }
 
                     // Validate vocabulary/code set
-                    if let Some(table_id) = &field_def.table_id {
-                        let vocab_validation = self.table_registry.validate(table_id, value);
+                    if let Some(table_id) = &field_def.table_id
+                        && let Some(code) = field_table_code(f, field_def, delimiters)
+                    {
+                        let vocab_validation = self.table_registry.validate(table_id, code);
                         if !vocab_validation.is_valid()
-                            && let Some(err_msg) = vocab_validation.error_message() {
-                                result.add_error(ValidationError::new(
-                                    field_location.clone(),
-                                    err_msg.to_string(),
-                                    ValidationErrorType::InvalidValue,
-                                ));
-                            }
+                            && let Some(err_msg) = vocab_validation.error_message()
+                        {
+                            result.add_error(ValidationError::new(
+                                field_location.clone(),
+                                err_msg.to_string(),
+                                ValidationErrorType::InvalidValue,
+                            ));
+                        }
                     }
                 }
 
@@ -584,6 +587,102 @@ impl Validator {
             }
         }
     }
+}
+
+/// Code a field-level table check applies to.
+///
+/// For composite fields the table constrains component 1 (the code), not the
+/// whole joined value. Builder-created fields may store composites as a single
+/// unsplit component, so the value is split on the component separator when
+/// the schema (or datatype) says the field is composite. Parsed messages
+/// already expose component 1 via `value()`, making the split a no-op there.
+fn field_table_code<'a>(
+    field: &'a vyna_hl7_core::field::Field,
+    field_def: &FieldDefinition,
+    delimiters: &vyna_hl7_core::delimiters::Delimiters,
+) -> Option<&'a str> {
+    let value = field.value()?;
+    if field_def.components.is_some() || is_composite_datatype(&field_def.data_type) {
+        Some(
+            value
+                .split(delimiters.component_separator)
+                .next()
+                .unwrap_or(value),
+        )
+    } else {
+        Some(value)
+    }
+}
+
+/// HL7 datatypes with components (field-level tables constrain component 1).
+fn is_composite_datatype(data_type: &str) -> bool {
+    matches!(
+        data_type,
+        "AD" | "AUI"
+            | "CCD"
+            | "CCP"
+            | "CD"
+            | "CE"
+            | "CF"
+            | "CNE"
+            | "CNN"
+            | "CP"
+            | "CQ"
+            | "CSU"
+            | "CWE"
+            | "CX"
+            | "DDI"
+            | "DIN"
+            | "DLN"
+            | "DLT"
+            | "DR"
+            | "DTN"
+            | "EI"
+            | "EIP"
+            | "ELD"
+            | "ERL"
+            | "FC"
+            | "FN"
+            | "HD"
+            | "JCC"
+            | "LA1"
+            | "LA2"
+            | "MA"
+            | "MOC"
+            | "MO"
+            | "MSG"
+            | "NA"
+            | "NDL"
+            | "NR"
+            | "OCD"
+            | "OSP"
+            | "PIP"
+            | "PL"
+            | "PPN"
+            | "PRL"
+            | "PT"
+            | "QIP"
+            | "QSC"
+            | "RCD"
+            | "RFR"
+            | "RI"
+            | "RMC"
+            | "RP"
+            | "SAD"
+            | "SCV"
+            | "SN"
+            | "SPD"
+            | "TQ"
+            | "UVC"
+            | "VH"
+            | "VID"
+            | "VR"
+            | "XAD"
+            | "XCN"
+            | "XON"
+            | "XPN"
+            | "XTN"
+    )
 }
 
 /// Message schema definition
@@ -1124,6 +1223,42 @@ mod tests {
             .filter(|e| e.location != "MSH[0]-9-3" && e.location != "MSH[0]-12-1")
             .collect();
         assert!(unexpected.is_empty(), "errors: {unexpected:?}");
+    }
+
+    #[test]
+    fn test_composite_table_check_uses_component_code() {
+        use vyna_hl7_core::builders::vxu::{ImmunizationDose, VxuV04Builder};
+
+        // Builders store composites via from_value (single unsplit component);
+        // the field-level table check must still validate the code (RXA-5.1).
+        let message = VxuV04Builder::new(Version::V2_5)
+            .sending_application("SEND")
+            .sending_facility("SFAC")
+            .receiving_application("RECV")
+            .receiving_facility("RFAC")
+            .patient_id("12345")
+            .patient_name("Smith", "John")
+            .add_immunization(
+                ImmunizationDose::new("ZZ^Not a vaccine^CVX", "20240101100000")
+                    .route("XX^Not a route"),
+            )
+            .build()
+            .unwrap();
+
+        let validator = Validator::for_message_type(Version::V2_5, "VXU", "V04").unwrap();
+        let result = validator.validate(&message);
+        let table_errors: Vec<_> = result
+            .errors
+            .iter()
+            .filter(|e| e.error_type == ValidationErrorType::InvalidValue)
+            .collect();
+        assert_eq!(table_errors.len(), 2);
+        assert!(table_errors.iter().any(|e| e.location.starts_with("RXA")
+            && e.message.contains("'ZZ'")
+            && e.message.contains("0292")));
+        assert!(table_errors.iter().any(|e| e.location.starts_with("RXR")
+            && e.message.contains("'XX'")
+            && e.message.contains("0162")));
     }
 
     #[test]
