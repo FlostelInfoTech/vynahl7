@@ -1,0 +1,37 @@
+[package]
+name = "vyna-hl7-fhir"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "HL7 v2.x to FHIR R4 conversion library with 12 production-ready converters"
+
+[dependencies]
+# Internal crates
+vyna-hl7-core.workspace = true
+vyna-hl7-parser.workspace = true
+vyna-hl7-terser.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Date/Time handling
+chrono.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+criterion = "0.8"
+
+[[bench]]
+name = "fhir_bench"
+harness = false

@@ -1,0 +1,279 @@
+/**
+ * TypeScript type definitions for VynaHL7 WebAssembly bindings
+ *
+ * VynaHL7 is a comprehensive HL7 v2.x library for parsing, validating,
+ * and manipulating healthcare messages in JavaScript/TypeScript.
+ */
+
+/**
+ * Initialize the WebAssembly module
+ * Must be called before using any other functions
+ */
+export function init(): Promise<void>;
+
+/**
+ * HL7 Message wrapper
+ */
+export class WasmMessage {
+  /** Get the HL7 version (e.g., "2.5") */
+  version(): string | undefined;
+
+  /** Get the message type (e.g., "ADT^A01") */
+  messageType(): string | undefined;
+
+  /** Get the sending application */
+  sendingApplication(): string | undefined;
+
+  /** Get the sending facility */
+  sendingFacility(): string | undefined;
+
+  /** Get the receiving application */
+  receivingApplication(): string | undefined;
+
+  /** Get the receiving facility */
+  receivingFacility(): string | undefined;
+
+  /** Get the message control ID */
+  controlId(): string | undefined;
+
+  /** Encode the message back to HL7 string format */
+  encode(): string;
+
+  /** Get the number of segments in the message */
+  segmentCount(): number;
+
+  /** Get an array of segment IDs */
+  segmentIds(): string[];
+
+  /** Convert message to JSON representation */
+  toJson(): MessageJson;
+}
+
+/**
+ * Validation result
+ */
+export class WasmValidationResult {
+  /** Check if the message is valid */
+  isValid(): boolean;
+
+  /** Get the number of validation errors */
+  errorCount(): number;
+
+  /** Get the number of validation warnings */
+  warningCount(): number;
+
+  /** Convert validation result to JSON */
+  toJson(): ValidationResultJson;
+}
+
+/**
+ * Parse an HL7 message string
+ *
+ * @param input - The HL7 message string
+ * @returns The parsed message
+ * @throws Error if parsing fails
+ *
+ * @example
+ * ```typescript
+ * const message = parseMessage(
+ *   "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\n" +
+ *   "PID|1||MRN123||DOE^JOHN||19800101|M"
+ * );
+ * ```
+ */
+export function parseMessage(input: string): WasmMessage;
+
+/**
+ * Get the HL7 version from a message
+ *
+ * @param message - The parsed message
+ * @returns The HL7 version string (e.g., "2.5")
+ */
+export function getVersion(message: WasmMessage): string | undefined;
+
+/**
+ * Get the message type from a message
+ *
+ * @param message - The parsed message
+ * @returns The message type string (e.g., "ADT^A01")
+ */
+export function getMessageType(message: WasmMessage): string | undefined;
+
+/**
+ * Encode a message back to HL7 string format
+ *
+ * @param message - The message to encode
+ * @returns The HL7 string
+ */
+export function encodeMessage(message: WasmMessage): string;
+
+/**
+ * Get a field value using Terser path notation
+ *
+ * @param message - The parsed message
+ * @param path - The Terser path (e.g., "PID-5-1")
+ * @returns The field value if found, or undefined
+ *
+ * @example
+ * ```typescript
+ * const patientName = getTerserValue(message, "PID-5");
+ * const familyName = getTerserValue(message, "PID-5-0");
+ * const givenName = getTerserValue(message, "PID-5-1");
+ * ```
+ */
+export function getTerserValue(message: WasmMessage, path: string): string | undefined;
+
+/**
+ * Set a field value using Terser path notation
+ *
+ * @param message - The message to modify
+ * @param path - The Terser path (e.g., "PID-5-0")
+ * @param value - The value to set
+ *
+ * @example
+ * ```typescript
+ * setTerserValue(message, "PID-5-0", "SMITH");
+ * setTerserValue(message, "PID-5-1", "JOHN");
+ * ```
+ */
+export function setTerserValue(message: WasmMessage, path: string, value: string): void;
+
+/**
+ * Get multiple values at once using Terser paths
+ *
+ * @param message - The message to query
+ * @param paths - Array of Terser paths
+ * @returns Object mapping paths to values
+ *
+ * @example
+ * ```typescript
+ * const values = getTerserValues(message, [
+ *   "PID-5-0",
+ *   "PID-5-1",
+ *   "PID-7",
+ *   "PID-8"
+ * ]);
+ * // { "PID-5-0": "DOE", "PID-5-1": "JOHN", "PID-7": "19800101", "PID-8": "M" }
+ * ```
+ */
+export function getTerserValues(message: WasmMessage, paths: string[]): Record<string, string | null>;
+
+/**
+ * Validate a message against HL7 standards
+ *
+ * @param message - The message to validate
+ * @returns Validation result
+ *
+ * @example
+ * ```typescript
+ * const result = validateMessage(message);
+ * if (!result.isValid()) {
+ *   const errors = result.toJson().errors;
+ *   console.error("Validation errors:", errors);
+ * }
+ * ```
+ */
+export function validateMessage(message: WasmMessage): WasmValidationResult;
+
+/**
+ * Create a new HL7 message with MSH segment
+ *
+ * @param version - HL7 version (e.g., "2.5")
+ * @param messageType - Message type (e.g., "ADT^A01")
+ * @param sendingApp - Sending application
+ * @param sendingFac - Sending facility
+ * @returns A new message with MSH segment
+ *
+ * @example
+ * ```typescript
+ * const message = createMessage("2.5", "ADT^A01", "MyApp", "MyFacility");
+ * ```
+ */
+export function createMessage(
+  version: string,
+  messageType: string,
+  sendingApp: string,
+  sendingFac: string
+): WasmMessage;
+
+/**
+ * Extract patient demographics from a message
+ *
+ * @param message - The message (typically ADT)
+ * @returns Patient demographics object
+ *
+ * @example
+ * ```typescript
+ * const demographics = extractPatientDemographics(message);
+ * console.log(demographics.familyName, demographics.givenName);
+ * ```
+ */
+export function extractPatientDemographics(message: WasmMessage): PatientDemographics;
+
+/**
+ * Extract observations from an ORU message
+ *
+ * @param message - The ORU message
+ * @returns Array of observation objects
+ *
+ * @example
+ * ```typescript
+ * const observations = extractObservations(message);
+ * observations.forEach(obs => {
+ *   console.log(obs.testName, obs.value, obs.units);
+ * });
+ * ```
+ */
+export function extractObservations(message: WasmMessage): Observation[];
+
+// Type definitions for JSON structures
+
+export interface MessageJson {
+  version?: string;
+  message_type?: string;
+  sending_application?: string;
+  sending_facility?: string;
+  control_id?: string;
+  segments: SegmentJson[];
+}
+
+export interface SegmentJson {
+  id: string;
+  fields: string[];
+}
+
+export interface ValidationResultJson {
+  is_valid: boolean;
+  errors: ValidationError[];
+  warnings: ValidationError[];
+}
+
+export interface ValidationError {
+  location: string;
+  message: string;
+  severity: string;
+}
+
+export interface PatientDemographics {
+  patient_id?: string;
+  mrn?: string;
+  family_name?: string;
+  given_name?: string;
+  date_of_birth?: string;
+  gender?: string;
+  address?: string;
+  phone?: string;
+}
+
+export interface Observation {
+  set_id?: string;
+  value_type?: string;
+  identifier?: string;
+  test_name?: string;
+  value?: string;
+  units?: string;
+  reference_range?: string;
+  abnormal_flags?: string;
+  status?: string;
+  observation_datetime?: string;
+}

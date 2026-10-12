@@ -1,0 +1,67 @@
+================================================================================
+  VynaHL7 Benchmark Report: Full Pipeline
+  Generated: 2026-03-21 08:19:38 UTC
+================================================================================
+
+  1. PURPOSE
+  ----------
+  Measure cumulative cost of cross-crate processing pipelines that represent real
+  interface engine workflows: parse-only (baseline), parse+validate, parse+extract
+  (Terser vs CachedTerser), parse+transform+encode (field modification round-trip),
+  and interface engine simulation (parse + extract routing fields + generate ACK).
+
+  2. METHODOLOGY
+  ---------------
+  Framework:     Criterion 0.7
+  Parse only:    vyna_hl7_parser::parse_message() baseline
+  Validate:      parse + Validator::for_message_type().validate()
+  Extract:       parse + Terser/CachedTerser get 10 clinical fields
+  Transform:     parse + TerserMut set fields + message.encode()
+  Engine sim:    parse + extract MSH-9/PID-3/PV1-2 + generate ACK string
+
+  3. CONFIGURATION
+  -----------------
+
+  Hardware:
+    OS:            Linux Mint 22.3
+    Kernel:        6.8.0-106-generic
+    CPU:           AMD Ryzen 5 4600U with Radeon Graphics
+    Cores:         12
+    RAM:           15.0 GB
+
+  Toolchain:
+    Rust:          rustc 1.94.0 (4a4ef493e 2026-03-02)
+    Cargo:         cargo 1.94.0 (85eff7c80 2026-01-15)
+    Target:        x86_64-unknown-linux-gnu
+    Profile:       release (opt-level=3, lto=true, codegen-units=1)
+
+  Reproduce:
+    cargo bench --bench pipeline_bench
+
+  4. RESULTS
+  ----------
+
+Pipeline_Parse_Only/ADT_A01
+    time:   [13.520 µs 13.576 µs 13.641 µs]
+    thrpt:  [24.959 MiB/s 25.078 MiB/s 25.181 MiB/s]
+Pipeline_Parse_Only/ORU_R01
+    time:   [36.464 µs 36.715 µs 37.006 µs]
+    thrpt:  [19.225 MiB/s 19.377 MiB/s 19.511 MiB/s]
+Pipeline_Parse_Validate/ADT_A01
+    time:   [28.983 µs 29.162 µs 29.368 µs]
+Pipeline_Parse_Validate/ORU_R01
+    time:   [47.440 µs 47.747 µs 48.092 µs]
+Pipeline_Parse_Extract/ADT_10_fields_terser
+    time:   [20.359 µs 20.498 µs 20.663 µs]
+Pipeline_Parse_Extract/ADT_10_fields_cached_terser
+    time:   [21.992 µs 22.106 µs 22.244 µs]
+Pipeline_Parse_Transform_Encode/ADT_modify_and_encode
+    time:   [28.481 µs 28.647 µs 28.825 µs]
+Pipeline_Parse_Transform_Encode/ORU_modify_and_encode
+    time:   [45.195 µs 45.522 µs 45.880 µs]
+Pipeline_Interface_Engine_Sim/ADT_route_and_ack
+    time:   [19.557 µs 19.650 µs 19.779 µs]
+Pipeline_Interface_Engine_Sim/ORU_route_and_ack
+    time:   [29.013 µs 29.160 µs 29.302 µs]
+
+================================================================================

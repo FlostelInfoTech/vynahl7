@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VynaHL7 WebAssembly - HL7 Message Parser</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        textarea {
+            width: 100%;
+            min-height: 200px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #0066cc;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0052a3;
+        }
+        .output {
+            background: #f8f8f8;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .error {
+            color: #d32f2f;
+            background: #ffebee;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success {
+            color: #388e3c;
+            background: #e8f5e9;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .field-value {
+            margin: 5px 0;
+            padding: 5px;
+            background: #e3f2fd;
+            border-left: 3px solid #2196f3;
+        }
+        .label {
+            font-weight: bold;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>🏥 VynaHL7 WebAssembly - HL7 v2.x Parser</h1>
+
+    <div class="container">
+        <h2>Sample HL7 Messages</h2>
+        <button onclick="loadADTSample()">Load ADT Sample</button>
+        <button onclick="loadORUSample()">Load ORU Sample</button>
+        <button onclick="clearInput()">Clear</button>
+    </div>
+
+    <div class="container">
+        <h2>HL7 Message Input</h2>
+        <textarea id="hl7Input" placeholder="Paste your HL7 message here..."></textarea>
+        <br><br>
+        <button onclick="parseMessage()">Parse Message</button>
+        <button onclick="validateMessage()">Validate Message</button>
+        <button onclick="extractData()">Extract Patient Data</button>
+    </div>
+
+    <div class="container">
+        <h2>Results</h2>
+        <div id="output" class="output"></div>
+    </div>
+
+    <script type="module">
+        import init, {
+            parseMessage as wasmParseMessage,
+            getTerserValue,
+            getTerserValues,
+            extractPatientDemographics,
+            extractObservations,
+            validateMessage as wasmValidateMessage
+        } from '../pkg/vyna_hl7_wasm.js';
+
+        // Initialize WASM
+        await init();
+        console.log('VynaHL7 WebAssembly initialized');
+
+        // Store message globally
+        window.currentMessage = null;
+
+        // Sample messages
+        window.adtSample = `MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315143000||ADT^A01|MSG12345|P|2.5
+PID|1|PAT001|MRN123456^^^Hospital^MR||DOE^JOHN^ALLEN^JR^DR^PhD||19800101|M|||123 Main St^Apt 4B^Boston^MA^02101^USA||555-1234^PRN^PH~555-5678^WPN^PH||EN^English^HL70296|M^Married^HL70002|||123-45-6789|||N
+PV1|1|I|ER^101^1^Hospital^^^^^ER|||12345^SMITH^JANE^M^^MD^L^^^NPI||||MED||||1|||12345^SMITH^JANE^M^^MD^L^^^NPI|INT|Visit001^^^Hospital^VN|||||||||||||||||||||||||20240315100000`;
+
+        window.oruSample = `MSH|^~\\&|LAB|Hospital|RecApp|RecFac|20240315143000||ORU^R01|LAB12345|P|2.5
+PID|1||MRN123||DOE^JOHN||19800101|M
+OBR|1|ORD123|LAB456|CBC^Complete Blood Count^LN|||20240315120000
+OBX|1|NM|WBC^White Blood Count^LN||7.5|10*3/uL|4.5-11.0|N|||F|||20240315120000
+OBX|2|NM|RBC^Red Blood Count^LN||4.8|10*6/uL|4.2-5.9|N|||F|||20240315120000
+OBX|3|NM|HGB^Hemoglobin^LN||14.5|g/dL|12.0-16.0|N|||F|||20240315120000`;
+
+        // Load samples
+        window.loadADTSample = function() {
+            document.getElementById('hl7Input').value = window.adtSample;
+        };
+
+        window.loadORUSample = function() {
+            document.getElementById('hl7Input').value = window.oruSample;
+        };
+
+        window.clearInput = function() {
+            document.getElementById('hl7Input').value = '';
+            document.getElementById('output').innerHTML = '';
+        };
+
+        // Parse message
+        window.parseMessage = function() {
+            const input = document.getElementById('hl7Input').value;
+            const output = document.getElementById('output');
+
+            try {
+                const message = wasmParseMessage(input);
+                window.currentMessage = message;
+
+                let result = '<div class="success">✓ Message parsed successfully!</div>\n\n';
+                result += `<strong>Message Type:</strong> ${message.messageType() || 'N/A'}\n`;
+                result += `<strong>Version:</strong> ${message.version() || 'N/A'}\n`;
+                result += `<strong>Sending Application:</strong> ${message.sendingApplication() || 'N/A'}\n`;
+                result += `<strong>Sending Facility:</strong> ${message.sendingFacility() || 'N/A'}\n`;
+                result += `<strong>Control ID:</strong> ${message.controlId() || 'N/A'}\n`;
+                result += `<strong>Segment Count:</strong> ${message.segmentCount()}\n`;
+                result += `<strong>Segments:</strong> ${message.segmentIds().join(', ')}\n\n`;
+
+                // Show JSON representation
+                result += '<strong>JSON Representation:</strong>\n';
+                result += JSON.stringify(message.toJson(), null, 2);
+
+                output.innerHTML = result;
+            } catch (error) {
+                output.innerHTML = `<div class="error">✗ Error: ${error}</div>`;
+            }
+        };
+
+        // Validate message
+        window.validateMessage = function() {
+            const input = document.getElementById('hl7Input').value;
+            const output = document.getElementById('output');
+
+            try {
+                const message = wasmParseMessage(input);
+                const result = wasmValidateMessage(message);
+
+                let html = '';
+                if (result.isValid()) {
+                    html = '<div class="success">✓ Message is valid!</div>';
+                } else {
+                    html = `<div class="error">✗ Validation failed</div>`;
+                    html += `<strong>Errors:</strong> ${result.errorCount()}\n`;
+                    html += `<strong>Warnings:</strong> ${result.warningCount()}\n\n`;
+
+                    const validationJson = result.toJson();
+                    if (validationJson.errors.length > 0) {
+                        html += '<strong>Validation Errors:</strong>\n';
+                        validationJson.errors.forEach(err => {
+                            html += `  • ${err.location}: ${err.message}\n`;
+                        });
+                    }
+
+                    if (validationJson.warnings.length > 0) {
+                        html += '\n<strong>Warnings:</strong>\n';
+                        validationJson.warnings.forEach(warn => {
+                            html += `  • ${warn.location}: ${warn.message}\n`;
+                        });
+                    }
+                }
+
+                output.innerHTML = html;
+            } catch (error) {
+                output.innerHTML = `<div class="error">✗ Error: ${error}</div>`;
+            }
+        };
+
+        // Extract data
+        window.extractData = function() {
+            const input = document.getElementById('hl7Input').value;
+            const output = document.getElementById('output');
+
+            try {
+                const message = wasmParseMessage(input);
+                const messageType = message.messageType() || '';
+
+                let result = '';
+
+                // Extract patient demographics (common to all)
+                try {
+                    const demographics = extractPatientDemographics(message);
+                    result += '<h3>Patient Demographics</h3>\n';
+                    result += `<div class="field-value"><span class="label">MRN:</span> ${demographics.mrn || 'N/A'}</div>`;
+                    result += `<div class="field-value"><span class="label">Name:</span> ${demographics.family_name || ''}, ${demographics.given_name || ''}</div>`;
+                    result += `<div class="field-value"><span class="label">DOB:</span> ${demographics.date_of_birth || 'N/A'}</div>`;
+                    result += `<div class="field-value"><span class="label">Gender:</span> ${demographics.gender || 'N/A'}</div>`;
+                    result += `<div class="field-value"><span class="label">Address:</span> ${demographics.address || 'N/A'}</div>`;
+                    result += `<div class="field-value"><span class="label">Phone:</span> ${demographics.phone || 'N/A'}</div>\n\n`;
+                } catch (e) {
+                    result += '<p>No patient demographics found</p>\n\n';
+                }
+
+                // Extract observations if ORU message
+                if (messageType.startsWith('ORU')) {
+                    try {
+                        const observations = extractObservations(message);
+                        result += '<h3>Observations</h3>\n';
+                        observations.forEach((obs, idx) => {
+                            result += `<div class="field-value">`;
+                            result += `<span class="label">${obs.test_name || 'Test ' + (idx + 1)}:</span> `;
+                            result += `${obs.value || 'N/A'} ${obs.units || ''} `;
+                            result += `(${obs.reference_range || 'N/A'}) `;
+                            result += `[${obs.abnormal_flags || 'N'}]`;
+                            result += `</div>`;
+                        });
+                    } catch (e) {
+                        result += '<p>No observations found</p>';
+                    }
+                }
+
+                output.innerHTML = result;
+            } catch (error) {
+                output.innerHTML = `<div class="error">✗ Error: ${error}</div>`;
+            }
+        };
+
+        // Load ADT sample on startup
+        window.loadADTSample();
+    </script>
+</body>
+</html>

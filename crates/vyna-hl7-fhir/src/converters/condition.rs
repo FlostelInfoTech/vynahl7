@@ -1,0 +1,141 @@
+//! Condition converter - PRB/DG1 segments to FHIR Condition resource
+
+use vyna_hl7_core::Message;
+use vyna_hl7_terser::Terser;
+use crate::error::{ConversionError, ConversionResult};
+use crate::resources::condition::*;
+use crate::resources::common::*;
+
+pub struct ConditionConverter;
+
+impl ConditionConverter {
+    pub fn convert_all(message: &Message) -> ConversionResult<Vec<Condition>> {
+        let prb_segments: Vec<_> = message
+            .segments
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.id == "PRB" || s.id == "DG1")
+            .collect();
+
+        if prb_segments.is_empty() {
+            return Err(ConversionError::MissingSegment("PRB or DG1".to_string()));
+        }
+
+        let mut conditions = Vec::new();
+        for (count, (_, seg)) in prb_segments.iter().enumerate() {
+            let condition = if seg.id == "PRB" {
+                Self::convert_prb(message, count)?
+            } else {
+                Self::convert_dg1(message, count)?
+            };
+            conditions.push(condition);
+        }
+
+        Ok(conditions)
+    }
+
+    fn convert_prb(message: &Message, prb_index: usize) -> ConversionResult<Condition> {
+        let terser = Terser::new(message);
+        let mut condition = Condition::new();
+
+        // PRB-3: Problem ID
+        let code_path = if prb_index == 0 {
+            "PRB-3".to_string()
+        } else {
+            format!("PRB({})-3", prb_index)
+        };
+        if let Ok(Some(code)) = terser.get(&code_path) {
+            condition.code = Some(CodeableConcept {
+                coding: Some(vec![Coding {
+                    system: None,
+                    version: None,
+                    code: Some(code.to_string()),
+                    display: None,
+                }]),
+                text: None,
+            });
+        }
+
+        // Link to patient
+        if let Ok(Some(patient_id)) = terser.get("PID-3") {
+            condition.subject = Some(Reference {
+                reference: Some(format!("Patient/{}", patient_id)),
+                type_: Some("Patient".to_string()),
+                identifier: None,
+                display: None,
+            });
+        }
+
+        condition.clinical_status = Some(CodeableConcept {
+            coding: Some(vec![Coding {
+                system: Some("http://terminology.hl7.org/CodeSystem/condition-clinical".to_string()),
+                version: None,
+                code: Some("active".to_string()),
+                display: None,
+            }]),
+            text: None,
+        });
+
+        Ok(condition)
+    }
+
+    fn convert_dg1(message: &Message, dg1_index: usize) -> ConversionResult<Condition> {
+        let terser = Terser::new(message);
+        let mut condition = Condition::new();
+
+        // DG1-3: Diagnosis Code
+        let code_path = if dg1_index == 0 {
+            "DG1-3".to_string()
+        } else {
+            format!("DG1({})-3", dg1_index)
+        };
+        if let Ok(Some(code)) = terser.get(&code_path) {
+            let mut coding = Coding {
+                system: None,
+                version: None,
+                code: Some(code.to_string()),
+                display: None,
+            };
+
+            if let Ok(Some(text)) = terser.get(&format!("{}-1", code_path)) {
+                coding.display = Some(text.to_string());
+            }
+
+            condition.code = Some(CodeableConcept {
+                coding: Some(vec![coding]),
+                text: None,
+            });
+        }
+
+        // Link to patient
+        if let Ok(Some(patient_id)) = terser.get("PID-3") {
+            condition.subject = Some(Reference {
+                reference: Some(format!("Patient/{}", patient_id)),
+                type_: Some("Patient".to_string()),
+                identifier: None,
+                display: None,
+            });
+        }
+
+        Ok(condition)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vyna_hl7_parser::parse_message;
+
+    #[test]
+    fn test_convert_condition_dg1() {
+        let hl7 = "MSH|^~\\&|System|Hospital|EMR|Hospital|20240315||ADT^A01|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   DG1|1||I10^Essential Hypertension^ICD10";
+
+        let message = parse_message(hl7).unwrap();
+        let conditions = ConditionConverter::convert_all(&message).unwrap();
+
+        assert_eq!(conditions.len(), 1);
+        assert_eq!(conditions[0].resource_type, "Condition");
+    }
+}

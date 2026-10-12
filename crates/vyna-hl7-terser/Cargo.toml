@@ -1,0 +1,29 @@
+[package]
+name = "vyna-hl7-terser"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Terser API for easy HL7 field access using path notation"
+
+[dependencies]
+vyna-hl7-core.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+vyna-hl7-parser.workspace = true
+criterion = "0.8"
+
+[[bench]]
+name = "terser_bench"
+harness = false
+
+[[bench]]
+name = "cached_terser_bench"
+harness = false

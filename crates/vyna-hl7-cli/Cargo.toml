@@ -1,0 +1,44 @@
+[package]
+name = "vyna-hl7-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Command-line interface for VynaHL7 HL7 v2.x library"
+
+[[bin]]
+name = "vynahl7"
+path = "src/main.rs"
+
+[dependencies]
+vyna-hl7-core.workspace = true
+vyna-hl7-parser.workspace = true
+vyna-hl7-validator.workspace = true
+vyna-hl7-terser.workspace = true
+
+# CLI
+clap = { version = "4.5", features = ["derive", "cargo"] }
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Error handling
+anyhow.workspace = true
+thiserror.workspace = true
+
+# Optional FHIR support
+vyna-hl7-fhir = { workspace = true, optional = true }
+
+# Terminal colors
+colored = "3.0.0"
+
+[features]
+default = []
+fhir = ["dep:vyna-hl7-fhir"]

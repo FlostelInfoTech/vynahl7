@@ -1,0 +1,45 @@
+[package]
+name = "vyna-hl7-wasm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "WebAssembly bindings for VynaHL7 HL7 v2.x library"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+vyna-hl7-core.workspace = true
+vyna-hl7-parser.workspace = true
+vyna-hl7-terser.workspace = true
+vyna-hl7-validator.workspace = true
+
+# WebAssembly
+wasm-bindgen = "0.2"
+serde-wasm-bindgen = "0.6"
+serde.workspace = true
+serde_json.workspace = true
+
+# Date/Time
+chrono.workspace = true
+
+# Error handling
+thiserror.workspace = true
+
+# Optional: Better panic messages in wasm
+console_error_panic_hook = { version = "0.1", optional = true }
+
+# Console logging for wasm
+[dependencies.web-sys]
+version = "0.3"
+features = ["console"]
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"

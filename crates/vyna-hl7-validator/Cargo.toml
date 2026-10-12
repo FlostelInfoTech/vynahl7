@@ -1,0 +1,29 @@
+[package]
+name = "vyna-hl7-validator"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Validation for HL7 v2.x messages against various standards"
+
+[dependencies]
+vyna-hl7-core.workspace = true
+vyna-hl7-terser.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+vyna-hl7-parser.workspace = true
+criterion = "0.8"
+
+[[bench]]
+name = "validator_bench"
+harness = false

@@ -1,0 +1,1252 @@
+{
+  "message_type": "QRY",
+  "trigger_event": "Q02",
+  "version": "2.8",
+  "description": "Query Sent for Deferred Response",
+  "segments": {
+    "MSH": {
+      "name": "Message Header",
+      "required": true,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Field Separator",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 1
+        },
+        "2": {
+          "name": "Encoding Characters",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 4
+        },
+        "3": {
+          "name": "Sending Application",
+          "data_type": "HD",
+          "required": false,
+          "repeating": false,
+          "max_length": 227,
+          "components": {
+            "1": {
+              "name": "Namespace ID",
+              "data_type": "IS",
+              "required": false,
+              "max_length": 20,
+              "table_id": "0300"
+            },
+            "2": {
+              "name": "Universal ID",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Universal ID Type",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 6,
+              "table_id": "0301"
+            }
+          }
+        },
+        "4": {
+          "name": "Sending Facility",
+          "data_type": "HD",
+          "required": false,
+          "repeating": false,
+          "max_length": 227,
+          "components": {
+            "1": {
+              "name": "Namespace ID",
+              "data_type": "IS",
+              "required": false,
+              "max_length": 20,
+              "table_id": "0300"
+            },
+            "2": {
+              "name": "Universal ID",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Universal ID Type",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 6,
+              "table_id": "0301"
+            }
+          }
+        },
+        "5": {
+          "name": "Receiving Application",
+          "data_type": "HD",
+          "required": false,
+          "repeating": false,
+          "max_length": 227,
+          "components": {
+            "1": {
+              "name": "Namespace ID",
+              "data_type": "IS",
+              "required": false,
+              "max_length": 20,
+              "table_id": "0300"
+            },
+            "2": {
+              "name": "Universal ID",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Universal ID Type",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 6,
+              "table_id": "0301"
+            }
+          }
+        },
+        "6": {
+          "name": "Receiving Facility",
+          "data_type": "HD",
+          "required": false,
+          "repeating": false,
+          "max_length": 227,
+          "components": {
+            "1": {
+              "name": "Namespace ID",
+              "data_type": "IS",
+              "required": false,
+              "max_length": 20,
+              "table_id": "0300"
+            },
+            "2": {
+              "name": "Universal ID",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Universal ID Type",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 6,
+              "table_id": "0301"
+            }
+          }
+        },
+        "7": {
+          "name": "Date/Time Of Message",
+          "data_type": "DTM",
+          "required": false,
+          "repeating": false,
+          "max_length": 26
+        },
+        "8": {
+          "name": "Security",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 40
+        },
+        "9": {
+          "name": "Message Type",
+          "data_type": "MSG",
+          "required": true,
+          "repeating": false,
+          "max_length": 15,
+          "components": {
+            "1": {
+              "name": "Message Code",
+              "data_type": "ID",
+              "required": true,
+              "max_length": 3,
+              "table_id": "0076"
+            },
+            "2": {
+              "name": "Trigger Event",
+              "data_type": "ID",
+              "required": true,
+              "max_length": 3,
+              "table_id": "0003"
+            },
+            "3": {
+              "name": "Message Structure",
+              "data_type": "ID",
+              "required": true,
+              "max_length": 7,
+              "table_id": "0354"
+            }
+          }
+        },
+        "10": {
+          "name": "Message Control ID",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 20
+        },
+        "11": {
+          "name": "Processing ID",
+          "data_type": "PT",
+          "required": true,
+          "repeating": false,
+          "max_length": 3,
+          "components": {
+            "1": {
+              "name": "Processing ID",
+              "data_type": "ID",
+              "required": true,
+              "max_length": 1,
+              "table_id": "0103"
+            },
+            "2": {
+              "name": "Processing Mode",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 1,
+              "table_id": "0207"
+            }
+          }
+        },
+        "12": {
+          "name": "Version ID",
+          "data_type": "VID",
+          "required": true,
+          "repeating": false,
+          "max_length": 60,
+          "components": {
+            "1": {
+              "name": "Version ID",
+              "data_type": "ID",
+              "required": true,
+              "max_length": 5,
+              "table_id": "0104"
+            },
+            "2": {
+              "name": "Internationalization Code",
+              "data_type": "CE",
+              "required": false,
+              "max_length": 483
+            },
+            "3": {
+              "name": "International Version ID",
+              "data_type": "CE",
+              "required": false,
+              "max_length": 483
+            }
+          }
+        },
+        "13": {
+          "name": "Sequence Number",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 15
+        },
+        "14": {
+          "name": "Continuation Pointer",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 180
+        },
+        "15": {
+          "name": "Accept Acknowledgment Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 2,
+          "table_id": "0155"
+        },
+        "16": {
+          "name": "Application Acknowledgment Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 2,
+          "table_id": "0155"
+        },
+        "17": {
+          "name": "Country Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 3,
+          "table_id": "0399"
+        },
+        "18": {
+          "name": "Character Set",
+          "data_type": "ID",
+          "required": false,
+          "repeating": true,
+          "max_length": 16,
+          "table_id": "0211"
+        },
+        "19": {
+          "name": "Principal Language Of Message",
+          "data_type": "CWE",
+          "required": false,
+          "repeating": false,
+          "max_length": 250,
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Name of Coding System",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 20,
+              "table_id": "0396"
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "6": {
+              "name": "Name of Alternate Coding System",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 20,
+              "table_id": "0396"
+            },
+            "7": {
+              "name": "Coding System Version ID",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 10
+            },
+            "8": {
+              "name": "Alternate Coding System Version ID",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 10
+            },
+            "9": {
+              "name": "Original Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            }
+          }
+        },
+        "20": {
+          "name": "Alternate Character Set Handling Scheme",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 20,
+          "table_id": "0356"
+        },
+        "21": {
+          "name": "Message Profile Identifier",
+          "data_type": "EI",
+          "required": false,
+          "repeating": true,
+          "max_length": 427,
+          "components": {
+            "1": {
+              "name": "Entity Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "2": {
+              "name": "Namespace ID",
+              "data_type": "IS",
+              "required": false,
+              "max_length": 20,
+              "table_id": "0363"
+            },
+            "3": {
+              "name": "Universal ID",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "4": {
+              "name": "Universal ID Type",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 6,
+              "table_id": "0301"
+            }
+          }
+        },
+        "22": {
+          "name": "Sending Responsible Organization",
+          "data_type": "XON",
+          "required": false,
+          "repeating": false,
+          "max_length": 567,
+          "components": {
+            "1": {
+              "name": "Organization Name",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 50
+            },
+            "2": {
+              "name": "Organization Name Type Code",
+              "data_type": "IS",
+              "required": false,
+              "max_length": 20,
+              "table_id": "0204"
+            },
+            "3": {
+              "name": "ID Number",
+              "data_type": "NM",
+              "required": false,
+              "max_length": 4
+            },
+            "4": {
+              "name": "Check Digit",
+              "data_type": "NM",
+              "required": false,
+              "max_length": 1
+            },
+            "5": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 3,
+              "table_id": "0061"
+            },
+            "6": {
+              "name": "Assigning Authority",
+              "data_type": "HD",
+              "required": false,
+              "max_length": 227,
+              "table_id": "0363"
+            },
+            "7": {
+              "name": "Identifier Type Code",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 5,
+              "table_id": "0203"
+            },
+            "8": {
+              "name": "Assigning Facility",
+              "data_type": "HD",
+              "required": false,
+              "max_length": 227
+            },
+            "9": {
+              "name": "Name Representation Code",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 1,
+              "table_id": "4000"
+            },
+            "10": {
+              "name": "Organization Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            }
+          }
+        },
+        "23": {
+          "name": "Receiving Responsible Organization",
+          "data_type": "XON",
+          "required": false,
+          "repeating": false,
+          "max_length": 567,
+          "components": {
+            "1": {
+              "name": "Organization Name",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 50
+            },
+            "2": {
+              "name": "Organization Name Type Code",
+              "data_type": "IS",
+              "required": false,
+              "max_length": 20,
+              "table_id": "0204"
+            },
+            "3": {
+              "name": "ID Number",
+              "data_type": "NM",
+              "required": false,
+              "max_length": 4
+            },
+            "4": {
+              "name": "Check Digit",
+              "data_type": "NM",
+              "required": false,
+              "max_length": 1
+            },
+            "5": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 3,
+              "table_id": "0061"
+            },
+            "6": {
+              "name": "Assigning Authority",
+              "data_type": "HD",
+              "required": false,
+              "max_length": 227,
+              "table_id": "0363"
+            },
+            "7": {
+              "name": "Identifier Type Code",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 5,
+              "table_id": "0203"
+            },
+            "8": {
+              "name": "Assigning Facility",
+              "data_type": "HD",
+              "required": false,
+              "max_length": 227
+            },
+            "9": {
+              "name": "Name Representation Code",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 1,
+              "table_id": "4000"
+            },
+            "10": {
+              "name": "Organization Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            }
+          }
+        },
+        "24": {
+          "name": "Sending Network Address",
+          "data_type": "HD",
+          "required": false,
+          "repeating": false,
+          "max_length": 227,
+          "components": {
+            "1": {
+              "name": "Namespace ID",
+              "data_type": "IS",
+              "required": false,
+              "max_length": 20,
+              "table_id": "0300"
+            },
+            "2": {
+              "name": "Universal ID",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Universal ID Type",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 6,
+              "table_id": "0301"
+            }
+          }
+        },
+        "25": {
+          "name": "Receiving Network Address",
+          "data_type": "HD",
+          "required": false,
+          "repeating": false,
+          "max_length": 227,
+          "components": {
+            "1": {
+              "name": "Namespace ID",
+              "data_type": "IS",
+              "required": false,
+              "max_length": 20,
+              "table_id": "0300"
+            },
+            "2": {
+              "name": "Universal ID",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Universal ID Type",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 6,
+              "table_id": "0301"
+            }
+          }
+        }
+      }
+    },
+    "SFT": {
+      "name": "Software Segment",
+      "required": false,
+      "repeating": true,
+      "fields": {
+        "1": {
+          "name": "Software Vendor Organization",
+          "data_type": "XON",
+          "required": true,
+          "repeating": false,
+          "max_length": 567,
+          "components": {
+            "1": {
+              "name": "Organization Name",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 50
+            },
+            "2": {
+              "name": "Organization Name Type Code",
+              "data_type": "IS",
+              "required": false,
+              "max_length": 20,
+              "table_id": "0204"
+            },
+            "3": {
+              "name": "ID Number",
+              "data_type": "NM",
+              "required": false,
+              "max_length": 4
+            },
+            "4": {
+              "name": "Check Digit",
+              "data_type": "NM",
+              "required": false,
+              "max_length": 1
+            },
+            "5": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 3,
+              "table_id": "0061"
+            },
+            "6": {
+              "name": "Assigning Authority",
+              "data_type": "HD",
+              "required": false,
+              "max_length": 227,
+              "table_id": "0363"
+            },
+            "7": {
+              "name": "Identifier Type Code",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 5,
+              "table_id": "0203"
+            },
+            "8": {
+              "name": "Assigning Facility",
+              "data_type": "HD",
+              "required": false,
+              "max_length": 227
+            },
+            "9": {
+              "name": "Name Representation Code",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 1,
+              "table_id": "4000"
+            },
+            "10": {
+              "name": "Organization Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            }
+          }
+        },
+        "2": {
+          "name": "Software Certified Version or Release Number",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 15
+        },
+        "3": {
+          "name": "Software Product Name",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 20
+        },
+        "4": {
+          "name": "Software Binary ID",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 20
+        },
+        "5": {
+          "name": "Software Product Information",
+          "data_type": "TX",
+          "required": false,
+          "repeating": false,
+          "max_length": 1024
+        },
+        "6": {
+          "name": "Software Install Date",
+          "data_type": "DTM",
+          "required": false,
+          "repeating": false,
+          "max_length": 26
+        }
+      }
+    },
+    "QRD": {
+      "name": "Original-Style Query Definition",
+      "required": true,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Query Date/Time",
+          "data_type": "DTM",
+          "required": true,
+          "repeating": false,
+          "max_length": 26
+        },
+        "2": {
+          "name": "Query Format Code",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "max_length": 1,
+          "table_id": "0106"
+        },
+        "3": {
+          "name": "Query Priority",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "max_length": 1,
+          "table_id": "0091"
+        },
+        "4": {
+          "name": "Query ID",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 10
+        },
+        "5": {
+          "name": "Deferred Response Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 1,
+          "table_id": "0107"
+        },
+        "6": {
+          "name": "Deferred Response Date/Time",
+          "data_type": "DTM",
+          "required": false,
+          "repeating": false,
+          "max_length": 26
+        },
+        "7": {
+          "name": "Quantity Limited Request",
+          "data_type": "CQ",
+          "required": true,
+          "repeating": false,
+          "max_length": 10,
+          "components": {
+            "1": {
+              "name": "Quantity",
+              "data_type": "NM",
+              "required": false,
+              "max_length": 16
+            },
+            "2": {
+              "name": "Units",
+              "data_type": "CE",
+              "required": false,
+              "max_length": 483
+            }
+          }
+        },
+        "8": {
+          "name": "Who Subject Filter",
+          "data_type": "XCN",
+          "required": true,
+          "repeating": true,
+          "max_length": 250,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 15
+            },
+            "2": {
+              "name": "Family Name",
+              "data_type": "FN",
+              "required": false,
+              "max_length": 194
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 30
+            },
+            "4": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 30
+            },
+            "5": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "6": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "7": {
+              "name": "Degree",
+              "data_type": "IS",
+              "required": false,
+              "max_length": 6,
+              "table_id": "0360"
+            },
+            "8": {
+              "name": "Source Table",
+              "data_type": "IS",
+              "required": false,
+              "max_length": 4,
+              "table_id": "0297"
+            },
+            "9": {
+              "name": "Assigning Authority",
+              "data_type": "HD",
+              "required": false,
+              "max_length": 227,
+              "table_id": "0363"
+            },
+            "10": {
+              "name": "Name Type Code",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 1,
+              "table_id": "0200"
+            },
+            "11": {
+              "name": "Identifier Check Digit",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 1
+            },
+            "12": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 3,
+              "table_id": "0061"
+            },
+            "13": {
+              "name": "Identifier Type Code",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 5,
+              "table_id": "0203"
+            },
+            "14": {
+              "name": "Assigning Facility",
+              "data_type": "HD",
+              "required": false,
+              "max_length": 227
+            },
+            "15": {
+              "name": "Name Representation Code",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 1,
+              "table_id": "4000"
+            },
+            "16": {
+              "name": "Name Context",
+              "data_type": "CE",
+              "required": false,
+              "max_length": 483
+            },
+            "17": {
+              "name": "Name Validity Range",
+              "data_type": "DR",
+              "required": false,
+              "max_length": 53
+            },
+            "18": {
+              "name": "Name Assembly Order",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 1,
+              "table_id": "0444"
+            },
+            "19": {
+              "name": "Effective Date",
+              "data_type": "TS",
+              "required": false,
+              "max_length": 26
+            },
+            "20": {
+              "name": "Expiration Date",
+              "data_type": "TS",
+              "required": false,
+              "max_length": 26
+            },
+            "21": {
+              "name": "Professional Suffix",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "22": {
+              "name": "Assigning Jurisdiction",
+              "data_type": "CWE",
+              "required": false,
+              "max_length": 483
+            },
+            "23": {
+              "name": "Assigning Agency or Department",
+              "data_type": "CWE",
+              "required": false,
+              "max_length": 483
+            }
+          }
+        },
+        "9": {
+          "name": "What Subject Filter",
+          "data_type": "CWE",
+          "required": true,
+          "repeating": true,
+          "max_length": 250,
+          "table_id": "0048",
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Name of Coding System",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 20,
+              "table_id": "0396"
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "6": {
+              "name": "Name of Alternate Coding System",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 20,
+              "table_id": "0396"
+            },
+            "7": {
+              "name": "Coding System Version ID",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 10
+            },
+            "8": {
+              "name": "Alternate Coding System Version ID",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 10
+            },
+            "9": {
+              "name": "Original Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            }
+          }
+        },
+        "10": {
+          "name": "What Department Data Code",
+          "data_type": "CWE",
+          "required": false,
+          "repeating": true,
+          "max_length": 250,
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Name of Coding System",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 20,
+              "table_id": "0396"
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "6": {
+              "name": "Name of Alternate Coding System",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 20,
+              "table_id": "0396"
+            },
+            "7": {
+              "name": "Coding System Version ID",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 10
+            },
+            "8": {
+              "name": "Alternate Coding System Version ID",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 10
+            },
+            "9": {
+              "name": "Original Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            }
+          }
+        },
+        "11": {
+          "name": "What Data Code Value Qual.",
+          "data_type": "ST",
+          "required": false,
+          "repeating": true,
+          "max_length": 20
+        },
+        "12": {
+          "name": "Query Results Level",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 1,
+          "table_id": "0108"
+        }
+      }
+    },
+    "QRF": {
+      "name": "Original-Style Query Filter",
+      "required": false,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Where Subject Filter",
+          "data_type": "ST",
+          "required": true,
+          "repeating": true,
+          "max_length": 20
+        },
+        "2": {
+          "name": "When Data Start Date/Time",
+          "data_type": "DTM",
+          "required": false,
+          "repeating": false,
+          "max_length": 26
+        },
+        "3": {
+          "name": "When Data End Date/Time",
+          "data_type": "DTM",
+          "required": false,
+          "repeating": false,
+          "max_length": 26
+        },
+        "4": {
+          "name": "What User Qualifier",
+          "data_type": "ST",
+          "required": false,
+          "repeating": true,
+          "max_length": 60
+        },
+        "5": {
+          "name": "Other QRY Subject Filter",
+          "data_type": "ST",
+          "required": false,
+          "repeating": true,
+          "max_length": 60
+        },
+        "6": {
+          "name": "Which Date/Time Qualifier",
+          "data_type": "ID",
+          "required": false,
+          "repeating": true,
+          "max_length": 12,
+          "table_id": "0156"
+        },
+        "7": {
+          "name": "Which Date/Time Status Qualifier",
+          "data_type": "ID",
+          "required": false,
+          "repeating": true,
+          "max_length": 12,
+          "table_id": "0157"
+        },
+        "8": {
+          "name": "Date/Time Selection Qualifier",
+          "data_type": "ID",
+          "required": false,
+          "repeating": true,
+          "max_length": 12,
+          "table_id": "0158"
+        },
+        "9": {
+          "name": "When Quantity/Timing Qualifier",
+          "data_type": "TQ",
+          "required": false,
+          "repeating": false,
+          "max_length": 60,
+          "components": {
+            "1": {
+              "name": "Quantity",
+              "data_type": "CQ",
+              "required": false,
+              "max_length": 267
+            },
+            "2": {
+              "name": "Interval",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 206
+            },
+            "3": {
+              "name": "Duration",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 6
+            },
+            "4": {
+              "name": "Start Date/Time",
+              "data_type": "TS",
+              "required": false,
+              "max_length": 26
+            },
+            "5": {
+              "name": "End Date/Time",
+              "data_type": "TS",
+              "required": false,
+              "max_length": 26
+            },
+            "6": {
+              "name": "Priority",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 6
+            },
+            "7": {
+              "name": "Condition",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "8": {
+              "name": "Text",
+              "data_type": "TX",
+              "required": false,
+              "max_length": 200
+            },
+            "9": {
+              "name": "Conjunction",
+              "data_type": "ID",
+              "required": false,
+              "max_length": 1,
+              "table_id": "0472"
+            },
+            "10": {
+              "name": "Order Sequencing",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 110
+            },
+            "11": {
+              "name": "Occurrence Duration",
+              "data_type": "CE",
+              "required": false,
+              "max_length": 483
+            },
+            "12": {
+              "name": "Total Occurrences",
+              "data_type": "NM",
+              "required": false,
+              "max_length": 4
+            }
+          }
+        },
+        "10": {
+          "name": "Search Confidence Threshold",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 10
+        }
+      }
+    }
+  }
+}

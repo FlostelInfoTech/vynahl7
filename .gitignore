@@ -1,0 +1,24 @@
+# Rust
+/target/
+Cargo.lock
+!crates/vyna-hl7-cli/Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+*.profraw
+*.profdata
+
+# Claude settings
+.claude/settings.local.json

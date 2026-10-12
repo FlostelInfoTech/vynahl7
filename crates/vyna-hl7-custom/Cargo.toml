@@ -1,0 +1,34 @@
+[package]
+name = "vyna-hl7-custom"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Framework for defining and registering custom Z-segments in HL7 v2.x messages"
+
+[dependencies]
+# Internal crates
+vyna-hl7-core.workspace = true
+vyna-hl7-parser.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Synchronization
+once_cell = "1.19"
+
+# Macro utilities
+paste.workspace = true
+
+# Date/Time handling
+chrono.workspace = true
+
+[dev-dependencies]
+vyna-hl7-parser.workspace = true

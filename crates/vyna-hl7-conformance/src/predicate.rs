@@ -1,0 +1,567 @@
+//! Predicate parsing and evaluation for conditional usage
+//!
+//! This module provides parsing and evaluation of conditional predicates used in
+//! conformance profiles. Predicates allow fields to have conditional requirements
+//! based on the values of other fields in the message.
+//!
+//! ## Supported Condition Types
+//!
+//! - **IS VALUED**: Check if a field has a non-empty value
+//! - **IS NOT VALUED**: Check if a field is empty or missing
+//! - **Equality**: Compare field value to literal (e.g., "PID-8 = 'M'")
+//! - **Comparison**: Numeric comparisons (>, <, >=, <=, !=)
+//! - **Boolean Logic**: AND, OR operators for complex conditions
+//!
+//! ## Example Conditions
+//!
+//! ```text
+//! PID-8 IS VALUED
+//! PID-8 = 'M'
+//! PID-7 IS NOT VALUED
+//! PID-8 IS VALUED AND PV1-2 = 'I'
+//! ```
+
+use crate::error::{ConformanceError, Result};
+use vyna_hl7_core::Message;
+use vyna_hl7_terser::Terser;
+
+/// Condition expression that can be evaluated against a message
+#[derive(Debug, Clone, PartialEq)]
+pub enum Condition {
+    /// Field has a non-empty value (e.g., "PID-8 IS VALUED")
+    IsValued(String),
+    /// Field is empty or missing (e.g., "PID-8 IS NOT VALUED")
+    IsNotValued(String),
+    /// Field equals literal value (e.g., "PID-8 = 'M'")
+    Equals(String, String),
+    /// Field does not equal literal value
+    NotEquals(String, String),
+    /// Numeric greater than comparison
+    GreaterThan(String, f64),
+    /// Numeric less than comparison
+    LessThan(String, f64),
+    /// Numeric greater than or equal comparison
+    GreaterThanOrEqual(String, f64),
+    /// Numeric less than or equal comparison
+    LessThanOrEqual(String, f64),
+    /// Logical AND of two conditions
+    And(Box<Condition>, Box<Condition>),
+    /// Logical OR of two conditions
+    Or(Box<Condition>, Box<Condition>),
+    /// Logical NOT of a condition
+    Not(Box<Condition>),
+}
+
+impl Condition {
+    /// Evaluate this condition against a message
+    pub fn evaluate(&self, message: &Message) -> bool {
+        let terser = Terser::new(message);
+        self.evaluate_with_terser(&terser)
+    }
+
+    /// Evaluate using an existing Terser instance
+    pub fn evaluate_with_terser(&self, terser: &Terser) -> bool {
+        match self {
+            Condition::IsValued(path) => {
+                if let Ok(Some(value)) = terser.get(path) {
+                    !value.trim().is_empty()
+                } else {
+                    false
+                }
+            }
+            Condition::IsNotValued(path) => {
+                if let Ok(Some(value)) = terser.get(path) {
+                    value.trim().is_empty()
+                } else {
+                    true
+                }
+            }
+            Condition::Equals(path, expected) => {
+                if let Ok(Some(value)) = terser.get(path) {
+                    value.trim() == expected.trim()
+                } else {
+                    false
+                }
+            }
+            Condition::NotEquals(path, expected) => {
+                if let Ok(Some(value)) = terser.get(path) {
+                    value.trim() != expected.trim()
+                } else {
+                    true
+                }
+            }
+            Condition::GreaterThan(path, threshold) => {
+                if let Ok(Some(value)) = terser.get(path) {
+                    if let Ok(num) = value.trim().parse::<f64>() {
+                        num > *threshold
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            Condition::LessThan(path, threshold) => {
+                if let Ok(Some(value)) = terser.get(path) {
+                    if let Ok(num) = value.trim().parse::<f64>() {
+                        num < *threshold
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            Condition::GreaterThanOrEqual(path, threshold) => {
+                if let Ok(Some(value)) = terser.get(path) {
+                    if let Ok(num) = value.trim().parse::<f64>() {
+                        num >= *threshold
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            Condition::LessThanOrEqual(path, threshold) => {
+                if let Ok(Some(value)) = terser.get(path) {
+                    if let Ok(num) = value.trim().parse::<f64>() {
+                        num <= *threshold
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            Condition::And(left, right) => {
+                left.evaluate_with_terser(terser) && right.evaluate_with_terser(terser)
+            }
+            Condition::Or(left, right) => {
+                left.evaluate_with_terser(terser) || right.evaluate_with_terser(terser)
+            }
+            Condition::Not(inner) => !inner.evaluate_with_terser(terser),
+        }
+    }
+}
+
+/// Parser for predicate condition expressions
+pub struct PredicateParser;
+
+impl PredicateParser {
+    /// Parse a condition string into a Condition
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vyna_hl7_conformance::predicate::{PredicateParser, Condition};
+    ///
+    /// let cond = PredicateParser::parse("PID-8 IS VALUED").unwrap();
+    /// assert_eq!(cond, Condition::IsValued("PID-8".to_string()));
+    ///
+    /// let cond = PredicateParser::parse("PID-8 = 'M'").unwrap();
+    /// assert_eq!(cond, Condition::Equals("PID-8".to_string(), "M".to_string()));
+    /// ```
+    pub fn parse(input: &str) -> Result<Condition> {
+        let trimmed = input.trim();
+
+        // Handle OR (lowest precedence)
+        if let Some(or_pos) = Self::find_operator(trimmed, " OR ") {
+            let left = Self::parse(&trimmed[..or_pos])?;
+            let right = Self::parse(&trimmed[or_pos + 4..])?;
+            return Ok(Condition::Or(Box::new(left), Box::new(right)));
+        }
+
+        // Handle AND (higher precedence than OR)
+        if let Some(and_pos) = Self::find_operator(trimmed, " AND ") {
+            let left = Self::parse(&trimmed[..and_pos])?;
+            let right = Self::parse(&trimmed[and_pos + 5..])?;
+            return Ok(Condition::And(Box::new(left), Box::new(right)));
+        }
+
+        // Handle NOT
+        if trimmed.to_uppercase().starts_with("NOT ") {
+            let inner = Self::parse(&trimmed[4..])?;
+            return Ok(Condition::Not(Box::new(inner)));
+        }
+
+        // Handle IS VALUED
+        if let Some(pos) = trimmed.to_uppercase().find(" IS VALUED") {
+            let path = trimmed[..pos].trim().to_string();
+            Self::validate_path(&path)?;
+            return Ok(Condition::IsValued(path));
+        }
+
+        // Handle IS NOT VALUED
+        if let Some(pos) = trimmed.to_uppercase().find(" IS NOT VALUED") {
+            let path = trimmed[..pos].trim().to_string();
+            Self::validate_path(&path)?;
+            return Ok(Condition::IsNotValued(path));
+        }
+
+        // Handle comparison operators
+        if let Some((path, op, value)) = Self::parse_comparison(trimmed)? {
+            Self::validate_path(&path)?;
+            match op.as_str() {
+                "=" => Ok(Condition::Equals(path, value)),
+                "!=" | "<>" => Ok(Condition::NotEquals(path, value)),
+                ">" => {
+                    let num = Self::parse_number(&value)?;
+                    Ok(Condition::GreaterThan(path, num))
+                }
+                "<" => {
+                    let num = Self::parse_number(&value)?;
+                    Ok(Condition::LessThan(path, num))
+                }
+                ">=" => {
+                    let num = Self::parse_number(&value)?;
+                    Ok(Condition::GreaterThanOrEqual(path, num))
+                }
+                "<=" => {
+                    let num = Self::parse_number(&value)?;
+                    Ok(Condition::LessThanOrEqual(path, num))
+                }
+                _ => Err(ConformanceError::InvalidPredicate(format!(
+                    "Unknown operator: {}",
+                    op
+                ))),
+            }
+        } else {
+            Err(ConformanceError::InvalidPredicate(format!(
+                "Unable to parse condition: {}",
+                trimmed
+            )))
+        }
+    }
+
+    /// Find operator position, ignoring quoted strings
+    fn find_operator(input: &str, operator: &str) -> Option<usize> {
+        let upper = input.to_uppercase();
+        let mut in_quotes = false;
+        let mut i = 0;
+
+        while i < input.len() {
+            if input.as_bytes()[i] == b'\'' {
+                in_quotes = !in_quotes;
+            }
+
+            if !in_quotes && upper[i..].starts_with(operator) {
+                return Some(i);
+            }
+
+            i += 1;
+        }
+
+        None
+    }
+
+    /// Parse comparison expression (path op value)
+    fn parse_comparison(input: &str) -> Result<Option<(String, String, String)>> {
+        // Try operators in order of length (to match >= before =, etc.)
+        let operators = [">=", "<=", "!=", "<>", "=", ">", "<"];
+
+        for op in &operators {
+            if let Some(op_pos) = input.find(op) {
+                let path = input[..op_pos].trim().to_string();
+                let value_part = input[op_pos + op.len()..].trim();
+
+                // Remove quotes if present (single or double)
+                let value = if (value_part.starts_with('\'') && value_part.ends_with('\''))
+                    || (value_part.starts_with('"') && value_part.ends_with('"'))
+                {
+                    value_part[1..value_part.len() - 1].to_string()
+                } else {
+                    value_part.to_string()
+                };
+
+                return Ok(Some((path, op.to_string(), value)));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Validate that a path follows Terser notation
+    fn validate_path(path: &str) -> Result<()> {
+        if path.is_empty() {
+            return Err(ConformanceError::InvalidPredicate(
+                "Empty field path".to_string(),
+            ));
+        }
+
+        // Basic validation: should contain at least one dash
+        if !path.contains('-') {
+            return Err(ConformanceError::InvalidPredicate(format!(
+                "Invalid field path: {}",
+                path
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Parse a string as a number
+    fn parse_number(s: &str) -> Result<f64> {
+        s.parse::<f64>().map_err(|_| {
+            ConformanceError::InvalidPredicate(format!("Invalid number: {}", s))
+        })
+    }
+}
+
+/// Evaluator for predicate-based conditional usage
+pub struct PredicateEvaluator;
+
+impl PredicateEvaluator {
+    /// Evaluate a predicate's condition and return the appropriate usage
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vyna_hl7_conformance::predicate::PredicateEvaluator;
+    /// use vyna_hl7_conformance::profile::{Predicate, Usage};
+    /// use vyna_hl7_parser::parse_message;
+    ///
+    /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let message = parse_message("MSH|^~\\&|...\rPID|||12345||Doe^John||M|||...")?;
+    ///
+    /// let predicate = Predicate::new(
+    ///     "PID-8 IS VALUED".to_string(),
+    ///     Usage::Required,
+    ///     Usage::Optional,
+    /// );
+    ///
+    /// let usage = PredicateEvaluator::evaluate(&predicate, &message)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn evaluate(
+        predicate: &crate::profile::Predicate,
+        message: &Message,
+    ) -> Result<crate::profile::Usage> {
+        let condition = PredicateParser::parse(&predicate.condition)?;
+        let result = condition.evaluate(message);
+
+        Ok(if result {
+            predicate.true_usage
+        } else {
+            predicate.false_usage
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vyna_hl7_core::{Component, Field, Repetition, Segment};
+
+    fn create_test_message() -> Message {
+        let mut message = Message::default();
+
+        // Add MSH segment
+        let mut msh = Segment::new("MSH");
+        msh.fields.push(Field::from_value("|")); // MSH-1
+        msh.fields.push(Field::from_value("^~\\&")); // MSH-2
+        message.segments.push(msh);
+
+        // Add PID segment
+        let mut pid = Segment::new("PID");
+        pid.fields.push(Field::new()); // PID-1 (empty)
+        pid.fields.push(Field::new()); // PID-2 (empty)
+        pid.fields.push(Field::from_value("12345")); // PID-3
+        pid.fields.push(Field::new()); // PID-4 (empty)
+
+        // PID-5: Patient Name with components
+        let mut name_field = Field::new();
+        let mut name_rep = Repetition::new();
+        name_rep.components.push(Component::from_value("Doe"));
+        name_rep.components.push(Component::from_value("John"));
+        name_field.add_repetition(name_rep);
+        pid.fields.push(name_field); // PID-5
+
+        pid.fields.push(Field::new()); // PID-6 (empty)
+        pid.fields.push(Field::from_value("19900101")); // PID-7: DOB
+        pid.fields.push(Field::from_value("M")); // PID-8: Sex
+        message.segments.push(pid);
+
+        message
+    }
+
+    #[test]
+    fn test_parse_is_valued() {
+        let result = PredicateParser::parse("PID-8 IS VALUED");
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            Condition::IsValued("PID-8".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_is_not_valued() {
+        let result = PredicateParser::parse("PID-7 IS NOT VALUED");
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            Condition::IsNotValued("PID-7".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_equals() {
+        let result = PredicateParser::parse("PID-8 = 'M'");
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            Condition::Equals("PID-8".to_string(), "M".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_not_equals() {
+        let result = PredicateParser::parse("PID-8 != 'F'");
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            Condition::NotEquals("PID-8".to_string(), "F".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_greater_than() {
+        let result = PredicateParser::parse("PID-7 > 18");
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            Condition::GreaterThan("PID-7".to_string(), 18.0)
+        );
+    }
+
+    #[test]
+    fn test_parse_and() {
+        let result = PredicateParser::parse("PID-8 IS VALUED AND PID-7 IS VALUED");
+        assert!(result.is_ok());
+        match result.unwrap() {
+            Condition::And(left, right) => {
+                assert_eq!(*left, Condition::IsValued("PID-8".to_string()));
+                assert_eq!(*right, Condition::IsValued("PID-7".to_string()));
+            }
+            _ => panic!("Expected And condition"),
+        }
+    }
+
+    #[test]
+    fn test_parse_or() {
+        let result = PredicateParser::parse("PID-8 = 'M' OR PID-8 = 'F'");
+        assert!(result.is_ok());
+        match result.unwrap() {
+            Condition::Or(left, right) => {
+                assert_eq!(*left, Condition::Equals("PID-8".to_string(), "M".to_string()));
+                assert_eq!(
+                    *right,
+                    Condition::Equals("PID-8".to_string(), "F".to_string())
+                );
+            }
+            _ => panic!("Expected Or condition"),
+        }
+    }
+
+    #[test]
+    fn test_parse_not() {
+        let result = PredicateParser::parse("NOT PID-8 IS VALUED");
+        assert!(result.is_ok());
+        match result.unwrap() {
+            Condition::Not(inner) => {
+                assert_eq!(*inner, Condition::IsValued("PID-8".to_string()));
+            }
+            _ => panic!("Expected Not condition"),
+        }
+    }
+
+    #[test]
+    fn test_evaluate_is_valued() {
+        let message = create_test_message();
+        let condition = Condition::IsValued("PID-8".to_string());
+        assert!(condition.evaluate(&message));
+
+        let condition = Condition::IsValued("PID-4".to_string());
+        assert!(!condition.evaluate(&message));
+    }
+
+    #[test]
+    fn test_evaluate_is_not_valued() {
+        let message = create_test_message();
+        let condition = Condition::IsNotValued("PID-4".to_string());
+        assert!(condition.evaluate(&message));
+
+        let condition = Condition::IsNotValued("PID-8".to_string());
+        assert!(!condition.evaluate(&message));
+    }
+
+    #[test]
+    fn test_evaluate_equals() {
+        let message = create_test_message();
+        let condition = Condition::Equals("PID-8".to_string(), "M".to_string());
+        assert!(condition.evaluate(&message));
+
+        let condition = Condition::Equals("PID-8".to_string(), "F".to_string());
+        assert!(!condition.evaluate(&message));
+    }
+
+    #[test]
+    fn test_evaluate_and() {
+        let message = create_test_message();
+        let condition = Condition::And(
+            Box::new(Condition::IsValued("PID-8".to_string())),
+            Box::new(Condition::Equals("PID-8".to_string(), "M".to_string())),
+        );
+        assert!(condition.evaluate(&message));
+
+        let condition = Condition::And(
+            Box::new(Condition::IsValued("PID-8".to_string())),
+            Box::new(Condition::Equals("PID-8".to_string(), "F".to_string())),
+        );
+        assert!(!condition.evaluate(&message));
+    }
+
+    #[test]
+    fn test_evaluate_or() {
+        let message = create_test_message();
+        let condition = Condition::Or(
+            Box::new(Condition::Equals("PID-8".to_string(), "M".to_string())),
+            Box::new(Condition::Equals("PID-8".to_string(), "F".to_string())),
+        );
+        assert!(condition.evaluate(&message));
+
+        let condition = Condition::Or(
+            Box::new(Condition::Equals("PID-8".to_string(), "X".to_string())),
+            Box::new(Condition::Equals("PID-8".to_string(), "U".to_string())),
+        );
+        assert!(!condition.evaluate(&message));
+    }
+
+    #[test]
+    fn test_evaluate_complex() {
+        let message = create_test_message();
+        // (PID-8 = 'M' OR PID-8 = 'F') AND PID-7 IS VALUED
+        let condition = Condition::And(
+            Box::new(Condition::Or(
+                Box::new(Condition::Equals("PID-8".to_string(), "M".to_string())),
+                Box::new(Condition::Equals("PID-8".to_string(), "F".to_string())),
+            )),
+            Box::new(Condition::IsValued("PID-7".to_string())),
+        );
+        assert!(condition.evaluate(&message));
+    }
+
+    #[test]
+    fn test_invalid_path() {
+        let result = PredicateParser::parse("INVALID IS VALUED");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_expression() {
+        let result = PredicateParser::parse("some random text");
+        assert!(result.is_err());
+    }
+}

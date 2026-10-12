@@ -1,0 +1,107 @@
+[package]
+name = "vyna-hl7-http"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "HTTP transport for HL7 v2.x messages (inter-organization communication)"
+
+[dependencies]
+vyna-hl7-core.workspace = true
+vyna-hl7-parser.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+
+# HTTP framework (latest versions - December 2025)
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.7", features = ["trace", "cors", "compression-gzip"] }
+hyper = { version = "1.8", features = ["full"] }
+hyper-util = { version = "0.1", features = ["tokio", "client-legacy", "http1", "http2"] }
+
+# HTTP client
+reqwest = { version = "0.13", features = ["json"] }
+
+# Date/time for RFC 2822 dates
+chrono.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Security - TLS/mTLS (optional)
+tokio-rustls = { version = "0.26", optional = true }
+rustls = { version = "0.23", optional = true }
+webpki-roots = { version = "1.0", optional = true }
+
+# Security - Authentication (optional)
+base64 = { version = "0.23", optional = true }
+jsonwebtoken = { version = "11", features = ["rust_crypto"], optional = true }
+
+# Protocol - WebSocket (optional)
+tokio-tungstenite = { version = "0.30", optional = true }
+futures-util = { version = "0.3", optional = true }
+
+# Protocol - Retry (optional)
+reqwest-retry = { version = "0.9", optional = true }
+reqwest-middleware = { version = "0.5", optional = true }
+rand = { version = "0.10", optional = true }
+
+# Operational - Logging (optional)
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"], optional = true }
+uuid = { version = "1.19", features = ["v4"], optional = true }
+vyna-hl7-terser = { workspace = true, optional = true }
+
+# Operational - Metrics (optional)
+metrics = { version = "0.24", optional = true }
+metrics-exporter-prometheus = { version = "0.18", optional = true }
+
+# Operational - Rate Limiting (optional)
+# Note: Rate limiting is provided as configuration helpers only.
+# Users should integrate with governor crate directly.
+
+# Messaging - Queue (optional)
+async-channel = { version = "2.3", optional = true }
+
+[features]
+default = []
+
+# Security features
+tls = ["dep:tokio-rustls", "dep:rustls", "dep:webpki-roots", "reqwest/rustls"]
+auth = ["dep:base64"]
+oauth = ["auth", "dep:jsonwebtoken"]
+
+# Protocol features
+websocket = ["axum/ws", "dep:tokio-tungstenite", "dep:futures-util"]
+retry = ["dep:rand"]
+
+# Operational features
+logging = ["dep:tracing-subscriber", "dep:uuid", "dep:vyna-hl7-terser"]
+metrics = ["dep:metrics", "dep:metrics-exporter-prometheus", "dep:vyna-hl7-terser"]
+ratelimit = []
+compression = ["tower-http/compression-gzip", "tower-http/compression-br", "tower-http/decompression-gzip", "tower-http/decompression-br"]
+
+# Messaging features
+queue = ["dep:async-channel"]
+batch = []
+routing = ["dep:vyna-hl7-terser"]
+webhooks = ["dep:vyna-hl7-terser"]
+
+# Testing features
+testing = []
+
+# Meta feature - enable all features
+full = ["tls", "auth", "oauth", "websocket", "retry", "logging", "metrics", "ratelimit", "compression", "queue", "batch", "routing", "webhooks", "testing"]
+
+[dev-dependencies]
+tokio-test = "0.4"
+tracing-subscriber = "0.3"
+vyna-hl7-terser.workspace = true

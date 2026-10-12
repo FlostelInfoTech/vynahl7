@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img">
+  <title>FLOSTEL INFOTECH</title>
+  <desc>Favicon — AI core mark on navy rounded square. Legible in light and dark browser tabs.</desc>
+  <defs>
+    <linearGradient id="flostelFavCore" x1="24" y1="24" x2="42" y2="42" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFC53D"/>
+      <stop offset="1" stop-color="#FF8A00"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="64" height="64" rx="14" fill="#0A1F44"/>
+  <g transform="translate(3.2,3.2) scale(0.9)">
+  <g transform="translate(32 32) scale(1.2) translate(-32 -32)">
+    <polygon points="54,32 43,51 21,51 10,32 21,13 43,13"
+             fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round"/>
+    <path d="M32 32 L32 23" stroke="#00D4FF" stroke-width="2.8" stroke-linecap="round"/>
+    <path d="M32 32 L24.5 36.5" stroke="#00D4FF" stroke-width="2.8" stroke-linecap="round"/>
+    <path d="M32 32 L39.5 36.5" stroke="#33E0FF" stroke-width="2.8" stroke-linecap="round"/>
+    <circle cx="32" cy="21.5" r="3.3" fill="#FFFFFF"/>
+    <circle cx="24" cy="37" r="3.3" fill="#FFFFFF"/>
+    <circle cx="40" cy="37" r="3.3" fill="#FFFFFF"/>
+    <path d="M32 23.5 C33.3 27.8 36.2 30.7 40.5 32 C36.2 33.3 33.3 36.2 32 40.5 C30.7 36.2 27.8 33.3 23.5 32 C27.8 30.7 30.7 27.8 32 23.5 Z"
+          fill="url(#flostelFavCore)"/>
+  </g>
+  </g>
+</svg>

@@ -1,0 +1,46 @@
+[package]
+name = "vyna-hl7-parser"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Parser for HL7 v2.x messages"
+
+[dependencies]
+vyna-hl7-core.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+criterion = "0.8"
+
+[[bench]]
+name = "parser_bench"
+harness = false
+
+[[bench]]
+name = "industry_bench"
+harness = false
+
+[[bench]]
+name = "message_types_bench"
+harness = false
+
+[[bench]]
+name = "edge_cases_bench"
+harness = false
+
+[[bench]]
+name = "alloc_profile_bench"
+harness = false
+
+[[bench]]
+name = "env_report_bench"
+harness = false

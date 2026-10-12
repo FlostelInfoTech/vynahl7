@@ -1,0 +1,24 @@
+[package]
+name = "vyna-hl7-xml"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords = ["hl7", "healthcare", "xml", "encoding"]
+categories.workspace = true
+description = "XML encoding and decoding for HL7 v2.x messages"
+
+[dependencies]
+vyna-hl7-core.workspace = true
+vyna-hl7-parser = { workspace = true, optional = true }
+thiserror.workspace = true
+quick-xml.workspace = true
+
+[features]
+default = []
+# Enable ER7 <-> XML conversion functions
+convert = ["vyna-hl7-parser"]

@@ -1,0 +1,61 @@
+================================================================================
+  VynaHL7 Benchmark Report: CachedTerser vs Terser
+  Generated: 2026-03-21 08:19:38 UTC
+================================================================================
+
+  1. PURPOSE
+  ----------
+  Compare CachedTerser (HashMap-cached path lookups) against standard Terser for
+  repeated field access patterns. Measures clinical workflow extraction scenarios:
+  patient demographics (6 paths), lab results summary (32 paths across 8 OBX segments),
+  and order info (5 paths). Also tests scaling behavior with 10/50/100 unique paths.
+
+  2. METHODOLOGY
+  ---------------
+  Framework:     Criterion 0.7
+  Comparison:    Same 10 paths accessed 5 times each, Terser vs CachedTerser
+  Workflows:     Realistic clinical extraction patterns on pre-parsed ORU message
+  Scaling:       Increasing unique path counts with cache hit on second pass
+
+  3. CONFIGURATION
+  -----------------
+
+  Hardware:
+    OS:            Linux Mint 22.3
+    Kernel:        6.8.0-106-generic
+    CPU:           AMD Ryzen 5 4600U with Radeon Graphics
+    Cores:         12
+    RAM:           15.0 GB
+
+  Toolchain:
+    Rust:          rustc 1.94.0 (4a4ef493e 2026-03-02)
+    Cargo:         cargo 1.94.0 (85eff7c80 2026-01-15)
+    Target:        x86_64-unknown-linux-gnu
+    Profile:       release (opt-level=3, lto=true, codegen-units=1)
+
+  Reproduce:
+    cargo bench -p vyna-hl7-terser --bench cached_terser_bench
+
+  4. RESULTS
+  ----------
+
+CachedTerser_vs_Terser/Terser_10paths_x5
+    time:   [7.8389 µs 7.8906 µs 7.9674 µs]
+CachedTerser_vs_Terser/CachedTerser_10paths_x5
+    time:   [4.6973 µs 4.7220 µs 4.7485 µs]
+CachedTerser_vs_Terser/CachedTerser_warmed_10paths_x5
+    time:   [4.9105 µs 4.9303 µs 4.9558 µs]
+Clinical_Workflow_Extract/demographics
+    time:   [1.5719 µs 1.5776 µs 1.5839 µs]
+Clinical_Workflow_Extract/lab_results_8_observations
+    time:   [13.282 µs 13.395 µs 13.527 µs]
+Clinical_Workflow_Extract/order_info
+    time:   [1.3072 µs 1.3144 µs 1.3228 µs]
+CachedTerser_Scaling/unique_paths/10
+    time:   [3.0859 µs 3.0997 µs 3.1147 µs]
+CachedTerser_Scaling/unique_paths/50
+    time:   [19.735 µs 19.843 µs 19.975 µs]
+CachedTerser_Scaling/unique_paths/100
+    time:   [42.452 µs 42.597 µs 42.757 µs]
+
+================================================================================

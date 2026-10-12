@@ -1,0 +1,77 @@
+================================================================================
+  VynaHL7 Memory Allocation Profile Report
+================================================================================
+
+  1. PURPOSE
+  ----------
+  Measure heap allocation behavior of vyna_hl7_parser::parse_message() to identify
+  memory efficiency characteristics. The key metric is "amplification" — the
+  ratio of bytes allocated on the heap vs bytes of HL7 input. Lower amplification
+  means less allocator pressure, fewer cache misses, and better throughput under
+  sustained load. This data guides optimization of the parser's internal data
+  structures and pre-allocation strategies.
+
+  2. METHODOLOGY
+  ---------------
+  Allocator:     Custom GlobalAlloc wrapper around std::alloc::System
+                 Counts every alloc() call and sums requested layout sizes
+                 Does NOT count reallocs or track dealloc (measures gross allocation)
+  Warmup:        10 parses discarded (stabilizes allocator internal state)
+  Iterations:    1000 per message type (results averaged)
+  Measurement:   Total alloc count and alloc bytes across all iterations, divided
+                 by iteration count to get per-parse averages
+  Messages:      9 realistic HL7 messages (ADT, ORU, RDE, SIU, MDM, DFT, ORM)
+                 plus escape-heavy and production-messy variants, plus batch msgs
+  Amplification: bytes_allocated / bytes_of_input (lower = more efficient)
+
+  3. CONFIGURATION
+  -----------------
+
+  Hardware:
+    OS:            Linux Mint 22.3
+    Kernel:        6.8.0-106-generic
+    CPU:           AMD Ryzen 5 4600U with Radeon Graphics
+    Cores:         6 physical / 12 logical
+    RAM:           15.0 GB
+
+  Toolchain:
+    Rust:          rustc 1.94.0 (4a4ef493e 2026-03-02)
+    Target:        x86_64-unknown-linux-gnu
+    Profile:       release (opt-level=3, lto=true, codegen-units=1)
+
+  Benchmark Parameters:
+    Iterations:    1000 per message type
+    Warmup:        10 iterations (discarded)
+    Allocator:     CountingAllocator (wraps System)
+
+  Reproduce:
+    cargo bench -p vyna-hl7-parser --bench alloc_profile_bench
+
+  4. RESULTS
+  ----------
+
+  Message Type           Size(B) Allocs/Parse Bytes/Parse Amplification
+  ──────────────────────────────────────────────────────────────────────
+  ADT_A01 Full               959          832       57603     60.1x
+  ORU_R01 Comprehensive     1808         1410       88946     49.2x
+  RDE_O11 Pharmacy           813          727       46402     57.1x
+  SIU_S12 Scheduling         729          547       33673     46.2x
+  MDM_T02 Document          2627          588       38297     14.6x
+  DFT_P03 Financial         1064          860       56724     53.3x
+  ORM_O01 Order              702          570       35468     50.5x
+  ──────────────────────────────────────────────────────────────────────
+  Escape Heavy               493          319       18193     36.9x
+  Production Messy           342          571       41716    122.0x
+  ──────────────────────────────────────────────────────────────────────
+  Batch (5 msgs)            1146         1045       63775     55.7x
+  Batch (50 msgs)          11002         9826      609435     55.4x
+  ──────────────────────────────────────────────────────────────────────
+
+  Key:
+    Allocs/Parse   = average heap allocations per parse_message() call
+    Bytes/Parse    = average bytes requested from allocator per parse
+    Amplification  = Bytes/Parse divided by input Size(B)
+                     Lower is better. 1.0x = zero overhead (theoretical min)
+
+================================================================================
+

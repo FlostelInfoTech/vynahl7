@@ -1,0 +1,71 @@
+================================================================================
+  VynaHL7 Benchmark Report: FHIR Conversion
+  Generated: 2026-03-21 08:19:38 UTC
+================================================================================
+
+  1. PURPOSE
+  ----------
+  Measure HL7 v2 to FHIR R4 conversion performance for 9 resource converters
+  (Patient, Observation, Encounter, DiagnosticReport, Practitioner, AllergyIntolerance,
+  Condition, Procedure), JSON serialization of converted resources, and full
+  parse-to-FHIR-to-JSON pipeline cost.
+
+  2. METHODOLOGY
+  ---------------
+  Framework:     Criterion 0.7
+  Converters:    Each converter benchmarked on pre-parsed Message (no parse cost)
+  Serialization: serde_json::to_string() on converted FHIR resources
+  Pipeline:      parse_message() + convert all applicable resources + serialize JSON
+
+  3. CONFIGURATION
+  -----------------
+
+  Hardware:
+    OS:            Linux Mint 22.3
+    Kernel:        6.8.0-106-generic
+    CPU:           AMD Ryzen 5 4600U with Radeon Graphics
+    Cores:         12
+    RAM:           15.0 GB
+
+  Toolchain:
+    Rust:          rustc 1.94.0 (4a4ef493e 2026-03-02)
+    Cargo:         cargo 1.94.0 (85eff7c80 2026-01-15)
+    Target:        x86_64-unknown-linux-gnu
+    Profile:       release (opt-level=3, lto=true, codegen-units=1)
+
+  Reproduce:
+    cargo bench -p vyna-hl7-fhir --bench fhir_bench
+
+  4. RESULTS
+  ----------
+
+FHIR_Individual/PatientConverter
+    time:   [4.2653 µs 4.2914 µs 4.3243 µs]
+FHIR_Individual/ObservationConverter_all
+    time:   [13.046 µs 13.103 µs 13.166 µs]
+FHIR_Individual/ObservationConverter_single
+    time:   [2.2900 µs 2.3096 µs 2.3347 µs]
+FHIR_Individual/EncounterConverter
+    time:   [2.3964 µs 2.4080 µs 2.4225 µs]
+FHIR_Individual/DiagnosticReportConverter
+    time:   [2.6110 µs 2.6334 µs 2.6596 µs]
+FHIR_Individual/PractitionerConverter
+    time:   [1.9268 µs 1.9383 µs 1.9527 µs]
+FHIR_Individual/AllergyIntoleranceConverter
+    time:   [863.49 ns 869.38 ns 876.70 ns]
+FHIR_Individual/ConditionConverter
+    time:   [624.31 ns 626.52 ns 629.25 ns]
+FHIR_Individual/ProcedureConverter
+    time:   [1.2494 µs 1.2564 µs 1.2643 µs]
+FHIR_Serialization/Patient_to_json
+    time:   [647.57 ns 650.25 ns 653.25 ns]
+FHIR_Serialization/Observations_to_json
+    time:   [2.6375 µs 2.6539 µs 2.6721 µs]
+FHIR_Serialization/Encounter_to_json
+    time:   [944.44 ns 948.11 ns 952.84 ns]
+FHIR_Full_Pipeline/ORU_parse_convert_all_serialize
+    time:   [62.390 µs 62.805 µs 63.265 µs]
+FHIR_Full_Pipeline/ADT_parse_convert_all_serialize
+    time:   [28.903 µs 29.205 µs 29.589 µs]
+
+================================================================================
