@@ -1,0 +1,776 @@
+{
+  "message_type": "ADT",
+  "trigger_event": "A34",
+  "version": "2.2",
+  "description": "Merge Patient - Patient ID Only",
+  "segments": {
+    "MSH": {
+      "name": "Message Header",
+      "required": true,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Field Separator",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 1
+        },
+        "2": {
+          "name": "Encoding Characters",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 4
+        },
+        "3": {
+          "name": "Sending Application",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "4": {
+          "name": "Sending Facility",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "5": {
+          "name": "Receiving Application",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "6": {
+          "name": "Receiving Facility",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "7": {
+          "name": "Date/Time Of Message",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "8": {
+          "name": "Security",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 40
+        },
+        "9": {
+          "name": "Message Type",
+          "data_type": "CM_MSG",
+          "required": true,
+          "repeating": false,
+          "table_id": "0076",
+          "components": {
+            "1": {
+              "name": "Message Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Trigger Event",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "10": {
+          "name": "Message Control ID",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 20
+        },
+        "11": {
+          "name": "Processing ID",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "table_id": "0103"
+        },
+        "12": {
+          "name": "Version ID",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "table_id": "0104"
+        },
+        "13": {
+          "name": "Sequence Number",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 15
+        },
+        "14": {
+          "name": "Continuation Pointer",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 180
+        },
+        "15": {
+          "name": "Accept Acknowledgment Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 2,
+          "table_id": "0155"
+        },
+        "16": {
+          "name": "Application Acknowledgment Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 2,
+          "table_id": "0155"
+        },
+        "17": {
+          "name": "Country Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 3
+        }
+      }
+    },
+    "EVN": {
+      "name": "Event Type",
+      "required": true,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Event Type Code",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "max_length": 3,
+          "table_id": "0003"
+        },
+        "2": {
+          "name": "Recorded Date/Time",
+          "data_type": "TS",
+          "required": true,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "3": {
+          "name": "Date/Time Planned Event",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "4": {
+          "name": "Event Reason Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0062"
+        },
+        "5": {
+          "name": "Operator ID",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0188"
+        }
+      }
+    },
+    "PID": {
+      "name": "Patient Identification",
+      "required": true,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Set ID - PID",
+          "data_type": "SI",
+          "required": false,
+          "repeating": false,
+          "max_length": 4
+        },
+        "2": {
+          "name": "Patient ID",
+          "data_type": "CM_PAT_ID",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Check Digit",
+              "data_type": "NM",
+              "required": false
+            },
+            "3": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Assigning Authority",
+              "data_type": "ID",
+              "required": false
+            },
+            "5": {
+              "name": "Identifier Type Code",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "3": {
+          "name": "Patient Identifier List",
+          "data_type": "CM_PAT_ID",
+          "required": true,
+          "repeating": true,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Check Digit",
+              "data_type": "NM",
+              "required": false
+            },
+            "3": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Assigning Authority",
+              "data_type": "ID",
+              "required": false
+            },
+            "5": {
+              "name": "Identifier Type Code",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "4": {
+          "name": "Alternate Patient ID - PID",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "5": {
+          "name": "Patient Name",
+          "data_type": "PN",
+          "required": true,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "6": {
+          "name": "Mother's Maiden Name",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "7": {
+          "name": "Date/Time of Birth",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "8": {
+          "name": "Administrative Sex",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0001"
+        },
+        "9": {
+          "name": "Patient Alias",
+          "data_type": "PN",
+          "required": false,
+          "repeating": true,
+          "components": {
+            "1": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "10": {
+          "name": "Race",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0005"
+        },
+        "11": {
+          "name": "Patient Address",
+          "data_type": "AD",
+          "required": false,
+          "repeating": true,
+          "components": {
+            "1": {
+              "name": "Street Address",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Other Designation",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "City",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "State or Province",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Zip or Postal Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "6": {
+              "name": "Country",
+              "data_type": "ID",
+              "required": false
+            },
+            "7": {
+              "name": "Address Type",
+              "data_type": "ID",
+              "required": false
+            },
+            "8": {
+              "name": "Other Geographic Designation",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "12": {
+          "name": "County Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "13": {
+          "name": "Phone Number - Home",
+          "data_type": "TN",
+          "required": false,
+          "repeating": true
+        },
+        "14": {
+          "name": "Phone Number - Business",
+          "data_type": "TN",
+          "required": false,
+          "repeating": true
+        },
+        "15": {
+          "name": "Primary Language",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "16": {
+          "name": "Marital Status",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0002"
+        },
+        "17": {
+          "name": "Religion",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0006"
+        },
+        "18": {
+          "name": "Patient Account Number",
+          "data_type": "CM_PAT_ID",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Check Digit",
+              "data_type": "NM",
+              "required": false
+            },
+            "3": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Assigning Authority",
+              "data_type": "ID",
+              "required": false
+            },
+            "5": {
+              "name": "Identifier Type Code",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "19": {
+          "name": "SSN Number - Patient",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 16
+        },
+        "20": {
+          "name": "Driver's License Number - Patient",
+          "data_type": "CM_LICENSE_NO",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "License Number",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Issuing State Province Country",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "21": {
+          "name": "Mother's Identifier",
+          "data_type": "CM_PAT_ID",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Check Digit",
+              "data_type": "NM",
+              "required": false
+            },
+            "3": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Assigning Authority",
+              "data_type": "ID",
+              "required": false
+            },
+            "5": {
+              "name": "Identifier Type Code",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "22": {
+          "name": "Ethnic Group",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0189"
+        },
+        "23": {
+          "name": "Birth Place",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 250
+        },
+        "24": {
+          "name": "Multiple Birth Indicator",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 1
+        },
+        "25": {
+          "name": "Birth Order",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 2
+        },
+        "26": {
+          "name": "Citizenship",
+          "data_type": "ID",
+          "required": false,
+          "repeating": true,
+          "table_id": "0171"
+        },
+        "27": {
+          "name": "Veterans Military Status",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        }
+      }
+    },
+    "MRG": {
+      "name": "Merge Patient Information",
+      "required": true,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Prior Patient Identifier List",
+          "data_type": "CM_PAT_ID",
+          "required": true,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Check Digit",
+              "data_type": "NM",
+              "required": false
+            },
+            "3": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Assigning Authority",
+              "data_type": "ID",
+              "required": false
+            },
+            "5": {
+              "name": "Identifier Type Code",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "2": {
+          "name": "Prior Alternate Patient ID",
+          "data_type": "CM_PAT_ID",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Check Digit",
+              "data_type": "NM",
+              "required": false
+            },
+            "3": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Assigning Authority",
+              "data_type": "ID",
+              "required": false
+            },
+            "5": {
+              "name": "Identifier Type Code",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "3": {
+          "name": "Prior Patient Account Number",
+          "data_type": "CK_ACCOUNT_NO",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "NM",
+              "required": false
+            },
+            "2": {
+              "name": "Check Digit",
+              "data_type": "NM",
+              "required": false
+            },
+            "3": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Assigning Authority",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "4": {
+          "name": "Prior Patient ID",
+          "data_type": "CM_PAT_ID",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Check Digit",
+              "data_type": "NM",
+              "required": false
+            },
+            "3": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Assigning Authority",
+              "data_type": "ID",
+              "required": false
+            },
+            "5": {
+              "name": "Identifier Type Code",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        }
+      }
+    }
+  }
+}

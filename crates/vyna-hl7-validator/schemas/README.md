@@ -6,6 +6,8 @@ This directory contains JSON schema definitions for HL7 v2.x messages across dif
 
 ```
 schemas/
+├── v2_1/     # HL7 version 2.1 (23 messages; later types fall back to v2.3)
+├── v2_2/     # HL7 version 2.2 (27 messages; later types fall back to v2.3)
 ├── v2_3/     # HL7 version 2.3 & 2.3.1
 ├── v2_4/     # HL7 version 2.4
 ├── v2_5/     # HL7 version 2.5 & 2.5.1
@@ -13,6 +15,21 @@ schemas/
 ├── v2_7/     # HL7 version 2.7 & 2.7.1
 └── v2_8/     # HL7 version 2.8, 2.8.1 & 2.8.2
 ```
+
+## Provenance
+
+The v2.3–v2.8 schemas are hand-curated. The v2.1/v2.2 schemas are
+generated from hl7apy 1.3.5 message/segment structures, with display
+names and `max_length` backfilled from v2.3 where the datatype is
+unchanged, table IDs from hl7apy only, and segment names for
+DSC/IN3/ORO/RX1/UB1/UB2/RQD/RQ1/ODS/ODT from HAPI. Known hl7apy data
+quirks are corrected in generation: v2.1 TS components are optional
+(all later versions agree), and RX1-30 is
+"Instructions (Sig)" with no table (per HAPI v21). Message types with
+no definition in that version have no file (v2.1 skips 24 keys,
+including ADT_A28/A31/A34/A40, MFN, SIU, pharmacy, and laboratory;
+v2.2 skips 20, still lacking SIU, pharmacy, laboratory, VXU, PPR, and
+OMP); the loader falls back to v2.3 for those keys.
 
 ## Schema Format
 
@@ -47,7 +64,12 @@ Each schema is a JSON file with the following structure:
 
 ## Available Schemas
 
-All schemas are available for **HL7 v2.3, v2.4, v2.5, v2.6, v2.7, and v2.8**.
+All schemas below are available for **HL7 v2.3, v2.4, v2.5, v2.6, v2.7, and v2.8**.
+**HL7 v2.1** carries the 23 message types that existed then: ADT
+(A01–A13, A17), ACK, BAR_P01/P02, DFT_P03, ORM_O01, ORU_R01, and QRY
+(A19, Q01, Q02). **HL7 v2.2** adds ADT_A28/A31/A34 and MFN_M01 (27
+files). Keys without a legacy file (VXU, PPR, OMP, SIU, MDM, pharmacy,
+laboratory, and the rest) fall back to v2.3 at load time.
 
 ### ADT (Admit/Discharge/Transfer) - 17 Schemas
 - ✅ ADT^A01 - Admit/Visit Notification

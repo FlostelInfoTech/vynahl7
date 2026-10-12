@@ -1,0 +1,346 @@
+{
+  "message_type": "MFN",
+  "trigger_event": "M01",
+  "version": "2.2",
+  "description": "Master File Notification - Not Otherwise Specified",
+  "segments": {
+    "MSH": {
+      "name": "Message Header",
+      "required": true,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Field Separator",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 1
+        },
+        "2": {
+          "name": "Encoding Characters",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 4
+        },
+        "3": {
+          "name": "Sending Application",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "4": {
+          "name": "Sending Facility",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "5": {
+          "name": "Receiving Application",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "6": {
+          "name": "Receiving Facility",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "7": {
+          "name": "Date/Time Of Message",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "8": {
+          "name": "Security",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 40
+        },
+        "9": {
+          "name": "Message Type",
+          "data_type": "CM_MSG",
+          "required": true,
+          "repeating": false,
+          "table_id": "0076",
+          "components": {
+            "1": {
+              "name": "Message Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Trigger Event",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "10": {
+          "name": "Message Control ID",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 20
+        },
+        "11": {
+          "name": "Processing ID",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "table_id": "0103"
+        },
+        "12": {
+          "name": "Version ID",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "table_id": "0104"
+        },
+        "13": {
+          "name": "Sequence Number",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 15
+        },
+        "14": {
+          "name": "Continuation Pointer",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 180
+        },
+        "15": {
+          "name": "Accept Acknowledgment Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 2,
+          "table_id": "0155"
+        },
+        "16": {
+          "name": "Application Acknowledgment Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 2,
+          "table_id": "0155"
+        },
+        "17": {
+          "name": "Country Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 3
+        }
+      }
+    },
+    "MFI": {
+      "name": "Master File Identification",
+      "required": true,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Master File Identifier",
+          "data_type": "CE",
+          "required": true,
+          "repeating": false,
+          "max_length": 250,
+          "table_id": "0175",
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Name of Coding System",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "6": {
+              "name": "Name of Alternate Coding System",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "2": {
+          "name": "Master File Application Identifier",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0176"
+        },
+        "3": {
+          "name": "File-Level Event Code",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "max_length": 3,
+          "table_id": "0178"
+        },
+        "4": {
+          "name": "Entered Date/Time",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "5": {
+          "name": "Effective Date/Time",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "6": {
+          "name": "Response Level Code",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "max_length": 2,
+          "table_id": "0179"
+        }
+      }
+    },
+    "MFE": {
+      "name": "Master File Entry",
+      "required": true,
+      "repeating": true,
+      "fields": {
+        "1": {
+          "name": "Record-Level Event Code",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "max_length": 3,
+          "table_id": "0180"
+        },
+        "2": {
+          "name": "MFN Control ID",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 20
+        },
+        "3": {
+          "name": "Effective Date/Time",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "4": {
+          "name": "Primary Key Value - MFE",
+          "data_type": "CE",
+          "required": true,
+          "repeating": true,
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Name Of Coding System",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Name Of Alternate Coding System",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -912,6 +912,66 @@ impl TableRegistry {
         table_0038.add_value("SC", "SC", false);
         self.add_table(table_0038);
 
+        // HL7 Table 0043 - Condition Code
+        let mut table_0043 = Hl7Table::new("0043", "Condition Code", "Condition Code");
+        table_0043.add_value("01", "01", false);
+        table_0043.add_value("02", "02", false);
+        table_0043.add_value("03", "03", false);
+        table_0043.add_value("04", "04", false);
+        table_0043.add_value("05", "05", false);
+        table_0043.add_value("06", "06", false);
+        table_0043.add_value("07", "07", false);
+        table_0043.add_value("08", "08", false);
+        table_0043.add_value("09", "09", false);
+        table_0043.add_value("10", "10", false);
+        table_0043.add_value("11", "11", false);
+        table_0043.add_value("12", "12", false);
+        table_0043.add_value("13", "13", false);
+        table_0043.add_value("14", "14", false);
+        table_0043.add_value("15", "15", false);
+        table_0043.add_value("16", "16", false);
+        table_0043.add_value("18", "18", false);
+        table_0043.add_value("19", "19", false);
+        table_0043.add_value("20", "20", false);
+        table_0043.add_value("21", "21", false);
+        table_0043.add_value("26", "26", false);
+        table_0043.add_value("27", "27", false);
+        table_0043.add_value("28", "28", false);
+        table_0043.add_value("29", "29", false);
+        table_0043.add_value("31", "31", false);
+        table_0043.add_value("32", "32", false);
+        table_0043.add_value("33", "33", false);
+        table_0043.add_value("34", "34", false);
+        table_0043.add_value("36", "36", false);
+        table_0043.add_value("37", "37", false);
+        table_0043.add_value("38", "38", false);
+        table_0043.add_value("39", "39", false);
+        table_0043.add_value("40", "40", false);
+        table_0043.add_value("41", "41", false);
+        table_0043.add_value("46", "46", false);
+        table_0043.add_value("48", "48", false);
+        table_0043.add_value("55", "55", false);
+        table_0043.add_value("56", "56", false);
+        table_0043.add_value("57", "57", false);
+        table_0043.add_value("60", "60", false);
+        table_0043.add_value("61", "61", false);
+        table_0043.add_value("62", "62", false);
+        table_0043.add_value("66", "66", false);
+        table_0043.add_value("67", "67", false);
+        table_0043.add_value("68", "68", false);
+        table_0043.add_value("70", "70", false);
+        table_0043.add_value("71", "71", false);
+        table_0043.add_value("72", "72", false);
+        table_0043.add_value("73", "73", false);
+        table_0043.add_value("74", "74", false);
+        table_0043.add_value("75", "75", false);
+        table_0043.add_value("76", "76", false);
+        table_0043.add_value("77", "77", false);
+        table_0043.add_value("78", "78", false);
+        table_0043.add_value("79", "79", false);
+        table_0043.add_value("80", "80", false);
+        self.add_table(table_0043);
+
         // HL7 Table 0048 - What subject filter
         let mut table_0048 = Hl7Table::new("0048", "What subject filter", "What subject filter");
         table_0048.add_value("ADV", "ADV", false);
@@ -1060,6 +1120,354 @@ impl TableRegistry {
         table_0069.add_value("SUR", "SUR", false);
         table_0069.add_value("URO", "URO", false);
         self.add_table(table_0069);
+
+        // HL7 Table 0070 - Specimen Source Codes
+        let mut table_0070 =
+            Hl7Table::new("0070", "Specimen Source Codes", "Specimen Source Codes");
+        table_0070.add_value("ABS", "ABS", false);
+        table_0070.add_value("ACNE", "ACNE", false);
+        table_0070.add_value("ACNFLD", "ACNFLD", false);
+        table_0070.add_value("AIRS", "AIRS", false);
+        table_0070.add_value("ALL", "ALL", false);
+        table_0070.add_value("AMN", "AMN", false);
+        table_0070.add_value("AMP", "AMP", false);
+        table_0070.add_value("ANGI", "ANGI", false);
+        table_0070.add_value("ARTC", "ARTC", false);
+        table_0070.add_value("ASERU", "ASERU", false);
+        table_0070.add_value("ASP", "ASP", false);
+        table_0070.add_value("ATTE", "ATTE", false);
+        table_0070.add_value("AUTOC", "AUTOC", false);
+        table_0070.add_value("AUTP", "AUTP", false);
+        table_0070.add_value("BBL", "BBL", false);
+        table_0070.add_value("BCYST", "BCYST", false);
+        table_0070.add_value("BDY", "BDY", false);
+        table_0070.add_value("BIFL", "BIFL", false);
+        table_0070.add_value("BITE", "BITE", false);
+        table_0070.add_value("BLD", "BLD", false);
+        table_0070.add_value("BLDA", "BLDA", false);
+        table_0070.add_value("BLDC", "BLDC", false);
+        table_0070.add_value("BLDCO", "BLDCO", false);
+        table_0070.add_value("BLDV", "BLDV", false);
+        table_0070.add_value("BLEB", "BLEB", false);
+        table_0070.add_value("BLIST", "BLIST", false);
+        table_0070.add_value("BOIL", "BOIL", false);
+        table_0070.add_value("BON", "BON", false);
+        table_0070.add_value("BOWL", "BOWL", false);
+        table_0070.add_value("BPH", "BPH", false);
+        table_0070.add_value("BPU", "BPU", false);
+        table_0070.add_value("BRN", "BRN", false);
+        table_0070.add_value("BRO", "BRO", false);
+        table_0070.add_value("BRSH", "BRSH", false);
+        table_0070.add_value("BRTH", "BRTH", false);
+        table_0070.add_value("BRUS", "BRUS", false);
+        table_0070.add_value("BUB", "BUB", false);
+        table_0070.add_value("BULLA", "BULLA", false);
+        table_0070.add_value("BX", "BX", false);
+        table_0070.add_value("CALC", "CALC", false);
+        table_0070.add_value("CARBU", "CARBU", false);
+        table_0070.add_value("CAT", "CAT", false);
+        table_0070.add_value("CBITE", "CBITE", false);
+        table_0070.add_value("CBLD", "CBLD", false);
+        table_0070.add_value("CDM", "CDM", false);
+        table_0070.add_value("CLIPP", "CLIPP", false);
+        table_0070.add_value("CNJT", "CNJT", false);
+        table_0070.add_value("CNL", "CNL", false);
+        table_0070.add_value("COL", "COL", false);
+        table_0070.add_value("CONE", "CONE", false);
+        table_0070.add_value("CSCR", "CSCR", false);
+        table_0070.add_value("CSERU", "CSERU", false);
+        table_0070.add_value("CSF", "CSF", false);
+        table_0070.add_value("CSITE", "CSITE", false);
+        table_0070.add_value("CSMY", "CSMY", false);
+        table_0070.add_value("CST", "CST", false);
+        table_0070.add_value("CSVR", "CSVR", false);
+        table_0070.add_value("CTP", "CTP", false);
+        table_0070.add_value("CUR", "CUR", false);
+        table_0070.add_value("CVM", "CVM", false);
+        table_0070.add_value("CVPS", "CVPS", false);
+        table_0070.add_value("CVPT", "CVPT", false);
+        table_0070.add_value("CVX", "CVX", false);
+        table_0070.add_value("CYN", "CYN", false);
+        table_0070.add_value("CYST", "CYST", false);
+        table_0070.add_value("DBITE", "DBITE", false);
+        table_0070.add_value("DCS", "DCS", false);
+        table_0070.add_value("DEC", "DEC", false);
+        table_0070.add_value("DEION", "DEION", false);
+        table_0070.add_value("DIA", "DIA", false);
+        table_0070.add_value("DIAF", "DIAF", false);
+        table_0070.add_value("DISCHG", "DISCHG", false);
+        table_0070.add_value("DIV", "DIV", false);
+        table_0070.add_value("DOSE", "DOSE", false);
+        table_0070.add_value("DRN", "DRN", false);
+        table_0070.add_value("DRNG", "DRNG", false);
+        table_0070.add_value("DRNGP", "DRNGP", false);
+        table_0070.add_value("DUFL", "DUFL", false);
+        table_0070.add_value("EAR", "EAR", false);
+        table_0070.add_value("EARW", "EARW", false);
+        table_0070.add_value("EBRUSH", "EBRUSH", false);
+        table_0070.add_value("EEYE", "EEYE", false);
+        table_0070.add_value("EFF", "EFF", false);
+        table_0070.add_value("EFFUS", "EFFUS", false);
+        table_0070.add_value("EFOD", "EFOD", false);
+        table_0070.add_value("EISO", "EISO", false);
+        table_0070.add_value("ELT", "ELT", false);
+        table_0070.add_value("ENDC", "ENDC", false);
+        table_0070.add_value("ENDM", "ENDM", false);
+        table_0070.add_value("ENVIR", "ENVIR", false);
+        table_0070.add_value("EOS", "EOS", false);
+        table_0070.add_value("EOTH", "EOTH", false);
+        table_0070.add_value("ESOI", "ESOI", false);
+        table_0070.add_value("ESOS", "ESOS", false);
+        table_0070.add_value("ETA", "ETA", false);
+        table_0070.add_value("ETTP", "ETTP", false);
+        table_0070.add_value("ETTUB", "ETTUB", false);
+        table_0070.add_value("EWHI", "EWHI", false);
+        table_0070.add_value("EXG", "EXG", false);
+        table_0070.add_value("EXHLD", "EXHLD", false);
+        table_0070.add_value("EXS", "EXS", false);
+        table_0070.add_value("EXUDTE", "EXUDTE", false);
+        table_0070.add_value("EYE", "EYE", false);
+        table_0070.add_value("FAW", "FAW", false);
+        table_0070.add_value("FBLOOD", "FBLOOD", false);
+        table_0070.add_value("FGA", "FGA", false);
+        table_0070.add_value("FIB", "FIB", false);
+        table_0070.add_value("FIST", "FIST", false);
+        table_0070.add_value("FLD", "FLD", false);
+        table_0070.add_value("FLT", "FLT", false);
+        table_0070.add_value("FLU", "FLU", false);
+        table_0070.add_value("FLUID", "FLUID", false);
+        table_0070.add_value("FOLEY", "FOLEY", false);
+        table_0070.add_value("FRS", "FRS", false);
+        table_0070.add_value("FSCLP", "FSCLP", false);
+        table_0070.add_value("FUR", "FUR", false);
+        table_0070.add_value("GAS", "GAS", false);
+        table_0070.add_value("GASA", "GASA", false);
+        table_0070.add_value("GASAN", "GASAN", false);
+        table_0070.add_value("GASBR", "GASBR", false);
+        table_0070.add_value("GASD", "GASD", false);
+        table_0070.add_value("GAST", "GAST", false);
+        table_0070.add_value("GEN", "GEN", false);
+        table_0070.add_value("GENC", "GENC", false);
+        table_0070.add_value("GENL", "GENL", false);
+        table_0070.add_value("GENV", "GENV", false);
+        table_0070.add_value("GRAFT", "GRAFT", false);
+        table_0070.add_value("GRANU", "GRANU", false);
+        table_0070.add_value("GROSH", "GROSH", false);
+        table_0070.add_value("GSOL", "GSOL", false);
+        table_0070.add_value("GSPEC", "GSPEC", false);
+        table_0070.add_value("GT", "GT", false);
+        table_0070.add_value("GTUBE", "GTUBE", false);
+        table_0070.add_value("HAR", "HAR", false);
+        table_0070.add_value("HBITE", "HBITE", false);
+        table_0070.add_value("HBLUD", "HBLUD", false);
+        table_0070.add_value("HEMAQ", "HEMAQ", false);
+        table_0070.add_value("HEMO", "HEMO", false);
+        table_0070.add_value("HERNI", "HERNI", false);
+        table_0070.add_value("HEV", "HEV", false);
+        table_0070.add_value("HIC", "HIC", false);
+        table_0070.add_value("HYDC", "HYDC", false);
+        table_0070.add_value("IBITE", "IBITE", false);
+        table_0070.add_value("ICYST", "ICYST", false);
+        table_0070.add_value("IDC", "IDC", false);
+        table_0070.add_value("IHG", "IHG", false);
+        table_0070.add_value("ILEO", "ILEO", false);
+        table_0070.add_value("ILLEG", "ILLEG", false);
+        table_0070.add_value("IMP", "IMP", false);
+        table_0070.add_value("INCI", "INCI", false);
+        table_0070.add_value("INFIL", "INFIL", false);
+        table_0070.add_value("INS", "INS", false);
+        table_0070.add_value("INTRD", "INTRD", false);
+        table_0070.add_value("ISLT", "ISLT", false);
+        table_0070.add_value("IT", "IT", false);
+        table_0070.add_value("IUD", "IUD", false);
+        table_0070.add_value("IVCAT", "IVCAT", false);
+        table_0070.add_value("IVFLD", "IVFLD", false);
+        table_0070.add_value("IVTIP", "IVTIP", false);
+        table_0070.add_value("JEJU", "JEJU", false);
+        table_0070.add_value("JNTFLD", "JNTFLD", false);
+        table_0070.add_value("JP", "JP", false);
+        table_0070.add_value("KELOI", "KELOI", false);
+        table_0070.add_value("KIDFLD", "KIDFLD", false);
+        table_0070.add_value("LAM", "LAM", false);
+        table_0070.add_value("LAVG", "LAVG", false);
+        table_0070.add_value("LAVGG", "LAVGG", false);
+        table_0070.add_value("LAVGP", "LAVGP", false);
+        table_0070.add_value("LAVPG", "LAVPG", false);
+        table_0070.add_value("LENS1", "LENS1", false);
+        table_0070.add_value("LENS2", "LENS2", false);
+        table_0070.add_value("LESN", "LESN", false);
+        table_0070.add_value("LIQ", "LIQ", false);
+        table_0070.add_value("LIQO", "LIQO", false);
+        table_0070.add_value("LN", "LN", false);
+        table_0070.add_value("LNA", "LNA", false);
+        table_0070.add_value("LNV", "LNV", false);
+        table_0070.add_value("LSAC", "LSAC", false);
+        table_0070.add_value("LYM", "LYM", false);
+        table_0070.add_value("MAC", "MAC", false);
+        table_0070.add_value("MAHUR", "MAHUR", false);
+        table_0070.add_value("MAR", "MAR", false);
+        table_0070.add_value("MASS", "MASS", false);
+        table_0070.add_value("MBLD", "MBLD", false);
+        table_0070.add_value("MEC", "MEC", false);
+        table_0070.add_value("MILK", "MILK", false);
+        table_0070.add_value("MLK", "MLK", false);
+        table_0070.add_value("MUCOS", "MUCOS", false);
+        table_0070.add_value("MUCUS", "MUCUS", false);
+        table_0070.add_value("NAIL", "NAIL", false);
+        table_0070.add_value("NASDR", "NASDR", false);
+        table_0070.add_value("NEDL", "NEDL", false);
+        table_0070.add_value("NEPH", "NEPH", false);
+        table_0070.add_value("NGASP", "NGASP", false);
+        table_0070.add_value("NGAST", "NGAST", false);
+        table_0070.add_value("NGS", "NGS", false);
+        table_0070.add_value("NODUL", "NODUL", false);
+        table_0070.add_value("NOS", "NOS", false);
+        table_0070.add_value("NSECR", "NSECR", false);
+        table_0070.add_value("ORH", "ORH", false);
+        table_0070.add_value("ORL", "ORL", false);
+        table_0070.add_value("OTH", "OTH", false);
+        table_0070.add_value("PACEM", "PACEM", false);
+        table_0070.add_value("PAFL", "PAFL", false);
+        table_0070.add_value("PAT", "PAT", false);
+        table_0070.add_value("PCFL", "PCFL", false);
+        table_0070.add_value("PDSIT", "PDSIT", false);
+        table_0070.add_value("PDTS", "PDTS", false);
+        table_0070.add_value("PELVA", "PELVA", false);
+        table_0070.add_value("PENIL", "PENIL", false);
+        table_0070.add_value("PERIA", "PERIA", false);
+        table_0070.add_value("PILOC", "PILOC", false);
+        table_0070.add_value("PINS", "PINS", false);
+        table_0070.add_value("PIS", "PIS", false);
+        table_0070.add_value("PLAN", "PLAN", false);
+        table_0070.add_value("PLAS", "PLAS", false);
+        table_0070.add_value("PLB", "PLB", false);
+        table_0070.add_value("PLC", "PLC", false);
+        table_0070.add_value("PLEVS", "PLEVS", false);
+        table_0070.add_value("PLR", "PLR", false);
+        table_0070.add_value("PMN", "PMN", false);
+        table_0070.add_value("PND", "PND", false);
+        table_0070.add_value("POL", "POL", false);
+        table_0070.add_value("POPGS", "POPGS", false);
+        table_0070.add_value("POPLG", "POPLG", false);
+        table_0070.add_value("POPLV", "POPLV", false);
+        table_0070.add_value("PORTA", "PORTA", false);
+        table_0070.add_value("PPP", "PPP", false);
+        table_0070.add_value("PROST", "PROST", false);
+        table_0070.add_value("PRP", "PRP", false);
+        table_0070.add_value("PRT", "PRT", false);
+        table_0070.add_value("PSC", "PSC", false);
+        table_0070.add_value("PUNCT", "PUNCT", false);
+        table_0070.add_value("PUS", "PUS", false);
+        table_0070.add_value("PUSFR", "PUSFR", false);
+        table_0070.add_value("PUST", "PUST", false);
+        table_0070.add_value("QC3", "QC3", false);
+        table_0070.add_value("RANDU", "RANDU", false);
+        table_0070.add_value("RBC", "RBC", false);
+        table_0070.add_value("RBITE", "RBITE", false);
+        table_0070.add_value("RECT", "RECT", false);
+        table_0070.add_value("RECTA", "RECTA", false);
+        table_0070.add_value("RENALC", "RENALC", false);
+        table_0070.add_value("RENC", "RENC", false);
+        table_0070.add_value("RES", "RES", false);
+        table_0070.add_value("RT", "RT", false);
+        table_0070.add_value("SAL", "SAL", false);
+        table_0070.add_value("SCAR", "SCAR", false);
+        table_0070.add_value("SCLV", "SCLV", false);
+        table_0070.add_value("SCROA", "SCROA", false);
+        table_0070.add_value("SECRE", "SECRE", false);
+        table_0070.add_value("SEM", "SEM", false);
+        table_0070.add_value("SER", "SER", false);
+        table_0070.add_value("SHU", "SHU", false);
+        table_0070.add_value("SHUNF", "SHUNF", false);
+        table_0070.add_value("SHUNT", "SHUNT", false);
+        table_0070.add_value("SITE", "SITE", false);
+        table_0070.add_value("SKBP", "SKBP", false);
+        table_0070.add_value("SKM", "SKM", false);
+        table_0070.add_value("SKN", "SKN", false);
+        table_0070.add_value("SMM", "SMM", false);
+        table_0070.add_value("SMN", "SMN", false);
+        table_0070.add_value("SNV", "SNV", false);
+        table_0070.add_value("SPRM", "SPRM", false);
+        table_0070.add_value("SPRP", "SPRP", false);
+        table_0070.add_value("SPRPB", "SPRPB", false);
+        table_0070.add_value("SPS", "SPS", false);
+        table_0070.add_value("SPT", "SPT", false);
+        table_0070.add_value("SPTC", "SPTC", false);
+        table_0070.add_value("SPTT", "SPTT", false);
+        table_0070.add_value("SPUT1", "SPUT1", false);
+        table_0070.add_value("SPUTIN", "SPUTIN", false);
+        table_0070.add_value("SPUTSP", "SPUTSP", false);
+        table_0070.add_value("STER", "STER", false);
+        table_0070.add_value("STL", "STL", false);
+        table_0070.add_value("STON", "STON", false);
+        table_0070.add_value("STONE", "STONE", false);
+        table_0070.add_value("SUBMA", "SUBMA", false);
+        table_0070.add_value("SUBMX", "SUBMX", false);
+        table_0070.add_value("SUMP", "SUMP", false);
+        table_0070.add_value("SUP", "SUP", false);
+        table_0070.add_value("SUTUR", "SUTUR", false);
+        table_0070.add_value("SWGZ", "SWGZ", false);
+        table_0070.add_value("SWT", "SWT", false);
+        table_0070.add_value("TASP", "TASP", false);
+        table_0070.add_value("TEAR", "TEAR", false);
+        table_0070.add_value("THRB", "THRB", false);
+        table_0070.add_value("THRT", "THRT", false);
+        table_0070.add_value("TISG", "TISG", false);
+        table_0070.add_value("TISPL", "TISPL", false);
+        table_0070.add_value("TISS", "TISS", false);
+        table_0070.add_value("TISU", "TISU", false);
+        table_0070.add_value("TLC", "TLC", false);
+        table_0070.add_value("TLGI", "TLGI", false);
+        table_0070.add_value("TLNG", "TLNG", false);
+        table_0070.add_value("TRAC", "TRAC", false);
+        table_0070.add_value("TRANS", "TRANS", false);
+        table_0070.add_value("TSERU", "TSERU", false);
+        table_0070.add_value("TSMI", "TSMI", false);
+        table_0070.add_value("TSTES", "TSTES", false);
+        table_0070.add_value("TTRA", "TTRA", false);
+        table_0070.add_value("TUB", "TUB", false);
+        table_0070.add_value("TUBES", "TUBES", false);
+        table_0070.add_value("TUMOR", "TUMOR", false);
+        table_0070.add_value("TZANC", "TZANC", false);
+        table_0070.add_value("UDENT", "UDENT", false);
+        table_0070.add_value("ULC", "ULC", false);
+        table_0070.add_value("UMB", "UMB", false);
+        table_0070.add_value("UMED", "UMED", false);
+        table_0070.add_value("UR", "UR", false);
+        table_0070.add_value("URC", "URC", false);
+        table_0070.add_value("URINB", "URINB", false);
+        table_0070.add_value("URINC", "URINC", false);
+        table_0070.add_value("URINM", "URINM", false);
+        table_0070.add_value("URINN", "URINN", false);
+        table_0070.add_value("URINP", "URINP", false);
+        table_0070.add_value("URNS", "URNS", false);
+        table_0070.add_value("URT", "URT", false);
+        table_0070.add_value("URTH", "URTH", false);
+        table_0070.add_value("USCOP", "USCOP", false);
+        table_0070.add_value("USPEC", "USPEC", false);
+        table_0070.add_value("USUB", "USUB", false);
+        table_0070.add_value("VASTIP", "VASTIP", false);
+        table_0070.add_value("VENT", "VENT", false);
+        table_0070.add_value("VITF", "VITF", false);
+        table_0070.add_value("VOM", "VOM", false);
+        table_0070.add_value("WASH", "WASH", false);
+        table_0070.add_value("WASI", "WASI", false);
+        table_0070.add_value("WAT", "WAT", false);
+        table_0070.add_value("WB", "WB", false);
+        table_0070.add_value("WBC", "WBC", false);
+        table_0070.add_value("WEN", "WEN", false);
+        table_0070.add_value("WICK", "WICK", false);
+        table_0070.add_value("WND", "WND", false);
+        table_0070.add_value("WNDA", "WNDA", false);
+        table_0070.add_value("WNDD", "WNDD", false);
+        table_0070.add_value("WNDE", "WNDE", false);
+        table_0070.add_value("WORM", "WORM", false);
+        table_0070.add_value("WRT", "WRT", false);
+        table_0070.add_value("WWA", "WWA", false);
+        table_0070.add_value("WWO", "WWO", false);
+        table_0070.add_value("WWT", "WWT", false);
+        table_0070.add_value("XXX", "XXX", false);
+        self.add_table(table_0070);
 
         // HL7 Table 0074 - Diagnostic Service Section ID
         let mut table_0074 = Hl7Table::new(
@@ -1404,6 +1812,16 @@ impl TableRegistry {
         table_0100.add_value("T", "T", false);
         self.add_table(table_0100);
 
+        // HL7 Table 0102 - Delayed acknowledgment type
+        let mut table_0102 = Hl7Table::new(
+            "0102",
+            "Delayed acknowledgment type",
+            "Delayed acknowledgment type",
+        );
+        table_0102.add_value("D", "D", false);
+        table_0102.add_value("F", "F", false);
+        self.add_table(table_0102);
+
         // HL7 Table 0103 - Processing ID
         let mut table_0103 = Hl7Table::new("0103", "Processing ID", "Message processing mode");
         table_0103.add_value("D", "Debugging", false);
@@ -1711,6 +2129,19 @@ impl TableRegistry {
         table_0125.add_value("XTN", "XTN", false);
         self.add_table(table_0125);
 
+        // HL7 Table 0126 - Quantity Limited Request
+        let mut table_0126 = Hl7Table::new(
+            "0126",
+            "Quantity Limited Request",
+            "Quantity Limited Request",
+        );
+        table_0126.add_value("CH", "CH", false);
+        table_0126.add_value("LI", "LI", false);
+        table_0126.add_value("PG", "PG", false);
+        table_0126.add_value("RD", "RD", false);
+        table_0126.add_value("ZO", "ZO", false);
+        self.add_table(table_0126);
+
         // HL7 Table 0127 - Allergen Type
         let mut table_0127 = Hl7Table::new("0127", "Allergen Type", "Allergen Type");
         table_0127.add_value("AA", "AA", false);
@@ -1843,6 +2274,119 @@ impl TableRegistry {
         table_0144.add_value("7", "7", false);
         self.add_table(table_0144);
 
+        // HL7 Table 0145 - Room Type
+        let mut table_0145 = Hl7Table::new("0145", "Room Type", "Room Type");
+        table_0145.add_value("2ICU", "2ICU", false);
+        table_0145.add_value("2PRI", "2PRI", false);
+        table_0145.add_value("2SPR", "2SPR", false);
+        table_0145.add_value("ICU", "ICU", false);
+        table_0145.add_value("PRI", "PRI", false);
+        table_0145.add_value("SPR", "SPR", false);
+        self.add_table(table_0145);
+
+        // HL7 Table 0147 - Policy Type
+        let mut table_0147 = Hl7Table::new("0147", "Policy Type", "Policy Type");
+        table_0147.add_value("2ANC", "2ANC", false);
+        table_0147.add_value("2MMD", "2MMD", false);
+        table_0147.add_value("3MMD", "3MMD", false);
+        table_0147.add_value("ANC", "ANC", false);
+        table_0147.add_value("MMD", "MMD", false);
+        self.add_table(table_0147);
+
+        // HL7 Table 0148 - Money or Percentage Indicator
+        let mut table_0148 = Hl7Table::new(
+            "0148",
+            "Money or Percentage Indicator",
+            "Money or Percentage Indicator",
+        );
+        table_0148.add_value("AT", "AT", false);
+        table_0148.add_value("PC", "PC", false);
+        self.add_table(table_0148);
+
+        // HL7 Table 0149 - Day Type
+        let mut table_0149 = Hl7Table::new("0149", "Day Type", "Day Type");
+        table_0149.add_value("AP", "AP", false);
+        table_0149.add_value("DE", "DE", false);
+        table_0149.add_value("PE", "PE", false);
+        self.add_table(table_0149);
+
+        // HL7 Table 0150 - Certification Patient Type
+        let mut table_0150 = Hl7Table::new(
+            "0150",
+            "Certification Patient Type",
+            "Certification Patient Type",
+        );
+        table_0150.add_value("ER", "ER", false);
+        table_0150.add_value("IPE", "IPE", false);
+        table_0150.add_value("OPE", "OPE", false);
+        table_0150.add_value("UR", "UR", false);
+        self.add_table(table_0150);
+
+        // HL7 Table 0153 - Value Code
+        let mut table_0153 = Hl7Table::new("0153", "Value Code", "Value Code");
+        table_0153.add_value("01", "01", false);
+        table_0153.add_value("02", "02", false);
+        table_0153.add_value("04", "04", false);
+        table_0153.add_value("05", "05", false);
+        table_0153.add_value("06", "06", false);
+        table_0153.add_value("08", "08", false);
+        table_0153.add_value("09", "09", false);
+        table_0153.add_value("10", "10", false);
+        table_0153.add_value("11", "11", false);
+        table_0153.add_value("12", "12", false);
+        table_0153.add_value("13", "13", false);
+        table_0153.add_value("14", "14", false);
+        table_0153.add_value("15", "15", false);
+        table_0153.add_value("16", "16", false);
+        table_0153.add_value("17", "17", false);
+        table_0153.add_value("21", "21", false);
+        table_0153.add_value("22", "22", false);
+        table_0153.add_value("23", "23", false);
+        table_0153.add_value("24", "24", false);
+        table_0153.add_value("30", "30", false);
+        table_0153.add_value("31", "31", false);
+        table_0153.add_value("37", "37", false);
+        table_0153.add_value("38", "38", false);
+        table_0153.add_value("39", "39", false);
+        table_0153.add_value("40", "40", false);
+        table_0153.add_value("41", "41", false);
+        table_0153.add_value("42", "42", false);
+        table_0153.add_value("43", "43", false);
+        table_0153.add_value("44", "44", false);
+        table_0153.add_value("45", "45", false);
+        table_0153.add_value("46", "46", false);
+        table_0153.add_value("47", "47", false);
+        table_0153.add_value("48", "48", false);
+        table_0153.add_value("49", "49", false);
+        table_0153.add_value("50", "50", false);
+        table_0153.add_value("51", "51", false);
+        table_0153.add_value("52", "52", false);
+        table_0153.add_value("53", "53", false);
+        table_0153.add_value("56", "56", false);
+        table_0153.add_value("57", "57", false);
+        table_0153.add_value("58", "58", false);
+        table_0153.add_value("59", "59", false);
+        table_0153.add_value("60", "60", false);
+        table_0153.add_value("67", "67", false);
+        table_0153.add_value("68", "68", false);
+        table_0153.add_value("70", "70", false);
+        table_0153.add_value("71", "71", false);
+        table_0153.add_value("72", "72", false);
+        table_0153.add_value("75", "75", false);
+        table_0153.add_value("76", "76", false);
+        table_0153.add_value("77", "77", false);
+        table_0153.add_value("78", "78", false);
+        table_0153.add_value("79", "79", false);
+        table_0153.add_value("80", "80", false);
+        table_0153.add_value("81", "81", false);
+        table_0153.add_value("A1", "A1", false);
+        table_0153.add_value("A2", "A2", false);
+        table_0153.add_value("A3", "A3", false);
+        table_0153.add_value("X0", "X0", false);
+        table_0153.add_value("X4", "X4", false);
+        table_0153.add_value("…", "…", false);
+        self.add_table(table_0153);
+
         // HL7 Table 0155 - Accept/Application Acknowledgment Conditions
         let mut table_0155 = Hl7Table::new(
             "0155",
@@ -1894,6 +2438,26 @@ impl TableRegistry {
         table_0158.add_value("LST", "LST", false);
         table_0158.add_value("REV", "REV", false);
         self.add_table(table_0158);
+
+        // HL7 Table 0159 - Diet Code Specification Type
+        let mut table_0159 = Hl7Table::new(
+            "0159",
+            "Diet Code Specification Type",
+            "Diet Code Specification Type",
+        );
+        table_0159.add_value("D", "D", false);
+        table_0159.add_value("P", "P", false);
+        table_0159.add_value("S", "S", false);
+        self.add_table(table_0159);
+
+        // HL7 Table 0160 - Tray Type
+        let mut table_0160 = Hl7Table::new("0160", "Tray Type", "Tray Type");
+        table_0160.add_value("EARLY", "EARLY", false);
+        table_0160.add_value("GUEST", "GUEST", false);
+        table_0160.add_value("LATE", "LATE", false);
+        table_0160.add_value("MSG", "MSG", false);
+        table_0160.add_value("NO", "NO", false);
+        self.add_table(table_0160);
 
         // HL7 Table 0161 - Allow Substitution
         let mut table_0161 = Hl7Table::new("0161", "Allow Substitution", "Allow Substitution");
@@ -2129,6 +2693,14 @@ impl TableRegistry {
         table_0191.add_value("TX", "TX", false);
         table_0191.add_value("multipart", "multipart", false);
         self.add_table(table_0191);
+
+        // HL7 Table 0193 - Amount Class
+        let mut table_0193 = Hl7Table::new("0193", "Amount Class", "Amount Class");
+        table_0193.add_value("AT", "AT", false);
+        table_0193.add_value("LM", "LM", false);
+        table_0193.add_value("PC", "PC", false);
+        table_0193.add_value("UL", "UL", false);
+        self.add_table(table_0193);
 
         // HL7 Table 0200 - Name Type
         let mut table_0200 = Hl7Table::new("0200", "Name Type", "Name Type");
@@ -5682,12 +6254,13 @@ mod tests {
     /// values) and therefore intentionally left unloaded.
     const USER_TABLES: &[&str] = &[
         "0010", "0018", "0019", "0021", "0022", "0024", "0032", "0042", "0044", "0045", "0046",
-        "0049", "0050", "0051", "0053", "0055", "0056", "0059", "0064", "0068", "0072", "0073",
-        "0086", "0087", "0089", "0099", "0110", "0111", "0113", "0114", "0115", "0117", "0118",
-        "0129", "0132", "0139", "0143", "0171", "0172", "0182", "0212", "0218", "0219", "0222",
-        "0288", "0289", "0295", "0296", "0297", "0300", "0302", "0303", "0304", "0306", "0307",
-        "0308", "0327", "0328", "0342", "0363", "0446", "0447", "0541", "0542", "0543", "0549",
-        "0552", "0836", "0838",
+        "0049", "0050", "0051", "0053", "0055", "0056", "0059", "0060", "0064", "0068", "0072",
+        "0073", "0079", "0084", "0086", "0087", "0089", "0090", "0099", "0110", "0111", "0113",
+        "0114", "0115", "0117", "0118", "0129", "0132", "0139", "0143", "0151", "0152", "0171",
+        "0172", "0176", "0182", "0188", "0192", "0212", "0218", "0219", "0222", "0288", "0289",
+        "0295", "0296", "0297", "0300", "0302", "0303", "0304", "0306", "0307", "0308", "0327",
+        "0328", "0342", "0363", "0446", "0447", "0541", "0542", "0543", "0549", "0552", "0836",
+        "0838",
     ];
 
     /// Every table referenced by a validation schema must be loaded or be a

@@ -129,7 +129,7 @@ Message
                       └─ Subcomponent (separated by &)
 ```
 
-**Supported HL7 Versions:** v2.3, v2.3.1, v2.4, v2.5, v2.5.1, v2.6, v2.7, v2.7.1, v2.8, v2.8.1, v2.8.2
+**Supported HL7 Versions:** v2.1 (23 messages), v2.2 (27 messages), v2.3, v2.3.1, v2.4, v2.5, v2.5.1, v2.6, v2.7, v2.7.1, v2.8, v2.8.1, v2.8.2 (message types introduced after 2.2 validate against v2.3 structures)
 
 **Message Types:** ADT (A01-A40), SIU (S12-S15), MDM (T01-T04), DFT (P03, P11), QRY (A19, Q01-Q02), BAR (P01-P02), Pharmacy (RDE, RAS, RDS, RGV, RRD, RRA), Laboratory (OUL, OML), ORM, ORU, ACK, MFN
 

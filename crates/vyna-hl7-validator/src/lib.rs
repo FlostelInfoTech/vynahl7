@@ -1293,15 +1293,15 @@ mod tests {
 
         let validator = Validator::for_message_type(Version::V2_5, "VXU", "V04").unwrap();
         let result = validator.validate(&message);
-        // Two global quirks affect every message type (the stock
+        // One global quirk affects every message type (the stock
         // schema_validation example reports the same on plain ADT^A01):
-        // MSH-9.3 is schema-required though wires carry 2 components, and
-        // the ID datatype rule rejects the dot in "2.5". Everything else,
+        // MSH-9.3 is schema-required though wires carry 2 components.
+        // Everything else,
         // in particular every VXU segment and required field, must be clean.
         let unexpected: Vec<_> = result
             .errors
             .iter()
-            .filter(|e| e.location != "MSH[0]-9-3" && e.location != "MSH[0]-12-1")
+            .filter(|e| e.location != "MSH[0]-9-3")
             .collect();
         assert!(unexpected.is_empty(), "errors: {unexpected:?}");
     }
@@ -1431,7 +1431,7 @@ mod tests {
         let unexpected: Vec<_> = result
             .errors
             .iter()
-            .filter(|e| e.location != "MSH[0]-9-3" && e.location != "MSH[0]-12-1")
+            .filter(|e| e.location != "MSH[0]-9-3")
             .collect();
         assert!(unexpected.is_empty(), "errors: {unexpected:?}");
     }
@@ -1484,7 +1484,7 @@ mod tests {
         let unexpected: Vec<_> = result
             .errors
             .iter()
-            .filter(|e| e.location != "MSH[0]-9-3" && e.location != "MSH[0]-12-1")
+            .filter(|e| e.location != "MSH[0]-9-3")
             .collect();
         assert!(unexpected.is_empty(), "errors: {unexpected:?}");
     }
@@ -1534,7 +1534,7 @@ mod tests {
         let unexpected: Vec<_> = result
             .errors
             .iter()
-            .filter(|e| e.location != "MSH[0]-9-3" && e.location != "MSH[0]-12-1")
+            .filter(|e| e.location != "MSH[0]-9-3")
             .collect();
         assert!(unexpected.is_empty(), "errors: {unexpected:?}");
     }
@@ -1554,6 +1554,60 @@ mod tests {
         assert!(!result.is_valid());
         assert!(
             result.errors.iter().any(|e| e.location.starts_with("MRG")),
+            "errors: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_validate_v21_adt_a01_is_clean() {
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|SND|SNF|RCV|RCF|199001011200||ADT^A01|MSG00001|P|2.1\r\
+             EVN|A01|199001011200\r\
+             PID|||12345||DOE^JOHN||19600101|M\r\
+             NK1|1|DOE^JANE\r\
+             PV1||I|WARD1\r",
+        )
+        .unwrap();
+
+        let validator = Validator::for_message_type(Version::V2_1, "ADT", "A01").unwrap();
+        let result = validator.validate(&message);
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn test_validate_v22_adt_a01_is_clean() {
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|SND|SNF|RCV|RCF|199401011200||ADT^A01|MSG00002|P|2.2\r\
+             EVN|A01|199401011200\r\
+             PID|||12345||DOE^JOHN||19600101|M\r\
+             PV1||I\r",
+        )
+        .unwrap();
+
+        let validator = Validator::for_message_type(Version::V2_2, "ADT", "A01").unwrap();
+        let result = validator.validate(&message);
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn test_v21_requires_nk1_while_v22_does_not() {
+        // NK1 is required in 2.1 ADT_A01 but optional in 2.2.
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|SND|SNF|RCV|RCF|199001011200||ADT^A01|MSG00001|P|2.1\r\
+             EVN|A01|199001011200\r\
+             PID|||12345||DOE^JOHN||19600101|M\r\
+             PV1||I|WARD1\r",
+        )
+        .unwrap();
+
+        let v21 = Validator::for_message_type(Version::V2_1, "ADT", "A01").unwrap();
+        let result = v21.validate(&message);
+        assert!(!result.is_valid());
+        assert!(
+            result.errors.iter().any(|e| e.message.contains("NK1")),
             "errors: {:?}",
             result.errors
         );

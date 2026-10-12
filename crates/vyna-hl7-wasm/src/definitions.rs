@@ -51,6 +51,7 @@ fn get_message_description(message_type: &str, trigger_event: &str) -> &'static 
         ("ADT", "A17") => "Swap Patients",
         ("ADT", "A28") => "Add Person Information",
         ("ADT", "A31") => "Update Person Information",
+        ("ADT", "A34") => "Merge Patient - Patient ID Only",
         ("ADT", "A40") => "Merge Patient - Patient Identifier List",
         // ORU - Observation Result
         ("ORU", "R01") => "Unsolicited Observation Result",
@@ -89,6 +90,12 @@ fn get_message_description(message_type: &str, trigger_event: &str) -> &'static 
         ("OML", "O21") => "Laboratory Order",
         // Master File
         ("MFN", "M01") => "Master File Notification - Not Otherwise Specified",
+        // VXU - Immunization
+        ("VXU", "V04") => "Unsolicited Vaccination Record Update",
+        // PPR - Patient Problem
+        ("PPR", "PC1") => "Patient Problem - Add",
+        // OMP - Pharmacy Order
+        ("OMP", "O09") => "Pharmacy/Treatment Order",
         _ => "Unknown Message Type",
     }
 }

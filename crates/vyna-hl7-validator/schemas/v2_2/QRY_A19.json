@@ -1,0 +1,387 @@
+{
+  "message_type": "QRY",
+  "trigger_event": "A19",
+  "version": "2.2",
+  "description": "Patient Query",
+  "segments": {
+    "MSH": {
+      "name": "Message Header",
+      "required": true,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Field Separator",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 1
+        },
+        "2": {
+          "name": "Encoding Characters",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 4
+        },
+        "3": {
+          "name": "Sending Application",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "4": {
+          "name": "Sending Facility",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "5": {
+          "name": "Receiving Application",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "6": {
+          "name": "Receiving Facility",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "7": {
+          "name": "Date/Time Of Message",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "8": {
+          "name": "Security",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 40
+        },
+        "9": {
+          "name": "Message Type",
+          "data_type": "CM_MSG",
+          "required": true,
+          "repeating": false,
+          "table_id": "0076",
+          "components": {
+            "1": {
+              "name": "Message Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Trigger Event",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "10": {
+          "name": "Message Control ID",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 20
+        },
+        "11": {
+          "name": "Processing ID",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "table_id": "0103"
+        },
+        "12": {
+          "name": "Version ID",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "table_id": "0104"
+        },
+        "13": {
+          "name": "Sequence Number",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 15
+        },
+        "14": {
+          "name": "Continuation Pointer",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 180
+        },
+        "15": {
+          "name": "Accept Acknowledgment Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 2,
+          "table_id": "0155"
+        },
+        "16": {
+          "name": "Application Acknowledgment Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 2,
+          "table_id": "0155"
+        },
+        "17": {
+          "name": "Country Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 3
+        }
+      }
+    },
+    "QRD": {
+      "name": "Original-Style Query Definition",
+      "required": true,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Query Date/Time",
+          "data_type": "TS",
+          "required": true,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "2": {
+          "name": "Query Format Code",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "max_length": 1,
+          "table_id": "0106"
+        },
+        "3": {
+          "name": "Query Priority",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "max_length": 1,
+          "table_id": "0091"
+        },
+        "4": {
+          "name": "Query ID",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 10
+        },
+        "5": {
+          "name": "Deferred Response Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 1,
+          "table_id": "0107"
+        },
+        "6": {
+          "name": "Deferred Response Date/Time",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "7": {
+          "name": "Quantity Limited Request",
+          "data_type": "CQ",
+          "required": true,
+          "repeating": false,
+          "max_length": 10,
+          "table_id": "0126",
+          "components": {
+            "1": {
+              "name": "Quantity",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Units",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "8": {
+          "name": "Who Subject Filter",
+          "data_type": "ST",
+          "required": true,
+          "repeating": true
+        },
+        "9": {
+          "name": "What Subject Filter",
+          "data_type": "ID",
+          "required": true,
+          "repeating": true,
+          "table_id": "0048"
+        },
+        "10": {
+          "name": "What Department Data Code",
+          "data_type": "ST",
+          "required": true,
+          "repeating": true
+        },
+        "11": {
+          "name": "What Data Code Value Qual.",
+          "data_type": "CM_VR",
+          "required": false,
+          "repeating": true,
+          "components": {
+            "1": {
+              "name": "First Data Code Value",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Last Data Code Calue",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "12": {
+          "name": "Query Results Level",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 1,
+          "table_id": "0108"
+        }
+      }
+    },
+    "QRF": {
+      "name": "Original-Style Query Filter",
+      "required": false,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Where Subject Filter",
+          "data_type": "ST",
+          "required": true,
+          "repeating": true,
+          "max_length": 20
+        },
+        "2": {
+          "name": "When Data Start Date/Time",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "3": {
+          "name": "When Data End Date/Time",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "4": {
+          "name": "What User Qualifier",
+          "data_type": "ST",
+          "required": false,
+          "repeating": true,
+          "max_length": 60
+        },
+        "5": {
+          "name": "Other QRY Subject Filter",
+          "data_type": "ST",
+          "required": false,
+          "repeating": true,
+          "max_length": 60
+        },
+        "6": {
+          "name": "Which Date/Time Qualifier",
+          "data_type": "ID",
+          "required": false,
+          "repeating": true,
+          "max_length": 12,
+          "table_id": "0156"
+        },
+        "7": {
+          "name": "Which Date/Time Status Qualifier",
+          "data_type": "ID",
+          "required": false,
+          "repeating": true,
+          "max_length": 12,
+          "table_id": "0157"
+        },
+        "8": {
+          "name": "Date/Time Selection Qualifier",
+          "data_type": "ID",
+          "required": false,
+          "repeating": true,
+          "max_length": 12,
+          "table_id": "0158"
+        }
+      }
+    }
+  }
+}

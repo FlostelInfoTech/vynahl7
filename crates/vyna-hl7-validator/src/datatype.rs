@@ -81,6 +81,13 @@ pub fn validate_data_type(value: &str, data_type: DataType) -> DataTypeValidatio
         DataType::DLD => validate_composite_type(value),
         DataType::FC => validate_composite_type(value),
         DataType::JCC => validate_composite_type(value),
+        // Legacy pre-2.3 types share their successors' shapes
+        DataType::PN => validate_person_name(value),
+        DataType::AD => validate_address(value),
+        DataType::TN => validate_telecom(value),
+        DataType::CN => validate_composite_name(value),
+        DataType::CK => validate_composite_id(value),
+        DataType::RI | DataType::CM => validate_composite_type(value),
     }
 }
 
@@ -177,12 +184,17 @@ fn validate_identifier(value: &str) -> DataTypeValidation {
         return DataTypeValidation::Valid;
     }
 
-    // IDs should be alphanumeric, may include underscore, hyphen
-    if value.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
+    // IDs should be alphanumeric, may include underscore, hyphen, dot
+    // (dotted values are legitimate: HL7 table 0104 holds "2.1".."2.8.2").
+    if value
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
+    {
         DataTypeValidation::Valid
     } else {
         DataTypeValidation::Invalid {
-            reason: "Identifier should contain only alphanumeric characters, hyphens, or underscores".to_string(),
+            reason: "Identifier should contain only alphanumeric characters, hyphens, underscores, or dots"
+                .to_string(),
         }
     }
 }
@@ -446,6 +458,7 @@ mod tests {
         assert!(validate_identifier("ABC123").is_valid());
         assert!(validate_identifier("test_id").is_valid());
         assert!(validate_identifier("test-id").is_valid());
+        assert!(validate_identifier("2.8.2").is_valid()); // Dotted IDs (table 0104)
         assert!(!validate_identifier("test id").is_valid()); // No spaces
         assert!(!validate_identifier("test@id").is_valid()); // No special chars
     }

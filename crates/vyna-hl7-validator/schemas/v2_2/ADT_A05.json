@@ -1,0 +1,4914 @@
+{
+  "message_type": "ADT",
+  "trigger_event": "A05",
+  "version": "2.2",
+  "description": "Pre-Admit a Patient",
+  "segments": {
+    "MSH": {
+      "name": "Message Header",
+      "required": true,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Field Separator",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 1
+        },
+        "2": {
+          "name": "Encoding Characters",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 4
+        },
+        "3": {
+          "name": "Sending Application",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "4": {
+          "name": "Sending Facility",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "5": {
+          "name": "Receiving Application",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "6": {
+          "name": "Receiving Facility",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "7": {
+          "name": "Date/Time Of Message",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "8": {
+          "name": "Security",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 40
+        },
+        "9": {
+          "name": "Message Type",
+          "data_type": "CM_MSG",
+          "required": true,
+          "repeating": false,
+          "table_id": "0076",
+          "components": {
+            "1": {
+              "name": "Message Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Trigger Event",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "10": {
+          "name": "Message Control ID",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 20
+        },
+        "11": {
+          "name": "Processing ID",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "table_id": "0103"
+        },
+        "12": {
+          "name": "Version ID",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "table_id": "0104"
+        },
+        "13": {
+          "name": "Sequence Number",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 15
+        },
+        "14": {
+          "name": "Continuation Pointer",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 180
+        },
+        "15": {
+          "name": "Accept Acknowledgment Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 2,
+          "table_id": "0155"
+        },
+        "16": {
+          "name": "Application Acknowledgment Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 2,
+          "table_id": "0155"
+        },
+        "17": {
+          "name": "Country Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 3
+        }
+      }
+    },
+    "EVN": {
+      "name": "Event Type",
+      "required": true,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Event Type Code",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "max_length": 3,
+          "table_id": "0003"
+        },
+        "2": {
+          "name": "Recorded Date/Time",
+          "data_type": "TS",
+          "required": true,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "3": {
+          "name": "Date/Time Planned Event",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "4": {
+          "name": "Event Reason Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0062"
+        },
+        "5": {
+          "name": "Operator ID",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0188"
+        }
+      }
+    },
+    "PID": {
+      "name": "Patient Identification",
+      "required": true,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Set ID - PID",
+          "data_type": "SI",
+          "required": false,
+          "repeating": false,
+          "max_length": 4
+        },
+        "2": {
+          "name": "Patient ID",
+          "data_type": "CM_PAT_ID",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Check Digit",
+              "data_type": "NM",
+              "required": false
+            },
+            "3": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Assigning Authority",
+              "data_type": "ID",
+              "required": false
+            },
+            "5": {
+              "name": "Identifier Type Code",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "3": {
+          "name": "Patient Identifier List",
+          "data_type": "CM_PAT_ID",
+          "required": true,
+          "repeating": true,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Check Digit",
+              "data_type": "NM",
+              "required": false
+            },
+            "3": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Assigning Authority",
+              "data_type": "ID",
+              "required": false
+            },
+            "5": {
+              "name": "Identifier Type Code",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "4": {
+          "name": "Alternate Patient ID - PID",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "5": {
+          "name": "Patient Name",
+          "data_type": "PN",
+          "required": true,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "6": {
+          "name": "Mother's Maiden Name",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "7": {
+          "name": "Date/Time of Birth",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "8": {
+          "name": "Administrative Sex",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0001"
+        },
+        "9": {
+          "name": "Patient Alias",
+          "data_type": "PN",
+          "required": false,
+          "repeating": true,
+          "components": {
+            "1": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "10": {
+          "name": "Race",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0005"
+        },
+        "11": {
+          "name": "Patient Address",
+          "data_type": "AD",
+          "required": false,
+          "repeating": true,
+          "components": {
+            "1": {
+              "name": "Street Address",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Other Designation",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "City",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "State or Province",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Zip or Postal Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "6": {
+              "name": "Country",
+              "data_type": "ID",
+              "required": false
+            },
+            "7": {
+              "name": "Address Type",
+              "data_type": "ID",
+              "required": false
+            },
+            "8": {
+              "name": "Other Geographic Designation",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "12": {
+          "name": "County Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "13": {
+          "name": "Phone Number - Home",
+          "data_type": "TN",
+          "required": false,
+          "repeating": true
+        },
+        "14": {
+          "name": "Phone Number - Business",
+          "data_type": "TN",
+          "required": false,
+          "repeating": true
+        },
+        "15": {
+          "name": "Primary Language",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "16": {
+          "name": "Marital Status",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0002"
+        },
+        "17": {
+          "name": "Religion",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0006"
+        },
+        "18": {
+          "name": "Patient Account Number",
+          "data_type": "CM_PAT_ID",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Check Digit",
+              "data_type": "NM",
+              "required": false
+            },
+            "3": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Assigning Authority",
+              "data_type": "ID",
+              "required": false
+            },
+            "5": {
+              "name": "Identifier Type Code",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "19": {
+          "name": "SSN Number - Patient",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 16
+        },
+        "20": {
+          "name": "Driver's License Number - Patient",
+          "data_type": "CM_LICENSE_NO",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "License Number",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Issuing State Province Country",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "21": {
+          "name": "Mother's Identifier",
+          "data_type": "CM_PAT_ID",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Check Digit",
+              "data_type": "NM",
+              "required": false
+            },
+            "3": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Assigning Authority",
+              "data_type": "ID",
+              "required": false
+            },
+            "5": {
+              "name": "Identifier Type Code",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "22": {
+          "name": "Ethnic Group",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0189"
+        },
+        "23": {
+          "name": "Birth Place",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 250
+        },
+        "24": {
+          "name": "Multiple Birth Indicator",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 1
+        },
+        "25": {
+          "name": "Birth Order",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 2
+        },
+        "26": {
+          "name": "Citizenship",
+          "data_type": "ID",
+          "required": false,
+          "repeating": true,
+          "table_id": "0171"
+        },
+        "27": {
+          "name": "Veterans Military Status",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        }
+      }
+    },
+    "NK1": {
+      "name": "Next of Kin / Associated Parties",
+      "required": false,
+      "repeating": true,
+      "fields": {
+        "1": {
+          "name": "Set ID - NK1",
+          "data_type": "SI",
+          "required": true,
+          "repeating": false,
+          "max_length": 4
+        },
+        "2": {
+          "name": "Name",
+          "data_type": "PN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "3": {
+          "name": "Relationship",
+          "data_type": "CE",
+          "required": false,
+          "repeating": false,
+          "max_length": 250,
+          "table_id": "0063",
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Name of Coding System",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "6": {
+              "name": "Name of Alternate Coding System",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "4": {
+          "name": "Address",
+          "data_type": "AD",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Street Address",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Other Designation",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "City",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "State or Province",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Zip or Postal Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "6": {
+              "name": "Country",
+              "data_type": "ID",
+              "required": false
+            },
+            "7": {
+              "name": "Address Type",
+              "data_type": "ID",
+              "required": false
+            },
+            "8": {
+              "name": "Other Geographic Designation",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "5": {
+          "name": "Phone Number",
+          "data_type": "TN",
+          "required": false,
+          "repeating": true
+        },
+        "6": {
+          "name": "Business Phone Number",
+          "data_type": "TN",
+          "required": false,
+          "repeating": false
+        },
+        "7": {
+          "name": "Contact Role",
+          "data_type": "CE",
+          "required": false,
+          "repeating": false,
+          "max_length": 250,
+          "table_id": "0131",
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Name of Coding System",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "6": {
+              "name": "Name of Alternate Coding System",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "8": {
+          "name": "Start Date",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false,
+          "max_length": 8
+        },
+        "9": {
+          "name": "End Date",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false,
+          "max_length": 8
+        },
+        "10": {
+          "name": "Next of Kin / Associated Parties Job Title",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 60
+        },
+        "11": {
+          "name": "Next of Kin / Associated Parties Job Code/Class",
+          "data_type": "CM_JOB_CODE",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Job Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Job Class",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "12": {
+          "name": "Next of Kin / Associated Parties Employee Number",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "13": {
+          "name": "Organization Name - NK1",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        }
+      }
+    },
+    "PV1": {
+      "name": "Patient Visit",
+      "required": true,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Set ID - PV1",
+          "data_type": "SI",
+          "required": false,
+          "repeating": false,
+          "max_length": 4
+        },
+        "2": {
+          "name": "Patient Class",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "table_id": "0004"
+        },
+        "3": {
+          "name": "Assigned Patient Location",
+          "data_type": "CM_INTERNAL_LOCATION",
+          "required": false,
+          "repeating": false,
+          "table_id": "0079",
+          "components": {
+            "1": {
+              "name": "Point of Care",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Room",
+              "data_type": "ID",
+              "required": false
+            },
+            "3": {
+              "name": "Bed",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Facility",
+              "data_type": "ID",
+              "required": false
+            },
+            "5": {
+              "name": "Location Status",
+              "data_type": "ID",
+              "required": false
+            },
+            "6": {
+              "name": "Person Location Type",
+              "data_type": "ID",
+              "required": false
+            },
+            "7": {
+              "name": "Building",
+              "data_type": "ID",
+              "required": false
+            },
+            "8": {
+              "name": "Floor",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "4": {
+          "name": "Admission Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0007"
+        },
+        "5": {
+          "name": "Preadmit Number",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "6": {
+          "name": "Prior Patient Location",
+          "data_type": "CM_INTERNAL_LOCATION",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Point of Care",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Room",
+              "data_type": "ID",
+              "required": false
+            },
+            "3": {
+              "name": "Bed",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Facility",
+              "data_type": "ID",
+              "required": false
+            },
+            "5": {
+              "name": "Location Status",
+              "data_type": "ID",
+              "required": false
+            },
+            "6": {
+              "name": "Person Location Type",
+              "data_type": "ID",
+              "required": false
+            },
+            "7": {
+              "name": "Building",
+              "data_type": "ID",
+              "required": false
+            },
+            "8": {
+              "name": "Floor",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "7": {
+          "name": "Attending Doctor",
+          "data_type": "CN",
+          "required": false,
+          "repeating": false,
+          "table_id": "0010",
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "7": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            },
+            "8": {
+              "name": "Source Table",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "8": {
+          "name": "Referring Doctor",
+          "data_type": "CN",
+          "required": false,
+          "repeating": false,
+          "table_id": "0010",
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "7": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            },
+            "8": {
+              "name": "Source Table",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "9": {
+          "name": "Consulting Doctor",
+          "data_type": "CN",
+          "required": false,
+          "repeating": true,
+          "table_id": "0010",
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "7": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            },
+            "8": {
+              "name": "Source Table",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "10": {
+          "name": "Hospital Service",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0069"
+        },
+        "11": {
+          "name": "Temporary Location",
+          "data_type": "CM_INTERNAL_LOCATION",
+          "required": false,
+          "repeating": false,
+          "table_id": "0079",
+          "components": {
+            "1": {
+              "name": "Point of Care",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Room",
+              "data_type": "ID",
+              "required": false
+            },
+            "3": {
+              "name": "Bed",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Facility",
+              "data_type": "ID",
+              "required": false
+            },
+            "5": {
+              "name": "Location Status",
+              "data_type": "ID",
+              "required": false
+            },
+            "6": {
+              "name": "Person Location Type",
+              "data_type": "ID",
+              "required": false
+            },
+            "7": {
+              "name": "Building",
+              "data_type": "ID",
+              "required": false
+            },
+            "8": {
+              "name": "Floor",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "12": {
+          "name": "Preadmit Test Indicator",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0087"
+        },
+        "13": {
+          "name": "Re-admission Indicator",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0092"
+        },
+        "14": {
+          "name": "Admit Source",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0023"
+        },
+        "15": {
+          "name": "Ambulatory Status",
+          "data_type": "ID",
+          "required": false,
+          "repeating": true,
+          "table_id": "0009"
+        },
+        "16": {
+          "name": "VIP Indicator",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0099"
+        },
+        "17": {
+          "name": "Admitting Doctor",
+          "data_type": "CN",
+          "required": false,
+          "repeating": false,
+          "table_id": "0010",
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "7": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            },
+            "8": {
+              "name": "Source Table",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "18": {
+          "name": "Patient Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0018"
+        },
+        "19": {
+          "name": "Visit Number",
+          "data_type": "CM_PAT_ID",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Check Digit",
+              "data_type": "NM",
+              "required": false
+            },
+            "3": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Assigning Authority",
+              "data_type": "ID",
+              "required": false
+            },
+            "5": {
+              "name": "Identifier Type Code",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "20": {
+          "name": "Financial Class",
+          "data_type": "CM_FINANCE",
+          "required": false,
+          "repeating": true,
+          "table_id": "0064",
+          "components": {
+            "1": {
+              "name": "Financial Class Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Effective Date",
+              "data_type": "TS",
+              "required": false
+            }
+          }
+        },
+        "21": {
+          "name": "Charge Price Indicator",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0032"
+        },
+        "22": {
+          "name": "Courtesy Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0045"
+        },
+        "23": {
+          "name": "Credit Rating",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0046"
+        },
+        "24": {
+          "name": "Contract Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": true,
+          "table_id": "0044"
+        },
+        "25": {
+          "name": "Contract Effective Date",
+          "data_type": "DT",
+          "required": false,
+          "repeating": true,
+          "max_length": 8
+        },
+        "26": {
+          "name": "Contract Amount",
+          "data_type": "NM",
+          "required": false,
+          "repeating": true,
+          "max_length": 12
+        },
+        "27": {
+          "name": "Contract Period",
+          "data_type": "NM",
+          "required": false,
+          "repeating": true,
+          "max_length": 3
+        },
+        "28": {
+          "name": "Interest Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0073"
+        },
+        "29": {
+          "name": "Transfer to Bad Debt Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0110"
+        },
+        "30": {
+          "name": "Transfer to Bad Debt Date",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false,
+          "max_length": 8
+        },
+        "31": {
+          "name": "Bad Debt Agency Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0021"
+        },
+        "32": {
+          "name": "Bad Debt Transfer Amount",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 12
+        },
+        "33": {
+          "name": "Bad Debt Recovery Amount",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 12
+        },
+        "34": {
+          "name": "Delete Account Indicator",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0111"
+        },
+        "35": {
+          "name": "Delete Account Date",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false,
+          "max_length": 8
+        },
+        "36": {
+          "name": "Discharge Disposition",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0112"
+        },
+        "37": {
+          "name": "Discharged to Location",
+          "data_type": "CM_DLD",
+          "required": false,
+          "repeating": false,
+          "table_id": "0113",
+          "components": {
+            "1": {
+              "name": "Discharge Location",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Effective Date",
+              "data_type": "TS",
+              "required": false
+            }
+          }
+        },
+        "38": {
+          "name": "Diet Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0114"
+        },
+        "39": {
+          "name": "Servicing Facility",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0115"
+        },
+        "40": {
+          "name": "Bed Status",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0116"
+        },
+        "41": {
+          "name": "Account Status",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0117"
+        },
+        "42": {
+          "name": "Pending Location",
+          "data_type": "CM_INTERNAL_LOCATION",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Point of Care",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Room",
+              "data_type": "ID",
+              "required": false
+            },
+            "3": {
+              "name": "Bed",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Facility",
+              "data_type": "ID",
+              "required": false
+            },
+            "5": {
+              "name": "Location Status",
+              "data_type": "ID",
+              "required": false
+            },
+            "6": {
+              "name": "Person Location Type",
+              "data_type": "ID",
+              "required": false
+            },
+            "7": {
+              "name": "Building",
+              "data_type": "ID",
+              "required": false
+            },
+            "8": {
+              "name": "Floor",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "43": {
+          "name": "Prior Temporary Location",
+          "data_type": "CM_INTERNAL_LOCATION",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Point of Care",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Room",
+              "data_type": "ID",
+              "required": false
+            },
+            "3": {
+              "name": "Bed",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Facility",
+              "data_type": "ID",
+              "required": false
+            },
+            "5": {
+              "name": "Location Status",
+              "data_type": "ID",
+              "required": false
+            },
+            "6": {
+              "name": "Person Location Type",
+              "data_type": "ID",
+              "required": false
+            },
+            "7": {
+              "name": "Building",
+              "data_type": "ID",
+              "required": false
+            },
+            "8": {
+              "name": "Floor",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "44": {
+          "name": "Admit Date/Time",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "45": {
+          "name": "Discharge Date/Time",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "46": {
+          "name": "Current Patient Balance",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 12
+        },
+        "47": {
+          "name": "Total Charges",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 12
+        },
+        "48": {
+          "name": "Total Adjustments",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 12
+        },
+        "49": {
+          "name": "Total Payments",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 12
+        },
+        "50": {
+          "name": "Alternate Visit ID",
+          "data_type": "CM_PAT_ID_0192",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Check Digit",
+              "data_type": "NM",
+              "required": false
+            },
+            "3": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Assigning Authority",
+              "data_type": "ID",
+              "required": false
+            },
+            "5": {
+              "name": "Identifier Type Code",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0192"
+            }
+          }
+        }
+      }
+    },
+    "PV2": {
+      "name": "Patient Visit - Additional Information",
+      "required": false,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Prior Pending Location",
+          "data_type": "CM_INTERNAL_LOCATION",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Point of Care",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Room",
+              "data_type": "ID",
+              "required": false
+            },
+            "3": {
+              "name": "Bed",
+              "data_type": "ID",
+              "required": false
+            },
+            "4": {
+              "name": "Facility",
+              "data_type": "ID",
+              "required": false
+            },
+            "5": {
+              "name": "Location Status",
+              "data_type": "ID",
+              "required": false
+            },
+            "6": {
+              "name": "Person Location Type",
+              "data_type": "ID",
+              "required": false
+            },
+            "7": {
+              "name": "Building",
+              "data_type": "ID",
+              "required": false
+            },
+            "8": {
+              "name": "Floor",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "2": {
+          "name": "Accommodation Code",
+          "data_type": "CE",
+          "required": false,
+          "repeating": false,
+          "max_length": 250,
+          "table_id": "0129",
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Name of Coding System",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "6": {
+              "name": "Name of Alternate Coding System",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "3": {
+          "name": "Admit Reason",
+          "data_type": "CE",
+          "required": false,
+          "repeating": false,
+          "max_length": 250,
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Name of Coding System",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "6": {
+              "name": "Name of Alternate Coding System",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "4": {
+          "name": "Transfer Reason",
+          "data_type": "CE",
+          "required": false,
+          "repeating": false,
+          "max_length": 250,
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Name of Coding System",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "6": {
+              "name": "Name of Alternate Coding System",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "5": {
+          "name": "Patient Valuables",
+          "data_type": "ST",
+          "required": false,
+          "repeating": true,
+          "max_length": 25
+        },
+        "6": {
+          "name": "Patient Valuables Location",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 25
+        },
+        "7": {
+          "name": "Visit User Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0130"
+        },
+        "8": {
+          "name": "Expected Admit Date/Time",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false
+        },
+        "9": {
+          "name": "Expected Discharge Date/Time",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false
+        }
+      }
+    },
+    "OBX": {
+      "name": "Observation/Result",
+      "required": false,
+      "repeating": true,
+      "fields": {
+        "1": {
+          "name": "Set ID - OBX",
+          "data_type": "SI",
+          "required": false,
+          "repeating": false,
+          "max_length": 4
+        },
+        "2": {
+          "name": "Value Type",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "max_length": 2,
+          "table_id": "0125"
+        },
+        "3": {
+          "name": "Observation Identifier",
+          "data_type": "CE",
+          "required": true,
+          "repeating": false,
+          "max_length": 250,
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Name of Coding System",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "6": {
+              "name": "Name of Alternate Coding System",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "4": {
+          "name": "Observation Sub-ID",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 20
+        },
+        "5": {
+          "name": "Observation Value",
+          "data_type": "Varies",
+          "required": false,
+          "repeating": false,
+          "max_length": 65536
+        },
+        "6": {
+          "name": "Units",
+          "data_type": "CE",
+          "required": false,
+          "repeating": false,
+          "max_length": 250,
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Name of Coding System",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "6": {
+              "name": "Name of Alternate Coding System",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "7": {
+          "name": "References Range",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 60
+        },
+        "8": {
+          "name": "Abnormal Flags",
+          "data_type": "ID",
+          "required": false,
+          "repeating": true,
+          "table_id": "0078"
+        },
+        "9": {
+          "name": "Probability",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 5
+        },
+        "10": {
+          "name": "Nature of Abnormal Test",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 2,
+          "table_id": "0080"
+        },
+        "11": {
+          "name": "Observation Result Status",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "max_length": 1,
+          "table_id": "0085"
+        },
+        "12": {
+          "name": "Effective Date of Reference Range",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "13": {
+          "name": "User Defined Access Checks",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 20
+        },
+        "14": {
+          "name": "Date/Time of the Observation",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "15": {
+          "name": "Producer's ID",
+          "data_type": "CE",
+          "required": false,
+          "repeating": false,
+          "max_length": 250,
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Name of Coding System",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "6": {
+              "name": "Name of Alternate Coding System",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "16": {
+          "name": "Responsible Observer",
+          "data_type": "CN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "7": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            },
+            "8": {
+              "name": "Source Table",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        }
+      }
+    },
+    "AL1": {
+      "name": "Patient Allergy Information",
+      "required": false,
+      "repeating": true,
+      "fields": {
+        "1": {
+          "name": "Set ID - AL1",
+          "data_type": "SI",
+          "required": true,
+          "repeating": false,
+          "max_length": 4
+        },
+        "2": {
+          "name": "Allergen Type Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0127"
+        },
+        "3": {
+          "name": "Allergen Code/Mnemonic/Description",
+          "data_type": "CE",
+          "required": true,
+          "repeating": false,
+          "max_length": 250,
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Name of Coding System",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "6": {
+              "name": "Name of Alternate Coding System",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "4": {
+          "name": "Allergy Severity Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0128"
+        },
+        "5": {
+          "name": "Allergy Reaction Code",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 15
+        },
+        "6": {
+          "name": "Identification Date",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false,
+          "max_length": 8
+        }
+      }
+    },
+    "DG1": {
+      "name": "Diagnosis",
+      "required": false,
+      "repeating": true,
+      "fields": {
+        "1": {
+          "name": "Set ID - DG1",
+          "data_type": "SI",
+          "required": true,
+          "repeating": false,
+          "max_length": 4
+        },
+        "2": {
+          "name": "Diagnosis Coding Method",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "max_length": 2,
+          "table_id": "0053"
+        },
+        "3": {
+          "name": "Diagnosis Code - DG1",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0051"
+        },
+        "4": {
+          "name": "Diagnosis Description",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 40
+        },
+        "5": {
+          "name": "Diagnosis Date/Time",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "6": {
+          "name": "Diagnosis Type",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "table_id": "0052"
+        },
+        "7": {
+          "name": "Major Diagnostic Category",
+          "data_type": "CE",
+          "required": false,
+          "repeating": false,
+          "max_length": 250,
+          "table_id": "0118",
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Name of Coding System",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "6": {
+              "name": "Name of Alternate Coding System",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "8": {
+          "name": "Diagnostic Related Group",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0055"
+        },
+        "9": {
+          "name": "DRG Approval Indicator",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 1
+        },
+        "10": {
+          "name": "DRG Grouper Review Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0056"
+        },
+        "11": {
+          "name": "Outlier Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0083"
+        },
+        "12": {
+          "name": "Outlier Days",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 3
+        },
+        "13": {
+          "name": "Outlier Cost",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false
+        },
+        "14": {
+          "name": "Grouper Version And Type",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 4
+        },
+        "15": {
+          "name": "Diagnosis Priority",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false
+        },
+        "16": {
+          "name": "Diagnosing Clinician",
+          "data_type": "CN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "7": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            },
+            "8": {
+              "name": "Source Table",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        }
+      }
+    },
+    "PR1": {
+      "name": "Procedures",
+      "required": false,
+      "repeating": true,
+      "fields": {
+        "1": {
+          "name": "Set ID - PR1",
+          "data_type": "SI",
+          "required": true,
+          "repeating": false,
+          "max_length": 4
+        },
+        "2": {
+          "name": "Procedure Coding Method",
+          "data_type": "ID",
+          "required": true,
+          "repeating": true,
+          "table_id": "0089"
+        },
+        "3": {
+          "name": "Procedure Code",
+          "data_type": "ID",
+          "required": true,
+          "repeating": true,
+          "table_id": "0088"
+        },
+        "4": {
+          "name": "Procedure Description",
+          "data_type": "ST",
+          "required": false,
+          "repeating": true,
+          "max_length": 40
+        },
+        "5": {
+          "name": "Procedure Date/Time",
+          "data_type": "TS",
+          "required": true,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "6": {
+          "name": "Procedure Functional Type",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "table_id": "0090"
+        },
+        "7": {
+          "name": "Procedure Minutes",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 4
+        },
+        "8": {
+          "name": "Anesthesiologist",
+          "data_type": "CN",
+          "required": false,
+          "repeating": false,
+          "table_id": "0010",
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "7": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            },
+            "8": {
+              "name": "Source Table",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "9": {
+          "name": "Anesthesia Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0019"
+        },
+        "10": {
+          "name": "Anesthesia Minutes",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 4
+        },
+        "11": {
+          "name": "Surgeon",
+          "data_type": "CN",
+          "required": false,
+          "repeating": false,
+          "table_id": "0010",
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "7": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            },
+            "8": {
+              "name": "Source Table",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "12": {
+          "name": "Procedure Practitioner",
+          "data_type": "CM_PRACTITIONER",
+          "required": false,
+          "repeating": true,
+          "table_id": "0010",
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "CN",
+              "required": false
+            },
+            "2": {
+              "name": "Family Name",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "13": {
+          "name": "Consent Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0059"
+        },
+        "14": {
+          "name": "Procedure Priority",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false
+        }
+      }
+    },
+    "GT1": {
+      "name": "Guarantor",
+      "required": false,
+      "repeating": true,
+      "fields": {
+        "1": {
+          "name": "Set ID - GT1",
+          "data_type": "SI",
+          "required": true,
+          "repeating": false,
+          "max_length": 4
+        },
+        "2": {
+          "name": "Guarantor Number",
+          "data_type": "CK",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "NM",
+              "required": false
+            },
+            "2": {
+              "name": "Check Digit",
+              "data_type": "NM",
+              "required": false
+            },
+            "3": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0061"
+            },
+            "4": {
+              "name": "Assigning Authority",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "3": {
+          "name": "Guarantor Name",
+          "data_type": "PN",
+          "required": true,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "4": {
+          "name": "Guarantor Spouse Name",
+          "data_type": "PN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "5": {
+          "name": "Guarantor Address",
+          "data_type": "AD",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Street Address",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Other Designation",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "City",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "State or Province",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Zip or Postal Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "6": {
+              "name": "Country",
+              "data_type": "ID",
+              "required": false
+            },
+            "7": {
+              "name": "Address Type",
+              "data_type": "ID",
+              "required": false
+            },
+            "8": {
+              "name": "Other Geographic Designation",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "6": {
+          "name": "Guarantor Ph Num - Home",
+          "data_type": "TN",
+          "required": false,
+          "repeating": true
+        },
+        "7": {
+          "name": "Guarantor Ph Num - Business",
+          "data_type": "TN",
+          "required": false,
+          "repeating": true
+        },
+        "8": {
+          "name": "Guarantor Date/Time Of Birth",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false
+        },
+        "9": {
+          "name": "Guarantor Administrative Sex",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0001"
+        },
+        "10": {
+          "name": "Guarantor Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0068"
+        },
+        "11": {
+          "name": "Guarantor Relationship",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0063"
+        },
+        "12": {
+          "name": "Guarantor SSN",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 11
+        },
+        "13": {
+          "name": "Guarantor Date - Begin",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false,
+          "max_length": 8
+        },
+        "14": {
+          "name": "Guarantor Date - End",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false,
+          "max_length": 8
+        },
+        "15": {
+          "name": "Guarantor Priority",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 2
+        },
+        "16": {
+          "name": "Guarantor Employer Name",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "17": {
+          "name": "Guarantor Employer Address",
+          "data_type": "AD",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Street Address",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Other Designation",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "City",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "State or Province",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Zip or Postal Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "6": {
+              "name": "Country",
+              "data_type": "ID",
+              "required": false
+            },
+            "7": {
+              "name": "Address Type",
+              "data_type": "ID",
+              "required": false
+            },
+            "8": {
+              "name": "Other Geographic Designation",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "18": {
+          "name": "Guarantor Employer Phone Number",
+          "data_type": "TN",
+          "required": false,
+          "repeating": true
+        },
+        "19": {
+          "name": "Guarantor Employee ID Number",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "20": {
+          "name": "Guarantor Employment Status",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0066"
+        },
+        "21": {
+          "name": "Guarantor Organization",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        }
+      }
+    },
+    "IN1": {
+      "name": "Insurance",
+      "required": false,
+      "repeating": true,
+      "fields": {
+        "1": {
+          "name": "Set ID - IN1",
+          "data_type": "SI",
+          "required": true,
+          "repeating": false,
+          "max_length": 4
+        },
+        "2": {
+          "name": "Insurance Plan ID",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "table_id": "0072"
+        },
+        "3": {
+          "name": "Insurance Company ID",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false
+        },
+        "4": {
+          "name": "Insurance Company Name",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "5": {
+          "name": "Insurance Company Address",
+          "data_type": "AD",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Street Address",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Other Designation",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "City",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "State or Province",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Zip or Postal Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "6": {
+              "name": "Country",
+              "data_type": "ID",
+              "required": false
+            },
+            "7": {
+              "name": "Address Type",
+              "data_type": "ID",
+              "required": false
+            },
+            "8": {
+              "name": "Other Geographic Designation",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "6": {
+          "name": "Insurance Co Contact Person",
+          "data_type": "PN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "7": {
+          "name": "Insurance Co Phone Number",
+          "data_type": "TN",
+          "required": false,
+          "repeating": true
+        },
+        "8": {
+          "name": "Group Number",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 12
+        },
+        "9": {
+          "name": "Group Name",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "10": {
+          "name": "Insured's Group Emp ID",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "11": {
+          "name": "Insured's Group Emp Name",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "12": {
+          "name": "Plan Effective Date",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false,
+          "max_length": 8
+        },
+        "13": {
+          "name": "Plan Expiration Date",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false,
+          "max_length": 8
+        },
+        "14": {
+          "name": "Authorization Information",
+          "data_type": "CM_AUI",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Authorization Number",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Date",
+              "data_type": "DT",
+              "required": false
+            },
+            "3": {
+              "name": "Source",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "15": {
+          "name": "Plan Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0086"
+        },
+        "16": {
+          "name": "Name Of Insured",
+          "data_type": "PN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "17": {
+          "name": "Insured's Relationship To Patient",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0063"
+        },
+        "18": {
+          "name": "Insured's Date Of Birth",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false
+        },
+        "19": {
+          "name": "Insured's Address",
+          "data_type": "AD",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Street Address",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Other Designation",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "City",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "State or Province",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Zip or Postal Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "6": {
+              "name": "Country",
+              "data_type": "ID",
+              "required": false
+            },
+            "7": {
+              "name": "Address Type",
+              "data_type": "ID",
+              "required": false
+            },
+            "8": {
+              "name": "Other Geographic Designation",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "20": {
+          "name": "Assignment Of Benefits",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0135"
+        },
+        "21": {
+          "name": "Coordination Of Benefits",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0173"
+        },
+        "22": {
+          "name": "Coord Of Ben. Priority",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 2
+        },
+        "23": {
+          "name": "Notice Of Admission Flag",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 1,
+          "table_id": "0136"
+        },
+        "24": {
+          "name": "Notice Of Admission Date",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false,
+          "max_length": 8
+        },
+        "25": {
+          "name": "Report Of Eligibility Flag",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 1
+        },
+        "26": {
+          "name": "Report Of Eligibility Date",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false,
+          "max_length": 8
+        },
+        "27": {
+          "name": "Release Information Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0093"
+        },
+        "28": {
+          "name": "Pre-Admit Cert (PAC)",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 15
+        },
+        "29": {
+          "name": "Verification Date/Time",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "30": {
+          "name": "Verification By",
+          "data_type": "CN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "7": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            },
+            "8": {
+              "name": "Source Table",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "31": {
+          "name": "Type Of Agreement Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0098"
+        },
+        "32": {
+          "name": "Billing Status",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0022"
+        },
+        "33": {
+          "name": "Lifetime Reserve Days",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 4
+        },
+        "34": {
+          "name": "Delay Before L.R. Day",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 4
+        },
+        "35": {
+          "name": "Company Plan Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0042"
+        },
+        "36": {
+          "name": "Policy Number",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 15
+        },
+        "37": {
+          "name": "Policy Deductible",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false
+        },
+        "38": {
+          "name": "Policy Limit - Amount",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false
+        },
+        "39": {
+          "name": "Policy Limit - Days",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 4
+        },
+        "40": {
+          "name": "Room Rate - Semi-Private",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false
+        },
+        "41": {
+          "name": "Room Rate - Private",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false
+        },
+        "42": {
+          "name": "Insured's Employment Status",
+          "data_type": "CE",
+          "required": false,
+          "repeating": false,
+          "max_length": 250,
+          "table_id": "0066",
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "3": {
+              "name": "Name of Coding System",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 20
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false,
+              "max_length": 199
+            },
+            "6": {
+              "name": "Name of Alternate Coding System",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "43": {
+          "name": "Insured's Administrative Sex",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0001"
+        },
+        "44": {
+          "name": "Insured's Employer's Address",
+          "data_type": "AD",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Street Address",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Other Designation",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "City",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "State or Province",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Zip or Postal Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "6": {
+              "name": "Country",
+              "data_type": "ID",
+              "required": false
+            },
+            "7": {
+              "name": "Address Type",
+              "data_type": "ID",
+              "required": false
+            },
+            "8": {
+              "name": "Other Geographic Designation",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "45": {
+          "name": "Verification Status",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 2
+        },
+        "46": {
+          "name": "Prior Insurance Plan ID",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0072"
+        }
+      }
+    },
+    "IN2": {
+      "name": "Insurance Additional Information",
+      "required": false,
+      "repeating": true,
+      "fields": {
+        "1": {
+          "name": "Insured's Employee ID",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "2": {
+          "name": "Insured's Social Security Number",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 11
+        },
+        "3": {
+          "name": "Insured's Employer's Name and ID",
+          "data_type": "CN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "7": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            },
+            "8": {
+              "name": "Source Table",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "4": {
+          "name": "Employer Information Data",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0139"
+        },
+        "5": {
+          "name": "Mail Claim Party",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0137"
+        },
+        "6": {
+          "name": "Medicare Health Ins Card Number",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false
+        },
+        "7": {
+          "name": "Medicaid Case Name",
+          "data_type": "PN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "8": {
+          "name": "Medicaid Case Number",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false
+        },
+        "9": {
+          "name": "Military Sponsor Name",
+          "data_type": "PN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "10": {
+          "name": "Military ID Number",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false
+        },
+        "11": {
+          "name": "Dependent Of Military Recipient",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "12": {
+          "name": "Military Organization",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 25
+        },
+        "13": {
+          "name": "Military Station",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 25
+        },
+        "14": {
+          "name": "Military Service",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0140"
+        },
+        "15": {
+          "name": "Military Rank/Grade",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0141"
+        },
+        "16": {
+          "name": "Military Status",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0142"
+        },
+        "17": {
+          "name": "Military Retire Date",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false,
+          "max_length": 8
+        },
+        "18": {
+          "name": "Military Non-Avail Cert On File",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 1,
+          "table_id": "0136"
+        },
+        "19": {
+          "name": "Baby Coverage",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 1,
+          "table_id": "0136"
+        },
+        "20": {
+          "name": "Combine Baby Bill",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 1,
+          "table_id": "0136"
+        },
+        "21": {
+          "name": "Blood Deductible",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false
+        },
+        "22": {
+          "name": "Special Coverage Approval Name",
+          "data_type": "PN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Prefix",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Degree",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "23": {
+          "name": "Special Coverage Approval Title",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 30
+        },
+        "24": {
+          "name": "Non-Covered Insurance Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": true,
+          "table_id": "0143"
+        },
+        "25": {
+          "name": "Payor ID",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "26": {
+          "name": "Payor Subscriber Id",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "27": {
+          "name": "Eligibility Source",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0144"
+        },
+        "28": {
+          "name": "Room Coverage Type Amount",
+          "data_type": "CM_RMC",
+          "required": false,
+          "repeating": true,
+          "table_id": "0145",
+          "components": {
+            "1": {
+              "name": "Room Type",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Amount Type",
+              "data_type": "ID",
+              "required": false
+            },
+            "3": {
+              "name": "Coverage Amount",
+              "data_type": "NM",
+              "required": false
+            }
+          }
+        },
+        "29": {
+          "name": "Policy Type Amount",
+          "data_type": "CM_PTA",
+          "required": false,
+          "repeating": true,
+          "table_id": "0147",
+          "components": {
+            "1": {
+              "name": "Policy Type",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0147"
+            },
+            "2": {
+              "name": "Amount Class",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0193"
+            },
+            "3": {
+              "name": "Amount",
+              "data_type": "NM",
+              "required": false
+            }
+          }
+        },
+        "30": {
+          "name": "Daily Deductible",
+          "data_type": "CM_DDI",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Delay Days",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Amount",
+              "data_type": "NM",
+              "required": false
+            },
+            "3": {
+              "name": "Number Of Days",
+              "data_type": "NM",
+              "required": false
+            }
+          }
+        }
+      }
+    },
+    "IN3": {
+      "name": "Insurance Additional Info-Certification",
+      "required": false,
+      "repeating": true,
+      "fields": {
+        "1": {
+          "name": "Set Id Insurance Certification",
+          "data_type": "SI",
+          "required": true,
+          "repeating": false
+        },
+        "2": {
+          "name": "Certification Number",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "3": {
+          "name": "Certified By",
+          "data_type": "CN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Id Number",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Familiy Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Middle Initial Or Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix E G Jr Or Iii",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Prefix E G Dr",
+              "data_type": "ST",
+              "required": false
+            },
+            "7": {
+              "name": "Degree E G Md",
+              "data_type": "ST",
+              "required": false
+            },
+            "8": {
+              "name": "Source Table Id",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "4": {
+          "name": "Certification Required",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0136"
+        },
+        "5": {
+          "name": "Penalty",
+          "data_type": "CM_PEN",
+          "required": false,
+          "repeating": false,
+          "table_id": "0148",
+          "components": {
+            "1": {
+              "name": "Penalty Id",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Penalty Amount",
+              "data_type": "NM",
+              "required": false
+            }
+          }
+        },
+        "6": {
+          "name": "Certification Date Time",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "7": {
+          "name": "Certification Modify Date Time",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "8": {
+          "name": "Operator",
+          "data_type": "CN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Id Number",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Familiy Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Middle Initial Or Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix E G Jr Or Iii",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Prefix E G Dr",
+              "data_type": "ST",
+              "required": false
+            },
+            "7": {
+              "name": "Degree E G Md",
+              "data_type": "ST",
+              "required": false
+            },
+            "8": {
+              "name": "Source Table Id",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "9": {
+          "name": "Certification Begin Date",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false
+        },
+        "10": {
+          "name": "Certification End Date",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false
+        },
+        "11": {
+          "name": "Days",
+          "data_type": "CM_DTN",
+          "required": false,
+          "repeating": false,
+          "table_id": "0149",
+          "components": {
+            "1": {
+              "name": "Day Type",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Number Of Days",
+              "data_type": "NM",
+              "required": false
+            }
+          }
+        },
+        "12": {
+          "name": "Non Concur Code Description",
+          "data_type": "CE",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Name Of Coding System",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Name Of Alternate Coding System",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "13": {
+          "name": "Non Concur Effective Date Time",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "14": {
+          "name": "Physician Reviewer",
+          "data_type": "CN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Id Number",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Familiy Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Middle Initial Or Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix E G Jr Or Iii",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Prefix E G Dr",
+              "data_type": "ST",
+              "required": false
+            },
+            "7": {
+              "name": "Degree E G Md",
+              "data_type": "ST",
+              "required": false
+            },
+            "8": {
+              "name": "Source Table Id",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "15": {
+          "name": "Certification Contact",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "16": {
+          "name": "Certification Contact Phone Number",
+          "data_type": "TN",
+          "required": false,
+          "repeating": true
+        },
+        "17": {
+          "name": "Appeal Reason",
+          "data_type": "CE",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Name Of Coding System",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Name Of Alternate Coding System",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "18": {
+          "name": "Certification Agency",
+          "data_type": "CE",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Name Of Coding System",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Name Of Alternate Coding System",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "19": {
+          "name": "Certification Agency Phone Number",
+          "data_type": "TN",
+          "required": false,
+          "repeating": true
+        },
+        "20": {
+          "name": "Pre Certification Required Window",
+          "data_type": "CM_PCF",
+          "required": false,
+          "repeating": true,
+          "table_id": "0150",
+          "components": {
+            "1": {
+              "name": "Pre Certification Patient Type",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Pre Certication Required",
+              "data_type": "ID",
+              "required": false
+            },
+            "3": {
+              "name": "Pre Certification Window",
+              "data_type": "TS",
+              "required": false
+            }
+          }
+        },
+        "21": {
+          "name": "Case Manager",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "22": {
+          "name": "Second Opinion Date",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false
+        },
+        "23": {
+          "name": "Second Opinion Status",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0151"
+        },
+        "24": {
+          "name": "Second Opinion Documentation Received",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0152"
+        },
+        "25": {
+          "name": "Second Opinion Practitioner",
+          "data_type": "CN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Id Number",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Familiy Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Middle Initial Or Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix E G Jr Or Iii",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Prefix E G Dr",
+              "data_type": "ST",
+              "required": false
+            },
+            "7": {
+              "name": "Degree E G Md",
+              "data_type": "ST",
+              "required": false
+            },
+            "8": {
+              "name": "Source Table Id",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        }
+      }
+    },
+    "ACC": {
+      "name": "Accident",
+      "required": false,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Accident Date/Time",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "2": {
+          "name": "Accident Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0050"
+        },
+        "3": {
+          "name": "Accident Location",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 25
+        }
+      }
+    },
+    "UB1": {
+      "name": "UB82 Data",
+      "required": false,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Set Id Ub82",
+          "data_type": "SI",
+          "required": false,
+          "repeating": false
+        },
+        "2": {
+          "name": "Blood Deductible 43",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "table_id": "0136"
+        },
+        "3": {
+          "name": "Blood Furnished Pints Of 40",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false
+        },
+        "4": {
+          "name": "Blood Replaced Pints 41",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false
+        },
+        "5": {
+          "name": "Blood Not Replaced Pints 42",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false
+        },
+        "6": {
+          "name": "Co Insurance Days 25",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false
+        },
+        "7": {
+          "name": "Condition Code 35 39",
+          "data_type": "ID",
+          "required": false,
+          "repeating": true,
+          "table_id": "0043"
+        },
+        "8": {
+          "name": "Covered Days 23",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false
+        },
+        "9": {
+          "name": "Non Covered Days 24",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false
+        },
+        "10": {
+          "name": "Value Amount And Code 46 49",
+          "data_type": "CM_UVC",
+          "required": false,
+          "repeating": true,
+          "table_id": "0153",
+          "components": {
+            "1": {
+              "name": "Value Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Value Amount",
+              "data_type": "NM",
+              "required": false
+            }
+          }
+        },
+        "11": {
+          "name": "Number Of Grace Days 90",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false
+        },
+        "12": {
+          "name": "Special Program Indicator 44",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "13": {
+          "name": "Psro Ur Approval Indicator 87",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "14": {
+          "name": "Psro Ur Approved Stay From 88",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false
+        },
+        "15": {
+          "name": "Psro Ur Approved Stay To 89",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false
+        },
+        "16": {
+          "name": "Occurrence 28 32",
+          "data_type": "CM_OCD",
+          "required": false,
+          "repeating": true,
+          "components": {
+            "1": {
+              "name": "Occurrence Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Occurrence Date",
+              "data_type": "DT",
+              "required": false
+            }
+          }
+        },
+        "17": {
+          "name": "Occurrence Span 33",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "18": {
+          "name": "Occurrence Span Start Date 33",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false
+        },
+        "19": {
+          "name": "Occurrence Span End Date 33",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false
+        },
+        "20": {
+          "name": "Ub 82 Locator 2",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "21": {
+          "name": "Ub 82 Locator 9",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "22": {
+          "name": "Ub 82 Locator 27",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "23": {
+          "name": "Ub 82 Locator 45",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        }
+      }
+    },
+    "UB2": {
+      "name": "UB92 Data",
+      "required": false,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Set Id Ub92",
+          "data_type": "SI",
+          "required": false,
+          "repeating": false
+        },
+        "2": {
+          "name": "Co Insurance Days 9",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "3": {
+          "name": "Condition Code 24 30",
+          "data_type": "ID",
+          "required": false,
+          "repeating": true,
+          "table_id": "0043"
+        },
+        "4": {
+          "name": "Covered Days 7",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "5": {
+          "name": "Non Covered Days 8",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "6": {
+          "name": "Value Amount And Code 39 41",
+          "data_type": "CM_UVC",
+          "required": false,
+          "repeating": true,
+          "components": {
+            "1": {
+              "name": "Value Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Value Amount",
+              "data_type": "NM",
+              "required": false
+            }
+          }
+        },
+        "7": {
+          "name": "Occurrence Code And Date 32 35",
+          "data_type": "CM_OCD",
+          "required": false,
+          "repeating": true,
+          "components": {
+            "1": {
+              "name": "Occurrence Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Occurrence Date",
+              "data_type": "DT",
+              "required": false
+            }
+          }
+        },
+        "8": {
+          "name": "Occurrence Span Code Dates 36",
+          "data_type": "CM_OSP",
+          "required": false,
+          "repeating": true,
+          "components": {
+            "1": {
+              "name": "Occurrence Span Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Occurrence Span Start Date",
+              "data_type": "DT",
+              "required": false
+            },
+            "3": {
+              "name": "Occurrence Span Stop Date",
+              "data_type": "DT",
+              "required": false
+            }
+          }
+        },
+        "9": {
+          "name": "Ub92 Locator 2 State",
+          "data_type": "ST",
+          "required": false,
+          "repeating": true
+        },
+        "10": {
+          "name": "Ub92 Locator 11 State",
+          "data_type": "ST",
+          "required": false,
+          "repeating": true
+        },
+        "11": {
+          "name": "Ub92 Locator 31 National",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "12": {
+          "name": "Document Control Number 37",
+          "data_type": "ST",
+          "required": false,
+          "repeating": true
+        },
+        "13": {
+          "name": "Ub92 Locator 49 National",
+          "data_type": "ST",
+          "required": false,
+          "repeating": true
+        },
+        "14": {
+          "name": "Ub92 Locator 56 State",
+          "data_type": "ST",
+          "required": false,
+          "repeating": true
+        },
+        "15": {
+          "name": "Ub92 Locator 57 National",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "16": {
+          "name": "Ub92 Locator 78 State",
+          "data_type": "ST",
+          "required": false,
+          "repeating": true
+        }
+      }
+    }
+  }
+}

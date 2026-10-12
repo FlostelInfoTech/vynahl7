@@ -9,8 +9,8 @@ use vyna_hl7_core::{error::Result, Version};
 /// Load a schema for a specific message type and version
 pub fn load_schema(version: Version, message_type: &str, trigger_event: &str) -> Result<MessageSchema> {
     let version_str = match version {
-        // Legacy versions fall back to v2.3 schemas
-        Version::V2_1 | Version::V2_2 => "v2_3",
+        Version::V2_1 => "v2_1",
+        Version::V2_2 => "v2_2",
         Version::V2_3 | Version::V2_3_1 => "v2_3",
         Version::V2_4 => "v2_4",
         Version::V2_5 | Version::V2_5_1 => "v2_5",
@@ -26,8 +26,15 @@ pub fn load_schema(version: Version, message_type: &str, trigger_event: &str) ->
         format!("{}_{}", message_type, trigger_event)
     };
 
-    // Try to load embedded schema
-    match load_embedded_schema(version_str, &schema_key) {
+    // Try to load embedded schema. Message types introduced after 2.2
+    // (VXU, PPR, OMP, ...) have no v2.1/v2.2 definition and fall back
+    // to the v2.3 structure.
+    let schema = load_embedded_schema(version_str, &schema_key).or_else(|| {
+        matches!(version, Version::V2_1 | Version::V2_2)
+            .then(|| load_embedded_schema("v2_3", &schema_key))
+            .flatten()
+    });
+    match schema {
         Some(schema) => Ok(schema),
         None => Err(vyna_hl7_core::error::Error::Validation(format!(
             "Schema not found for {} {} version {}",
@@ -40,6 +47,60 @@ pub fn load_schema(version: Version, message_type: &str, trigger_event: &str) ->
 fn load_embedded_schema(version: &str, schema_key: &str) -> Option<MessageSchema> {
     // Include schemas at compile time
     match (version, schema_key) {
+        // V2_1 schemas (generated from hl7apy structures)
+        ("v2_1", "ACK") => parse_schema_json(include_str!("../schemas/v2_1/ACK.json")),
+        ("v2_1", "ADT_A01") => parse_schema_json(include_str!("../schemas/v2_1/ADT_A01.json")),
+        ("v2_1", "ADT_A02") => parse_schema_json(include_str!("../schemas/v2_1/ADT_A02.json")),
+        ("v2_1", "ADT_A03") => parse_schema_json(include_str!("../schemas/v2_1/ADT_A03.json")),
+        ("v2_1", "ADT_A04") => parse_schema_json(include_str!("../schemas/v2_1/ADT_A04.json")),
+        ("v2_1", "ADT_A05") => parse_schema_json(include_str!("../schemas/v2_1/ADT_A05.json")),
+        ("v2_1", "ADT_A06") => parse_schema_json(include_str!("../schemas/v2_1/ADT_A06.json")),
+        ("v2_1", "ADT_A07") => parse_schema_json(include_str!("../schemas/v2_1/ADT_A07.json")),
+        ("v2_1", "ADT_A08") => parse_schema_json(include_str!("../schemas/v2_1/ADT_A08.json")),
+        ("v2_1", "ADT_A09") => parse_schema_json(include_str!("../schemas/v2_1/ADT_A09.json")),
+        ("v2_1", "ADT_A10") => parse_schema_json(include_str!("../schemas/v2_1/ADT_A10.json")),
+        ("v2_1", "ADT_A11") => parse_schema_json(include_str!("../schemas/v2_1/ADT_A11.json")),
+        ("v2_1", "ADT_A12") => parse_schema_json(include_str!("../schemas/v2_1/ADT_A12.json")),
+        ("v2_1", "ADT_A13") => parse_schema_json(include_str!("../schemas/v2_1/ADT_A13.json")),
+        ("v2_1", "ADT_A17") => parse_schema_json(include_str!("../schemas/v2_1/ADT_A17.json")),
+        ("v2_1", "BAR_P01") => parse_schema_json(include_str!("../schemas/v2_1/BAR_P01.json")),
+        ("v2_1", "BAR_P02") => parse_schema_json(include_str!("../schemas/v2_1/BAR_P02.json")),
+        ("v2_1", "DFT_P03") => parse_schema_json(include_str!("../schemas/v2_1/DFT_P03.json")),
+        ("v2_1", "ORM_O01") => parse_schema_json(include_str!("../schemas/v2_1/ORM_O01.json")),
+        ("v2_1", "ORU_R01") => parse_schema_json(include_str!("../schemas/v2_1/ORU_R01.json")),
+        ("v2_1", "QRY_A19") => parse_schema_json(include_str!("../schemas/v2_1/QRY_A19.json")),
+        ("v2_1", "QRY_Q01") => parse_schema_json(include_str!("../schemas/v2_1/QRY_Q01.json")),
+        ("v2_1", "QRY_Q02") => parse_schema_json(include_str!("../schemas/v2_1/QRY_Q02.json")),
+
+        // V2_2 schemas (generated from hl7apy structures)
+        ("v2_2", "ACK") => parse_schema_json(include_str!("../schemas/v2_2/ACK.json")),
+        ("v2_2", "ADT_A01") => parse_schema_json(include_str!("../schemas/v2_2/ADT_A01.json")),
+        ("v2_2", "ADT_A02") => parse_schema_json(include_str!("../schemas/v2_2/ADT_A02.json")),
+        ("v2_2", "ADT_A03") => parse_schema_json(include_str!("../schemas/v2_2/ADT_A03.json")),
+        ("v2_2", "ADT_A04") => parse_schema_json(include_str!("../schemas/v2_2/ADT_A04.json")),
+        ("v2_2", "ADT_A05") => parse_schema_json(include_str!("../schemas/v2_2/ADT_A05.json")),
+        ("v2_2", "ADT_A06") => parse_schema_json(include_str!("../schemas/v2_2/ADT_A06.json")),
+        ("v2_2", "ADT_A07") => parse_schema_json(include_str!("../schemas/v2_2/ADT_A07.json")),
+        ("v2_2", "ADT_A08") => parse_schema_json(include_str!("../schemas/v2_2/ADT_A08.json")),
+        ("v2_2", "ADT_A09") => parse_schema_json(include_str!("../schemas/v2_2/ADT_A09.json")),
+        ("v2_2", "ADT_A10") => parse_schema_json(include_str!("../schemas/v2_2/ADT_A10.json")),
+        ("v2_2", "ADT_A11") => parse_schema_json(include_str!("../schemas/v2_2/ADT_A11.json")),
+        ("v2_2", "ADT_A12") => parse_schema_json(include_str!("../schemas/v2_2/ADT_A12.json")),
+        ("v2_2", "ADT_A13") => parse_schema_json(include_str!("../schemas/v2_2/ADT_A13.json")),
+        ("v2_2", "ADT_A17") => parse_schema_json(include_str!("../schemas/v2_2/ADT_A17.json")),
+        ("v2_2", "ADT_A28") => parse_schema_json(include_str!("../schemas/v2_2/ADT_A28.json")),
+        ("v2_2", "ADT_A31") => parse_schema_json(include_str!("../schemas/v2_2/ADT_A31.json")),
+        ("v2_2", "ADT_A34") => parse_schema_json(include_str!("../schemas/v2_2/ADT_A34.json")),
+        ("v2_2", "BAR_P01") => parse_schema_json(include_str!("../schemas/v2_2/BAR_P01.json")),
+        ("v2_2", "BAR_P02") => parse_schema_json(include_str!("../schemas/v2_2/BAR_P02.json")),
+        ("v2_2", "DFT_P03") => parse_schema_json(include_str!("../schemas/v2_2/DFT_P03.json")),
+        ("v2_2", "MFN_M01") => parse_schema_json(include_str!("../schemas/v2_2/MFN_M01.json")),
+        ("v2_2", "ORM_O01") => parse_schema_json(include_str!("../schemas/v2_2/ORM_O01.json")),
+        ("v2_2", "ORU_R01") => parse_schema_json(include_str!("../schemas/v2_2/ORU_R01.json")),
+        ("v2_2", "QRY_A19") => parse_schema_json(include_str!("../schemas/v2_2/QRY_A19.json")),
+        ("v2_2", "QRY_Q01") => parse_schema_json(include_str!("../schemas/v2_2/QRY_Q01.json")),
+        ("v2_2", "QRY_Q02") => parse_schema_json(include_str!("../schemas/v2_2/QRY_Q02.json")),
+
         // V2.3 schemas - ADT messages
         ("v2_3", "ADT_A01") => parse_schema_json(include_str!("../schemas/v2_3/ADT_A01.json")),
         ("v2_3", "ADT_A02") => parse_schema_json(include_str!("../schemas/v2_3/ADT_A02.json")),
@@ -389,8 +450,8 @@ pub fn list_available_schemas(version: Version) -> Vec<String> {
         "OMP^O09".to_string(),
     ];
 
-    // All versions currently have the same set of schemas
-    // Legacy versions (2.1, 2.2) use v2.3 schemas
+    // All versions resolve the same set of keys; message types introduced
+    // after 2.2 fall back to v2.3 structures for legacy versions
     match version {
         Version::V2_1 | Version::V2_2 => schemas,
         Version::V2_3 | Version::V2_3_1 => schemas,
@@ -776,5 +837,50 @@ mod tests {
 
         let schema_282 = load_schema(Version::V2_8_2, "ADT", "A01").unwrap();
         assert_eq!(schema_282.version, "2.8");
+    }
+
+    #[test]
+    fn test_load_v21_schema_with_legacy_types() {
+        let schema = load_schema(Version::V2_1, "ADT", "A01").unwrap();
+        assert_eq!(schema.version, "2.1");
+
+        let pid = schema.segments.get("PID").unwrap();
+        // Pre-2.3 datatype names (PN/AD/TN/CN/CK instead of XPN/XAD/XTN/XCN/CX)
+        assert_eq!(pid.fields.get(&5).unwrap().data_type, "PN");
+        assert_eq!(pid.fields.get(&11).unwrap().data_type, "AD");
+        assert_eq!(pid.fields.get(&13).unwrap().data_type, "TN");
+        // 2.1 PID has 20 fields (grew to 39 by 2.3)
+        assert_eq!(pid.fields.len(), 20);
+
+        let msh = schema.segments.get("MSH").unwrap();
+        assert_eq!(msh.fields.get(&9).unwrap().data_type, "CM_MSG");
+    }
+
+    #[test]
+    fn test_load_v22_schema_with_legacy_segments() {
+        let schema = load_schema(Version::V2_2, "ADT", "A01").unwrap();
+        assert_eq!(schema.version, "2.2");
+        // UB1/UB2 billing segments present in 2.2 ADT
+        assert!(schema.segments.contains_key("UB1"));
+        assert!(schema.segments.contains_key("UB2"));
+
+        // 2.1 ORM still uses ORO/RX1 order segments
+        let orm = load_schema(Version::V2_1, "ORM", "O01").unwrap();
+        assert!(orm.segments.contains_key("ORO"));
+        assert!(orm.segments.contains_key("RX1"));
+
+        // 2.2 ORM uses the choice-group successors instead
+        let orm2 = load_schema(Version::V2_2, "ORM", "O01").unwrap();
+        assert!(!orm2.segments.contains_key("ORO"));
+        assert!(orm2.segments.contains_key("RXO"));
+    }
+
+    #[test]
+    fn test_legacy_fallback_for_later_message_types() {
+        // VXU did not exist in 2.1/2.2: falls back to the v2.3 structure
+        let schema = load_schema(Version::V2_1, "VXU", "V04").unwrap();
+        assert_eq!(schema.version, "2.3");
+        let schema = load_schema(Version::V2_2, "PPR", "PC1").unwrap();
+        assert_eq!(schema.version, "2.3");
     }
 }

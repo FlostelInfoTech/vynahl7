@@ -79,30 +79,48 @@ pub fn convert(
     from: Version,
     to: Version,
 ) -> Result<(Message, ConversionReport), ConvertError> {
-    // The loader falls back to v2.3 schemas for v2.1/v2.2; conversion must
-    // not silently use them.
-    for version in [&from, &to] {
-        if matches!(version, Version::V2_1 | Version::V2_2) {
-            return Err(ConvertError::Unsupported(format!(
-                "version {} has no schemas",
-                version.as_str()
-            )));
-        }
-    }
     let (msg_type, trigger) = message_type_of(message)?;
-    let from_schema = load_schema(from, &msg_type, &trigger).map_err(|_| {
-        ConvertError::Unsupported(format!(
-            "{msg_type}^{trigger} has no {} source schema",
-            from.as_str()
-        ))
-    })?;
-    let to_schema = load_schema(to, &msg_type, &trigger).map_err(|_| {
-        ConvertError::Unsupported(format!(
-            "{msg_type}^{trigger} has no {} target schema",
-            to.as_str()
-        ))
-    })?;
+    let from_schema = version_schema(from, &msg_type, &trigger, "source")?;
+    let to_schema = version_schema(to, &msg_type, &trigger, "target")?;
     Ok(convert_with_schemas(message, &from_schema, &to_schema, to))
+}
+
+/// Load the schema covering `version`, refusing the loader's legacy
+/// fallbacks: conversion must not silently use a v2.3 structure while
+/// stamping MSH-12 with 2.1 or 2.2.
+fn version_schema(
+    version: Version,
+    msg_type: &str,
+    trigger: &str,
+    role: &str,
+) -> Result<MessageSchema, ConvertError> {
+    let schema = load_schema(version, msg_type, trigger).map_err(|_| {
+        ConvertError::Unsupported(format!(
+            "{msg_type}^{trigger} has no {} {role} schema",
+            version.as_str()
+        ))
+    })?;
+    if schema.version != schema_version(version) {
+        return Err(ConvertError::Unsupported(format!(
+            "{msg_type}^{trigger} has no {} {role} schema",
+            version.as_str()
+        )));
+    }
+    Ok(schema)
+}
+
+/// Schema-directory version backing a `Version` (patch releases share dirs).
+fn schema_version(version: Version) -> &'static str {
+    match version {
+        Version::V2_1 => "2.1",
+        Version::V2_2 => "2.2",
+        Version::V2_3 | Version::V2_3_1 => "2.3",
+        Version::V2_4 => "2.4",
+        Version::V2_5 | Version::V2_5_1 => "2.5",
+        Version::V2_6 => "2.6",
+        Version::V2_7 | Version::V2_7_1 => "2.7",
+        Version::V2_8 | Version::V2_8_1 | Version::V2_8_2 => "2.8",
+    }
 }
 
 /// Convert using explicit schemas (the engine behind [`convert`]).
@@ -404,10 +422,21 @@ mod tests {
             Err(ConvertError::Unsupported(_))
         ));
 
-        // No schemas exist for v2.1 at all.
+        // v2.1 has real schemas for covered messages: ADT converts.
         let adt = parse_message("MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1||7\r").unwrap();
+        let (converted, _report) = convert(&adt, Version::V2_5, Version::V2_1).unwrap();
+        assert_eq!(
+            converted
+                .get_segment_by_id("MSH")
+                .unwrap()
+                .get_field_value(12),
+            Some("2.1")
+        );
+
+        // VXU did not exist in 2.1: the v2.3 fallback must be refused.
+        let vxu = parse_message("MSH|^~\\&|A|B|C|D|20240101||VXU^V04|1|P|2.5\rPID|1||7\r").unwrap();
         assert!(matches!(
-            convert(&adt, Version::V2_5, Version::V2_1),
+            convert(&vxu, Version::V2_5, Version::V2_1),
             Err(ConvertError::Unsupported(_))
         ));
     }

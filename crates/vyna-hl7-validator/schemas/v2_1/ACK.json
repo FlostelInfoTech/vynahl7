@@ -1,0 +1,185 @@
+{
+  "message_type": "ACK",
+  "trigger_event": "",
+  "version": "2.1",
+  "description": "General Acknowledgment",
+  "segments": {
+    "MSH": {
+      "name": "Message Header",
+      "required": true,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Field Separator",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 1
+        },
+        "2": {
+          "name": "Encoding Characters",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 4
+        },
+        "3": {
+          "name": "Sending Application",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "4": {
+          "name": "Sending Facility",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "5": {
+          "name": "Receiving Application",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "6": {
+          "name": "Receiving Facility",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "7": {
+          "name": "Date/Time Of Message",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "8": {
+          "name": "Security",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 40
+        },
+        "9": {
+          "name": "Message Type",
+          "data_type": "CM_MSG",
+          "required": true,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Message Code",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Trigger Event",
+              "data_type": "ID",
+              "required": false
+            }
+          }
+        },
+        "10": {
+          "name": "Message Control ID",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 20
+        },
+        "11": {
+          "name": "Processing ID",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false
+        },
+        "12": {
+          "name": "Version ID",
+          "data_type": "NM",
+          "required": true,
+          "repeating": false
+        },
+        "13": {
+          "name": "Sequence Number",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 15
+        },
+        "14": {
+          "name": "Continuation Pointer",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 180
+        }
+      }
+    },
+    "MSA": {
+      "name": "Message Acknowledgment",
+      "required": true,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Acknowledgment Code",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false,
+          "max_length": 2
+        },
+        "2": {
+          "name": "Message Control ID",
+          "data_type": "ST",
+          "required": true,
+          "repeating": false,
+          "max_length": 20
+        },
+        "3": {
+          "name": "Text Message",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false,
+          "max_length": 80
+        },
+        "4": {
+          "name": "Expected Sequence Number",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 15
+        },
+        "5": {
+          "name": "Delayed Acknowledgment Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "max_length": 1
+        }
+      }
+    },
+    "ERR": {
+      "name": "Error",
+      "required": false,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Error Code and Location",
+          "data_type": "ID",
+          "required": true,
+          "repeating": true
+        }
+      }
+    }
+  }
+}

@@ -94,6 +94,20 @@ pub enum DataType {
     FC,
     /// Job Code/Class (JCC)
     JCC,
+    /// Person Name (PN) - legacy pre-2.3 person name
+    PN,
+    /// Address (AD) - legacy pre-2.3 address
+    AD,
+    /// Telephone Number (TN) - legacy pre-2.3 telecom
+    TN,
+    /// Composite ID and Name (CN) - legacy pre-2.3 person ID
+    CN,
+    /// Composite ID (CK) - legacy pre-2.3 composite ID
+    CK,
+    /// Repeat Interval (RI)
+    RI,
+    /// Composite (CM) - legacy generic composite
+    CM,
 }
 
 impl DataType {
@@ -142,6 +156,13 @@ impl DataType {
             DataType::DLD => "DLD",
             DataType::FC => "FC",
             DataType::JCC => "JCC",
+            DataType::PN => "PN",
+            DataType::AD => "AD",
+            DataType::TN => "TN",
+            DataType::CN => "CN",
+            DataType::CK => "CK",
+            DataType::RI => "RI",
+            DataType::CM => "CM",
         }
     }
 
@@ -194,6 +215,13 @@ impl DataType {
             "DLD" => Some(DataType::DLD),
             "FC" => Some(DataType::FC),
             "JCC" => Some(DataType::JCC),
+            "PN" => Some(DataType::PN),
+            "AD" => Some(DataType::AD),
+            "TN" => Some(DataType::TN),
+            "CN" => Some(DataType::CN),
+            "CK" => Some(DataType::CK),
+            "RI" => Some(DataType::RI),
+            "CM" => Some(DataType::CM),
             _ => None,
         }
     }
