@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-12
+
+### Added
+
+- Typed codegen model: schema-driven HAPI-style message structs
+- Message coverage: VXU_V04 immunization, PPR_PC1 problems, OMP_O09 pharmacy orders, ADT_A34 merges (schemas, builders, validation)
+- FHIR: declarative YAML mapping plus Bundle output
+- New crates: Safe Harbor PHI redaction, durable store-and-forward queue, batch file exchange with FTP/SFTP transports, schema-driven cross-version conversion
+- Serde `Serialize`/`Deserialize` derives for the core model
+- Vocabulary: 183-table registry with code patterns and component-level table checks
+- CLI: `send` (MLLP/HTTP) and `diff` commands plus a core message diff engine
+- Typed HL7 timestamps with precision and UTC offsets
+- Validation contexts: strict/standard/lenient severity profiles (`--strict`/`--lenient` CLI flags)
+- Streaming MLLP codec (`tokio_util` `Decoder`/`Encoder`, `Framed` support)
+- HL7 v2.1 (23 messages) and v2.2 (27 messages) validation schemas; legacy `PN/AD/TN/CN/CK/RI/CM` datatypes
+
+### Fixed
+
+- ID datatype rule rejected dotted values (false MSH-12 errors on 2.2/2.5+)
+
 ## [0.1.0] - 2026-10-12
 
 ### Changed
@@ -14,5 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial VynaHL7 release (Vyna Healthcare product family internal library), forked from rs7 1.6.1 with versioning restarted at 0.1.0
 - Renamed project from rs7 to VynaHL7: all crates renamed from `rs7-*` to `vyna-hl7-*`, Rust paths from `rs7_*` to `vyna_hl7_*`, CLI binary to `vynahl7`, and documentation updated accordingly
 
-[Unreleased]: https://gitlab.flostel.com/alexshao/vyna-hl7/compare/v0.1.0...HEAD
+[Unreleased]: https://gitlab.flostel.com/alexshao/vyna-hl7/compare/v0.2.0...HEAD
+[0.2.0]: https://gitlab.flostel.com/alexshao/vyna-hl7/compare/v0.1.0...v0.2.0
 [0.1.0]: https://gitlab.flostel.com/alexshao/vyna-hl7/releases/tag/v0.1.0
