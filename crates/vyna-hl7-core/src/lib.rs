@@ -11,6 +11,7 @@
 pub mod batch;
 pub mod builders;
 pub mod charset;
+pub mod datetime;
 pub mod delimiters;
 pub mod diff;
 pub mod encoding;

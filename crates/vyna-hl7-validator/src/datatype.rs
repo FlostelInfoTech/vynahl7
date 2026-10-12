@@ -4,7 +4,17 @@
 //! HL7 v2.x specification. Each data type has specific formatting rules that
 //! must be followed for conformance.
 
-use vyna_hl7_core::types::{parse_date, parse_timestamp, DataType};
+use vyna_hl7_core::datetime::{Hl7Date, Hl7DateTime, Hl7Time};
+use vyna_hl7_core::error::Error as CoreError;
+use vyna_hl7_core::types::DataType;
+
+/// Reason text from a core parse error (without the "Parse error: " prefix).
+fn parse_reason(error: CoreError) -> String {
+    match error {
+        CoreError::Parse(message) => message,
+        other => other.to_string(),
+    }
+}
 
 /// Result of data type validation
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,101 +90,29 @@ fn validate_date(value: &str) -> DataTypeValidation {
         return DataTypeValidation::Valid;
     }
 
-    let len = value.len();
-
-    // Must be 4, 6, or 8 characters
-    if len != 4 && len != 6 && len != 8 {
-        return DataTypeValidation::Invalid {
-            reason: format!("Date must be 4, 6, or 8 digits (YYYY, YYYYMM, or YYYYMMDD), got {} characters", len),
-        };
-    }
-
-    // Must be all digits
-    if !value.chars().all(|c| c.is_ascii_digit()) {
-        return DataTypeValidation::Invalid {
-            reason: "Date must contain only digits".to_string(),
-        };
-    }
-
-    // Validate using parser (checks for valid dates)
-    match parse_date(value) {
-        Some(_) => DataTypeValidation::Valid,
-        None => DataTypeValidation::Invalid {
-            reason: "Invalid date value".to_string(),
+    match Hl7Date::parse(value) {
+        Ok(_) => DataTypeValidation::Valid,
+        Err(e) => DataTypeValidation::Invalid {
+            reason: parse_reason(e),
         },
     }
 }
 
-/// Validate TM (Time) format: HH[MM[SS[.S[S[S[S]]]]]]
+/// Validate TM (Time) format: HH[MM[SS[.S[S[S[S]]]]]][+/-ZZZZ]
 fn validate_time(value: &str) -> DataTypeValidation {
     if value.is_empty() {
         return DataTypeValidation::Valid;
     }
 
-    // Split on decimal point if present
-    let parts: Vec<&str> = value.split('.').collect();
-    if parts.len() > 2 {
-        return DataTypeValidation::Invalid {
-            reason: "Time can have at most one decimal point".to_string(),
-        };
+    match Hl7Time::parse(value) {
+        Ok(time) if time.frac_digits() > 4 => DataTypeValidation::Invalid {
+            reason: "Fractional seconds must be 1-4 digits".to_string(),
+        },
+        Ok(_) => DataTypeValidation::Valid,
+        Err(e) => DataTypeValidation::Invalid {
+            reason: parse_reason(e),
+        },
     }
-
-    let time_part = parts[0];
-    let len = time_part.len();
-
-    // Must be 2, 4, or 6 characters (HH, HHMM, or HHMMSS)
-    if len != 2 && len != 4 && len != 6 {
-        return DataTypeValidation::Invalid {
-            reason: format!("Time must be 2, 4, or 6 digits (HH, HHMM, or HHMMSS), got {}", len),
-        };
-    }
-
-    // Must be all digits
-    if !time_part.chars().all(|c| c.is_ascii_digit()) {
-        return DataTypeValidation::Invalid {
-            reason: "Time must contain only digits".to_string(),
-        };
-    }
-
-    // Validate hours (00-23)
-    let hours: u32 = time_part[0..2].parse().unwrap();
-    if hours > 23 {
-        return DataTypeValidation::Invalid {
-            reason: format!("Invalid hours: {} (must be 00-23)", hours),
-        };
-    }
-
-    // Validate minutes (00-59) if present
-    if len >= 4 {
-        let minutes: u32 = time_part[2..4].parse().unwrap();
-        if minutes > 59 {
-            return DataTypeValidation::Invalid {
-                reason: format!("Invalid minutes: {} (must be 00-59)", minutes),
-            };
-        }
-    }
-
-    // Validate seconds (00-59) if present
-    if len == 6 {
-        let seconds: u32 = time_part[4..6].parse().unwrap();
-        if seconds > 59 {
-            return DataTypeValidation::Invalid {
-                reason: format!("Invalid seconds: {} (must be 00-59)", seconds),
-            };
-        }
-    }
-
-    // Validate fractional seconds if present
-    if parts.len() == 2 {
-        let frac = parts[1];
-        if frac.len() > 4 || !frac.chars().all(|c| c.is_ascii_digit()) {
-            return DataTypeValidation::Invalid {
-                reason: "Fractional seconds must be 1-4 digits".to_string(),
-            };
-        }
-    }
-
-    DataTypeValidation::Valid
 }
 
 /// Validate DTM/TS (Timestamp) format: YYYY[MM[DD[HH[MM[SS[.S[S[S[S]]]]]]]]][+/-ZZZZ]
@@ -183,56 +121,13 @@ fn validate_timestamp(value: &str) -> DataTypeValidation {
         return DataTypeValidation::Valid;
     }
 
-    // Strip timezone if present
-    let (ts_part, _tz) = if value.contains('+') || value.ends_with('-') {
-        let idx = value.rfind(['+', '-']).unwrap();
-        (&value[..idx], Some(&value[idx..]))
-    } else {
-        (value, None)
-    };
-
-    // Strip fractional seconds if present
-    let (main_part, frac) = if ts_part.contains('.') {
-        let parts: Vec<&str> = ts_part.split('.').collect();
-        if parts.len() != 2 {
-            return DataTypeValidation::Invalid {
-                reason: "Timestamp can have at most one decimal point".to_string(),
-            };
-        }
-        (parts[0], Some(parts[1]))
-    } else {
-        (ts_part, None)
-    };
-
-    let len = main_part.len();
-
-    // Must be 4, 6, 8, 10, 12, or 14 characters
-    if ![4, 6, 8, 10, 12, 14].contains(&len) {
-        return DataTypeValidation::Invalid {
-            reason: format!("Timestamp must be 4-14 digits in valid format, got {}", len),
-        };
-    }
-
-    // Must be all digits
-    if !main_part.chars().all(|c| c.is_ascii_digit()) {
-        return DataTypeValidation::Invalid {
-            reason: "Timestamp must contain only digits".to_string(),
-        };
-    }
-
-    // Validate fractional seconds if present
-    if let Some(f) = frac
-        && (f.len() > 4 || !f.chars().all(|c| c.is_ascii_digit())) {
-            return DataTypeValidation::Invalid {
-                reason: "Fractional seconds must be 1-4 digits".to_string(),
-            };
-        }
-
-    // Validate using parser
-    match parse_timestamp(main_part) {
-        Some(_) => DataTypeValidation::Valid,
-        None => DataTypeValidation::Invalid {
-            reason: "Invalid timestamp value".to_string(),
+    match Hl7DateTime::parse(value) {
+        Ok(ts) if ts.frac_digits() > 4 => DataTypeValidation::Invalid {
+            reason: "Fractional seconds must be 1-4 digits".to_string(),
+        },
+        Ok(_) => DataTypeValidation::Valid,
+        Err(e) => DataTypeValidation::Invalid {
+            reason: parse_reason(e),
         },
     }
 }
@@ -503,10 +398,14 @@ mod tests {
         assert!(validate_time("1430").is_valid());
         assert!(validate_time("143000").is_valid());
         assert!(validate_time("143000.123").is_valid());
+        assert!(validate_time("143000+0800").is_valid()); // Offset
+        assert!(validate_time("143000.12-0530").is_valid()); // Offset
         assert!(!validate_time("2530").is_valid()); // Invalid hours
         assert!(!validate_time("1460").is_valid()); // Invalid minutes
         assert!(!validate_time("143060").is_valid()); // Invalid seconds
         assert!(!validate_time("14300").is_valid()); // Wrong length
+        assert!(!validate_time("143000+2500").is_valid()); // Bad offset
+        assert!(!validate_time("143000.12345").is_valid()); // Fraction too long
     }
 
     #[test]
@@ -514,8 +413,13 @@ mod tests {
         assert!(validate_timestamp("20240315").is_valid());
         assert!(validate_timestamp("20240315143000").is_valid());
         assert!(validate_timestamp("20240315143000.1234").is_valid());
+        assert!(validate_timestamp("20240315143000+0800").is_valid()); // Offset
+        assert!(validate_timestamp("20240315143000.12-0530").is_valid()); // Offset
         assert!(!validate_timestamp("202403151").is_valid()); // Wrong length
         assert!(!validate_timestamp("20241301").is_valid()); // Invalid date
+        assert!(!validate_timestamp("20240315143000+9999").is_valid()); // Bad offset
+        assert!(!validate_timestamp("20240315143000+ABCD").is_valid()); // Bad offset
+        assert!(!validate_timestamp("20240315143000.12345").is_valid()); // Fraction too long
     }
 
     #[test]
