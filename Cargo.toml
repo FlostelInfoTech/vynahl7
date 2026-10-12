@@ -66,6 +66,7 @@ members = [
     "crates/vyna-hl7-http",
     "crates/vyna-hl7-macros",
     "crates/vyna-hl7-codegen",
+    "crates/vyna-hl7-redact",
     "crates/vyna-hl7-fhir",
     "crates/vyna-hl7-custom",
     "crates/vyna-hl7-conformance",
@@ -108,6 +109,10 @@ regex = "1.12"
 # Date/Time handling
 chrono = "0.4"
 
+# Hashing (de-identification)
+hmac = "0.12"
+sha2 = "0.10"
+
 # WebAssembly
 wasm-bindgen = "0.2"
 
@@ -142,6 +147,7 @@ vyna-hl7-custom = { version = "0.1.0", path = "crates/vyna-hl7-custom" }
 vyna-hl7-conformance = { version = "0.1.0", path = "crates/vyna-hl7-conformance" }
 vyna-hl7-macros = { version = "0.1.0", path = "crates/vyna-hl7-macros" }
 vyna-hl7-codegen = { version = "0.1.0", path = "crates/vyna-hl7-codegen" }
+vyna-hl7-redact = { version = "0.1.0", path = "crates/vyna-hl7-redact" }
 vyna-hl7-xml = { version = "0.1.0", path = "crates/vyna-hl7-xml" }
 
 # XML

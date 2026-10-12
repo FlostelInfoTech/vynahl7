@@ -1,0 +1,23 @@
+[package]
+name = "vyna-hl7-redact"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Safe Harbor de-identification for HL7 v2.x messages"
+
+[dependencies]
+vyna-hl7-core.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+vyna-hl7-parser.workspace = true
