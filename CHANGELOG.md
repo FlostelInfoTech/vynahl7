@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-12
+
 ### Fixed
 
 - MSH-9.3 (Message Structure) is now optional in all schemas: real wires carry 2 MSH-9 components, and the library's own builders emit 2
@@ -15,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - WASM bindings accept HL7 versions 2.1 and 2.2
+
+### Changed
+
+- Dependencies updated to latest (`hmac` 0.13, `sha2` 0.11, `russh` 0.64)
 
 ## [0.2.0] - 2026-10-12
 
@@ -43,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial VynaHL7 release (Vyna Healthcare product family internal library), forked from rs7 1.6.1 with versioning restarted at 0.1.0
 - Renamed project from rs7 to VynaHL7: all crates renamed from `rs7-*` to `vyna-hl7-*`, Rust paths from `rs7_*` to `vyna_hl7_*`, CLI binary to `vynahl7`, and documentation updated accordingly
 
-[Unreleased]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.2.0...HEAD
+[Unreleased]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.3.0...HEAD
+[0.3.0]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.2.0...v0.3.0
 [0.2.0]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.1.0...v0.2.0
 [0.1.0]: https://gitlab.flostel.com/alexshao/VynaHL7/releases/tag/v0.1.0
