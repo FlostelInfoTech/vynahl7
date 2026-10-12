@@ -96,6 +96,7 @@ categories = ["parsing", "network-programming", "healthcare"]
 # Async runtime for MLLP
 tokio = { version = "1.48", features = ["full"] }
 tokio-util = { version = "0.7", features = ["codec"] }
+bytes = "1"
 
 # Error handling
 thiserror = "2.0"

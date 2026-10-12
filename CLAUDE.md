@@ -339,7 +339,7 @@ Intra-organization communication on TCP. MLLP frames messages with:
 - Start byte: 0x0B (VT)
 - End bytes: 0x1C 0x0D (FS CR)
 
-Implementation in `vyna-hl7-mllp` uses Tokio for async I/O.
+Implementation in `vyna-hl7-mllp` uses Tokio for async I/O. For streaming pipelines, `codec::MllpCodec` implements `tokio_util` `Decoder`/`Encoder` for use with `Framed` (`MllpFramed` alias); it mirrors `receive_message` semantics (noise skipping, first `FS CR` terminates, size limit).
 
 **TLS/mTLS Support:**
 - `TlsServerConfig::new()` - Basic TLS with server certificate

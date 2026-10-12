@@ -17,6 +17,7 @@ vyna-hl7-core.workspace = true
 vyna-hl7-parser.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+bytes.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
 
@@ -39,3 +40,4 @@ full = ["tls", "testing"]
 
 [dev-dependencies]
 uuid = { version = "1.19", features = ["v4"] }
+futures = "0.3"

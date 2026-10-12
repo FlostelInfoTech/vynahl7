@@ -6,6 +6,9 @@
 //! - FS (File Separator): 0x1C - End of block
 //! - CR (Carriage Return): 0x0D - End of message
 
+// Streaming codec (tokio_util Framed support)
+pub mod codec;
+
 // Message routing
 pub mod router;
 
