@@ -1934,12 +1934,12 @@
             "1": {
               "name": "Time Of Event",
               "data_type": "ST",
-              "required": false
+              "required": true
             },
             "2": {
               "name": "Degree Of Precision",
               "data_type": "ST",
-              "required": false
+              "required": true
             }
           }
         },

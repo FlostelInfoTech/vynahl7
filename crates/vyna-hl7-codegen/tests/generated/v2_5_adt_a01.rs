@@ -47,9 +47,12 @@ pub struct Msh {
     /// MSH-6.3 Receiving Facility / Universal ID Type (ID)
     #[hl7(field = 6, component = 3)]
     pub receiving_facility_universal_id_type: Option<String>,
-    /// MSH-7 Date/Time Of Message (TS)
-    #[hl7(field = 7)]
-    pub date_time_of_message: Option<String>,
+    /// MSH-7.1 Date/Time Of Message / Time Of An Event (DTM)
+    #[hl7(field = 7, component = 1)]
+    pub date_time_of_message_time_of_an_event: Option<String>,
+    /// MSH-7.2 Date/Time Of Message / Degree Of Precision (ID)
+    #[hl7(field = 7, component = 2)]
+    pub date_time_of_message_degree_of_precision: Option<String>,
     /// MSH-8 Security (ST)
     #[hl7(field = 8)]
     pub security: Option<String>,
@@ -170,9 +173,12 @@ pub struct Sft {
     /// SFT-5 Software Product Information (TX)
     #[hl7(field = 5)]
     pub software_product_information: Option<String>,
-    /// SFT-6 Software Install Date (TS)
-    #[hl7(field = 6)]
-    pub software_install_date: Option<String>,
+    /// SFT-6.1 Software Install Date / Time (DTM)
+    #[hl7(field = 6, component = 1)]
+    pub software_install_date_time: Option<String>,
+    /// SFT-6.2 Software Install Date / Degree Of Precision (ID)
+    #[hl7(field = 6, component = 2)]
+    pub software_install_date_degree_of_precision: Option<String>,
 }
 
 /// EVN - Event Type
@@ -182,21 +188,30 @@ pub struct Evn {
     /// EVN-1 Event Type Code (ID)
     #[hl7(field = 1)]
     pub event_type_code: Option<String>,
-    /// EVN-2 Recorded Date/Time (TS)
-    #[hl7(field = 2)]
-    pub recorded_date_time: Option<String>,
-    /// EVN-3 Date/Time Planned Event (TS)
-    #[hl7(field = 3)]
-    pub date_time_planned_event: Option<String>,
+    /// EVN-2.1 Recorded Date/Time / Time Of An Event (DTM)
+    #[hl7(field = 2, component = 1)]
+    pub recorded_date_time_time_of_an_event: Option<String>,
+    /// EVN-2.2 Recorded Date/Time / Degree Of Precision (ID)
+    #[hl7(field = 2, component = 2)]
+    pub recorded_date_time_degree_of_precision: Option<String>,
+    /// EVN-3.1 Date/Time Planned Event / Time Of An Event (DTM)
+    #[hl7(field = 3, component = 1)]
+    pub date_time_planned_event_time_of_an_event: Option<String>,
+    /// EVN-3.2 Date/Time Planned Event / Degree Of Precision (ID)
+    #[hl7(field = 3, component = 2)]
+    pub date_time_planned_event_degree_of_precision: Option<String>,
     /// EVN-4 Event Reason Code (IS)
     #[hl7(field = 4)]
     pub event_reason_code: Option<String>,
     /// EVN-5 Operator ID (XCN, repeating)
     #[hl7(field = 5)]
     pub operator_id: Vec<String>,
-    /// EVN-6 Event Occurred (TS)
-    #[hl7(field = 6)]
-    pub event_occurred: Option<String>,
+    /// EVN-6.1 Event Occurred / Time Of An Event (DTM)
+    #[hl7(field = 6, component = 1)]
+    pub event_occurred_time_of_an_event: Option<String>,
+    /// EVN-6.2 Event Occurred / Degree Of Precision (ID)
+    #[hl7(field = 6, component = 2)]
+    pub event_occurred_degree_of_precision: Option<String>,
     /// EVN-7.1 Event Facility / Namespace ID (IS)
     #[hl7(field = 7, component = 1)]
     pub event_facility_namespace_id: Option<String>,
@@ -257,9 +272,12 @@ pub struct Pid {
     /// PID-6 Mother's Maiden Name (XPN, repeating)
     #[hl7(field = 6)]
     pub mother_s_maiden_name: Vec<String>,
-    /// PID-7 Date/Time of Birth (TS)
-    #[hl7(field = 7)]
-    pub date_time_of_birth: Option<String>,
+    /// PID-7.1 Date/Time of Birth / Time Of An Event (DTM)
+    #[hl7(field = 7, component = 1)]
+    pub date_time_of_birth_time_of_an_event: Option<String>,
+    /// PID-7.2 Date/Time of Birth / Degree Of Precision (ID)
+    #[hl7(field = 7, component = 2)]
+    pub date_time_of_birth_degree_of_precision: Option<String>,
     /// PID-8 Administrative Sex (IS)
     #[hl7(field = 8)]
     pub administrative_sex: Option<String>,
@@ -368,9 +386,15 @@ pub struct Pid {
     /// PID-19 SSN Number - Patient (ST)
     #[hl7(field = 19)]
     pub ssn_number_patient: Option<String>,
-    /// PID-20 Driver's License Number - Patient (ST)
-    #[hl7(field = 20)]
-    pub driver_s_license_number_patient: Option<String>,
+    /// PID-20.1 Driver's License Number - Patient / Driver S License Number (ST)
+    #[hl7(field = 20, component = 1)]
+    pub driver_s_license_number_patient_driver_s_license_number: Option<String>,
+    /// PID-20.2 Driver's License Number - Patient / Issuing State Province Country (IS)
+    #[hl7(field = 20, component = 2)]
+    pub driver_s_license_number_patient_issuing_state_province_country: Option<String>,
+    /// PID-20.3 Driver's License Number - Patient / Expiration Date (DT)
+    #[hl7(field = 20, component = 3)]
+    pub driver_s_license_number_patient_expiration_date: Option<String>,
     /// PID-21 Mother's Identifier (CX, repeating)
     #[hl7(field = 21)]
     pub mother_s_identifier: Vec<String>,
@@ -425,9 +449,12 @@ pub struct Pid {
     /// PID-28.6 Nationality / Name of Alternate Coding System (ID)
     #[hl7(field = 28, component = 6)]
     pub nationality_name_of_alternate_coding_system: Option<String>,
-    /// PID-29 Patient Death Date and Time (TS)
-    #[hl7(field = 29)]
-    pub patient_death_date_and_time: Option<String>,
+    /// PID-29.1 Patient Death Date and Time / Time Of An Event (DTM)
+    #[hl7(field = 29, component = 1)]
+    pub patient_death_date_and_time_time_of_an_event: Option<String>,
+    /// PID-29.2 Patient Death Date and Time / Degree Of Precision (ID)
+    #[hl7(field = 29, component = 2)]
+    pub patient_death_date_and_time_degree_of_precision: Option<String>,
     /// PID-30 Patient Death Indicator (ID)
     #[hl7(field = 30)]
     pub patient_death_indicator: Option<String>,
@@ -437,9 +464,12 @@ pub struct Pid {
     /// PID-32 Identity Reliability Code (IS, repeating)
     #[hl7(field = 32)]
     pub identity_reliability_code: Vec<String>,
-    /// PID-33 Last Update Date/Time (TS)
-    #[hl7(field = 33)]
-    pub last_update_date_time: Option<String>,
+    /// PID-33.1 Last Update Date/Time / Time (DTM)
+    #[hl7(field = 33, component = 1)]
+    pub last_update_date_time_time: Option<String>,
+    /// PID-33.2 Last Update Date/Time / Degree Of Precision (ID)
+    #[hl7(field = 33, component = 2)]
+    pub last_update_date_time_degree_of_precision: Option<String>,
     /// PID-34.1 Last Update Facility / Namespace ID (IS)
     #[hl7(field = 34, component = 1)]
     pub last_update_facility_namespace_id: Option<String>,
@@ -488,9 +518,24 @@ pub struct Pid {
     /// PID-37 Strain (ST)
     #[hl7(field = 37)]
     pub strain: Option<String>,
-    /// PID-38 Production Class Code (CE, repeating)
-    #[hl7(field = 38)]
-    pub production_class_code: Vec<String>,
+    /// PID-38.1 Production Class Code / Identifier (ST)
+    #[hl7(field = 38, component = 1)]
+    pub production_class_code_identifier: Option<String>,
+    /// PID-38.2 Production Class Code / Text (ST)
+    #[hl7(field = 38, component = 2)]
+    pub production_class_code_text: Option<String>,
+    /// PID-38.3 Production Class Code / Name of Coding System (ID)
+    #[hl7(field = 38, component = 3)]
+    pub production_class_code_name_of_coding_system: Option<String>,
+    /// PID-38.4 Production Class Code / Alternate Identifier (ST)
+    #[hl7(field = 38, component = 4)]
+    pub production_class_code_alternate_identifier: Option<String>,
+    /// PID-38.5 Production Class Code / Alternate Text (ST)
+    #[hl7(field = 38, component = 5)]
+    pub production_class_code_alternate_text: Option<String>,
+    /// PID-38.6 Production Class Code / Name of Alternate Coding System (ID)
+    #[hl7(field = 38, component = 6)]
+    pub production_class_code_name_of_alternate_coding_system: Option<String>,
     /// PID-39 Tribal Citizenship (CWE, repeating)
     #[hl7(field = 39)]
     pub tribal_citizenship: Vec<String>,
@@ -620,12 +665,18 @@ pub struct Rol {
     /// ROL-4 Role Person (XCN, repeating)
     #[hl7(field = 4)]
     pub role_person: Vec<String>,
-    /// ROL-5 Role Begin Date/Time (TS)
-    #[hl7(field = 5)]
-    pub role_begin_date_time: Option<String>,
-    /// ROL-6 Role End Date/Time (TS)
-    #[hl7(field = 6)]
-    pub role_end_date_time: Option<String>,
+    /// ROL-5.1 Role Begin Date/Time / Time Of An Event (DTM)
+    #[hl7(field = 5, component = 1)]
+    pub role_begin_date_time_time_of_an_event: Option<String>,
+    /// ROL-5.2 Role Begin Date/Time / Degree Of Precision (ID)
+    #[hl7(field = 5, component = 2)]
+    pub role_begin_date_time_degree_of_precision: Option<String>,
+    /// ROL-6.1 Role End Date/Time / Time Of An Event (DTM)
+    #[hl7(field = 6, component = 1)]
+    pub role_end_date_time_time_of_an_event: Option<String>,
+    /// ROL-6.2 Role End Date/Time / Degree Of Precision (ID)
+    #[hl7(field = 6, component = 2)]
+    pub role_end_date_time_degree_of_precision: Option<String>,
     /// ROL-7.1 Role Duration / Identifier (ST)
     #[hl7(field = 7, component = 1)]
     pub role_duration_identifier: Option<String>,
@@ -819,9 +870,12 @@ pub struct Nk1 {
     /// NK1-15 Administrative Sex (IS)
     #[hl7(field = 15)]
     pub administrative_sex: Option<String>,
-    /// NK1-16 Date/Time of Birth (TS)
-    #[hl7(field = 16)]
-    pub date_time_of_birth: Option<String>,
+    /// NK1-16.1 Date/Time of Birth / Time Of An Event (DTM)
+    #[hl7(field = 16, component = 1)]
+    pub date_time_of_birth_time_of_an_event: Option<String>,
+    /// NK1-16.2 Date/Time of Birth / Degree Of Precision (ID)
+    #[hl7(field = 16, component = 2)]
+    pub date_time_of_birth_degree_of_precision: Option<String>,
     /// NK1-17 Living Dependency (IS, repeating)
     #[hl7(field = 17)]
     pub living_dependency: Vec<String>,
@@ -1308,9 +1362,12 @@ pub struct Pv1 {
     /// PV1-43.11 Prior Temporary Location / Assigning Authority for Location (HD)
     #[hl7(field = 43, component = 11)]
     pub prior_temporary_location_assigning_authority_for_location: Option<String>,
-    /// PV1-44 Admit Date/Time (TS)
-    #[hl7(field = 44)]
-    pub admit_date_time: Option<String>,
+    /// PV1-44.1 Admit Date/Time / Time Of An Event (DTM)
+    #[hl7(field = 44, component = 1)]
+    pub admit_date_time_time_of_an_event: Option<String>,
+    /// PV1-44.2 Admit Date/Time / Degree Of Precision (ID)
+    #[hl7(field = 44, component = 2)]
+    pub admit_date_time_degree_of_precision: Option<String>,
     /// PV1-45 Discharge Date/Time (TS, repeating)
     #[hl7(field = 45)]
     pub discharge_date_time: Vec<String>,
@@ -1464,12 +1521,18 @@ pub struct Pv2 {
     /// PV2-7 Visit User Code (IS, repeating)
     #[hl7(field = 7)]
     pub visit_user_code: Vec<String>,
-    /// PV2-8 Expected Admit Date/Time (TS)
-    #[hl7(field = 8)]
-    pub expected_admit_date_time: Option<String>,
-    /// PV2-9 Expected Discharge Date/Time (TS)
-    #[hl7(field = 9)]
-    pub expected_discharge_date_time: Option<String>,
+    /// PV2-8.1 Expected Admit Date/Time / Time Of An Event (DTM)
+    #[hl7(field = 8, component = 1)]
+    pub expected_admit_date_time_time_of_an_event: Option<String>,
+    /// PV2-8.2 Expected Admit Date/Time / Degree Of Precision (ID)
+    #[hl7(field = 8, component = 2)]
+    pub expected_admit_date_time_degree_of_precision: Option<String>,
+    /// PV2-9.1 Expected Discharge Date/Time / Time Of An Event (DTM)
+    #[hl7(field = 9, component = 1)]
+    pub expected_discharge_date_time_time_of_an_event: Option<String>,
+    /// PV2-9.2 Expected Discharge Date/Time / Degree Of Precision (ID)
+    #[hl7(field = 9, component = 2)]
+    pub expected_discharge_date_time_degree_of_precision: Option<String>,
     /// PV2-10 Estimated Length of Inpatient Stay (NM)
     #[hl7(field = 10)]
     pub estimated_length_of_inpatient_stay: Option<String>,
@@ -1554,9 +1617,12 @@ pub struct Pv2 {
     /// PV2-32 Billing Media Code (ID)
     #[hl7(field = 32)]
     pub billing_media_code: Option<String>,
-    /// PV2-33 Expected Surgery Date and Time (TS)
-    #[hl7(field = 33)]
-    pub expected_surgery_date_and_time: Option<String>,
+    /// PV2-33.1 Expected Surgery Date and Time / Time Of An Event (DTM)
+    #[hl7(field = 33, component = 1)]
+    pub expected_surgery_date_and_time_time_of_an_event: Option<String>,
+    /// PV2-33.2 Expected Surgery Date and Time / Degree Of Precision (ID)
+    #[hl7(field = 33, component = 2)]
+    pub expected_surgery_date_and_time_degree_of_precision: Option<String>,
     /// PV2-34 Military Partnership Code (ID)
     #[hl7(field = 34)]
     pub military_partnership_code: Option<String>,
@@ -1641,9 +1707,21 @@ pub struct Pv2 {
     /// PV2-46 Patient Status Effective Date (DT)
     #[hl7(field = 46)]
     pub patient_status_effective_date: Option<String>,
-    /// PV2-47 Expected LOA Return Date/Time (TS)
-    #[hl7(field = 47)]
-    pub expected_loa_return_date_time: Option<String>,
+    /// PV2-47.1 Expected LOA Return Date/Time / Time (DTM)
+    #[hl7(field = 47, component = 1)]
+    pub expected_loa_return_date_time_time: Option<String>,
+    /// PV2-47.2 Expected LOA Return Date/Time / Degree Of Precision (ID)
+    #[hl7(field = 47, component = 2)]
+    pub expected_loa_return_date_time_degree_of_precision: Option<String>,
+    /// PV2-48.1 Expected Pre Admission Testing Date Time / Time (DTM)
+    #[hl7(field = 48, component = 1)]
+    pub expected_pre_admission_testing_date_time_time: Option<String>,
+    /// PV2-48.2 Expected Pre Admission Testing Date Time / Degree Of Precision (ID)
+    #[hl7(field = 48, component = 2)]
+    pub expected_pre_admission_testing_date_time_degree_of_precision: Option<String>,
+    /// PV2-49 Notify Clergy Code (IS, repeating)
+    #[hl7(field = 49)]
+    pub notify_clergy_code: Vec<String>,
 }
 
 /// DB1 - Disability
@@ -1743,15 +1821,21 @@ pub struct Obx {
     /// OBX-11 Observation Result Status (ID)
     #[hl7(field = 11)]
     pub observation_result_status: String,
-    /// OBX-12 Effective Date of Reference Range (TS)
-    #[hl7(field = 12)]
-    pub effective_date_of_reference_range: Option<String>,
+    /// OBX-12.1 Effective Date of Reference Range / Time Of An Event (DTM)
+    #[hl7(field = 12, component = 1)]
+    pub effective_date_of_reference_range_time_of_an_event: Option<String>,
+    /// OBX-12.2 Effective Date of Reference Range / Degree Of Precision (ID)
+    #[hl7(field = 12, component = 2)]
+    pub effective_date_of_reference_range_degree_of_precision: Option<String>,
     /// OBX-13 User Defined Access Checks (ST)
     #[hl7(field = 13)]
     pub user_defined_access_checks: Option<String>,
-    /// OBX-14 Date/Time of the Observation (TS)
-    #[hl7(field = 14)]
-    pub date_time_of_the_observation: Option<String>,
+    /// OBX-14.1 Date/Time of the Observation / Time Of An Event (DTM)
+    #[hl7(field = 14, component = 1)]
+    pub date_time_of_the_observation_time_of_an_event: Option<String>,
+    /// OBX-14.2 Date/Time of the Observation / Degree Of Precision (ID)
+    #[hl7(field = 14, component = 2)]
+    pub date_time_of_the_observation_degree_of_precision: Option<String>,
     /// OBX-15.1 Producer's ID / Identifier (ST)
     #[hl7(field = 15, component = 1)]
     pub producer_s_id_identifier: Option<String>,
@@ -1779,9 +1863,12 @@ pub struct Obx {
     /// OBX-18 Equipment Instance Identifier (EI, repeating)
     #[hl7(field = 18)]
     pub equipment_instance_identifier: Vec<String>,
-    /// OBX-19 Date/Time of the Analysis (TS)
-    #[hl7(field = 19)]
-    pub date_time_of_the_analysis: Option<String>,
+    /// OBX-19.1 Date/Time of the Analysis / Time (DTM)
+    #[hl7(field = 19, component = 1)]
+    pub date_time_of_the_analysis_time: Option<String>,
+    /// OBX-19.2 Date/Time of the Analysis / Degree Of Precision (ID)
+    #[hl7(field = 19, component = 2)]
+    pub date_time_of_the_analysis_degree_of_precision: Option<String>,
 }
 
 /// AL1 - Patient Allergy Information
@@ -1884,9 +1971,12 @@ pub struct Dg1 {
     /// DG1-4 Diagnosis Description (ST)
     #[hl7(field = 4)]
     pub diagnosis_description: Option<String>,
-    /// DG1-5 Diagnosis Date/Time (TS)
-    #[hl7(field = 5)]
-    pub diagnosis_date_time: Option<String>,
+    /// DG1-5.1 Diagnosis Date/Time / Time Of An Event (DTM)
+    #[hl7(field = 5, component = 1)]
+    pub diagnosis_date_time_time_of_an_event: Option<String>,
+    /// DG1-5.2 Diagnosis Date/Time / Degree Of Precision (ID)
+    #[hl7(field = 5, component = 2)]
+    pub diagnosis_date_time_degree_of_precision: Option<String>,
     /// DG1-6 Diagnosis Type (IS)
     #[hl7(field = 6)]
     pub diagnosis_type: String,
@@ -1986,9 +2076,12 @@ pub struct Dg1 {
     /// DG1-18 Confidential Indicator (ID)
     #[hl7(field = 18)]
     pub confidential_indicator: Option<String>,
-    /// DG1-19 Attestation Date/Time (TS)
-    #[hl7(field = 19)]
-    pub attestation_date_time: Option<String>,
+    /// DG1-19.1 Attestation Date/Time / Time Of An Event (DTM)
+    #[hl7(field = 19, component = 1)]
+    pub attestation_date_time_time_of_an_event: Option<String>,
+    /// DG1-19.2 Attestation Date/Time / Degree Of Precision (ID)
+    #[hl7(field = 19, component = 2)]
+    pub attestation_date_time_degree_of_precision: Option<String>,
     /// DG1-20.1 Diagnosis Identifier / Entity Identifier (ST)
     #[hl7(field = 20, component = 1)]
     pub diagnosis_identifier_entity_identifier: Option<String>,
@@ -2028,9 +2121,12 @@ pub struct Drg {
     /// DRG-1.6 Diagnostic Related Group / Name of Alternate Coding System (ID)
     #[hl7(field = 1, component = 6)]
     pub diagnostic_related_group_name_of_alternate_coding_system: Option<String>,
-    /// DRG-2 DRG Assigned Date/Time (TS)
-    #[hl7(field = 2)]
-    pub drg_assigned_date_time: Option<String>,
+    /// DRG-2.1 DRG Assigned Date/Time / Time Of An Event (DTM)
+    #[hl7(field = 2, component = 1)]
+    pub drg_assigned_date_time_time_of_an_event: Option<String>,
+    /// DRG-2.2 DRG Assigned Date/Time / Degree Of Precision (ID)
+    #[hl7(field = 2, component = 2)]
+    pub drg_assigned_date_time_degree_of_precision: Option<String>,
     /// DRG-3 DRG Approval Indicator (ID)
     #[hl7(field = 3)]
     pub drg_approval_indicator: Option<String>,
@@ -2136,9 +2232,12 @@ pub struct Pr1 {
     /// PR1-4 Procedure Description (ST)
     #[hl7(field = 4)]
     pub procedure_description: Option<String>,
-    /// PR1-5 Procedure Date/Time (TS)
-    #[hl7(field = 5)]
-    pub procedure_date_time: String,
+    /// PR1-5.1 Procedure Date/Time / Time Of An Event (DTM)
+    #[hl7(field = 5, component = 1)]
+    pub procedure_date_time_time_of_an_event: Option<String>,
+    /// PR1-5.2 Procedure Date/Time / Degree Of Precision (ID)
+    #[hl7(field = 5, component = 2)]
+    pub procedure_date_time_degree_of_precision: Option<String>,
     /// PR1-6 Procedure Functional Type (IS)
     #[hl7(field = 6)]
     pub procedure_functional_type: Option<String>,
@@ -2250,9 +2349,12 @@ pub struct Gt1 {
     /// GT1-7 Guarantor Ph Num - Business (XTN, repeating)
     #[hl7(field = 7)]
     pub guarantor_ph_num_business: Vec<String>,
-    /// GT1-8 Guarantor Date/Time Of Birth (TS)
-    #[hl7(field = 8)]
-    pub guarantor_date_time_of_birth: Option<String>,
+    /// GT1-8.1 Guarantor Date/Time Of Birth / Time Of An Event (DTM)
+    #[hl7(field = 8, component = 1)]
+    pub guarantor_date_time_of_birth_time_of_an_event: Option<String>,
+    /// GT1-8.2 Guarantor Date/Time Of Birth / Degree Of Precision (ID)
+    #[hl7(field = 8, component = 2)]
+    pub guarantor_date_time_of_birth_degree_of_precision: Option<String>,
     /// GT1-9 Guarantor Administrative Sex (IS)
     #[hl7(field = 9)]
     pub guarantor_administrative_sex: Option<String>,
@@ -2307,6 +2409,261 @@ pub struct Gt1 {
     /// GT1-21 Guarantor Organization Name (XON, repeating)
     #[hl7(field = 21)]
     pub guarantor_organization_name: Vec<String>,
+    /// GT1-22 Guarantor Billing Hold Flag (ID)
+    #[hl7(field = 22)]
+    pub guarantor_billing_hold_flag: Option<String>,
+    /// GT1-23.1 Guarantor Credit Rating Code / Identifier (ST)
+    #[hl7(field = 23, component = 1)]
+    pub guarantor_credit_rating_code_identifier: Option<String>,
+    /// GT1-23.2 Guarantor Credit Rating Code / Text (ST)
+    #[hl7(field = 23, component = 2)]
+    pub guarantor_credit_rating_code_text: Option<String>,
+    /// GT1-23.3 Guarantor Credit Rating Code / Name Of Coding System (ID)
+    #[hl7(field = 23, component = 3)]
+    pub guarantor_credit_rating_code_name_of_coding_system: Option<String>,
+    /// GT1-23.4 Guarantor Credit Rating Code / Alternate Identifier (ST)
+    #[hl7(field = 23, component = 4)]
+    pub guarantor_credit_rating_code_alternate_identifier: Option<String>,
+    /// GT1-23.5 Guarantor Credit Rating Code / Alternate Text (ST)
+    #[hl7(field = 23, component = 5)]
+    pub guarantor_credit_rating_code_alternate_text: Option<String>,
+    /// GT1-23.6 Guarantor Credit Rating Code / Name Of Alternate Coding System (ID)
+    #[hl7(field = 23, component = 6)]
+    pub guarantor_credit_rating_code_name_of_alternate_coding_system: Option<String>,
+    /// GT1-24.1 Guarantor Death Date And Time / Time Of An Event (DTM)
+    #[hl7(field = 24, component = 1)]
+    pub guarantor_death_date_and_time_time_of_an_event: Option<String>,
+    /// GT1-24.2 Guarantor Death Date And Time / Degree Of Precision (ID)
+    #[hl7(field = 24, component = 2)]
+    pub guarantor_death_date_and_time_degree_of_precision: Option<String>,
+    /// GT1-25 Guarantor Death Flag (ID)
+    #[hl7(field = 25)]
+    pub guarantor_death_flag: Option<String>,
+    /// GT1-26.1 Guarantor Charge Adjustment Code / Identifier (ST)
+    #[hl7(field = 26, component = 1)]
+    pub guarantor_charge_adjustment_code_identifier: Option<String>,
+    /// GT1-26.2 Guarantor Charge Adjustment Code / Text (ST)
+    #[hl7(field = 26, component = 2)]
+    pub guarantor_charge_adjustment_code_text: Option<String>,
+    /// GT1-26.3 Guarantor Charge Adjustment Code / Name Of Coding System (ID)
+    #[hl7(field = 26, component = 3)]
+    pub guarantor_charge_adjustment_code_name_of_coding_system: Option<String>,
+    /// GT1-26.4 Guarantor Charge Adjustment Code / Alternate Identifier (ST)
+    #[hl7(field = 26, component = 4)]
+    pub guarantor_charge_adjustment_code_alternate_identifier: Option<String>,
+    /// GT1-26.5 Guarantor Charge Adjustment Code / Alternate Text (ST)
+    #[hl7(field = 26, component = 5)]
+    pub guarantor_charge_adjustment_code_alternate_text: Option<String>,
+    /// GT1-26.6 Guarantor Charge Adjustment Code / Name Of Alternate Coding System (ID)
+    #[hl7(field = 26, component = 6)]
+    pub guarantor_charge_adjustment_code_name_of_alternate_coding_system: Option<String>,
+    /// GT1-27.1 Guarantor Household Annual Income / Price (MO)
+    #[hl7(field = 27, component = 1)]
+    pub guarantor_household_annual_income_price: Option<String>,
+    /// GT1-27.2 Guarantor Household Annual Income / Price Type (ID)
+    #[hl7(field = 27, component = 2)]
+    pub guarantor_household_annual_income_price_type: Option<String>,
+    /// GT1-27.3 Guarantor Household Annual Income / From Value (NM)
+    #[hl7(field = 27, component = 3)]
+    pub guarantor_household_annual_income_from_value: Option<String>,
+    /// GT1-27.4 Guarantor Household Annual Income / To Value (NM)
+    #[hl7(field = 27, component = 4)]
+    pub guarantor_household_annual_income_to_value: Option<String>,
+    /// GT1-27.5 Guarantor Household Annual Income / Range Units (CE)
+    #[hl7(field = 27, component = 5)]
+    pub guarantor_household_annual_income_range_units: Option<String>,
+    /// GT1-27.6 Guarantor Household Annual Income / Range Type (ID)
+    #[hl7(field = 27, component = 6)]
+    pub guarantor_household_annual_income_range_type: Option<String>,
+    /// GT1-28 Guarantor Household Size (NM)
+    #[hl7(field = 28)]
+    pub guarantor_household_size: Option<String>,
+    /// GT1-29 Guarantor Employer Id Number (CX, repeating)
+    #[hl7(field = 29)]
+    pub guarantor_employer_id_number: Vec<String>,
+    /// GT1-30.1 Guarantor Marital Status Code / Identifier (ST)
+    #[hl7(field = 30, component = 1)]
+    pub guarantor_marital_status_code_identifier: Option<String>,
+    /// GT1-30.2 Guarantor Marital Status Code / Text (ST)
+    #[hl7(field = 30, component = 2)]
+    pub guarantor_marital_status_code_text: Option<String>,
+    /// GT1-30.3 Guarantor Marital Status Code / Name Of Coding System (ID)
+    #[hl7(field = 30, component = 3)]
+    pub guarantor_marital_status_code_name_of_coding_system: Option<String>,
+    /// GT1-30.4 Guarantor Marital Status Code / Alternate Identifier (ST)
+    #[hl7(field = 30, component = 4)]
+    pub guarantor_marital_status_code_alternate_identifier: Option<String>,
+    /// GT1-30.5 Guarantor Marital Status Code / Alternate Text (ST)
+    #[hl7(field = 30, component = 5)]
+    pub guarantor_marital_status_code_alternate_text: Option<String>,
+    /// GT1-30.6 Guarantor Marital Status Code / Name Of Alternate Coding System (ID)
+    #[hl7(field = 30, component = 6)]
+    pub guarantor_marital_status_code_name_of_alternate_coding_system: Option<String>,
+    /// GT1-31 Guarantor Hire Effective Date (DT)
+    #[hl7(field = 31)]
+    pub guarantor_hire_effective_date: Option<String>,
+    /// GT1-32 Employment Stop Date (DT)
+    #[hl7(field = 32)]
+    pub employment_stop_date: Option<String>,
+    /// GT1-33 Living Dependency (IS)
+    #[hl7(field = 33)]
+    pub living_dependency: Option<String>,
+    /// GT1-34 Ambulatory Status (IS, repeating)
+    #[hl7(field = 34)]
+    pub ambulatory_status: Vec<String>,
+    /// GT1-35 Citizenship (CE, repeating)
+    #[hl7(field = 35)]
+    pub citizenship: Vec<String>,
+    /// GT1-36.1 Primary Language / Identifier (ST)
+    #[hl7(field = 36, component = 1)]
+    pub primary_language_identifier: Option<String>,
+    /// GT1-36.2 Primary Language / Text (ST)
+    #[hl7(field = 36, component = 2)]
+    pub primary_language_text: Option<String>,
+    /// GT1-36.3 Primary Language / Name Of Coding System (ID)
+    #[hl7(field = 36, component = 3)]
+    pub primary_language_name_of_coding_system: Option<String>,
+    /// GT1-36.4 Primary Language / Alternate Identifier (ST)
+    #[hl7(field = 36, component = 4)]
+    pub primary_language_alternate_identifier: Option<String>,
+    /// GT1-36.5 Primary Language / Alternate Text (ST)
+    #[hl7(field = 36, component = 5)]
+    pub primary_language_alternate_text: Option<String>,
+    /// GT1-36.6 Primary Language / Name Of Alternate Coding System (ID)
+    #[hl7(field = 36, component = 6)]
+    pub primary_language_name_of_alternate_coding_system: Option<String>,
+    /// GT1-37 Living Arrangement (IS)
+    #[hl7(field = 37)]
+    pub living_arrangement: Option<String>,
+    /// GT1-38.1 Publicity Indicator / Identifier (ST)
+    #[hl7(field = 38, component = 1)]
+    pub publicity_indicator_identifier: Option<String>,
+    /// GT1-38.2 Publicity Indicator / Text (ST)
+    #[hl7(field = 38, component = 2)]
+    pub publicity_indicator_text: Option<String>,
+    /// GT1-38.3 Publicity Indicator / Name Of Coding System (ID)
+    #[hl7(field = 38, component = 3)]
+    pub publicity_indicator_name_of_coding_system: Option<String>,
+    /// GT1-38.4 Publicity Indicator / Alternate Identifier (ST)
+    #[hl7(field = 38, component = 4)]
+    pub publicity_indicator_alternate_identifier: Option<String>,
+    /// GT1-38.5 Publicity Indicator / Alternate Text (ST)
+    #[hl7(field = 38, component = 5)]
+    pub publicity_indicator_alternate_text: Option<String>,
+    /// GT1-38.6 Publicity Indicator / Name Of Alternate Coding System (ID)
+    #[hl7(field = 38, component = 6)]
+    pub publicity_indicator_name_of_alternate_coding_system: Option<String>,
+    /// GT1-39 Protection Indicator (ID)
+    #[hl7(field = 39)]
+    pub protection_indicator: Option<String>,
+    /// GT1-40 Student Indicator (IS)
+    #[hl7(field = 40)]
+    pub student_indicator: Option<String>,
+    /// GT1-41.1 Religion / Identifier (ST)
+    #[hl7(field = 41, component = 1)]
+    pub religion_identifier: Option<String>,
+    /// GT1-41.2 Religion / Text (ST)
+    #[hl7(field = 41, component = 2)]
+    pub religion_text: Option<String>,
+    /// GT1-41.3 Religion / Name Of Coding System (ID)
+    #[hl7(field = 41, component = 3)]
+    pub religion_name_of_coding_system: Option<String>,
+    /// GT1-41.4 Religion / Alternate Identifier (ST)
+    #[hl7(field = 41, component = 4)]
+    pub religion_alternate_identifier: Option<String>,
+    /// GT1-41.5 Religion / Alternate Text (ST)
+    #[hl7(field = 41, component = 5)]
+    pub religion_alternate_text: Option<String>,
+    /// GT1-41.6 Religion / Name Of Alternate Coding System (ID)
+    #[hl7(field = 41, component = 6)]
+    pub religion_name_of_alternate_coding_system: Option<String>,
+    /// GT1-42 Mother S Maiden Name (XPN, repeating)
+    #[hl7(field = 42)]
+    pub mother_s_maiden_name: Vec<String>,
+    /// GT1-43.1 Nationality Code / Identifier (ST)
+    #[hl7(field = 43, component = 1)]
+    pub nationality_code_identifier: Option<String>,
+    /// GT1-43.2 Nationality Code / Text (ST)
+    #[hl7(field = 43, component = 2)]
+    pub nationality_code_text: Option<String>,
+    /// GT1-43.3 Nationality Code / Name Of Coding System (ID)
+    #[hl7(field = 43, component = 3)]
+    pub nationality_code_name_of_coding_system: Option<String>,
+    /// GT1-43.4 Nationality Code / Alternate Identifier (ST)
+    #[hl7(field = 43, component = 4)]
+    pub nationality_code_alternate_identifier: Option<String>,
+    /// GT1-43.5 Nationality Code / Alternate Text (ST)
+    #[hl7(field = 43, component = 5)]
+    pub nationality_code_alternate_text: Option<String>,
+    /// GT1-43.6 Nationality Code / Name Of Alternate Coding System (ID)
+    #[hl7(field = 43, component = 6)]
+    pub nationality_code_name_of_alternate_coding_system: Option<String>,
+    /// GT1-44 Ethnic Group (CE, repeating)
+    #[hl7(field = 44)]
+    pub ethnic_group: Vec<String>,
+    /// GT1-45 Contact Person S Name (XPN, repeating)
+    #[hl7(field = 45)]
+    pub contact_person_s_name: Vec<String>,
+    /// GT1-46 Contact Person S Telephone Number (XTN, repeating)
+    #[hl7(field = 46)]
+    pub contact_person_s_telephone_number: Vec<String>,
+    /// GT1-47.1 Contact Reason / Identifier (ST)
+    #[hl7(field = 47, component = 1)]
+    pub contact_reason_identifier: Option<String>,
+    /// GT1-47.2 Contact Reason / Text (ST)
+    #[hl7(field = 47, component = 2)]
+    pub contact_reason_text: Option<String>,
+    /// GT1-47.3 Contact Reason / Name Of Coding System (ID)
+    #[hl7(field = 47, component = 3)]
+    pub contact_reason_name_of_coding_system: Option<String>,
+    /// GT1-47.4 Contact Reason / Alternate Identifier (ST)
+    #[hl7(field = 47, component = 4)]
+    pub contact_reason_alternate_identifier: Option<String>,
+    /// GT1-47.5 Contact Reason / Alternate Text (ST)
+    #[hl7(field = 47, component = 5)]
+    pub contact_reason_alternate_text: Option<String>,
+    /// GT1-47.6 Contact Reason / Name Of Alternate Coding System (ID)
+    #[hl7(field = 47, component = 6)]
+    pub contact_reason_name_of_alternate_coding_system: Option<String>,
+    /// GT1-48 Contact Relationship Code (IS)
+    #[hl7(field = 48)]
+    pub contact_relationship_code: Option<String>,
+    /// GT1-49 Job Title (ST)
+    #[hl7(field = 49)]
+    pub job_title: Option<String>,
+    /// GT1-50.1 Job Code Class / Job Code (IS)
+    #[hl7(field = 50, component = 1)]
+    pub job_code_class_job_code: Option<String>,
+    /// GT1-50.2 Job Code Class / Job Class (IS)
+    #[hl7(field = 50, component = 2)]
+    pub job_code_class_job_class: Option<String>,
+    /// GT1-50.3 Job Code Class / Job Description Text (TX)
+    #[hl7(field = 50, component = 3)]
+    pub job_code_class_job_description_text: Option<String>,
+    /// GT1-51 Guarantor Employer S Organization Name (XON, repeating)
+    #[hl7(field = 51)]
+    pub guarantor_employer_s_organization_name: Vec<String>,
+    /// GT1-52 Handicap (IS)
+    #[hl7(field = 52)]
+    pub handicap: Option<String>,
+    /// GT1-53 Job Status (IS)
+    #[hl7(field = 53)]
+    pub job_status: Option<String>,
+    /// GT1-54.1 Guarantor Financial Class / Financial Class (IS)
+    #[hl7(field = 54, component = 1)]
+    pub guarantor_financial_class_financial_class: Option<String>,
+    /// GT1-54.2 Guarantor Financial Class / Effective Date (TS)
+    #[hl7(field = 54, component = 2)]
+    pub guarantor_financial_class_effective_date: Option<String>,
+    /// GT1-55 Guarantor Race (CE, repeating)
+    #[hl7(field = 55)]
+    pub guarantor_race: Vec<String>,
+    /// GT1-56 Guarantor Birth Place (ST)
+    #[hl7(field = 56)]
+    pub guarantor_birth_place: Option<String>,
+    /// GT1-57 Vip Indicator (IS)
+    #[hl7(field = 57)]
+    pub vip_indicator: Option<String>,
 }
 
 /// IN1 - Insurance
@@ -2367,9 +2724,15 @@ pub struct In1 {
     /// IN1-13 Plan Expiration Date (DT)
     #[hl7(field = 13)]
     pub plan_expiration_date: Option<String>,
-    /// IN1-14 Authorization Information (ST)
-    #[hl7(field = 14)]
-    pub authorization_information: Option<String>,
+    /// IN1-14.1 Authorization Information / Authorization Number (ST)
+    #[hl7(field = 14, component = 1)]
+    pub authorization_information_authorization_number: Option<String>,
+    /// IN1-14.2 Authorization Information / Date (DT)
+    #[hl7(field = 14, component = 2)]
+    pub authorization_information_date: Option<String>,
+    /// IN1-14.3 Authorization Information / Source (ST)
+    #[hl7(field = 14, component = 3)]
+    pub authorization_information_source: Option<String>,
     /// IN1-15 Plan Type (IS)
     #[hl7(field = 15)]
     pub plan_type: Option<String>,
@@ -2394,9 +2757,12 @@ pub struct In1 {
     /// IN1-17.6 Insured's Relationship To Patient / Name of Alternate Coding System (ID)
     #[hl7(field = 17, component = 6)]
     pub insured_s_relationship_to_patient_name_of_alternate_coding_system: Option<String>,
-    /// IN1-18 Insured's Date Of Birth (TS)
-    #[hl7(field = 18)]
-    pub insured_s_date_of_birth: Option<String>,
+    /// IN1-18.1 Insured's Date Of Birth / Time Of An Event (DTM)
+    #[hl7(field = 18, component = 1)]
+    pub insured_s_date_of_birth_time_of_an_event: Option<String>,
+    /// IN1-18.2 Insured's Date Of Birth / Degree Of Precision (ID)
+    #[hl7(field = 18, component = 2)]
+    pub insured_s_date_of_birth_degree_of_precision: Option<String>,
     /// IN1-19 Insured's Address (XAD, repeating)
     #[hl7(field = 19)]
     pub insured_s_address: Vec<String>,
@@ -2427,9 +2793,12 @@ pub struct In1 {
     /// IN1-28 Pre-Admit Cert (PAC) (ST)
     #[hl7(field = 28)]
     pub pre_admit_cert_pac: Option<String>,
-    /// IN1-29 Verification Date/Time (TS)
-    #[hl7(field = 29)]
-    pub verification_date_time: Option<String>,
+    /// IN1-29.1 Verification Date/Time / Time Of An Event (DTM)
+    #[hl7(field = 29, component = 1)]
+    pub verification_date_time_time_of_an_event: Option<String>,
+    /// IN1-29.2 Verification Date/Time / Degree Of Precision (ID)
+    #[hl7(field = 29, component = 2)]
+    pub verification_date_time_degree_of_precision: Option<String>,
     /// IN1-30 Verification By (XCN, repeating)
     #[hl7(field = 30)]
     pub verification_by: Vec<String>,
@@ -2565,6 +2934,18 @@ pub struct In1 {
     /// IN1-49 Insured's ID Number (CX, repeating)
     #[hl7(field = 49)]
     pub insured_s_id_number: Vec<String>,
+    /// IN1-50 Signature Code (IS)
+    #[hl7(field = 50)]
+    pub signature_code: Option<String>,
+    /// IN1-51 Signature Code Date (DT)
+    #[hl7(field = 51)]
+    pub signature_code_date: Option<String>,
+    /// IN1-52 Insured S Birth Place (ST)
+    #[hl7(field = 52)]
+    pub insured_s_birth_place: Option<String>,
+    /// IN1-53 Vip Indicator (IS)
+    #[hl7(field = 53)]
+    pub vip_indicator: Option<String>,
 }
 
 /// IN2 - Insurance Additional Information
@@ -2667,27 +3048,501 @@ pub struct In2 {
     /// IN2-27 Eligibility Source (IS)
     #[hl7(field = 27)]
     pub eligibility_source: Option<String>,
-    /// IN2-28 Room Coverage Type/Amount (ST, repeating)
+    /// IN2-28 Room Coverage Type/Amount (RMC, repeating)
     #[hl7(field = 28)]
     pub room_coverage_type_amount: Vec<String>,
-    /// IN2-29 Policy Type/Amount (ST, repeating)
+    /// IN2-29 Policy Type/Amount (PTA, repeating)
     #[hl7(field = 29)]
     pub policy_type_amount: Vec<String>,
     /// IN2-30.1 Daily Deductible / Quantity (NM)
     #[hl7(field = 30, component = 1)]
     pub daily_deductible_quantity: Option<String>,
-    /// IN2-30.2 Daily Deductible / Denomination (ID)
+    /// IN2-30.2 Daily Deductible / Denomination (MO)
     #[hl7(field = 30, component = 2)]
     pub daily_deductible_denomination: Option<String>,
+    /// IN2-30.3 Daily Deductible / Number Of Days (NM)
+    #[hl7(field = 30, component = 3)]
+    pub daily_deductible_number_of_days: Option<String>,
+    /// IN2-31 Living Dependency (IS)
+    #[hl7(field = 31)]
+    pub living_dependency: Option<String>,
+    /// IN2-32 Ambulatory Status (IS, repeating)
+    #[hl7(field = 32)]
+    pub ambulatory_status: Vec<String>,
+    /// IN2-33 Citizenship (CE, repeating)
+    #[hl7(field = 33)]
+    pub citizenship: Vec<String>,
+    /// IN2-34.1 Primary Language / Identifier (ST)
+    #[hl7(field = 34, component = 1)]
+    pub primary_language_identifier: Option<String>,
+    /// IN2-34.2 Primary Language / Text (ST)
+    #[hl7(field = 34, component = 2)]
+    pub primary_language_text: Option<String>,
+    /// IN2-34.3 Primary Language / Name Of Coding System (ID)
+    #[hl7(field = 34, component = 3)]
+    pub primary_language_name_of_coding_system: Option<String>,
+    /// IN2-34.4 Primary Language / Alternate Identifier (ST)
+    #[hl7(field = 34, component = 4)]
+    pub primary_language_alternate_identifier: Option<String>,
+    /// IN2-34.5 Primary Language / Alternate Text (ST)
+    #[hl7(field = 34, component = 5)]
+    pub primary_language_alternate_text: Option<String>,
+    /// IN2-34.6 Primary Language / Name Of Alternate Coding System (ID)
+    #[hl7(field = 34, component = 6)]
+    pub primary_language_name_of_alternate_coding_system: Option<String>,
+    /// IN2-35 Living Arrangement (IS)
+    #[hl7(field = 35)]
+    pub living_arrangement: Option<String>,
+    /// IN2-36.1 Publicity Indicator / Identifier (ST)
+    #[hl7(field = 36, component = 1)]
+    pub publicity_indicator_identifier: Option<String>,
+    /// IN2-36.2 Publicity Indicator / Text (ST)
+    #[hl7(field = 36, component = 2)]
+    pub publicity_indicator_text: Option<String>,
+    /// IN2-36.3 Publicity Indicator / Name Of Coding System (ID)
+    #[hl7(field = 36, component = 3)]
+    pub publicity_indicator_name_of_coding_system: Option<String>,
+    /// IN2-36.4 Publicity Indicator / Alternate Identifier (ST)
+    #[hl7(field = 36, component = 4)]
+    pub publicity_indicator_alternate_identifier: Option<String>,
+    /// IN2-36.5 Publicity Indicator / Alternate Text (ST)
+    #[hl7(field = 36, component = 5)]
+    pub publicity_indicator_alternate_text: Option<String>,
+    /// IN2-36.6 Publicity Indicator / Name Of Alternate Coding System (ID)
+    #[hl7(field = 36, component = 6)]
+    pub publicity_indicator_name_of_alternate_coding_system: Option<String>,
+    /// IN2-37 Protection Indicator (ID)
+    #[hl7(field = 37)]
+    pub protection_indicator: Option<String>,
+    /// IN2-38 Student Indicator (IS)
+    #[hl7(field = 38)]
+    pub student_indicator: Option<String>,
+    /// IN2-39.1 Religion / Identifier (ST)
+    #[hl7(field = 39, component = 1)]
+    pub religion_identifier: Option<String>,
+    /// IN2-39.2 Religion / Text (ST)
+    #[hl7(field = 39, component = 2)]
+    pub religion_text: Option<String>,
+    /// IN2-39.3 Religion / Name Of Coding System (ID)
+    #[hl7(field = 39, component = 3)]
+    pub religion_name_of_coding_system: Option<String>,
+    /// IN2-39.4 Religion / Alternate Identifier (ST)
+    #[hl7(field = 39, component = 4)]
+    pub religion_alternate_identifier: Option<String>,
+    /// IN2-39.5 Religion / Alternate Text (ST)
+    #[hl7(field = 39, component = 5)]
+    pub religion_alternate_text: Option<String>,
+    /// IN2-39.6 Religion / Name Of Alternate Coding System (ID)
+    #[hl7(field = 39, component = 6)]
+    pub religion_name_of_alternate_coding_system: Option<String>,
+    /// IN2-40 Mother S Maiden Name (XPN, repeating)
+    #[hl7(field = 40)]
+    pub mother_s_maiden_name: Vec<String>,
+    /// IN2-41.1 Nationality Code / Identifier (ST)
+    #[hl7(field = 41, component = 1)]
+    pub nationality_code_identifier: Option<String>,
+    /// IN2-41.2 Nationality Code / Text (ST)
+    #[hl7(field = 41, component = 2)]
+    pub nationality_code_text: Option<String>,
+    /// IN2-41.3 Nationality Code / Name Of Coding System (ID)
+    #[hl7(field = 41, component = 3)]
+    pub nationality_code_name_of_coding_system: Option<String>,
+    /// IN2-41.4 Nationality Code / Alternate Identifier (ST)
+    #[hl7(field = 41, component = 4)]
+    pub nationality_code_alternate_identifier: Option<String>,
+    /// IN2-41.5 Nationality Code / Alternate Text (ST)
+    #[hl7(field = 41, component = 5)]
+    pub nationality_code_alternate_text: Option<String>,
+    /// IN2-41.6 Nationality Code / Name Of Alternate Coding System (ID)
+    #[hl7(field = 41, component = 6)]
+    pub nationality_code_name_of_alternate_coding_system: Option<String>,
+    /// IN2-42 Ethnic Group (CE, repeating)
+    #[hl7(field = 42)]
+    pub ethnic_group: Vec<String>,
+    /// IN2-43 Marital Status (CE, repeating)
+    #[hl7(field = 43)]
+    pub marital_status: Vec<String>,
+    /// IN2-44 Employment Start Date (DT)
+    #[hl7(field = 44)]
+    pub employment_start_date: Option<String>,
+    /// IN2-45 Employment Stop Date (DT)
+    #[hl7(field = 45)]
+    pub employment_stop_date: Option<String>,
+    /// IN2-46 Job Title (ST)
+    #[hl7(field = 46)]
+    pub job_title: Option<String>,
+    /// IN2-47.1 Job Code Class / Job Code (IS)
+    #[hl7(field = 47, component = 1)]
+    pub job_code_class_job_code: Option<String>,
+    /// IN2-47.2 Job Code Class / Job Class (IS)
+    #[hl7(field = 47, component = 2)]
+    pub job_code_class_job_class: Option<String>,
+    /// IN2-47.3 Job Code Class / Job Description Text (TX)
+    #[hl7(field = 47, component = 3)]
+    pub job_code_class_job_description_text: Option<String>,
+    /// IN2-48 Job Status (IS)
+    #[hl7(field = 48)]
+    pub job_status: Option<String>,
+    /// IN2-49 Employer Contact Person Name (XPN, repeating)
+    #[hl7(field = 49)]
+    pub employer_contact_person_name: Vec<String>,
+    /// IN2-50 Employer Contact Person Phone Number (XTN, repeating)
+    #[hl7(field = 50)]
+    pub employer_contact_person_phone_number: Vec<String>,
+    /// IN2-51 Employer Contact Reason (IS)
+    #[hl7(field = 51)]
+    pub employer_contact_reason: Option<String>,
+    /// IN2-52 Insured S Contact Person S Name (XPN, repeating)
+    #[hl7(field = 52)]
+    pub insured_s_contact_person_s_name: Vec<String>,
+    /// IN2-53 Insured S Contact Person Telephone Number (XTN, repeating)
+    #[hl7(field = 53)]
+    pub insured_s_contact_person_telephone_number: Vec<String>,
+    /// IN2-54 Insured S Contact Person Reason (IS, repeating)
+    #[hl7(field = 54)]
+    pub insured_s_contact_person_reason: Vec<String>,
+    /// IN2-55 Relationship To The Patient Start Date (DT)
+    #[hl7(field = 55)]
+    pub relationship_to_the_patient_start_date: Option<String>,
+    /// IN2-56 Relationship To The Patient Stop Date (DT, repeating)
+    #[hl7(field = 56)]
+    pub relationship_to_the_patient_stop_date: Vec<String>,
+    /// IN2-57 Insurance Co Contact Reason (IS)
+    #[hl7(field = 57)]
+    pub insurance_co_contact_reason: Option<String>,
+    /// IN2-58.1 Insurance Co Contact Phone Number / 999 999 9999 X99999 C Any Text (ST)
+    #[hl7(field = 58, component = 1)]
+    pub insurance_co_contact_phone_number_999_999_9999_x99999_c_any_text: Option<String>,
+    /// IN2-58.2 Insurance Co Contact Phone Number / Telecommunication Use Code (ID)
+    #[hl7(field = 58, component = 2)]
+    pub insurance_co_contact_phone_number_telecommunication_use_code: Option<String>,
+    /// IN2-58.3 Insurance Co Contact Phone Number / Telecommunication Equipment Type Id (ID)
+    #[hl7(field = 58, component = 3)]
+    pub insurance_co_contact_phone_number_telecommunication_equipment_type_id: Option<String>,
+    /// IN2-58.4 Insurance Co Contact Phone Number / Email Address (ST)
+    #[hl7(field = 58, component = 4)]
+    pub insurance_co_contact_phone_number_email_address: Option<String>,
+    /// IN2-58.5 Insurance Co Contact Phone Number / Country Code (NM)
+    #[hl7(field = 58, component = 5)]
+    pub insurance_co_contact_phone_number_country_code: Option<String>,
+    /// IN2-58.6 Insurance Co Contact Phone Number / Area City Code (NM)
+    #[hl7(field = 58, component = 6)]
+    pub insurance_co_contact_phone_number_area_city_code: Option<String>,
+    /// IN2-58.7 Insurance Co Contact Phone Number / Phone Number (NM)
+    #[hl7(field = 58, component = 7)]
+    pub insurance_co_contact_phone_number_phone_number: Option<String>,
+    /// IN2-58.8 Insurance Co Contact Phone Number / Extension (NM)
+    #[hl7(field = 58, component = 8)]
+    pub insurance_co_contact_phone_number_extension: Option<String>,
+    /// IN2-58.9 Insurance Co Contact Phone Number / Any Text (ST)
+    #[hl7(field = 58, component = 9)]
+    pub insurance_co_contact_phone_number_any_text: Option<String>,
+    /// IN2-58.10 Insurance Co Contact Phone Number / Extension Prefix (ST)
+    #[hl7(field = 58, component = 10)]
+    pub insurance_co_contact_phone_number_extension_prefix: Option<String>,
+    /// IN2-58.11 Insurance Co Contact Phone Number / Speed Dial Code (ST)
+    #[hl7(field = 58, component = 11)]
+    pub insurance_co_contact_phone_number_speed_dial_code: Option<String>,
+    /// IN2-58.12 Insurance Co Contact Phone Number / Unformatted Telephone Number (ST)
+    #[hl7(field = 58, component = 12)]
+    pub insurance_co_contact_phone_number_unformatted_telephone_number: Option<String>,
+    /// IN2-59 Policy Scope (IS)
+    #[hl7(field = 59)]
+    pub policy_scope: Option<String>,
+    /// IN2-60 Policy Source (IS)
+    #[hl7(field = 60)]
+    pub policy_source: Option<String>,
+    /// IN2-61.1 Patient Member Number / Id (ST)
+    #[hl7(field = 61, component = 1)]
+    pub patient_member_number_id: Option<String>,
+    /// IN2-61.2 Patient Member Number / Check Digit (ST)
+    #[hl7(field = 61, component = 2)]
+    pub patient_member_number_check_digit: Option<String>,
+    /// IN2-61.3 Patient Member Number / Code Identifying The Check Digit Scheme Employed (ID)
+    #[hl7(field = 61, component = 3)]
+    pub patient_member_number_code_identifying_the_check_digit_scheme_employed: Option<String>,
+    /// IN2-61.4 Patient Member Number / Assigning Authority (HD)
+    #[hl7(field = 61, component = 4)]
+    pub patient_member_number_assigning_authority: Option<String>,
+    /// IN2-61.5 Patient Member Number / Identifier Type Code (ID)
+    #[hl7(field = 61, component = 5)]
+    pub patient_member_number_identifier_type_code: Option<String>,
+    /// IN2-61.6 Patient Member Number / Assigning Facility (HD)
+    #[hl7(field = 61, component = 6)]
+    pub patient_member_number_assigning_facility: Option<String>,
+    /// IN2-61.7 Patient Member Number / Effective Date (DT)
+    #[hl7(field = 61, component = 7)]
+    pub patient_member_number_effective_date: Option<String>,
+    /// IN2-61.8 Patient Member Number / Expiration Date (DT)
+    #[hl7(field = 61, component = 8)]
+    pub patient_member_number_expiration_date: Option<String>,
+    /// IN2-61.9 Patient Member Number / Assigning Jurisdiction (CWE)
+    #[hl7(field = 61, component = 9)]
+    pub patient_member_number_assigning_jurisdiction: Option<String>,
+    /// IN2-61.10 Patient Member Number / Assigning Agency Or Department (CWE)
+    #[hl7(field = 61, component = 10)]
+    pub patient_member_number_assigning_agency_or_department: Option<String>,
+    /// IN2-62.1 Guarantor S Relationship To Insured / Identifier (ST)
+    #[hl7(field = 62, component = 1)]
+    pub guarantor_s_relationship_to_insured_identifier: Option<String>,
+    /// IN2-62.2 Guarantor S Relationship To Insured / Text (ST)
+    #[hl7(field = 62, component = 2)]
+    pub guarantor_s_relationship_to_insured_text: Option<String>,
+    /// IN2-62.3 Guarantor S Relationship To Insured / Name Of Coding System (ID)
+    #[hl7(field = 62, component = 3)]
+    pub guarantor_s_relationship_to_insured_name_of_coding_system: Option<String>,
+    /// IN2-62.4 Guarantor S Relationship To Insured / Alternate Identifier (ST)
+    #[hl7(field = 62, component = 4)]
+    pub guarantor_s_relationship_to_insured_alternate_identifier: Option<String>,
+    /// IN2-62.5 Guarantor S Relationship To Insured / Alternate Text (ST)
+    #[hl7(field = 62, component = 5)]
+    pub guarantor_s_relationship_to_insured_alternate_text: Option<String>,
+    /// IN2-62.6 Guarantor S Relationship To Insured / Name Of Alternate Coding System (ID)
+    #[hl7(field = 62, component = 6)]
+    pub guarantor_s_relationship_to_insured_name_of_alternate_coding_system: Option<String>,
+    /// IN2-63 Insured S Telephone Number Home (XTN, repeating)
+    #[hl7(field = 63)]
+    pub insured_s_telephone_number_home: Vec<String>,
+    /// IN2-64 Insured S Employer Telephone Number (XTN, repeating)
+    #[hl7(field = 64)]
+    pub insured_s_employer_telephone_number: Vec<String>,
+    /// IN2-65.1 Military Handicapped Program / Identifier (ST)
+    #[hl7(field = 65, component = 1)]
+    pub military_handicapped_program_identifier: Option<String>,
+    /// IN2-65.2 Military Handicapped Program / Text (ST)
+    #[hl7(field = 65, component = 2)]
+    pub military_handicapped_program_text: Option<String>,
+    /// IN2-65.3 Military Handicapped Program / Name Of Coding System (ID)
+    #[hl7(field = 65, component = 3)]
+    pub military_handicapped_program_name_of_coding_system: Option<String>,
+    /// IN2-65.4 Military Handicapped Program / Alternate Identifier (ST)
+    #[hl7(field = 65, component = 4)]
+    pub military_handicapped_program_alternate_identifier: Option<String>,
+    /// IN2-65.5 Military Handicapped Program / Alternate Text (ST)
+    #[hl7(field = 65, component = 5)]
+    pub military_handicapped_program_alternate_text: Option<String>,
+    /// IN2-65.6 Military Handicapped Program / Name Of Alternate Coding System (ID)
+    #[hl7(field = 65, component = 6)]
+    pub military_handicapped_program_name_of_alternate_coding_system: Option<String>,
+    /// IN2-66 Suspend Flag (ID)
+    #[hl7(field = 66)]
+    pub suspend_flag: Option<String>,
+    /// IN2-67 Co Pay Limit Flag (ID)
+    #[hl7(field = 67)]
+    pub co_pay_limit_flag: Option<String>,
+    /// IN2-68 Stoploss Limit Flag (ID)
+    #[hl7(field = 68)]
+    pub stoploss_limit_flag: Option<String>,
+    /// IN2-69 Insured Organization Name And Id (XON, repeating)
+    #[hl7(field = 69)]
+    pub insured_organization_name_and_id: Vec<String>,
+    /// IN2-70 Insured Employer Organization Name And Id (XON, repeating)
+    #[hl7(field = 70)]
+    pub insured_employer_organization_name_and_id: Vec<String>,
+    /// IN2-71 Race (CE, repeating)
+    #[hl7(field = 71)]
+    pub race: Vec<String>,
+    /// IN2-72.1 Patient Relationship To Insured / Identifier (ST)
+    #[hl7(field = 72, component = 1)]
+    pub patient_relationship_to_insured_identifier: Option<String>,
+    /// IN2-72.2 Patient Relationship To Insured / Text (ST)
+    #[hl7(field = 72, component = 2)]
+    pub patient_relationship_to_insured_text: Option<String>,
+    /// IN2-72.3 Patient Relationship To Insured / Name Of Coding System (ID)
+    #[hl7(field = 72, component = 3)]
+    pub patient_relationship_to_insured_name_of_coding_system: Option<String>,
+    /// IN2-72.4 Patient Relationship To Insured / Alternate Identifier (ST)
+    #[hl7(field = 72, component = 4)]
+    pub patient_relationship_to_insured_alternate_identifier: Option<String>,
+    /// IN2-72.5 Patient Relationship To Insured / Alternate Text (ST)
+    #[hl7(field = 72, component = 5)]
+    pub patient_relationship_to_insured_alternate_text: Option<String>,
+    /// IN2-72.6 Patient Relationship To Insured / Name Of Alternate Coding System (ID)
+    #[hl7(field = 72, component = 6)]
+    pub patient_relationship_to_insured_name_of_alternate_coding_system: Option<String>,
+}
+
+/// IN3 - IN3
+#[derive(vyna_hl7_macros::Segment, Debug, Clone, Default, PartialEq)]
+#[hl7(id = "IN3")]
+pub struct In3 {
+    /// IN3-1 Set Id Insurance Certification (SI)
+    #[hl7(field = 1)]
+    pub set_id_insurance_certification: String,
+    /// IN3-2.1 Certification Number / Id (ST)
+    #[hl7(field = 2, component = 1)]
+    pub certification_number_id: Option<String>,
+    /// IN3-2.2 Certification Number / Check Digit (ST)
+    #[hl7(field = 2, component = 2)]
+    pub certification_number_check_digit: Option<String>,
+    /// IN3-2.3 Certification Number / Code Identifying The Check Digit Scheme Employed (ID)
+    #[hl7(field = 2, component = 3)]
+    pub certification_number_code_identifying_the_check_digit_scheme_employed: Option<String>,
+    /// IN3-2.4 Certification Number / Assigning Authority (HD)
+    #[hl7(field = 2, component = 4)]
+    pub certification_number_assigning_authority: Option<String>,
+    /// IN3-2.5 Certification Number / Identifier Type Code (ID)
+    #[hl7(field = 2, component = 5)]
+    pub certification_number_identifier_type_code: Option<String>,
+    /// IN3-2.6 Certification Number / Assigning Facility (HD)
+    #[hl7(field = 2, component = 6)]
+    pub certification_number_assigning_facility: Option<String>,
+    /// IN3-2.7 Certification Number / Effective Date (DT)
+    #[hl7(field = 2, component = 7)]
+    pub certification_number_effective_date: Option<String>,
+    /// IN3-2.8 Certification Number / Expiration Date (DT)
+    #[hl7(field = 2, component = 8)]
+    pub certification_number_expiration_date: Option<String>,
+    /// IN3-2.9 Certification Number / Assigning Jurisdiction (CWE)
+    #[hl7(field = 2, component = 9)]
+    pub certification_number_assigning_jurisdiction: Option<String>,
+    /// IN3-2.10 Certification Number / Assigning Agency Or Department (CWE)
+    #[hl7(field = 2, component = 10)]
+    pub certification_number_assigning_agency_or_department: Option<String>,
+    /// IN3-3 Certified By (XCN, repeating)
+    #[hl7(field = 3)]
+    pub certified_by: Vec<String>,
+    /// IN3-4 Certification Required (ID)
+    #[hl7(field = 4)]
+    pub certification_required: Option<String>,
+    /// IN3-5.1 Penalty / Penalty Type (ID)
+    #[hl7(field = 5, component = 1)]
+    pub penalty_penalty_type: Option<String>,
+    /// IN3-5.2 Penalty / Penalty Amount (NM)
+    #[hl7(field = 5, component = 2)]
+    pub penalty_penalty_amount: Option<String>,
+    /// IN3-5.3 Penalty / Currency Denomination (ID)
+    #[hl7(field = 5, component = 3)]
+    pub penalty_currency_denomination: Option<String>,
+    /// IN3-6.1 Certification Date Time / Time Of An Event (DTM)
+    #[hl7(field = 6, component = 1)]
+    pub certification_date_time_time_of_an_event: Option<String>,
+    /// IN3-6.2 Certification Date Time / Degree Of Precision (ID)
+    #[hl7(field = 6, component = 2)]
+    pub certification_date_time_degree_of_precision: Option<String>,
+    /// IN3-7.1 Certification Modify Date Time / Time Of An Event (DTM)
+    #[hl7(field = 7, component = 1)]
+    pub certification_modify_date_time_time_of_an_event: Option<String>,
+    /// IN3-7.2 Certification Modify Date Time / Degree Of Precision (ID)
+    #[hl7(field = 7, component = 2)]
+    pub certification_modify_date_time_degree_of_precision: Option<String>,
+    /// IN3-8 Operator (XCN, repeating)
+    #[hl7(field = 8)]
+    pub operator: Vec<String>,
+    /// IN3-9 Certification Begin Date (DT)
+    #[hl7(field = 9)]
+    pub certification_begin_date: Option<String>,
+    /// IN3-10 Certification End Date (DT)
+    #[hl7(field = 10)]
+    pub certification_end_date: Option<String>,
+    /// IN3-11.1 Days / Day Type (IS)
+    #[hl7(field = 11, component = 1)]
+    pub days_day_type: Option<String>,
+    /// IN3-11.2 Days / Number Of Days (NM)
+    #[hl7(field = 11, component = 2)]
+    pub days_number_of_days: Option<String>,
+    /// IN3-12.1 Non Concur Code Description / Identifier (ST)
+    #[hl7(field = 12, component = 1)]
+    pub non_concur_code_description_identifier: Option<String>,
+    /// IN3-12.2 Non Concur Code Description / Text (ST)
+    #[hl7(field = 12, component = 2)]
+    pub non_concur_code_description_text: Option<String>,
+    /// IN3-12.3 Non Concur Code Description / Name Of Coding System (ID)
+    #[hl7(field = 12, component = 3)]
+    pub non_concur_code_description_name_of_coding_system: Option<String>,
+    /// IN3-12.4 Non Concur Code Description / Alternate Identifier (ST)
+    #[hl7(field = 12, component = 4)]
+    pub non_concur_code_description_alternate_identifier: Option<String>,
+    /// IN3-12.5 Non Concur Code Description / Alternate Text (ST)
+    #[hl7(field = 12, component = 5)]
+    pub non_concur_code_description_alternate_text: Option<String>,
+    /// IN3-12.6 Non Concur Code Description / Name Of Alternate Coding System (ID)
+    #[hl7(field = 12, component = 6)]
+    pub non_concur_code_description_name_of_alternate_coding_system: Option<String>,
+    /// IN3-13.1 Non Concur Effective Date Time / Time Of An Event (DTM)
+    #[hl7(field = 13, component = 1)]
+    pub non_concur_effective_date_time_time_of_an_event: Option<String>,
+    /// IN3-13.2 Non Concur Effective Date Time / Degree Of Precision (ID)
+    #[hl7(field = 13, component = 2)]
+    pub non_concur_effective_date_time_degree_of_precision: Option<String>,
+    /// IN3-14 Physician Reviewer (XCN, repeating)
+    #[hl7(field = 14)]
+    pub physician_reviewer: Vec<String>,
+    /// IN3-15 Certification Contact (ST)
+    #[hl7(field = 15)]
+    pub certification_contact: Option<String>,
+    /// IN3-16 Certification Contact Phone Number (XTN, repeating)
+    #[hl7(field = 16)]
+    pub certification_contact_phone_number: Vec<String>,
+    /// IN3-17.1 Appeal Reason / Identifier (ST)
+    #[hl7(field = 17, component = 1)]
+    pub appeal_reason_identifier: Option<String>,
+    /// IN3-17.2 Appeal Reason / Text (ST)
+    #[hl7(field = 17, component = 2)]
+    pub appeal_reason_text: Option<String>,
+    /// IN3-17.3 Appeal Reason / Name Of Coding System (ID)
+    #[hl7(field = 17, component = 3)]
+    pub appeal_reason_name_of_coding_system: Option<String>,
+    /// IN3-17.4 Appeal Reason / Alternate Identifier (ST)
+    #[hl7(field = 17, component = 4)]
+    pub appeal_reason_alternate_identifier: Option<String>,
+    /// IN3-17.5 Appeal Reason / Alternate Text (ST)
+    #[hl7(field = 17, component = 5)]
+    pub appeal_reason_alternate_text: Option<String>,
+    /// IN3-17.6 Appeal Reason / Name Of Alternate Coding System (ID)
+    #[hl7(field = 17, component = 6)]
+    pub appeal_reason_name_of_alternate_coding_system: Option<String>,
+    /// IN3-18.1 Certification Agency / Identifier (ST)
+    #[hl7(field = 18, component = 1)]
+    pub certification_agency_identifier: Option<String>,
+    /// IN3-18.2 Certification Agency / Text (ST)
+    #[hl7(field = 18, component = 2)]
+    pub certification_agency_text: Option<String>,
+    /// IN3-18.3 Certification Agency / Name Of Coding System (ID)
+    #[hl7(field = 18, component = 3)]
+    pub certification_agency_name_of_coding_system: Option<String>,
+    /// IN3-18.4 Certification Agency / Alternate Identifier (ST)
+    #[hl7(field = 18, component = 4)]
+    pub certification_agency_alternate_identifier: Option<String>,
+    /// IN3-18.5 Certification Agency / Alternate Text (ST)
+    #[hl7(field = 18, component = 5)]
+    pub certification_agency_alternate_text: Option<String>,
+    /// IN3-18.6 Certification Agency / Name Of Alternate Coding System (ID)
+    #[hl7(field = 18, component = 6)]
+    pub certification_agency_name_of_alternate_coding_system: Option<String>,
+    /// IN3-19 Certification Agency Phone Number (XTN, repeating)
+    #[hl7(field = 19)]
+    pub certification_agency_phone_number: Vec<String>,
+    /// IN3-20 Pre Certification Required Window (ICD, repeating)
+    #[hl7(field = 20)]
+    pub pre_certification_required_window: Vec<String>,
+    /// IN3-21 Case Manager (ST)
+    #[hl7(field = 21)]
+    pub case_manager: Option<String>,
+    /// IN3-22 Second Opinion Date (DT)
+    #[hl7(field = 22)]
+    pub second_opinion_date: Option<String>,
+    /// IN3-23 Second Opinion Status (IS)
+    #[hl7(field = 23)]
+    pub second_opinion_status: Option<String>,
+    /// IN3-24 Second Opinion Documentation Received (IS, repeating)
+    #[hl7(field = 24)]
+    pub second_opinion_documentation_received: Vec<String>,
+    /// IN3-25 Second Opinion Physician (XCN, repeating)
+    #[hl7(field = 25)]
+    pub second_opinion_physician: Vec<String>,
 }
 
 /// ACC - Accident
 #[derive(vyna_hl7_macros::Segment, Debug, Clone, Default, PartialEq)]
 #[hl7(id = "ACC")]
 pub struct Acc {
-    /// ACC-1 Accident Date/Time (TS)
-    #[hl7(field = 1)]
-    pub accident_date_time: Option<String>,
+    /// ACC-1.1 Accident Date/Time / Time Of An Event (DTM)
+    #[hl7(field = 1, component = 1)]
+    pub accident_date_time_time_of_an_event: Option<String>,
+    /// ACC-1.2 Accident Date/Time / Degree Of Precision (ID)
+    #[hl7(field = 1, component = 2)]
+    pub accident_date_time_degree_of_precision: Option<String>,
     /// ACC-2.1 Accident Code / Identifier (ST)
     #[hl7(field = 2, component = 1)]
     pub accident_code_identifier: Option<String>,
@@ -2733,39 +3588,504 @@ pub struct Acc {
     /// ACC-6 Accident Death Indicator (ID)
     #[hl7(field = 6)]
     pub accident_death_indicator: Option<String>,
+    /// ACC-7.1 Entered By / Id Number (ST)
+    #[hl7(field = 7, component = 1)]
+    pub entered_by_id_number: Option<String>,
+    /// ACC-7.2 Entered By / Family Name (FN)
+    #[hl7(field = 7, component = 2)]
+    pub entered_by_family_name: Option<String>,
+    /// ACC-7.3 Entered By / Given Name (ST)
+    #[hl7(field = 7, component = 3)]
+    pub entered_by_given_name: Option<String>,
+    /// ACC-7.4 Entered By / Second And Further Given Names Or Initials Thereof (ST)
+    #[hl7(field = 7, component = 4)]
+    pub entered_by_second_and_further_given_names_or_initials_thereof: Option<String>,
+    /// ACC-7.5 Entered By / Suffix E G Jr Or Iii (ST)
+    #[hl7(field = 7, component = 5)]
+    pub entered_by_suffix_e_g_jr_or_iii: Option<String>,
+    /// ACC-7.6 Entered By / Prefix E G Dr (ST)
+    #[hl7(field = 7, component = 6)]
+    pub entered_by_prefix_e_g_dr: Option<String>,
+    /// ACC-7.7 Entered By / Degree E G Md (IS)
+    #[hl7(field = 7, component = 7)]
+    pub entered_by_degree_e_g_md: Option<String>,
+    /// ACC-7.8 Entered By / Source Table (IS)
+    #[hl7(field = 7, component = 8)]
+    pub entered_by_source_table: Option<String>,
+    /// ACC-7.9 Entered By / Assigning Authority (HD)
+    #[hl7(field = 7, component = 9)]
+    pub entered_by_assigning_authority: Option<String>,
+    /// ACC-7.10 Entered By / Name Type Code (ID)
+    #[hl7(field = 7, component = 10)]
+    pub entered_by_name_type_code: Option<String>,
+    /// ACC-7.11 Entered By / Identifier Check Digit (ST)
+    #[hl7(field = 7, component = 11)]
+    pub entered_by_identifier_check_digit: Option<String>,
+    /// ACC-7.12 Entered By / Check Digit Scheme (ID)
+    #[hl7(field = 7, component = 12)]
+    pub entered_by_check_digit_scheme: Option<String>,
+    /// ACC-7.13 Entered By / Identifier Type Code (ID)
+    #[hl7(field = 7, component = 13)]
+    pub entered_by_identifier_type_code: Option<String>,
+    /// ACC-7.14 Entered By / Assigning Facility (HD)
+    #[hl7(field = 7, component = 14)]
+    pub entered_by_assigning_facility: Option<String>,
+    /// ACC-7.15 Entered By / Name Representation Code (ID)
+    #[hl7(field = 7, component = 15)]
+    pub entered_by_name_representation_code: Option<String>,
+    /// ACC-7.16 Entered By / Name Context (CE)
+    #[hl7(field = 7, component = 16)]
+    pub entered_by_name_context: Option<String>,
+    /// ACC-7.17 Entered By / Name Validity Range (DR)
+    #[hl7(field = 7, component = 17)]
+    pub entered_by_name_validity_range: Option<String>,
+    /// ACC-7.18 Entered By / Name Assembly Order (ID)
+    #[hl7(field = 7, component = 18)]
+    pub entered_by_name_assembly_order: Option<String>,
+    /// ACC-7.19 Entered By / Effective Date (TS)
+    #[hl7(field = 7, component = 19)]
+    pub entered_by_effective_date: Option<String>,
+    /// ACC-7.20 Entered By / Expiration Date (TS)
+    #[hl7(field = 7, component = 20)]
+    pub entered_by_expiration_date: Option<String>,
+    /// ACC-7.21 Entered By / Professional Suffix (ST)
+    #[hl7(field = 7, component = 21)]
+    pub entered_by_professional_suffix: Option<String>,
+    /// ACC-7.22 Entered By / Assigning Jurisdiction (CWE)
+    #[hl7(field = 7, component = 22)]
+    pub entered_by_assigning_jurisdiction: Option<String>,
+    /// ACC-7.23 Entered By / Assigning Agency Or Department (CWE)
+    #[hl7(field = 7, component = 23)]
+    pub entered_by_assigning_agency_or_department: Option<String>,
+    /// ACC-8 Accident Description (ST)
+    #[hl7(field = 8)]
+    pub accident_description: Option<String>,
+    /// ACC-9 Brought In By (ST)
+    #[hl7(field = 9)]
+    pub brought_in_by: Option<String>,
+    /// ACC-10 Police Notified Indicator (ID)
+    #[hl7(field = 10)]
+    pub police_notified_indicator: Option<String>,
+    /// ACC-11.1 Accident Address / Street Address (SAD)
+    #[hl7(field = 11, component = 1)]
+    pub accident_address_street_address: Option<String>,
+    /// ACC-11.2 Accident Address / Other Designation (ST)
+    #[hl7(field = 11, component = 2)]
+    pub accident_address_other_designation: Option<String>,
+    /// ACC-11.3 Accident Address / City (ST)
+    #[hl7(field = 11, component = 3)]
+    pub accident_address_city: Option<String>,
+    /// ACC-11.4 Accident Address / State Or Province (ST)
+    #[hl7(field = 11, component = 4)]
+    pub accident_address_state_or_province: Option<String>,
+    /// ACC-11.5 Accident Address / Zip Or Postal Code (ST)
+    #[hl7(field = 11, component = 5)]
+    pub accident_address_zip_or_postal_code: Option<String>,
+    /// ACC-11.6 Accident Address / Country (ID)
+    #[hl7(field = 11, component = 6)]
+    pub accident_address_country: Option<String>,
+    /// ACC-11.7 Accident Address / Address Type (ID)
+    #[hl7(field = 11, component = 7)]
+    pub accident_address_address_type: Option<String>,
+    /// ACC-11.8 Accident Address / Other Geographic Designation (ST)
+    #[hl7(field = 11, component = 8)]
+    pub accident_address_other_geographic_designation: Option<String>,
+    /// ACC-11.9 Accident Address / County Parish Code (IS)
+    #[hl7(field = 11, component = 9)]
+    pub accident_address_county_parish_code: Option<String>,
+    /// ACC-11.10 Accident Address / Census Tract (IS)
+    #[hl7(field = 11, component = 10)]
+    pub accident_address_census_tract: Option<String>,
+    /// ACC-11.11 Accident Address / Address Representation Code (ID)
+    #[hl7(field = 11, component = 11)]
+    pub accident_address_address_representation_code: Option<String>,
+    /// ACC-11.12 Accident Address / Address Validity Range (DR)
+    #[hl7(field = 11, component = 12)]
+    pub accident_address_address_validity_range: Option<String>,
+    /// ACC-11.13 Accident Address / Effective Date (TS)
+    #[hl7(field = 11, component = 13)]
+    pub accident_address_effective_date: Option<String>,
+    /// ACC-11.14 Accident Address / Expiration Date (TS)
+    #[hl7(field = 11, component = 14)]
+    pub accident_address_expiration_date: Option<String>,
 }
 
-/// NTE - Notes and Comments
+/// UB1 - UB1
 #[derive(vyna_hl7_macros::Segment, Debug, Clone, Default, PartialEq)]
-#[hl7(id = "NTE")]
-pub struct Nte {
-    /// NTE-1 Set ID - NTE (SI)
+#[hl7(id = "UB1")]
+pub struct Ub1 {
+    /// UB1-1 Set Id Ub1 (SI)
     #[hl7(field = 1)]
-    pub set_id_nte: Option<String>,
-    /// NTE-2 Source of Comment (ID)
+    pub set_id_ub1: Option<String>,
+    /// UB1-2 Blood Deductible 43 (NM)
     #[hl7(field = 2)]
-    pub source_of_comment: Option<String>,
-    /// NTE-3 Comment (FT, repeating)
+    pub blood_deductible_43: Option<String>,
+    /// UB1-3 Blood Furnished Pints Of 40 (NM)
     #[hl7(field = 3)]
-    pub comment: Vec<String>,
-    /// NTE-4.1 Comment Type / Identifier (ST)
+    pub blood_furnished_pints_of_40: Option<String>,
+    /// UB1-4 Blood Replaced Pints 41 (NM)
+    #[hl7(field = 4)]
+    pub blood_replaced_pints_41: Option<String>,
+    /// UB1-5 Blood Not Replaced Pints 42 (NM)
+    #[hl7(field = 5)]
+    pub blood_not_replaced_pints_42: Option<String>,
+    /// UB1-6 Co Insurance Days 25 (NM)
+    #[hl7(field = 6)]
+    pub co_insurance_days_25: Option<String>,
+    /// UB1-7 Condition Code 35 39 (IS, repeating)
+    #[hl7(field = 7)]
+    pub condition_code_35_39: Vec<String>,
+    /// UB1-8 Covered Days 23 (NM)
+    #[hl7(field = 8)]
+    pub covered_days_23: Option<String>,
+    /// UB1-9 Non Covered Days 24 (NM)
+    #[hl7(field = 9)]
+    pub non_covered_days_24: Option<String>,
+    /// UB1-10 Value Amount Code 46 49 (UVC, repeating)
+    #[hl7(field = 10)]
+    pub value_amount_code_46_49: Vec<String>,
+    /// UB1-11 Number Of Grace Days 90 (NM)
+    #[hl7(field = 11)]
+    pub number_of_grace_days_90: Option<String>,
+    /// UB1-12.1 Spec Program Indicator 44 / Identifier (ST)
+    #[hl7(field = 12, component = 1)]
+    pub spec_program_indicator_44_identifier: Option<String>,
+    /// UB1-12.2 Spec Program Indicator 44 / Text (ST)
+    #[hl7(field = 12, component = 2)]
+    pub spec_program_indicator_44_text: Option<String>,
+    /// UB1-12.3 Spec Program Indicator 44 / Name Of Coding System (ID)
+    #[hl7(field = 12, component = 3)]
+    pub spec_program_indicator_44_name_of_coding_system: Option<String>,
+    /// UB1-12.4 Spec Program Indicator 44 / Alternate Identifier (ST)
+    #[hl7(field = 12, component = 4)]
+    pub spec_program_indicator_44_alternate_identifier: Option<String>,
+    /// UB1-12.5 Spec Program Indicator 44 / Alternate Text (ST)
+    #[hl7(field = 12, component = 5)]
+    pub spec_program_indicator_44_alternate_text: Option<String>,
+    /// UB1-12.6 Spec Program Indicator 44 / Name Of Alternate Coding System (ID)
+    #[hl7(field = 12, component = 6)]
+    pub spec_program_indicator_44_name_of_alternate_coding_system: Option<String>,
+    /// UB1-13.1 Psro Ur Approval Indicator 87 / Identifier (ST)
+    #[hl7(field = 13, component = 1)]
+    pub psro_ur_approval_indicator_87_identifier: Option<String>,
+    /// UB1-13.2 Psro Ur Approval Indicator 87 / Text (ST)
+    #[hl7(field = 13, component = 2)]
+    pub psro_ur_approval_indicator_87_text: Option<String>,
+    /// UB1-13.3 Psro Ur Approval Indicator 87 / Name Of Coding System (ID)
+    #[hl7(field = 13, component = 3)]
+    pub psro_ur_approval_indicator_87_name_of_coding_system: Option<String>,
+    /// UB1-13.4 Psro Ur Approval Indicator 87 / Alternate Identifier (ST)
+    #[hl7(field = 13, component = 4)]
+    pub psro_ur_approval_indicator_87_alternate_identifier: Option<String>,
+    /// UB1-13.5 Psro Ur Approval Indicator 87 / Alternate Text (ST)
+    #[hl7(field = 13, component = 5)]
+    pub psro_ur_approval_indicator_87_alternate_text: Option<String>,
+    /// UB1-13.6 Psro Ur Approval Indicator 87 / Name Of Alternate Coding System (ID)
+    #[hl7(field = 13, component = 6)]
+    pub psro_ur_approval_indicator_87_name_of_alternate_coding_system: Option<String>,
+    /// UB1-14 Psro Ur Approved Stay Fm 88 (DT)
+    #[hl7(field = 14)]
+    pub psro_ur_approved_stay_fm_88: Option<String>,
+    /// UB1-15 Psro Ur Approved Stay To 89 (DT)
+    #[hl7(field = 15)]
+    pub psro_ur_approved_stay_to_89: Option<String>,
+    /// UB1-16 Occurrence 28 32 (OCD, repeating)
+    #[hl7(field = 16)]
+    pub occurrence_28_32: Vec<String>,
+    /// UB1-17.1 Occurrence Span 33 / Identifier (ST)
+    #[hl7(field = 17, component = 1)]
+    pub occurrence_span_33_identifier: Option<String>,
+    /// UB1-17.2 Occurrence Span 33 / Text (ST)
+    #[hl7(field = 17, component = 2)]
+    pub occurrence_span_33_text: Option<String>,
+    /// UB1-17.3 Occurrence Span 33 / Name Of Coding System (ID)
+    #[hl7(field = 17, component = 3)]
+    pub occurrence_span_33_name_of_coding_system: Option<String>,
+    /// UB1-17.4 Occurrence Span 33 / Alternate Identifier (ST)
+    #[hl7(field = 17, component = 4)]
+    pub occurrence_span_33_alternate_identifier: Option<String>,
+    /// UB1-17.5 Occurrence Span 33 / Alternate Text (ST)
+    #[hl7(field = 17, component = 5)]
+    pub occurrence_span_33_alternate_text: Option<String>,
+    /// UB1-17.6 Occurrence Span 33 / Name Of Alternate Coding System (ID)
+    #[hl7(field = 17, component = 6)]
+    pub occurrence_span_33_name_of_alternate_coding_system: Option<String>,
+    /// UB1-18 Occur Span Start Date 33 (DT)
+    #[hl7(field = 18)]
+    pub occur_span_start_date_33: Option<String>,
+    /// UB1-19 Occur Span End Date 33 (DT)
+    #[hl7(field = 19)]
+    pub occur_span_end_date_33: Option<String>,
+    /// UB1-20 Ub 82 Locator 2 (ST)
+    #[hl7(field = 20)]
+    pub ub_82_locator_2: Option<String>,
+    /// UB1-21 Ub 82 Locator 9 (ST)
+    #[hl7(field = 21)]
+    pub ub_82_locator_9: Option<String>,
+    /// UB1-22 Ub 82 Locator 27 (ST)
+    #[hl7(field = 22)]
+    pub ub_82_locator_27: Option<String>,
+    /// UB1-23 Ub 82 Locator 45 (ST)
+    #[hl7(field = 23)]
+    pub ub_82_locator_45: Option<String>,
+}
+
+/// UB2 - UB2
+#[derive(vyna_hl7_macros::Segment, Debug, Clone, Default, PartialEq)]
+#[hl7(id = "UB2")]
+pub struct Ub2 {
+    /// UB2-1 Set Id Ub2 (SI)
+    #[hl7(field = 1)]
+    pub set_id_ub2: Option<String>,
+    /// UB2-2 Co Insurance Days 9 (ST)
+    #[hl7(field = 2)]
+    pub co_insurance_days_9: Option<String>,
+    /// UB2-3 Condition Code 24 30 (IS, repeating)
+    #[hl7(field = 3)]
+    pub condition_code_24_30: Vec<String>,
+    /// UB2-4 Covered Days 7 (ST)
+    #[hl7(field = 4)]
+    pub covered_days_7: Option<String>,
+    /// UB2-5 Non Covered Days 8 (ST)
+    #[hl7(field = 5)]
+    pub non_covered_days_8: Option<String>,
+    /// UB2-6 Value Amount Code (UVC, repeating)
+    #[hl7(field = 6)]
+    pub value_amount_code: Vec<String>,
+    /// UB2-7 Occurrence Code Date 32 35 (OCD, repeating)
+    #[hl7(field = 7)]
+    pub occurrence_code_date_32_35: Vec<String>,
+    /// UB2-8 Occurrence Span Code Dates 36 (OSP, repeating)
+    #[hl7(field = 8)]
+    pub occurrence_span_code_dates_36: Vec<String>,
+    /// UB2-9 Ub92 Locator 2 State (ST, repeating)
+    #[hl7(field = 9)]
+    pub ub92_locator_2_state: Vec<String>,
+    /// UB2-10 Ub92 Locator 11 State (ST, repeating)
+    #[hl7(field = 10)]
+    pub ub92_locator_11_state: Vec<String>,
+    /// UB2-11 Ub92 Locator 31 National (ST)
+    #[hl7(field = 11)]
+    pub ub92_locator_31_national: Option<String>,
+    /// UB2-12 Document Control Number (ST, repeating)
+    #[hl7(field = 12)]
+    pub document_control_number: Vec<String>,
+    /// UB2-13 Ub92 Locator 49 National (ST, repeating)
+    #[hl7(field = 13)]
+    pub ub92_locator_49_national: Vec<String>,
+    /// UB2-14 Ub92 Locator 56 State (ST, repeating)
+    #[hl7(field = 14)]
+    pub ub92_locator_56_state: Vec<String>,
+    /// UB2-15 Ub92 Locator 57 National (ST)
+    #[hl7(field = 15)]
+    pub ub92_locator_57_national: Option<String>,
+    /// UB2-16 Ub92 Locator 78 State (ST, repeating)
+    #[hl7(field = 16)]
+    pub ub92_locator_78_state: Vec<String>,
+    /// UB2-17 Special Visit Count (NM)
+    #[hl7(field = 17)]
+    pub special_visit_count: Option<String>,
+}
+
+/// PDA - PDA
+#[derive(vyna_hl7_macros::Segment, Debug, Clone, Default, PartialEq)]
+#[hl7(id = "PDA")]
+pub struct Pda {
+    /// PDA-1 Death Cause Code (CE, repeating)
+    #[hl7(field = 1)]
+    pub death_cause_code: Vec<String>,
+    /// PDA-2.1 Death Location / Point Of Care (IS)
+    #[hl7(field = 2, component = 1)]
+    pub death_location_point_of_care: Option<String>,
+    /// PDA-2.2 Death Location / Room (IS)
+    #[hl7(field = 2, component = 2)]
+    pub death_location_room: Option<String>,
+    /// PDA-2.3 Death Location / Bed (IS)
+    #[hl7(field = 2, component = 3)]
+    pub death_location_bed: Option<String>,
+    /// PDA-2.4 Death Location / Facility (HD)
+    #[hl7(field = 2, component = 4)]
+    pub death_location_facility: Option<String>,
+    /// PDA-2.5 Death Location / Location Status (IS)
+    #[hl7(field = 2, component = 5)]
+    pub death_location_location_status: Option<String>,
+    /// PDA-2.6 Death Location / Person Location Type (IS)
+    #[hl7(field = 2, component = 6)]
+    pub death_location_person_location_type: Option<String>,
+    /// PDA-2.7 Death Location / Building (IS)
+    #[hl7(field = 2, component = 7)]
+    pub death_location_building: Option<String>,
+    /// PDA-2.8 Death Location / Floor (IS)
+    #[hl7(field = 2, component = 8)]
+    pub death_location_floor: Option<String>,
+    /// PDA-2.9 Death Location / Location Description (ST)
+    #[hl7(field = 2, component = 9)]
+    pub death_location_location_description: Option<String>,
+    /// PDA-2.10 Death Location / Comprehensive Location Identifier (EI)
+    #[hl7(field = 2, component = 10)]
+    pub death_location_comprehensive_location_identifier: Option<String>,
+    /// PDA-2.11 Death Location / Assigning Authority For Location (HD)
+    #[hl7(field = 2, component = 11)]
+    pub death_location_assigning_authority_for_location: Option<String>,
+    /// PDA-3 Death Certified Indicator (ID)
+    #[hl7(field = 3)]
+    pub death_certified_indicator: Option<String>,
+    /// PDA-4.1 Death Certificate Signed Date Time / Time (DTM)
     #[hl7(field = 4, component = 1)]
-    pub comment_type_identifier: Option<String>,
-    /// NTE-4.2 Comment Type / Text (ST)
+    pub death_certificate_signed_date_time_time: Option<String>,
+    /// PDA-4.2 Death Certificate Signed Date Time / Degree Of Precision (ID)
     #[hl7(field = 4, component = 2)]
-    pub comment_type_text: Option<String>,
-    /// NTE-4.3 Comment Type / Name of Coding System (ID)
-    #[hl7(field = 4, component = 3)]
-    pub comment_type_name_of_coding_system: Option<String>,
-    /// NTE-4.4 Comment Type / Alternate Identifier (ST)
-    #[hl7(field = 4, component = 4)]
-    pub comment_type_alternate_identifier: Option<String>,
-    /// NTE-4.5 Comment Type / Alternate Text (ST)
-    #[hl7(field = 4, component = 5)]
-    pub comment_type_alternate_text: Option<String>,
-    /// NTE-4.6 Comment Type / Name of Alternate Coding System (ID)
-    #[hl7(field = 4, component = 6)]
-    pub comment_type_name_of_alternate_coding_system: Option<String>,
+    pub death_certificate_signed_date_time_degree_of_precision: Option<String>,
+    /// PDA-5.1 Death Certified By / Id Number (ST)
+    #[hl7(field = 5, component = 1)]
+    pub death_certified_by_id_number: Option<String>,
+    /// PDA-5.2 Death Certified By / Family Name (FN)
+    #[hl7(field = 5, component = 2)]
+    pub death_certified_by_family_name: Option<String>,
+    /// PDA-5.3 Death Certified By / Given Name (ST)
+    #[hl7(field = 5, component = 3)]
+    pub death_certified_by_given_name: Option<String>,
+    /// PDA-5.4 Death Certified By / Second And Further Given Names Or Initials Thereof (ST)
+    #[hl7(field = 5, component = 4)]
+    pub death_certified_by_second_and_further_given_names_or_initials_thereof: Option<String>,
+    /// PDA-5.5 Death Certified By / Suffix E G Jr Or Iii (ST)
+    #[hl7(field = 5, component = 5)]
+    pub death_certified_by_suffix_e_g_jr_or_iii: Option<String>,
+    /// PDA-5.6 Death Certified By / Prefix E G Dr (ST)
+    #[hl7(field = 5, component = 6)]
+    pub death_certified_by_prefix_e_g_dr: Option<String>,
+    /// PDA-5.7 Death Certified By / Degree E G Md (IS)
+    #[hl7(field = 5, component = 7)]
+    pub death_certified_by_degree_e_g_md: Option<String>,
+    /// PDA-5.8 Death Certified By / Source Table (IS)
+    #[hl7(field = 5, component = 8)]
+    pub death_certified_by_source_table: Option<String>,
+    /// PDA-5.9 Death Certified By / Assigning Authority (HD)
+    #[hl7(field = 5, component = 9)]
+    pub death_certified_by_assigning_authority: Option<String>,
+    /// PDA-5.10 Death Certified By / Name Type Code (ID)
+    #[hl7(field = 5, component = 10)]
+    pub death_certified_by_name_type_code: Option<String>,
+    /// PDA-5.11 Death Certified By / Identifier Check Digit (ST)
+    #[hl7(field = 5, component = 11)]
+    pub death_certified_by_identifier_check_digit: Option<String>,
+    /// PDA-5.12 Death Certified By / Check Digit Scheme (ID)
+    #[hl7(field = 5, component = 12)]
+    pub death_certified_by_check_digit_scheme: Option<String>,
+    /// PDA-5.13 Death Certified By / Identifier Type Code (ID)
+    #[hl7(field = 5, component = 13)]
+    pub death_certified_by_identifier_type_code: Option<String>,
+    /// PDA-5.14 Death Certified By / Assigning Facility (HD)
+    #[hl7(field = 5, component = 14)]
+    pub death_certified_by_assigning_facility: Option<String>,
+    /// PDA-5.15 Death Certified By / Name Representation Code (ID)
+    #[hl7(field = 5, component = 15)]
+    pub death_certified_by_name_representation_code: Option<String>,
+    /// PDA-5.16 Death Certified By / Name Context (CE)
+    #[hl7(field = 5, component = 16)]
+    pub death_certified_by_name_context: Option<String>,
+    /// PDA-5.17 Death Certified By / Name Validity Range (DR)
+    #[hl7(field = 5, component = 17)]
+    pub death_certified_by_name_validity_range: Option<String>,
+    /// PDA-5.18 Death Certified By / Name Assembly Order (ID)
+    #[hl7(field = 5, component = 18)]
+    pub death_certified_by_name_assembly_order: Option<String>,
+    /// PDA-5.19 Death Certified By / Effective Date (TS)
+    #[hl7(field = 5, component = 19)]
+    pub death_certified_by_effective_date: Option<String>,
+    /// PDA-5.20 Death Certified By / Expiration Date (TS)
+    #[hl7(field = 5, component = 20)]
+    pub death_certified_by_expiration_date: Option<String>,
+    /// PDA-5.21 Death Certified By / Professional Suffix (ST)
+    #[hl7(field = 5, component = 21)]
+    pub death_certified_by_professional_suffix: Option<String>,
+    /// PDA-5.22 Death Certified By / Assigning Jurisdiction (CWE)
+    #[hl7(field = 5, component = 22)]
+    pub death_certified_by_assigning_jurisdiction: Option<String>,
+    /// PDA-5.23 Death Certified By / Assigning Agency Or Department (CWE)
+    #[hl7(field = 5, component = 23)]
+    pub death_certified_by_assigning_agency_or_department: Option<String>,
+    /// PDA-6 Autopsy Indicator (ID)
+    #[hl7(field = 6)]
+    pub autopsy_indicator: Option<String>,
+    /// PDA-7.1 Autopsy Start And End Date Time / Range Start Date Time (TS)
+    #[hl7(field = 7, component = 1)]
+    pub autopsy_start_and_end_date_time_range_start_date_time: Option<String>,
+    /// PDA-7.2 Autopsy Start And End Date Time / Range End Date Time (TS)
+    #[hl7(field = 7, component = 2)]
+    pub autopsy_start_and_end_date_time_range_end_date_time: Option<String>,
+    /// PDA-8.1 Autopsy Performed By / Id Number (ST)
+    #[hl7(field = 8, component = 1)]
+    pub autopsy_performed_by_id_number: Option<String>,
+    /// PDA-8.2 Autopsy Performed By / Family Name (FN)
+    #[hl7(field = 8, component = 2)]
+    pub autopsy_performed_by_family_name: Option<String>,
+    /// PDA-8.3 Autopsy Performed By / Given Name (ST)
+    #[hl7(field = 8, component = 3)]
+    pub autopsy_performed_by_given_name: Option<String>,
+    /// PDA-8.4 Autopsy Performed By / Second And Further Given Names Or Initials Thereof (ST)
+    #[hl7(field = 8, component = 4)]
+    pub autopsy_performed_by_second_and_further_given_names_or_initials_thereof: Option<String>,
+    /// PDA-8.5 Autopsy Performed By / Suffix E G Jr Or Iii (ST)
+    #[hl7(field = 8, component = 5)]
+    pub autopsy_performed_by_suffix_e_g_jr_or_iii: Option<String>,
+    /// PDA-8.6 Autopsy Performed By / Prefix E G Dr (ST)
+    #[hl7(field = 8, component = 6)]
+    pub autopsy_performed_by_prefix_e_g_dr: Option<String>,
+    /// PDA-8.7 Autopsy Performed By / Degree E G Md (IS)
+    #[hl7(field = 8, component = 7)]
+    pub autopsy_performed_by_degree_e_g_md: Option<String>,
+    /// PDA-8.8 Autopsy Performed By / Source Table (IS)
+    #[hl7(field = 8, component = 8)]
+    pub autopsy_performed_by_source_table: Option<String>,
+    /// PDA-8.9 Autopsy Performed By / Assigning Authority (HD)
+    #[hl7(field = 8, component = 9)]
+    pub autopsy_performed_by_assigning_authority: Option<String>,
+    /// PDA-8.10 Autopsy Performed By / Name Type Code (ID)
+    #[hl7(field = 8, component = 10)]
+    pub autopsy_performed_by_name_type_code: Option<String>,
+    /// PDA-8.11 Autopsy Performed By / Identifier Check Digit (ST)
+    #[hl7(field = 8, component = 11)]
+    pub autopsy_performed_by_identifier_check_digit: Option<String>,
+    /// PDA-8.12 Autopsy Performed By / Check Digit Scheme (ID)
+    #[hl7(field = 8, component = 12)]
+    pub autopsy_performed_by_check_digit_scheme: Option<String>,
+    /// PDA-8.13 Autopsy Performed By / Identifier Type Code (ID)
+    #[hl7(field = 8, component = 13)]
+    pub autopsy_performed_by_identifier_type_code: Option<String>,
+    /// PDA-8.14 Autopsy Performed By / Assigning Facility (HD)
+    #[hl7(field = 8, component = 14)]
+    pub autopsy_performed_by_assigning_facility: Option<String>,
+    /// PDA-8.15 Autopsy Performed By / Name Representation Code (ID)
+    #[hl7(field = 8, component = 15)]
+    pub autopsy_performed_by_name_representation_code: Option<String>,
+    /// PDA-8.16 Autopsy Performed By / Name Context (CE)
+    #[hl7(field = 8, component = 16)]
+    pub autopsy_performed_by_name_context: Option<String>,
+    /// PDA-8.17 Autopsy Performed By / Name Validity Range (DR)
+    #[hl7(field = 8, component = 17)]
+    pub autopsy_performed_by_name_validity_range: Option<String>,
+    /// PDA-8.18 Autopsy Performed By / Name Assembly Order (ID)
+    #[hl7(field = 8, component = 18)]
+    pub autopsy_performed_by_name_assembly_order: Option<String>,
+    /// PDA-8.19 Autopsy Performed By / Effective Date (TS)
+    #[hl7(field = 8, component = 19)]
+    pub autopsy_performed_by_effective_date: Option<String>,
+    /// PDA-8.20 Autopsy Performed By / Expiration Date (TS)
+    #[hl7(field = 8, component = 20)]
+    pub autopsy_performed_by_expiration_date: Option<String>,
+    /// PDA-8.21 Autopsy Performed By / Professional Suffix (ST)
+    #[hl7(field = 8, component = 21)]
+    pub autopsy_performed_by_professional_suffix: Option<String>,
+    /// PDA-8.22 Autopsy Performed By / Assigning Jurisdiction (CWE)
+    #[hl7(field = 8, component = 22)]
+    pub autopsy_performed_by_assigning_jurisdiction: Option<String>,
+    /// PDA-8.23 Autopsy Performed By / Assigning Agency Or Department (CWE)
+    #[hl7(field = 8, component = 23)]
+    pub autopsy_performed_by_assigning_agency_or_department: Option<String>,
+    /// PDA-9 Coroner Indicator (ID)
+    #[hl7(field = 9)]
+    pub coroner_indicator: Option<String>,
 }
 
 /// ADT^A01 (HL7 v2.5)
@@ -2826,10 +4146,19 @@ pub struct AdtA01 {
     /// IN2 - Insurance Additional Information
     #[hl7(segment, repeating)]
     pub in2: Vec<In2>,
+    /// IN3 - IN3
+    #[hl7(segment, repeating)]
+    pub in3: Vec<In3>,
     /// ACC - Accident
     #[hl7(segment, optional)]
     pub acc: Option<Acc>,
-    /// NTE - Notes and Comments
-    #[hl7(segment, repeating)]
-    pub nte: Vec<Nte>,
+    /// UB1 - UB1
+    #[hl7(segment, optional)]
+    pub ub1: Option<Ub1>,
+    /// UB2 - UB2
+    #[hl7(segment, optional)]
+    pub ub2: Option<Ub2>,
+    /// PDA - PDA
+    #[hl7(segment, optional)]
+    pub pda: Option<Pda>,
 }

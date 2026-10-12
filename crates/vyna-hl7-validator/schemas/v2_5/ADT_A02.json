@@ -29,6 +29,7 @@
           "required": false,
           "repeating": false,
           "max_length": 227,
+          "table_id": "0361",
           "components": {
             "1": {
               "name": "Namespace ID",
@@ -58,6 +59,7 @@
           "required": false,
           "repeating": false,
           "max_length": 227,
+          "table_id": "0362",
           "components": {
             "1": {
               "name": "Namespace ID",
@@ -87,6 +89,7 @@
           "required": false,
           "repeating": false,
           "max_length": 227,
+          "table_id": "0361",
           "components": {
             "1": {
               "name": "Namespace ID",
@@ -116,6 +119,7 @@
           "required": false,
           "repeating": false,
           "max_length": 227,
+          "table_id": "0362",
           "components": {
             "1": {
               "name": "Namespace ID",
@@ -142,9 +146,22 @@
         "7": {
           "name": "Date/Time Of Message",
           "data_type": "TS",
-          "required": false,
+          "required": true,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "8": {
           "name": "Security",
@@ -231,7 +248,8 @@
               "name": "Internationalization Code",
               "data_type": "CE",
               "required": false,
-              "max_length": 483
+              "max_length": 483,
+              "table_id": "0399"
             },
             "3": {
               "name": "International Version ID",
@@ -448,7 +466,7 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "10": {
               "name": "Organization Identifier",
@@ -491,7 +509,20 @@
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         }
       }
     },
@@ -511,16 +542,42 @@
         "2": {
           "name": "Recorded Date/Time",
           "data_type": "TS",
-          "required": false,
+          "required": true,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "3": {
           "name": "Date/Time Planned Event",
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "4": {
           "name": "Event Reason Code",
@@ -536,6 +593,7 @@
           "required": false,
           "repeating": true,
           "max_length": 250,
+          "table_id": "0188",
           "components": {
             "1": {
               "name": "ID Number",
@@ -632,13 +690,14 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "16": {
               "name": "Name Context",
               "data_type": "CE",
               "required": false,
-              "max_length": 483
+              "max_length": 483,
+              "table_id": "0448"
             },
             "17": {
               "name": "Name Validity Range",
@@ -690,7 +749,20 @@
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "7": {
           "name": "Event Facility",
@@ -1007,13 +1079,14 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "9": {
               "name": "Name Context",
               "data_type": "CE",
               "required": false,
-              "max_length": 483
+              "max_length": 483,
+              "table_id": "0448"
             },
             "10": {
               "name": "Name Validity Range",
@@ -1104,13 +1177,14 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "9": {
               "name": "Name Context",
               "data_type": "CE",
               "required": false,
-              "max_length": 483
+              "max_length": 483,
+              "table_id": "0448"
             },
             "10": {
               "name": "Name Validity Range",
@@ -1150,7 +1224,20 @@
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "8": {
           "name": "Administrative Sex",
@@ -1216,13 +1303,14 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "9": {
               "name": "Name Context",
               "data_type": "CE",
               "required": false,
-              "max_length": 483
+              "max_length": 483,
+              "table_id": "0448"
             },
             "10": {
               "name": "Name Validity Range",
@@ -1314,9 +1402,8 @@
           "components": {
             "1": {
               "name": "Street Address",
-              "data_type": "ST",
-              "required": false,
-              "max_length": 184
+              "data_type": "SAD",
+              "required": false
             },
             "2": {
               "name": "Other Designation",
@@ -1381,7 +1468,7 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "12": {
               "name": "Address Validity Range",
@@ -1802,10 +1889,27 @@
         },
         "20": {
           "name": "Driver's License Number - Patient",
-          "data_type": "ST",
+          "data_type": "DLN",
           "required": false,
           "repeating": false,
-          "max_length": 25
+          "components": {
+            "1": {
+              "name": "Driver S License Number",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Issuing State Province Country",
+              "data_type": "IS",
+              "required": false,
+              "table_id": "0333"
+            },
+            "3": {
+              "name": "Expiration Date",
+              "data_type": "DT",
+              "required": false
+            }
+          }
         },
         "21": {
           "name": "Mother's Identifier",
@@ -2098,7 +2202,20 @@
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "30": {
           "name": "Patient Death Indicator",
@@ -2129,7 +2246,20 @@
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "34": {
           "name": "Last Update Facility",
@@ -2267,7 +2397,7 @@
           "name": "Production Class Code",
           "data_type": "CE",
           "required": false,
-          "repeating": true,
+          "repeating": false,
           "max_length": 250,
           "table_id": "0429",
           "components": {
@@ -2406,7 +2536,6 @@
           "required": false,
           "repeating": true,
           "max_length": 250,
-          "table_id": "0204",
           "components": {
             "1": {
               "name": "Organization Name",
@@ -2465,7 +2594,7 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "10": {
               "name": "Organization Identifier",
@@ -2577,13 +2706,14 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "16": {
               "name": "Name Context",
               "data_type": "CE",
               "required": false,
-              "max_length": 483
+              "max_length": 483,
+              "table_id": "0448"
             },
             "17": {
               "name": "Name Validity Range",
@@ -2869,7 +2999,7 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "10": {
               "name": "Organization Identifier",
@@ -3173,13 +3303,14 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "16": {
               "name": "Name Context",
               "data_type": "CE",
               "required": false,
-              "max_length": 483
+              "max_length": 483,
+              "table_id": "0448"
             },
             "17": {
               "name": "Name Validity Range",
@@ -3231,14 +3362,40 @@
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "6": {
           "name": "Role End Date/Time",
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "7": {
           "name": "Role Duration",
@@ -3438,9 +3595,8 @@
           "components": {
             "1": {
               "name": "Street Address",
-              "data_type": "ST",
-              "required": false,
-              "max_length": 184
+              "data_type": "SAD",
+              "required": false
             },
             "2": {
               "name": "Other Designation",
@@ -3505,7 +3661,7 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "12": {
               "name": "Address Validity Range",
@@ -3979,13 +4135,14 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "16": {
               "name": "Name Context",
               "data_type": "CE",
               "required": false,
-              "max_length": 483
+              "max_length": 483,
+              "table_id": "0448"
             },
             "17": {
               "name": "Name Validity Range",
@@ -4135,13 +4292,14 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "16": {
               "name": "Name Context",
               "data_type": "CE",
               "required": false,
-              "max_length": 483
+              "max_length": 483,
+              "table_id": "0448"
             },
             "17": {
               "name": "Name Validity Range",
@@ -4291,13 +4449,14 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "16": {
               "name": "Name Context",
               "data_type": "CE",
               "required": false,
-              "max_length": 483
+              "max_length": 483,
+              "table_id": "0448"
             },
             "17": {
               "name": "Name Validity Range",
@@ -4577,13 +4736,14 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "16": {
               "name": "Name Context",
               "data_type": "CE",
               "required": false,
-              "max_length": 483
+              "max_length": 483,
+              "table_id": "0448"
             },
             "17": {
               "name": "Name Validity Range",
@@ -5118,14 +5278,40 @@
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "45": {
           "name": "Discharge Date/Time",
           "data_type": "TS",
           "required": false,
           "repeating": true,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "46": {
           "name": "Current Patient Balance",
@@ -5161,6 +5347,7 @@
           "required": false,
           "repeating": false,
           "max_length": 250,
+          "table_id": "0203",
           "components": {
             "1": {
               "name": "ID Number",
@@ -5338,13 +5525,14 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "16": {
               "name": "Name Context",
               "data_type": "CE",
               "required": false,
-              "max_length": 483
+              "max_length": 483,
+              "table_id": "0448"
             },
             "17": {
               "name": "Name Validity Range",
@@ -5649,14 +5837,40 @@
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "9": {
           "name": "Expected Discharge Date/Time",
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "10": {
           "name": "Estimated Length of Inpatient Stay",
@@ -5781,13 +5995,14 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "16": {
               "name": "Name Context",
               "data_type": "CE",
               "required": false,
-              "max_length": 483
+              "max_length": 483,
+              "table_id": "0448"
             },
             "17": {
               "name": "Name Validity Range",
@@ -5967,7 +6182,7 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "10": {
               "name": "Organization Identifier",
@@ -6091,7 +6306,20 @@
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "34": {
           "name": "Military Partnership Code",
@@ -6441,7 +6669,46 @@
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
+        },
+        "48": {
+          "name": "Expected Pre Admission Testing Date Time",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Time",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
+        },
+        "49": {
+          "name": "Notify Clergy Code",
+          "data_type": "IS",
+          "required": false,
+          "repeating": true,
+          "table_id": "0534"
         }
       }
     },
@@ -6746,7 +7013,20 @@
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "13": {
           "name": "User Defined Access Checks",
@@ -6760,7 +7040,20 @@
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "15": {
           "name": "Producer's ID",
@@ -6911,13 +7204,14 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "16": {
               "name": "Name Context",
               "data_type": "CE",
               "required": false,
-              "max_length": 483
+              "max_length": 483,
+              "table_id": "0448"
             },
             "17": {
               "name": "Name Validity Range",
@@ -7051,7 +7345,459 @@
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
+        }
+      }
+    },
+    "PDA": {
+      "name": "PDA",
+      "required": false,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Death Cause Code",
+          "data_type": "CE",
+          "required": false,
+          "repeating": true,
+          "components": {
+            "1": {
+              "name": "Identifier",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Text",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Name Of Coding System",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0396"
+            },
+            "4": {
+              "name": "Alternate Identifier",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Alternate Text",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Name Of Alternate Coding System",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0396"
+            }
+          }
+        },
+        "2": {
+          "name": "Death Location",
+          "data_type": "PL",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Point Of Care",
+              "data_type": "IS",
+              "required": false,
+              "table_id": "0302"
+            },
+            "2": {
+              "name": "Room",
+              "data_type": "IS",
+              "required": false,
+              "table_id": "0303"
+            },
+            "3": {
+              "name": "Bed",
+              "data_type": "IS",
+              "required": false,
+              "table_id": "0304"
+            },
+            "4": {
+              "name": "Facility",
+              "data_type": "HD",
+              "required": false
+            },
+            "5": {
+              "name": "Location Status",
+              "data_type": "IS",
+              "required": false,
+              "table_id": "0306"
+            },
+            "6": {
+              "name": "Person Location Type",
+              "data_type": "IS",
+              "required": false,
+              "table_id": "0305"
+            },
+            "7": {
+              "name": "Building",
+              "data_type": "IS",
+              "required": false,
+              "table_id": "0307"
+            },
+            "8": {
+              "name": "Floor",
+              "data_type": "IS",
+              "required": false,
+              "table_id": "0308"
+            },
+            "9": {
+              "name": "Location Description",
+              "data_type": "ST",
+              "required": false
+            },
+            "10": {
+              "name": "Comprehensive Location Identifier",
+              "data_type": "EI",
+              "required": false
+            },
+            "11": {
+              "name": "Assigning Authority For Location",
+              "data_type": "HD",
+              "required": false
+            }
+          }
+        },
+        "3": {
+          "name": "Death Certified Indicator",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0136"
+        },
+        "4": {
+          "name": "Death Certificate Signed Date Time",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Time",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
+        },
+        "5": {
+          "name": "Death Certified By",
+          "data_type": "XCN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Id Number",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Family Name",
+              "data_type": "FN",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Second And Further Given Names Or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix E G Jr Or Iii",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Prefix E G Dr",
+              "data_type": "ST",
+              "required": false
+            },
+            "7": {
+              "name": "Degree E G Md",
+              "data_type": "IS",
+              "required": false,
+              "table_id": "0360"
+            },
+            "8": {
+              "name": "Source Table",
+              "data_type": "IS",
+              "required": false,
+              "table_id": "0297"
+            },
+            "9": {
+              "name": "Assigning Authority",
+              "data_type": "HD",
+              "required": false,
+              "table_id": "0363"
+            },
+            "10": {
+              "name": "Name Type Code",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0200"
+            },
+            "11": {
+              "name": "Identifier Check Digit",
+              "data_type": "ST",
+              "required": false
+            },
+            "12": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0061"
+            },
+            "13": {
+              "name": "Identifier Type Code",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0203"
+            },
+            "14": {
+              "name": "Assigning Facility",
+              "data_type": "HD",
+              "required": false
+            },
+            "15": {
+              "name": "Name Representation Code",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0465"
+            },
+            "16": {
+              "name": "Name Context",
+              "data_type": "CE",
+              "required": false,
+              "table_id": "0448"
+            },
+            "17": {
+              "name": "Name Validity Range",
+              "data_type": "DR",
+              "required": false
+            },
+            "18": {
+              "name": "Name Assembly Order",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0444"
+            },
+            "19": {
+              "name": "Effective Date",
+              "data_type": "TS",
+              "required": false
+            },
+            "20": {
+              "name": "Expiration Date",
+              "data_type": "TS",
+              "required": false
+            },
+            "21": {
+              "name": "Professional Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "22": {
+              "name": "Assigning Jurisdiction",
+              "data_type": "CWE",
+              "required": false
+            },
+            "23": {
+              "name": "Assigning Agency Or Department",
+              "data_type": "CWE",
+              "required": false
+            }
+          }
+        },
+        "6": {
+          "name": "Autopsy Indicator",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0136"
+        },
+        "7": {
+          "name": "Autopsy Start And End Date Time",
+          "data_type": "DR",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Range Start Date Time",
+              "data_type": "TS",
+              "required": false
+            },
+            "2": {
+              "name": "Range End Date Time",
+              "data_type": "TS",
+              "required": false
+            }
+          }
+        },
+        "8": {
+          "name": "Autopsy Performed By",
+          "data_type": "XCN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "Id Number",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Family Name",
+              "data_type": "FN",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Second And Further Given Names Or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix E G Jr Or Iii",
+              "data_type": "ST",
+              "required": false
+            },
+            "6": {
+              "name": "Prefix E G Dr",
+              "data_type": "ST",
+              "required": false
+            },
+            "7": {
+              "name": "Degree E G Md",
+              "data_type": "IS",
+              "required": false,
+              "table_id": "0360"
+            },
+            "8": {
+              "name": "Source Table",
+              "data_type": "IS",
+              "required": false,
+              "table_id": "0297"
+            },
+            "9": {
+              "name": "Assigning Authority",
+              "data_type": "HD",
+              "required": false,
+              "table_id": "0363"
+            },
+            "10": {
+              "name": "Name Type Code",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0200"
+            },
+            "11": {
+              "name": "Identifier Check Digit",
+              "data_type": "ST",
+              "required": false
+            },
+            "12": {
+              "name": "Check Digit Scheme",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0061"
+            },
+            "13": {
+              "name": "Identifier Type Code",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0203"
+            },
+            "14": {
+              "name": "Assigning Facility",
+              "data_type": "HD",
+              "required": false
+            },
+            "15": {
+              "name": "Name Representation Code",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0465"
+            },
+            "16": {
+              "name": "Name Context",
+              "data_type": "CE",
+              "required": false,
+              "table_id": "0448"
+            },
+            "17": {
+              "name": "Name Validity Range",
+              "data_type": "DR",
+              "required": false
+            },
+            "18": {
+              "name": "Name Assembly Order",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0444"
+            },
+            "19": {
+              "name": "Effective Date",
+              "data_type": "TS",
+              "required": false
+            },
+            "20": {
+              "name": "Expiration Date",
+              "data_type": "TS",
+              "required": false
+            },
+            "21": {
+              "name": "Professional Suffix",
+              "data_type": "ST",
+              "required": false
+            },
+            "22": {
+              "name": "Assigning Jurisdiction",
+              "data_type": "CWE",
+              "required": false
+            },
+            "23": {
+              "name": "Assigning Agency Or Department",
+              "data_type": "CWE",
+              "required": false
+            }
+          }
+        },
+        "9": {
+          "name": "Coroner Indicator",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false,
+          "table_id": "0136"
         }
       }
     }

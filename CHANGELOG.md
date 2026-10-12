@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - DICOM support removed from the test panel (SCU/SCP tab, `dicom-*` dependencies) to keep the project HL7-only
+- 22 validation schemas for message structures that do not exist in their version (10 pre-dating v2.3 pharmacy/laboratory triggers and DFT^P11; QRY/ORM/MFN^M01/OUL^R21 withdrawn from v2.7/v2.8 in favor of QBP/OMG/MFN^M04/OUL^R22); `list_available_schemas` is now version-accurate
+
+### Fixed
+
+- Validation schemas re-skinned against the HAPI structure database (segments) and hl7apy (fields/components), arbitrated where the oracles disagree: ~7.9k datatype corrections (v2.3 CM_* composites, IS/CWE migrations, TS/DTM), segment sets/flags aligned with HAPI, ~1.6k table backfills, bogus table codes dropped, `CON_` renamed to the real `CON` segment ID
+- Vocabulary registry regenerated: 265 enforced tables (was 196), 28 site-defined tables documented, ISO 4217 currency codes added, hl7apy `9999` unknown-table sentinel purged from schemas
 
 ## [0.3.0] - 2026-10-12
 

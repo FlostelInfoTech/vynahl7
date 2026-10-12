@@ -1629,14 +1629,17 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_vxu_v04_missing_order_is_invalid() {
+    fn test_validate_vxu_v04_missing_pid_is_invalid() {
         use vyna_hl7_core::builders::vxu::VxuV04Builder;
 
-        let message = VxuV04Builder::new(Version::V2_5)
+        // The ORDER group (ORC/RXA) is optional per the VXU_V04 grammar, so an
+        // orderless message is structurally valid; a missing PID is not.
+        let mut message = VxuV04Builder::new(Version::V2_5)
             .patient_id("12345")
             .patient_name("Smith", "John")
             .build()
             .unwrap();
+        message.segments.retain(|s| s.id != "PID");
 
         let validator = Validator::for_message_type(Version::V2_5, "VXU", "V04").unwrap();
         let result = validator.validate(&message);
@@ -1645,7 +1648,7 @@ mod tests {
             result
                 .errors
                 .iter()
-                .any(|e| e.message.contains("ORC") || e.message.contains("RXA"))
+                .any(|e| e.message.contains("PID"))
         );
     }
 }

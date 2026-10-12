@@ -29,6 +29,7 @@
           "required": false,
           "repeating": false,
           "max_length": 227,
+          "table_id": "0361",
           "components": {
             "1": {
               "name": "Namespace ID",
@@ -58,6 +59,7 @@
           "required": false,
           "repeating": false,
           "max_length": 227,
+          "table_id": "0362",
           "components": {
             "1": {
               "name": "Namespace ID",
@@ -87,6 +89,7 @@
           "required": false,
           "repeating": false,
           "max_length": 227,
+          "table_id": "0361",
           "components": {
             "1": {
               "name": "Namespace ID",
@@ -116,6 +119,7 @@
           "required": false,
           "repeating": false,
           "max_length": 227,
+          "table_id": "0362",
           "components": {
             "1": {
               "name": "Namespace ID",
@@ -142,9 +146,21 @@
         "7": {
           "name": "Date/Time Of Message",
           "data_type": "TS",
-          "required": false,
+          "required": true,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
         },
         "8": {
           "name": "Security",
@@ -159,6 +175,7 @@
           "required": true,
           "repeating": false,
           "max_length": 15,
+          "table_id": "0076",
           "components": {
             "1": {
               "name": "Message Code",
@@ -219,6 +236,7 @@
           "required": true,
           "repeating": false,
           "max_length": 60,
+          "table_id": "0104",
           "components": {
             "1": {
               "name": "Version ID",
@@ -308,9 +326,8 @@
             },
             "3": {
               "name": "Name of Coding System",
-              "data_type": "ID",
+              "data_type": "IS",
               "required": false,
-              "max_length": 20,
               "table_id": "0396"
             },
             "4": {
@@ -327,9 +344,8 @@
             },
             "6": {
               "name": "Name of Alternate Coding System",
-              "data_type": "ID",
+              "data_type": "IS",
               "required": false,
-              "max_length": 20,
               "table_id": "0396"
             }
           }
@@ -344,38 +360,10 @@
         },
         "21": {
           "name": "Message Profile Identifier",
-          "data_type": "EI",
+          "data_type": "ID",
           "required": false,
           "repeating": true,
-          "max_length": 427,
-          "components": {
-            "1": {
-              "name": "Entity Identifier",
-              "data_type": "ST",
-              "required": false,
-              "max_length": 199
-            },
-            "2": {
-              "name": "Namespace ID",
-              "data_type": "IS",
-              "required": false,
-              "max_length": 20,
-              "table_id": "0363"
-            },
-            "3": {
-              "name": "Universal ID",
-              "data_type": "ST",
-              "required": false,
-              "max_length": 199
-            },
-            "4": {
-              "name": "Universal ID Type",
-              "data_type": "ID",
-              "required": false,
-              "max_length": 6,
-              "table_id": "0301"
-            }
-          }
+          "table_id": "0449"
         }
       }
     },
@@ -418,7 +406,8 @@
           "data_type": "ID",
           "required": false,
           "repeating": false,
-          "max_length": 1
+          "max_length": 1,
+          "table_id": "0102"
         },
         "6": {
           "name": "Error Condition",
@@ -426,74 +415,6 @@
           "required": false,
           "repeating": false,
           "max_length": 250,
-          "components": {
-            "1": {
-              "name": "Identifier",
-              "data_type": "ST",
-              "required": false,
-              "max_length": 20
-            },
-            "2": {
-              "name": "Text",
-              "data_type": "ST",
-              "required": false,
-              "max_length": 199
-            },
-            "3": {
-              "name": "Name of Coding System",
-              "data_type": "ID",
-              "required": false,
-              "max_length": 20,
-              "table_id": "0396"
-            },
-            "4": {
-              "name": "Alternate Identifier",
-              "data_type": "ST",
-              "required": false,
-              "max_length": 20
-            },
-            "5": {
-              "name": "Alternate Text",
-              "data_type": "ST",
-              "required": false,
-              "max_length": 199
-            },
-            "6": {
-              "name": "Name of Alternate Coding System",
-              "data_type": "ID",
-              "required": false,
-              "max_length": 20,
-              "table_id": "0396"
-            }
-          }
-        }
-      }
-    },
-    "ERR": {
-      "name": "Error",
-      "required": false,
-      "repeating": true,
-      "fields": {
-        "1": {
-          "name": "Error Code and Location",
-          "data_type": "ST",
-          "required": false,
-          "repeating": false,
-          "max_length": 80
-        },
-        "2": {
-          "name": "Error Location",
-          "data_type": "ST",
-          "required": false,
-          "repeating": true,
-          "max_length": 18
-        },
-        "3": {
-          "name": "HL7 Error Code",
-          "data_type": "CWE",
-          "required": true,
-          "repeating": false,
-          "max_length": 705,
           "table_id": "0357",
           "components": {
             "1": {
@@ -510,9 +431,8 @@
             },
             "3": {
               "name": "Name of Coding System",
-              "data_type": "ID",
+              "data_type": "IS",
               "required": false,
-              "max_length": 20,
               "table_id": "0396"
             },
             "4": {
@@ -529,38 +449,46 @@
             },
             "6": {
               "name": "Name of Alternate Coding System",
-              "data_type": "ID",
+              "data_type": "IS",
               "required": false,
-              "max_length": 20,
               "table_id": "0396"
-            },
-            "7": {
-              "name": "Coding System Version ID",
-              "data_type": "ST",
-              "required": false,
-              "max_length": 10
-            },
-            "8": {
-              "name": "Alternate Coding System Version ID",
-              "data_type": "ST",
-              "required": false,
-              "max_length": 10
-            },
-            "9": {
-              "name": "Original Text",
-              "data_type": "ST",
-              "required": false,
-              "max_length": 199
             }
           }
-        },
-        "4": {
-          "name": "Severity",
-          "data_type": "ID",
+        }
+      }
+    },
+    "ERR": {
+      "name": "Error",
+      "required": false,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Error Code and Location",
+          "data_type": "ELD",
           "required": true,
-          "repeating": false,
-          "max_length": 2,
-          "table_id": "0516"
+          "repeating": true,
+          "components": {
+            "1": {
+              "name": "Segment Id",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Sequence",
+              "data_type": "NM",
+              "required": false
+            },
+            "3": {
+              "name": "Field Position",
+              "data_type": "NM",
+              "required": false
+            },
+            "4": {
+              "name": "Code Identifying Error",
+              "data_type": "CE",
+              "required": false
+            }
+          }
         }
       }
     }

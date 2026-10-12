@@ -459,6 +459,453 @@
           "repeating": false
         }
       }
+    },
+    "PV1": {
+      "name": "Patient Visit",
+      "required": true,
+      "repeating": false,
+      "fields": {
+        "1": {
+          "name": "Set ID - PV1",
+          "data_type": "SI",
+          "required": false,
+          "repeating": false,
+          "max_length": 4
+        },
+        "2": {
+          "name": "Patient Class",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false
+        },
+        "3": {
+          "name": "Assigned Patient Location",
+          "data_type": "ID",
+          "required": true,
+          "repeating": false
+        },
+        "4": {
+          "name": "Admission Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "5": {
+          "name": "Preadmit Number",
+          "data_type": "ST",
+          "required": false,
+          "repeating": false
+        },
+        "6": {
+          "name": "Prior Patient Location",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "7": {
+          "name": "Attending Doctor",
+          "data_type": "CN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "8": {
+          "name": "Referring Doctor",
+          "data_type": "CN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "9": {
+          "name": "Consulting Doctor",
+          "data_type": "CN",
+          "required": false,
+          "repeating": true,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "10": {
+          "name": "Hospital Service",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "11": {
+          "name": "Temporary Location",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "12": {
+          "name": "Preadmit Test Indicator",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "13": {
+          "name": "Re-admission Indicator",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "14": {
+          "name": "Admit Source",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "15": {
+          "name": "Ambulatory Status",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "16": {
+          "name": "VIP Indicator",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "17": {
+          "name": "Admitting Doctor",
+          "data_type": "CN",
+          "required": false,
+          "repeating": false,
+          "components": {
+            "1": {
+              "name": "ID Number",
+              "data_type": "ID",
+              "required": false
+            },
+            "2": {
+              "name": "Family Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "3": {
+              "name": "Given Name",
+              "data_type": "ST",
+              "required": false
+            },
+            "4": {
+              "name": "Second and Further Given Names or Initials Thereof",
+              "data_type": "ST",
+              "required": false
+            },
+            "5": {
+              "name": "Suffix",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "18": {
+          "name": "Patient Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "19": {
+          "name": "Visit Number",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false
+        },
+        "20": {
+          "name": "Financial Class",
+          "data_type": "ID",
+          "required": false,
+          "repeating": true
+        },
+        "21": {
+          "name": "Charge Price Indicator",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "22": {
+          "name": "Courtesy Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "23": {
+          "name": "Credit Rating",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "24": {
+          "name": "Contract Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": true
+        },
+        "25": {
+          "name": "Contract Effective Date",
+          "data_type": "DT",
+          "required": false,
+          "repeating": true,
+          "max_length": 8
+        },
+        "26": {
+          "name": "Contract Amount",
+          "data_type": "NM",
+          "required": false,
+          "repeating": true,
+          "max_length": 12
+        },
+        "27": {
+          "name": "Contract Period",
+          "data_type": "NM",
+          "required": false,
+          "repeating": true,
+          "max_length": 3
+        },
+        "28": {
+          "name": "Interest Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "29": {
+          "name": "Transfer to Bad Debt Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "30": {
+          "name": "Transfer to Bad Debt Date",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false,
+          "max_length": 8
+        },
+        "31": {
+          "name": "Bad Debt Agency Code",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "32": {
+          "name": "Bad Debt Transfer Amount",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 12
+        },
+        "33": {
+          "name": "Bad Debt Recovery Amount",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 12
+        },
+        "34": {
+          "name": "Delete Account Indicator",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "35": {
+          "name": "Delete Account Date",
+          "data_type": "DT",
+          "required": false,
+          "repeating": false,
+          "max_length": 8
+        },
+        "36": {
+          "name": "Discharge Disposition",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "37": {
+          "name": "Discharged to Location",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "38": {
+          "name": "Diet Type",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "39": {
+          "name": "Servicing Facility",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "40": {
+          "name": "Bed Status",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "41": {
+          "name": "Account Status",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "42": {
+          "name": "Pending Location",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "43": {
+          "name": "Prior Temporary Location",
+          "data_type": "ID",
+          "required": false,
+          "repeating": false
+        },
+        "44": {
+          "name": "Admit Date/Time",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "45": {
+          "name": "Discharge Date/Time",
+          "data_type": "TS",
+          "required": false,
+          "repeating": false,
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
+        },
+        "46": {
+          "name": "Current Patient Balance",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 12
+        },
+        "47": {
+          "name": "Total Charges",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 12
+        },
+        "48": {
+          "name": "Total Adjustments",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 12
+        },
+        "49": {
+          "name": "Total Payments",
+          "data_type": "NM",
+          "required": false,
+          "repeating": false,
+          "max_length": 12
+        }
+      }
     }
   }
 }

@@ -36,7 +36,10 @@ fn generated_model_parses_a_real_message() {
     // Repeating composite fields stay whole, one Vec element per repetition.
     assert_eq!(adt.pid.patient_identifier_list, vec!["12345^^^HOSP^MR"]);
     assert_eq!(adt.pid.patient_name, vec!["Smith^John^A"]);
-    assert_eq!(adt.pid.date_time_of_birth.as_deref(), Some("19800101"));
+    assert_eq!(
+        adt.pid.date_time_of_birth_time_of_an_event.as_deref(),
+        Some("19800101")
+    );
     assert_eq!(adt.pid.administrative_sex.as_deref(), Some("M"));
 
     // PV1-3 maps per component.

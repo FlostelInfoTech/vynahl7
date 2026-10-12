@@ -144,7 +144,19 @@
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ST",
+              "required": false
+            }
+          }
         },
         "8": {
           "name": "Security",
@@ -155,31 +167,21 @@
         },
         "9": {
           "name": "Message Type",
-          "data_type": "MSG",
+          "data_type": "CM_MSG",
           "required": true,
           "repeating": false,
-          "max_length": 15,
           "components": {
             "1": {
               "name": "Message Code",
               "data_type": "ID",
               "required": true,
-              "max_length": 3,
               "table_id": "0076"
             },
             "2": {
               "name": "Trigger Event",
               "data_type": "ID",
               "required": true,
-              "max_length": 3,
               "table_id": "0003"
-            },
-            "3": {
-              "name": "Message Structure",
-              "data_type": "ID",
-              "required": false,
-              "max_length": 7,
-              "table_id": "0354"
             }
           }
         },
@@ -199,47 +201,24 @@
           "components": {
             "1": {
               "name": "Processing ID",
-              "data_type": "ID",
+              "data_type": "ST",
               "required": true,
-              "max_length": 1,
               "table_id": "0103"
             },
             "2": {
               "name": "Processing Mode",
-              "data_type": "ID",
+              "data_type": "ST",
               "required": false,
-              "max_length": 1,
               "table_id": "0207"
             }
           }
         },
         "12": {
           "name": "Version ID",
-          "data_type": "VID",
+          "data_type": "ID",
           "required": true,
           "repeating": false,
-          "max_length": 60,
-          "components": {
-            "1": {
-              "name": "Version ID",
-              "data_type": "ID",
-              "required": true,
-              "max_length": 5,
-              "table_id": "0104"
-            },
-            "2": {
-              "name": "Internationalization Code",
-              "data_type": "CE",
-              "required": false,
-              "max_length": 483
-            },
-            "3": {
-              "name": "International Version ID",
-              "data_type": "CE",
-              "required": false,
-              "max_length": 483
-            }
-          }
+          "table_id": "0104"
         },
         "13": {
           "name": "Sequence Number",
@@ -283,7 +262,7 @@
           "name": "Character Set",
           "data_type": "ID",
           "required": false,
-          "repeating": true,
+          "repeating": false,
           "max_length": 16,
           "table_id": "0211"
         },
@@ -296,9 +275,8 @@
           "components": {
             "1": {
               "name": "Identifier",
-              "data_type": "ST",
-              "required": false,
-              "max_length": 20
+              "data_type": "ID",
+              "required": false
             },
             "2": {
               "name": "Text",
@@ -308,16 +286,14 @@
             },
             "3": {
               "name": "Name of Coding System",
-              "data_type": "ID",
+              "data_type": "ST",
               "required": false,
-              "max_length": 20,
               "table_id": "0396"
             },
             "4": {
               "name": "Alternate Identifier",
-              "data_type": "ST",
-              "required": false,
-              "max_length": 20
+              "data_type": "ID",
+              "required": false
             },
             "5": {
               "name": "Alternate Text",
@@ -327,9 +303,8 @@
             },
             "6": {
               "name": "Name of Alternate Coding System",
-              "data_type": "ID",
+              "data_type": "ST",
               "required": false,
-              "max_length": 20,
               "table_id": "0396"
             }
           }
@@ -375,7 +350,8 @@
           "data_type": "ID",
           "required": false,
           "repeating": false,
-          "max_length": 1
+          "max_length": 1,
+          "table_id": "0102"
         },
         "6": {
           "name": "Error Condition",
@@ -386,9 +362,8 @@
           "components": {
             "1": {
               "name": "Identifier",
-              "data_type": "ST",
-              "required": false,
-              "max_length": 20
+              "data_type": "ID",
+              "required": false
             },
             "2": {
               "name": "Text",
@@ -398,16 +373,14 @@
             },
             "3": {
               "name": "Name of Coding System",
-              "data_type": "ID",
+              "data_type": "ST",
               "required": false,
-              "max_length": 20,
               "table_id": "0396"
             },
             "4": {
               "name": "Alternate Identifier",
-              "data_type": "ST",
-              "required": false,
-              "max_length": 20
+              "data_type": "ID",
+              "required": false
             },
             "5": {
               "name": "Alternate Text",
@@ -417,9 +390,8 @@
             },
             "6": {
               "name": "Name of Alternate Coding System",
-              "data_type": "ID",
+              "data_type": "ST",
               "required": false,
-              "max_length": 20,
               "table_id": "0396"
             }
           }
@@ -429,14 +401,36 @@
     "ERR": {
       "name": "Error",
       "required": false,
-      "repeating": true,
+      "repeating": false,
       "fields": {
         "1": {
           "name": "Error Code and Location",
-          "data_type": "ST",
-          "required": false,
-          "repeating": false,
-          "max_length": 80
+          "data_type": "CM_ELD",
+          "required": true,
+          "repeating": true,
+          "table_id": "0060",
+          "components": {
+            "1": {
+              "name": "Segment Id",
+              "data_type": "ST",
+              "required": false
+            },
+            "2": {
+              "name": "Sequence",
+              "data_type": "NM",
+              "required": false
+            },
+            "3": {
+              "name": "Field Position",
+              "data_type": "NM",
+              "required": false
+            },
+            "4": {
+              "name": "Code Identifying Error",
+              "data_type": "CE",
+              "required": false
+            }
+          }
         }
       }
     }

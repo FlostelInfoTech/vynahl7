@@ -29,6 +29,7 @@
           "required": false,
           "repeating": false,
           "max_length": 227,
+          "table_id": "0361",
           "components": {
             "1": {
               "name": "Namespace ID",
@@ -58,6 +59,7 @@
           "required": false,
           "repeating": false,
           "max_length": 227,
+          "table_id": "0362",
           "components": {
             "1": {
               "name": "Namespace ID",
@@ -87,6 +89,7 @@
           "required": false,
           "repeating": false,
           "max_length": 227,
+          "table_id": "0361",
           "components": {
             "1": {
               "name": "Namespace ID",
@@ -116,6 +119,7 @@
           "required": false,
           "repeating": false,
           "max_length": 227,
+          "table_id": "0362",
           "components": {
             "1": {
               "name": "Namespace ID",
@@ -142,9 +146,22 @@
         "7": {
           "name": "Date/Time Of Message",
           "data_type": "TS",
-          "required": false,
+          "required": true,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "8": {
           "name": "Security",
@@ -231,7 +248,8 @@
               "name": "Internationalization Code",
               "data_type": "CE",
               "required": false,
-              "max_length": 483
+              "max_length": 483,
+              "table_id": "0399"
             },
             "3": {
               "name": "International Version ID",
@@ -448,7 +466,7 @@
               "data_type": "ID",
               "required": false,
               "max_length": 1,
-              "table_id": "4000"
+              "table_id": "0465"
             },
             "10": {
               "name": "Organization Identifier",
@@ -491,7 +509,20 @@
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         }
       }
     },
@@ -552,8 +583,9 @@
           "name": "Master File Application Identifier",
           "data_type": "HD",
           "required": false,
-          "repeating": true,
+          "repeating": false,
           "max_length": 180,
+          "table_id": "0361",
           "components": {
             "1": {
               "name": "Namespace ID",
@@ -590,14 +622,40 @@
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "5": {
           "name": "Effective Date/Time",
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "6": {
           "name": "Response Level Code",
@@ -634,7 +692,20 @@
           "data_type": "TS",
           "required": false,
           "repeating": false,
-          "max_length": 26
+          "max_length": 26,
+          "components": {
+            "1": {
+              "name": "Time Of An Event",
+              "data_type": "DTM",
+              "required": false
+            },
+            "2": {
+              "name": "Degree Of Precision",
+              "data_type": "ID",
+              "required": false,
+              "table_id": "0529"
+            }
+          }
         },
         "4": {
           "name": "Primary Key Value - MFE",
@@ -653,82 +724,11 @@
         }
       }
     },
-    "NTE": {
-      "name": "Notes and Comments",
+    "Hxx": {
+      "name": "Hxx",
       "required": false,
       "repeating": true,
-      "fields": {
-        "1": {
-          "name": "Set ID - NTE",
-          "data_type": "SI",
-          "required": false,
-          "repeating": false,
-          "max_length": 4
-        },
-        "2": {
-          "name": "Source of Comment",
-          "data_type": "ID",
-          "required": false,
-          "repeating": false,
-          "max_length": 8,
-          "table_id": "0105"
-        },
-        "3": {
-          "name": "Comment",
-          "data_type": "FT",
-          "required": false,
-          "repeating": true,
-          "max_length": 65536
-        },
-        "4": {
-          "name": "Comment Type",
-          "data_type": "CE",
-          "required": false,
-          "repeating": false,
-          "max_length": 250,
-          "table_id": "0364",
-          "components": {
-            "1": {
-              "name": "Identifier",
-              "data_type": "ST",
-              "required": false,
-              "max_length": 20
-            },
-            "2": {
-              "name": "Text",
-              "data_type": "ST",
-              "required": false,
-              "max_length": 199
-            },
-            "3": {
-              "name": "Name of Coding System",
-              "data_type": "ID",
-              "required": false,
-              "max_length": 20,
-              "table_id": "0396"
-            },
-            "4": {
-              "name": "Alternate Identifier",
-              "data_type": "ST",
-              "required": false,
-              "max_length": 20
-            },
-            "5": {
-              "name": "Alternate Text",
-              "data_type": "ST",
-              "required": false,
-              "max_length": 199
-            },
-            "6": {
-              "name": "Name of Alternate Coding System",
-              "data_type": "ID",
-              "required": false,
-              "max_length": 20,
-              "table_id": "0396"
-            }
-          }
-        }
-      }
+      "fields": {}
     }
   }
 }
