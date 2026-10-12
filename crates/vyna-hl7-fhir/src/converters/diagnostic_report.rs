@@ -40,7 +40,7 @@ impl DiagnosticReportConverter {
         let code_path = if obr_index == 0 {
             "OBR-4".to_string()
         } else {
-            format!("OBR({})-4", obr_index)
+            format!("OBR({})-4", obr_index + 1)
         };
 
         let code = if let Ok(Some(code_id)) = terser.get(&code_path) {
@@ -78,7 +78,7 @@ impl DiagnosticReportConverter {
         let status_path = if obr_index == 0 {
             "OBR-25".to_string()
         } else {
-            format!("OBR({})-25", obr_index)
+            format!("OBR({})-25", obr_index + 1)
         };
         let status = if let Ok(Some(status_code)) = terser.get(&status_path) {
             Self::convert_status(status_code)
@@ -92,7 +92,7 @@ impl DiagnosticReportConverter {
         let placer_path = if obr_index == 0 {
             "OBR-2".to_string()
         } else {
-            format!("OBR({})-2", obr_index)
+            format!("OBR({})-2", obr_index + 1)
         };
         if let Ok(Some(placer)) = terser.get(&placer_path)
             && !placer.is_empty() {
@@ -110,7 +110,7 @@ impl DiagnosticReportConverter {
         let obs_dt_path = if obr_index == 0 {
             "OBR-7".to_string()
         } else {
-            format!("OBR({})-7", obr_index)
+            format!("OBR({})-7", obr_index + 1)
         };
         if let Ok(Some(obs_dt)) = terser.get(&obs_dt_path)
             && !obs_dt.is_empty() {
@@ -121,7 +121,7 @@ impl DiagnosticReportConverter {
         let issued_path = if obr_index == 0 {
             "OBR-22".to_string()
         } else {
-            format!("OBR({})-22", obr_index)
+            format!("OBR({})-22", obr_index + 1)
         };
         if let Ok(Some(issued)) = terser.get(&issued_path)
             && !issued.is_empty() {
@@ -228,5 +228,26 @@ mod tests {
         assert_eq!(report.resource_type, "DiagnosticReport");
         assert_eq!(report.status, "final");
         assert_eq!(report.code.coding.as_ref().unwrap()[0].code, Some("24331-1".to_string()));
+    }
+
+    #[test]
+    fn test_convert_report_second_repetition_reads_second_segment() {
+        let hl7 = "MSH|^~\\&|System|Hospital|EMR|Hospital|20240315||ORU^R01|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   OBR|1|||24331-1^Lipid Panel^LN\r\
+                   OBR|2|||24342-8^Metabolic Panel^LN";
+
+        let message = parse_message(hl7).unwrap();
+        let reports = DiagnosticReportConverter::convert_all(&message).unwrap();
+
+        assert_eq!(reports.len(), 2);
+        assert_eq!(
+            reports[0].code.coding.as_ref().unwrap()[0].code,
+            Some("24331-1".to_string())
+        );
+        assert_eq!(
+            reports[1].code.coding.as_ref().unwrap()[0].code,
+            Some("24342-8".to_string())
+        );
     }
 }

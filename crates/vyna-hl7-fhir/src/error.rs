@@ -47,6 +47,10 @@ pub enum ConversionError {
     /// Generic conversion error
     #[error("Conversion error: {0}")]
     Generic(String),
+
+    /// Declarative mapping error (invalid mapping or rule failure)
+    #[error("Mapping error: {0}")]
+    Mapping(String),
 }
 
 // Note: vyna-hl7-terser doesn't export TerserError, so we handle errors via Result directly

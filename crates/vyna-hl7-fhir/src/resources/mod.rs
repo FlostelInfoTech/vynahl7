@@ -15,6 +15,7 @@ pub mod procedure;
 pub mod immunization;
 pub mod service_request;
 pub mod specimen;
+pub mod bundle;
 pub mod common;
 
 pub use patient::Patient;
@@ -29,4 +30,5 @@ pub use procedure::Procedure;
 pub use immunization::Immunization;
 pub use service_request::ServiceRequest;
 pub use specimen::Specimen;
+pub use bundle::{Bundle, BundleEntry};
 pub use common::*;

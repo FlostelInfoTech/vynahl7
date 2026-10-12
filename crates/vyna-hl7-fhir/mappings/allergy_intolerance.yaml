@@ -1,0 +1,28 @@
+# AL1 allergy list entry -> FHIR AllergyIntolerance.
+# Mirrors AllergyIntoleranceConverter for a single repetition: exact JSON
+# parity is asserted in mapping.rs tests.
+resourceType: AllergyIntolerance
+fields:
+  - target: clinicalStatus.coding[0].system
+    constant: "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical"
+  - target: clinicalStatus.coding[0].code
+    constant: active
+  - target: clinicalStatus.coding[0].display
+    constant: Active
+  - target: category[0]
+    source: AL1-2
+    map: {DA: medication, FA: food, MA: environment, EA: environment}
+    default: environment
+  - target: code.coding[0].code
+    source: AL1-3
+  - target: code.text
+    source: AL1-3
+  - target: patient.reference
+    source: PID-3
+    template: "Patient/{value}"
+  - target: patient.type
+    constant: Patient
+  - target: criticality
+    source: AL1-4
+    map: {MI: low, MO: low, SV: high}
+    default: unable-to-assess

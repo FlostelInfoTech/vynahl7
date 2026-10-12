@@ -38,7 +38,7 @@ impl AllergyIntoleranceConverter {
         let type_path = if al1_index == 0 {
             "AL1-2".to_string()
         } else {
-            format!("AL1({})-2", al1_index)
+            format!("AL1({})-2", al1_index + 1)
         };
         if let Ok(Some(allergen_type)) = terser.get(&type_path) {
             allergy.category = Some(vec![Self::convert_allergen_type(allergen_type)]);
@@ -48,7 +48,7 @@ impl AllergyIntoleranceConverter {
         let code_path = if al1_index == 0 {
             "AL1-3".to_string()
         } else {
-            format!("AL1({})-3", al1_index)
+            format!("AL1({})-3", al1_index + 1)
         };
         if let Ok(Some(code)) = terser.get(&code_path) {
             allergy.code = Some(CodeableConcept {
@@ -66,7 +66,7 @@ impl AllergyIntoleranceConverter {
         let severity_path = if al1_index == 0 {
             "AL1-4".to_string()
         } else {
-            format!("AL1({})-4", al1_index)
+            format!("AL1({})-4", al1_index + 1)
         };
         if let Ok(Some(severity)) = terser.get(&severity_path) {
             allergy.criticality = Some(Self::convert_severity(severity));
@@ -132,5 +132,28 @@ mod tests {
         assert_eq!(allergies[0].resource_type, "AllergyIntolerance");
         assert_eq!(allergies[0].category, Some(vec!["medication".to_string()]));
         assert_eq!(allergies[0].criticality, Some("high".to_string()));
+    }
+
+    #[test]
+    fn test_convert_allergy_second_repetition_reads_second_segment() {
+        let hl7 = "MSH|^~\\&|System|Hospital|EMR|Hospital|20240315||ADT^A01|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   AL1|1|DA|1191^ASPIRIN|SV\r\
+                   AL1|2|FA|716^PEANUT|MO";
+
+        let message = parse_message(hl7).unwrap();
+        let allergies = AllergyIntoleranceConverter::convert_all(&message).unwrap();
+
+        assert_eq!(allergies.len(), 2);
+        assert_eq!(allergies[0].category, Some(vec!["medication".to_string()]));
+        assert_eq!(allergies[1].category, Some(vec!["food".to_string()]));
+        assert_eq!(allergies[1].criticality, Some("low".to_string()));
+        let code = |a: &AllergyIntolerance| {
+            a.code.as_ref().unwrap().coding.as_ref().unwrap()[0]
+                .code
+                .clone()
+        };
+        assert_eq!(code(&allergies[0]).as_deref(), Some("1191"));
+        assert_eq!(code(&allergies[1]).as_deref(), Some("716"));
     }
 }

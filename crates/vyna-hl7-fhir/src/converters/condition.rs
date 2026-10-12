@@ -42,7 +42,7 @@ impl ConditionConverter {
         let code_path = if prb_index == 0 {
             "PRB-3".to_string()
         } else {
-            format!("PRB({})-3", prb_index)
+            format!("PRB({})-3", prb_index + 1)
         };
         if let Ok(Some(code)) = terser.get(&code_path) {
             condition.code = Some(CodeableConcept {
@@ -87,7 +87,7 @@ impl ConditionConverter {
         let code_path = if dg1_index == 0 {
             "DG1-3".to_string()
         } else {
-            format!("DG1({})-3", dg1_index)
+            format!("DG1({})-3", dg1_index + 1)
         };
         if let Ok(Some(code)) = terser.get(&code_path) {
             let mut coding = Coding {
@@ -137,5 +137,25 @@ mod tests {
 
         assert_eq!(conditions.len(), 1);
         assert_eq!(conditions[0].resource_type, "Condition");
+    }
+
+    #[test]
+    fn test_convert_condition_second_repetition_reads_second_segment() {
+        let hl7 = "MSH|^~\\&|System|Hospital|EMR|Hospital|20240315||PPR^PC1|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   PRB|AD|20240315|38341003^HTN^SCT|P1\r\
+                   PRB|AD|20240315|44054006^DIAB^SCT|P2";
+
+        let message = parse_message(hl7).unwrap();
+        let conditions = ConditionConverter::convert_all(&message).unwrap();
+
+        assert_eq!(conditions.len(), 2);
+        let code = |c: &Condition| {
+            c.code.as_ref().unwrap().coding.as_ref().unwrap()[0]
+                .code
+                .clone()
+        };
+        assert_eq!(code(&conditions[0]).as_deref(), Some("38341003"));
+        assert_eq!(code(&conditions[1]).as_deref(), Some("44054006"));
     }
 }

@@ -37,7 +37,7 @@ impl MedicationConverter {
         let status_path = if rxa_index == 0 {
             "RXA-20".to_string()
         } else {
-            format!("RXA({})-20", rxa_index)
+            format!("RXA({})-20", rxa_index + 1)
         };
         let status = if let Ok(Some(status_code)) = terser.get(&status_path) {
             Self::convert_status(status_code)
@@ -51,7 +51,7 @@ impl MedicationConverter {
         let code_path = if rxa_index == 0 {
             "RXA-5".to_string()
         } else {
-            format!("RXA({})-5", rxa_index)
+            format!("RXA({})-5", rxa_index + 1)
         };
         if let Ok(Some(code)) = terser.get(&code_path) {
             let mut coding = Coding {
@@ -76,7 +76,7 @@ impl MedicationConverter {
         let datetime_path = if rxa_index == 0 {
             "RXA-3".to_string()
         } else {
-            format!("RXA({})-3", rxa_index)
+            format!("RXA({})-3", rxa_index + 1)
         };
         if let Ok(Some(datetime)) = terser.get(&datetime_path) {
             admin.effective_date_time = Some(Self::convert_datetime(datetime)?);
@@ -86,7 +86,7 @@ impl MedicationConverter {
         let amount_path = if rxa_index == 0 {
             "RXA-6".to_string()
         } else {
-            format!("RXA({})-6", rxa_index)
+            format!("RXA({})-6", rxa_index + 1)
         };
         if let Ok(Some(amount)) = terser.get(&amount_path)
             && let Ok(value) = amount.parse::<f64>() {
@@ -104,7 +104,7 @@ impl MedicationConverter {
                 let units_path = if rxa_index == 0 {
                     "RXA-7".to_string()
                 } else {
-                    format!("RXA({})-7", rxa_index)
+                    format!("RXA({})-7", rxa_index + 1)
                 };
                 if let Ok(Some(units)) = terser.get(&units_path) {
                     dosage.dose.as_mut().unwrap().unit = Some(units.to_string());
@@ -169,5 +169,30 @@ mod tests {
         assert_eq!(administrations.len(), 1);
         assert_eq!(administrations[0].resource_type, "MedicationAdministration");
         assert_eq!(administrations[0].status, "completed");
+    }
+
+    #[test]
+    fn test_convert_medication_second_repetition_reads_second_segment() {
+        let hl7 = "MSH|^~\\&|Pharmacy|Hospital|EMR|Hospital|20240315||RAS^O17|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000||1191^ASPIRIN^NDC|100|MG||||||||||||CP\r\
+                   RXA|0|1|20240315110000||104375^TYLENOL^NDC|200|MG||||||||||||CP";
+
+        let message = parse_message(hl7).unwrap();
+        let administrations = MedicationConverter::convert_all(&message).unwrap();
+
+        assert_eq!(administrations.len(), 2);
+        let code = |a: &MedicationAdministration| {
+            a.medication_codeable_concept
+                .as_ref()
+                .unwrap()
+                .coding
+                .as_ref()
+                .unwrap()[0]
+                .code
+                .clone()
+        };
+        assert_eq!(code(&administrations[0]).as_deref(), Some("1191"));
+        assert_eq!(code(&administrations[1]).as_deref(), Some("104375"));
     }
 }

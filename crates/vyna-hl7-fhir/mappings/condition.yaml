@@ -1,0 +1,16 @@
+# PRB problem list entry -> FHIR Condition.
+# Mirrors ConditionConverter for PRB segments: exact JSON parity is asserted
+# in mapping.rs tests.
+resourceType: Condition
+fields:
+  - target: code.coding[0].code
+    source: PRB-3
+  - target: subject.reference
+    source: PID-3
+    template: "Patient/{value}"
+  - target: subject.type
+    constant: Patient
+  - target: clinicalStatus.coding[0].system
+    constant: "http://terminology.hl7.org/CodeSystem/condition-clinical"
+  - target: clinicalStatus.coding[0].code
+    constant: active

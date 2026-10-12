@@ -27,14 +27,18 @@
 pub mod converters;
 pub mod resources;
 pub mod error;
+pub mod mapping;
+pub mod bundle;
 
 pub use error::{ConversionError, ConversionResult};
 
 /// Re-export commonly used types
 pub mod prelude {
-    pub use crate::converters::patient::PatientConverter;
+    pub use crate::bundle::{BundleBuilder, convert_message_to_bundle};
     pub use crate::converters::observation::ObservationConverter;
+    pub use crate::converters::patient::PatientConverter;
     pub use crate::converters::practitioner::PractitionerConverter;
-    pub use crate::resources::*;
     pub use crate::error::{ConversionError, ConversionResult};
+    pub use crate::mapping::{Mapping, MappingEngine};
+    pub use crate::resources::*;
 }
