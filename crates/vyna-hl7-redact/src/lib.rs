@@ -37,7 +37,7 @@
 //!   needs NLP. Add explicit rules if your policy requires it.
 
 use chrono::{Duration, NaiveDate};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use thiserror::Error;
 use vyna_hl7_core::{Field, Message, Repetition, Segment};

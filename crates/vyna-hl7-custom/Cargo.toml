@@ -22,7 +22,7 @@ thiserror.workspace = true
 anyhow.workspace = true
 
 # Synchronization
-once_cell = "1.19"
+once_cell.workspace = true
 
 # Macro utilities
 paste.workspace = true

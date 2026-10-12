@@ -45,7 +45,7 @@ unftp-core = "0.1"  # Auth traits for the libunftp test server
 
 # SFTP Client/Server support (via SSH)
 ssh2 = "0.9"  # For SFTP client (sync, wrapped with spawn_blocking)
-russh = "0.63"  # For SFTP server (async)
+russh.workspace = true  # For SFTP server (async)
 async-trait = "0.1"
 futures = "0.3"
 glob = "0.3"  # For file pattern matching
