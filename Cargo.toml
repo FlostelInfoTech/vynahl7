@@ -65,6 +65,7 @@ members = [
     "crates/vyna-hl7-mllp",
     "crates/vyna-hl7-http",
     "crates/vyna-hl7-macros",
+    "crates/vyna-hl7-codegen",
     "crates/vyna-hl7-fhir",
     "crates/vyna-hl7-custom",
     "crates/vyna-hl7-conformance",
@@ -140,6 +141,7 @@ vyna-hl7-fhir = { version = "0.1.0", path = "crates/vyna-hl7-fhir" }
 vyna-hl7-custom = { version = "0.1.0", path = "crates/vyna-hl7-custom" }
 vyna-hl7-conformance = { version = "0.1.0", path = "crates/vyna-hl7-conformance" }
 vyna-hl7-macros = { version = "0.1.0", path = "crates/vyna-hl7-macros" }
+vyna-hl7-codegen = { version = "0.1.0", path = "crates/vyna-hl7-codegen" }
 vyna-hl7-xml = { version = "0.1.0", path = "crates/vyna-hl7-xml" }
 
 # XML

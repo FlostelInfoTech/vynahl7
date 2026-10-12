@@ -1,0 +1,492 @@
+//! Schema-driven code generation for HAPI-style typed HL7 models.
+//!
+//! This crate renders the JSON message schemas embedded in
+//! [`vyna_hl7_validator`] as Rust structs annotated with the
+//! [`vyna_hl7_macros`] derive macros, giving every message a strongly-typed
+//! API in the spirit of HAPI's generated model classes.
+//!
+//! ```rust
+//! use vyna_hl7_codegen::generate_for;
+//! use vyna_hl7_core::Version;
+//!
+//! let source = generate_for(Version::V2_5, "ADT", "A01").unwrap();
+//! assert!(source.contains("pub struct AdtA01"));
+//! assert!(source.contains("pub struct Pid"));
+//! ```
+//!
+//! ## Mapping rules
+//!
+//! - One struct per segment (`PID` -> `Pid`), one struct per message
+//!   (`ADT` + `A01` -> `AdtA01`), using the `Segment` / `Message` derives.
+//! - Required fields become `String`, optional fields `Option<String>`,
+//!   repeating fields `Vec<String>`.
+//! - Composite fields whose schema defines components map one struct field
+//!   per component; repeating composite fields fall back to whole-field
+//!   `Vec<String>` because `Vec` cannot combine with `component=`.
+//! - Segment order follows a canonical HL7 order with `MSH` first so that
+//!   `to_message` output stays valid; unknown segments sort alphabetically
+//!   after the known ones.
+
+use std::collections::HashSet;
+
+use vyna_hl7_core::{Version, error::Result};
+use vyna_hl7_validator::{
+    ComponentDefinition, FieldDefinition, MessageSchema, SegmentDefinition, load_schema,
+};
+
+/// Canonical segment order for generated message structs.
+///
+/// The validator schemas store segments in a map without order information,
+/// so codegen imposes this deterministic order. `MSH` must stay first:
+/// parsers and validators reject messages that do not start with it.
+const SEGMENT_ORDER: &[&str] = &[
+    "MSH", "SFT", "EVN", "PID", "PD1", "ROL", "NK1", "PV1", "PV2", "DB1", "OBX", "AL1", "DG1",
+    "DRG", "PR1", "GT1", "IN1", "IN2", "IN3", "ACC", "UB1", "UB2", "PDA", "OBR", "ORC", "RXO",
+    "RXE", "RXR", "RXC", "RXD", "RXG", "RXA", "RDS", "RDE", "RGV", "RRD", "RRA", "RAS", "MSA",
+    "ERR", "QAK", "QPD", "RCP", "DSC", "FHS", "BHS", "FTS", "BTS", "NTE",
+];
+
+/// Strict and reserved Rust keywords that a generated identifier may collide with.
+const RUST_KEYWORDS: &[&str] = &[
+    "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern",
+    "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub",
+    "ref", "return", "self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use",
+    "where", "while", "abstract", "become", "box", "do", "final", "macro", "override", "priv",
+    "try", "typeof", "unsized", "virtual", "yield",
+];
+
+/// Sort key for segment IDs: canonical position first, then alphabetical.
+fn segment_rank(id: &str) -> (usize, &str) {
+    match SEGMENT_ORDER.iter().position(|known| *known == id) {
+        Some(index) => (index, id),
+        None => (usize::MAX, id),
+    }
+}
+
+/// Convert an HL7 element name ("Patient Identifier List") to snake_case.
+pub fn to_snake_case(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    let mut need_separator = false;
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            if need_separator && !out.is_empty() {
+                out.push('_');
+            }
+            out.push(ch.to_ascii_lowercase());
+            need_separator = false;
+        } else {
+            need_separator = true;
+        }
+    }
+    out
+}
+
+/// Capitalize a segment ID or message type ("PID" -> "Pid", "ADT" -> "Adt").
+fn capitalize(word: &str) -> String {
+    let mut chars = word.chars();
+    match chars.next() {
+        Some(first) => {
+            let mut out = String::with_capacity(word.len());
+            out.extend(first.to_uppercase());
+            out.push_str(&chars.as_str().to_lowercase());
+            out
+        }
+        None => String::new(),
+    }
+}
+
+/// Struct name for a segment ID (`PID` -> `Pid`).
+pub fn segment_struct_name(segment_id: &str) -> String {
+    let name = capitalize(segment_id);
+    if name.is_empty() {
+        "Unknown".to_string()
+    } else {
+        name
+    }
+}
+
+/// Struct name for a message (`ADT` + `A01` -> `AdtA01`, `ACK` -> `Ack`).
+pub fn message_struct_name(message_type: &str, trigger_event: &str) -> String {
+    format!("{}{}", capitalize(message_type), trigger_event)
+}
+
+/// Turn a raw HL7 element name into a unique, compilable struct field name.
+///
+/// Falls back to `fallback` when the name carries no usable characters,
+/// prefixes digit-leading names, escapes Rust keywords with `r#`, and appends
+/// `_2`, `_3`, ... on collision within the same struct.
+pub fn sanitize_ident(base: &str, fallback: &str, used: &mut HashSet<String>) -> String {
+    let mut name = to_snake_case(base);
+    if name.is_empty() {
+        name = fallback.to_string();
+    }
+    if name.starts_with(|c: char| c.is_ascii_digit()) {
+        name = format!("field_{name}");
+    }
+    if RUST_KEYWORDS.contains(&name.as_str()) {
+        name = format!("r#{name}");
+    }
+    let mut candidate = name.clone();
+    let mut counter = 2;
+    while used.contains(&candidate) {
+        candidate = format!("{name}_{counter}");
+        counter += 1;
+    }
+    used.insert(candidate.clone());
+    candidate
+}
+
+/// Render one `#[derive(Segment)]` struct from a schema segment definition.
+pub fn generate_segment(segment_id: &str, def: &SegmentDefinition) -> String {
+    let struct_name = segment_struct_name(segment_id);
+    let mut used = HashSet::new();
+    let mut body = String::new();
+
+    let mut numbers: Vec<usize> = def.fields.keys().copied().collect();
+    numbers.sort_unstable();
+    for number in numbers {
+        let field = &def.fields[&number];
+        if !field.repeating
+            && let Some(components) = field.components.as_ref()
+        {
+            let mut keys: Vec<(&String, &ComponentDefinition)> = components.iter().collect();
+            keys.sort_by_key(|(key, _)| key.parse::<usize>().unwrap_or(usize::MAX));
+            if !keys.is_empty() {
+                for (key, component) in keys {
+                    let Some(component_number) = key.parse::<usize>().ok().filter(|n| *n > 0)
+                    else {
+                        continue;
+                    };
+                    render_component_field(
+                        &mut body,
+                        segment_id,
+                        number,
+                        field,
+                        component_number,
+                        component,
+                        &mut used,
+                    );
+                }
+                continue;
+            }
+        }
+        render_whole_field(&mut body, segment_id, number, field, &mut used);
+    }
+
+    let mut out = String::new();
+    out.push_str(&format!("/// {segment_id} - {}\n", def.name));
+    out.push_str("#[derive(vyna_hl7_macros::Segment, Debug, Clone, Default, PartialEq)]\n");
+    out.push_str(&format!("#[hl7(id = \"{segment_id}\")]\n"));
+    out.push_str(&format!("pub struct {struct_name} {{\n"));
+    out.push_str(&body);
+    out.push_str("}\n");
+    out
+}
+
+/// Render a struct field declaration, wrapping the type onto its own line when
+/// the single-line form would exceed rustfmt's 100-column limit.
+fn render_field_decl(body: &mut String, ident: &str, ty: &str) {
+    let single = format!("    pub {ident}: {ty},");
+    if single.len() > 100 {
+        body.push_str(&format!("    pub {ident}:\n        {ty},\n"));
+    } else {
+        body.push_str(&single);
+        body.push('\n');
+    }
+}
+
+/// Render one struct field per schema component of a composite field.
+#[allow(clippy::too_many_arguments)]
+fn render_component_field(
+    body: &mut String,
+    segment_id: &str,
+    field_number: usize,
+    field: &FieldDefinition,
+    component_number: usize,
+    component: &ComponentDefinition,
+    used: &mut HashSet<String>,
+) {
+    let base = format!("{}_{}", field.name, component.name);
+    let fallback = format!("field_{field_number}_{component_number}");
+    let ident = sanitize_ident(&base, &fallback, used);
+    let ty = if component.required {
+        "String"
+    } else {
+        "Option<String>"
+    };
+    body.push_str(&format!(
+        "    /// {segment_id}-{field_number}.{component_number} {} / {} ({})\n",
+        field.name, component.name, component.data_type
+    ));
+    body.push_str(&format!(
+        "    #[hl7(field = {field_number}, component = {component_number})]\n"
+    ));
+    render_field_decl(body, &ident, ty);
+}
+
+/// Render one struct field holding a whole HL7 field value.
+fn render_whole_field(
+    body: &mut String,
+    segment_id: &str,
+    field_number: usize,
+    field: &FieldDefinition,
+    used: &mut HashSet<String>,
+) {
+    let fallback = format!("field_{field_number}");
+    let ident = sanitize_ident(&field.name, &fallback, used);
+    let ty = if field.repeating {
+        "Vec<String>"
+    } else if field.required {
+        "String"
+    } else {
+        "Option<String>"
+    };
+    let mut flags = field.data_type.clone();
+    if field.repeating {
+        flags.push_str(", repeating");
+    }
+    body.push_str(&format!(
+        "    /// {segment_id}-{field_number} {} ({flags})\n",
+        field.name
+    ));
+    body.push_str(&format!("    #[hl7(field = {field_number})]\n"));
+    render_field_decl(body, &ident, ty);
+}
+
+/// Render a complete module: every segment struct plus the message struct.
+pub fn generate_module(schema: &MessageSchema) -> String {
+    let mut ids: Vec<&String> = schema.segments.keys().collect();
+    ids.sort_by(|a, b| segment_rank(a).cmp(&segment_rank(b)));
+
+    let mut out = String::new();
+    out.push_str("// Code generated by vyna-hl7-codegen - DO NOT EDIT.\n");
+    out.push_str(&format!(
+        "// Source: {}^{} (HL7 v{})\n\n",
+        schema.message_type, schema.trigger_event, schema.version
+    ));
+    for id in &ids {
+        out.push_str(&generate_segment(id, &schema.segments[id.as_str()]));
+        out.push('\n');
+    }
+
+    let struct_name = message_struct_name(&schema.message_type, &schema.trigger_event);
+    let mut used = HashSet::new();
+    out.push_str(&format!(
+        "/// {}^{} (HL7 v{})\n",
+        schema.message_type, schema.trigger_event, schema.version
+    ));
+    out.push_str("#[derive(vyna_hl7_macros::Message, Debug, Clone, Default, PartialEq)]\n");
+    out.push_str(&format!(
+        "#[hl7(message_type = \"{}\", trigger_event = \"{}\")]\n",
+        schema.message_type, schema.trigger_event
+    ));
+    out.push_str(&format!("pub struct {struct_name} {{\n"));
+    for id in &ids {
+        let def = &schema.segments[id.as_str()];
+        let ident = sanitize_ident(id, &format!("segment_{}", id.to_lowercase()), &mut used);
+        let target = segment_struct_name(id);
+        let (attr, ty) = if def.repeating {
+            ("repeating", format!("Vec<{target}>"))
+        } else if def.required {
+            ("", target)
+        } else {
+            ("optional", format!("Option<{target}>"))
+        };
+        out.push_str(&format!("    /// {} - {}\n", id, def.name));
+        if attr.is_empty() {
+            out.push_str("    #[hl7(segment)]\n");
+        } else {
+            out.push_str(&format!("    #[hl7(segment, {attr})]\n"));
+        }
+        render_field_decl(&mut out, &ident, &ty);
+    }
+    out.push_str("}\n");
+    out
+}
+
+/// Load the schema for a message and render its typed module.
+pub fn generate_for(version: Version, message_type: &str, trigger_event: &str) -> Result<String> {
+    let schema = load_schema(version, message_type, trigger_event)?;
+    Ok(generate_module(&schema))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn snake_case_converts_names() {
+        assert_eq!(
+            to_snake_case("Patient Identifier List"),
+            "patient_identifier_list"
+        );
+        assert_eq!(to_snake_case("Date/Time of Birth"), "date_time_of_birth");
+        assert_eq!(to_snake_case("  X-Ray  (Portable) "), "x_ray_portable");
+        assert_eq!(to_snake_case("MSH-9"), "msh_9");
+        assert_eq!(to_snake_case("---"), "");
+    }
+
+    #[test]
+    fn struct_names_follow_rust_conventions() {
+        assert_eq!(segment_struct_name("PID"), "Pid");
+        assert_eq!(segment_struct_name("MSH"), "Msh");
+        assert_eq!(message_struct_name("ADT", "A01"), "AdtA01");
+        assert_eq!(message_struct_name("ACK", ""), "Ack");
+    }
+
+    #[test]
+    fn sanitize_handles_keywords_digits_and_collisions() {
+        let mut used = HashSet::new();
+        assert_eq!(sanitize_ident("Type", "field_1", &mut used), "r#type");
+        assert_eq!(
+            sanitize_ident("1st Visit", "field_2", &mut used),
+            "field_1st_visit"
+        );
+        assert_eq!(sanitize_ident("!!!", "field_3", &mut used), "field_3");
+        assert_eq!(sanitize_ident("Name", "field_4", &mut used), "name");
+        assert_eq!(sanitize_ident("Name", "field_5", &mut used), "name_2");
+    }
+
+    #[test]
+    fn canonical_order_keeps_msh_first() {
+        let mut ids = ["PID", "ZZZ", "MSH", "AAA", "NK1"];
+        ids.sort_by(|a, b| segment_rank(a).cmp(&segment_rank(b)));
+        assert_eq!(ids, ["MSH", "PID", "NK1", "AAA", "ZZZ"]);
+    }
+
+    fn field(name: &str, required: bool, repeating: bool) -> FieldDefinition {
+        FieldDefinition {
+            name: name.to_string(),
+            data_type: "ST".to_string(),
+            required,
+            repeating,
+            max_length: None,
+            table_id: None,
+            components: None,
+        }
+    }
+
+    #[test]
+    fn long_field_declarations_wrap_like_rustfmt() {
+        let mut body = String::new();
+        render_field_decl(&mut body, "short", "String");
+        assert_eq!(body, "    pub short: String,\n");
+
+        let mut body = String::new();
+        let long = format!("overly_long_field_name_{}", "x".repeat(80));
+        render_field_decl(&mut body, &long, "Option<String>");
+        assert_eq!(body, format!("    pub {long}:\n        Option<String>,\n"));
+    }
+
+    #[test]
+    fn segment_maps_required_optional_and_repeating() {
+        let def = SegmentDefinition {
+            name: "Patient Identification".to_string(),
+            required: true,
+            repeating: false,
+            fields: HashMap::from([
+                (3, field("Patient Identifier List", false, true)),
+                (5, field("Patient Name", true, false)),
+                (8, field("Sex", false, false)),
+            ]),
+        };
+
+        let source = generate_segment("PID", &def);
+        assert!(source.contains("pub struct Pid"), "{source}");
+        assert!(source.contains("#[hl7(id = \"PID\")]"), "{source}");
+        assert!(
+            source.contains("pub patient_identifier_list: Vec<String>,"),
+            "{source}"
+        );
+        assert!(source.contains("pub patient_name: String,"), "{source}");
+        assert!(source.contains("pub sex: Option<String>,"), "{source}");
+        // Fields render in field-number order.
+        let id_pos = source.find("patient_identifier_list").unwrap();
+        let name_pos = source.find("patient_name").unwrap();
+        let sex_pos = source.find("pub sex").unwrap();
+        assert!(id_pos < name_pos && name_pos < sex_pos);
+    }
+
+    #[test]
+    fn segment_expands_components_for_composite_fields() {
+        let mut composite = field("Sending Application", false, false);
+        composite.data_type = "HD".to_string();
+        composite.components = Some(HashMap::from([
+            (
+                "1".to_string(),
+                ComponentDefinition {
+                    name: "Namespace ID".to_string(),
+                    data_type: "IS".to_string(),
+                    required: false,
+                    max_length: None,
+                    table_id: None,
+                },
+            ),
+            (
+                "2".to_string(),
+                ComponentDefinition {
+                    name: "Universal ID".to_string(),
+                    data_type: "ST".to_string(),
+                    required: true,
+                    max_length: None,
+                    table_id: None,
+                },
+            ),
+        ]));
+        let def = SegmentDefinition {
+            name: "Message Header".to_string(),
+            required: true,
+            repeating: false,
+            fields: HashMap::from([(3, composite)]),
+        };
+
+        let source = generate_segment("MSH", &def);
+        assert!(
+            source.contains("pub sending_application_namespace_id: Option<String>,"),
+            "{source}"
+        );
+        assert!(
+            source.contains("pub sending_application_universal_id: String,"),
+            "{source}"
+        );
+        assert!(
+            source.contains("#[hl7(field = 3, component = 1)]"),
+            "{source}"
+        );
+        assert!(
+            source.contains("#[hl7(field = 3, component = 2)]"),
+            "{source}"
+        );
+    }
+
+    #[test]
+    fn segment_keeps_repeating_composite_fields_whole() {
+        let mut repeating = field("Patient Name", true, true);
+        repeating.data_type = "XPN".to_string();
+        repeating.components = Some(HashMap::from([(
+            "1".to_string(),
+            ComponentDefinition {
+                name: "Family Name".to_string(),
+                data_type: "FN".to_string(),
+                required: false,
+                max_length: None,
+                table_id: None,
+            },
+        )]));
+        let def = SegmentDefinition {
+            name: "Patient Identification".to_string(),
+            required: true,
+            repeating: false,
+            fields: HashMap::from([(5, repeating)]),
+        };
+
+        // Vec cannot combine with component=, so the field stays whole.
+        let source = generate_segment("PID", &def);
+        assert!(
+            source.contains("pub patient_name: Vec<String>,"),
+            "{source}"
+        );
+        assert!(!source.contains("component ="), "{source}");
+    }
+}

@@ -1,5 +1,7 @@
 //! Integration tests for vyna-hl7-macros derive macros
 
+use vyna_hl7_core::field::{Field, Repetition};
+use vyna_hl7_core::message::Message;
 use vyna_hl7_core::segment::Segment;
 use vyna_hl7_macros::{Message, Segment as DeriveSegment};
 
@@ -237,6 +239,210 @@ fn test_message_into_trait() {
     let adt = AdtA01::default();
     let message: vyna_hl7_core::message::Message = adt.into();
     assert!(message.segments.is_empty() || !message.segments.is_empty()); // Just verify conversion works
+}
+
+/// Test message with a repeating segment
+#[derive(Message, Default, Debug)]
+#[hl7(message_type = "ORU", trigger_event = "R01")]
+struct OruR01 {
+    #[hl7(segment)]
+    pid: PatientIdentification,
+
+    #[hl7(segment, repeating)]
+    obx: Vec<Observation>,
+}
+
+/// Test segment with a repeating field (e.g. PID-3 patient identifier list)
+#[derive(DeriveSegment, Default, Debug, PartialEq)]
+#[hl7(id = "PID")]
+struct RepeatingPid {
+    #[hl7(field = 3)]
+    patient_ids: Vec<String>,
+}
+
+fn sample_pid_segment() -> Segment {
+    let mut segment = Segment::new("PID");
+    let _ = segment.set_field_value(1, "1");
+    let _ = segment.set_field_value(3, "12345");
+    let _ = segment.set_component(5, 0, 0, "Smith");
+    let _ = segment.set_component(5, 0, 1, "John");
+    let _ = segment.set_field_value(7, "19800101");
+    let _ = segment.set_field_value(8, "M");
+    segment
+}
+
+fn sample_obx_segment(set_id: &str, value: &str) -> Segment {
+    let mut segment = Segment::new("OBX");
+    let _ = segment.set_field_value(1, set_id);
+    let _ = segment.set_field_value(2, "NM");
+    let _ = segment.set_field_value(3, "GLUCOSE");
+    let _ = segment.set_field_value(5, value);
+    let _ = segment.set_field_value(11, "F");
+    segment
+}
+
+#[test]
+fn test_message_from_message() {
+    let mut message = Message::new();
+    message.add_segment(sample_pid_segment());
+    message.add_segment(sample_obx_segment("1", "100"));
+
+    let adt = AdtA01::from_message(&message);
+    assert!(adt.is_some());
+    let adt = adt.unwrap();
+    assert_eq!(adt.pid.patient_id, "12345");
+    assert_eq!(adt.pid.family_name, "Smith");
+    assert!(adt.obx.is_some());
+    assert_eq!(adt.obx.unwrap().observation_value, Some("100".to_string()));
+}
+
+#[test]
+fn test_message_from_message_missing_required() {
+    // No PID segment: required field cannot be satisfied
+    let mut message = Message::new();
+    message.add_segment(sample_obx_segment("1", "100"));
+
+    assert!(AdtA01::from_message(&message).is_none());
+}
+
+#[test]
+fn test_message_from_message_optional_absent() {
+    let mut message = Message::new();
+    message.add_segment(sample_pid_segment());
+
+    let adt = AdtA01::from_message(&message);
+    assert!(adt.is_some());
+    assert!(adt.unwrap().obx.is_none());
+}
+
+#[test]
+fn test_message_from_message_repeating() {
+    let mut message = Message::new();
+    message.add_segment(sample_pid_segment());
+    message.add_segment(sample_obx_segment("1", "100"));
+    message.add_segment(sample_obx_segment("2", "105"));
+
+    let oru = OruR01::from_message(&message);
+    assert!(oru.is_some());
+    let oru = oru.unwrap();
+    assert_eq!(oru.pid.patient_id, "12345");
+    assert_eq!(oru.obx.len(), 2);
+    assert_eq!(oru.obx[0].observation_value, Some("100".to_string()));
+    assert_eq!(oru.obx[1].observation_value, Some("105".to_string()));
+}
+
+#[test]
+fn test_message_from_message_repeating_empty() {
+    let mut message = Message::new();
+    message.add_segment(sample_pid_segment());
+
+    let oru = OruR01::from_message(&message);
+    assert!(oru.is_some());
+    assert!(oru.unwrap().obx.is_empty());
+}
+
+#[test]
+fn test_message_try_from() {
+    use std::convert::TryFrom;
+
+    let mut message = Message::new();
+    message.add_segment(sample_pid_segment());
+    let adt = AdtA01::try_from(&message);
+    assert!(adt.is_ok());
+
+    let empty = Message::new();
+    assert!(AdtA01::try_from(&empty).is_err());
+}
+
+#[test]
+fn test_message_round_trip() {
+    let mut message = Message::new();
+    message.add_segment(sample_pid_segment());
+    message.add_segment(sample_obx_segment("1", "100"));
+
+    let adt = AdtA01::from_message(&message).unwrap();
+    let encoded = adt.to_message();
+
+    assert_eq!(encoded.segments.len(), 2);
+    assert_eq!(
+        encoded.get_segment_by_id("PID").unwrap().get_field_value(3),
+        Some("12345")
+    );
+    assert_eq!(
+        encoded.get_segment_by_id("OBX").unwrap().get_field_value(5),
+        Some("100")
+    );
+}
+
+#[test]
+fn test_repeating_field_from_segment() {
+    let mut field = Field::new();
+    field.add_repetition(Repetition::from_value("ID-A"));
+    field.add_repetition(Repetition::from_value("ID-B"));
+    let mut segment = Segment::new("PID");
+    let _ = segment.set_field(3, field);
+
+    let pid = RepeatingPid::from_segment(&segment).unwrap();
+    assert_eq!(
+        pid.patient_ids,
+        vec!["ID-A".to_string(), "ID-B".to_string()]
+    );
+}
+
+/// Test segment mapping a composite field as one whole string
+#[derive(DeriveSegment, Default, Debug)]
+#[hl7(id = "PID")]
+struct WholeNamePid {
+    #[hl7(field = 5)]
+    patient_name: String,
+}
+
+#[test]
+fn test_composite_whole_field_round_trip() {
+    let mut segment = Segment::new("PID");
+    let _ = segment.set_component(5, 0, 0, "Smith");
+    let _ = segment.set_component(5, 0, 1, "John");
+
+    // Whole-field read preserves every component, not just the first.
+    let pid = WholeNamePid::from_segment(&segment).unwrap();
+    assert_eq!(pid.patient_name, "Smith^John");
+
+    // Whole-field write rebuilds the component structure.
+    let back = pid.to_segment();
+    let rep = back.get_field(5).unwrap().get_repetition(0).unwrap();
+    assert_eq!(rep.get_component(0).unwrap().value(), Some("Smith"));
+    assert_eq!(rep.get_component(1).unwrap().value(), Some("John"));
+}
+
+#[test]
+fn test_composite_repeating_field_round_trip() {
+    let pid = RepeatingPid {
+        patient_ids: vec!["ID1^AA".to_string(), "ID2^BB".to_string()],
+    };
+
+    let segment = pid.to_segment();
+    let field = segment.get_field(3).unwrap();
+    assert_eq!(field.repetitions.len(), 2);
+    assert_eq!(
+        field.get_repetition(0).unwrap().full_value().as_deref(),
+        Some("ID1^AA")
+    );
+
+    let back = RepeatingPid::from_segment(&segment).unwrap();
+    assert_eq!(back.patient_ids, pid.patient_ids);
+}
+
+#[test]
+fn test_repeating_field_to_segment() {
+    let pid = RepeatingPid {
+        patient_ids: vec!["ID-A".to_string(), "ID-B".to_string()],
+    };
+
+    let segment = pid.to_segment();
+    let field = segment.get_field(3).unwrap();
+    assert_eq!(field.repetitions.len(), 2);
+    assert_eq!(field.get_repetition(0).unwrap().value(), Some("ID-A"));
+    assert_eq!(field.get_repetition(1).unwrap().value(), Some("ID-B"));
 }
 
 #[test]
