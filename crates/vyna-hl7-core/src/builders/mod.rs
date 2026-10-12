@@ -10,13 +10,16 @@ pub mod dft;
 pub mod fields;
 pub mod laboratory;
 pub mod mdm;
+pub mod omp;
 pub mod orm;
 pub mod oru;
 pub mod pharmacy;
+pub mod ppr;
 pub mod qbp;
 pub mod qry;
 pub mod rsp;
 pub mod siu;
+pub mod vxu;
 
 use crate::{
     charset::CharacterSet,

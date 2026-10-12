@@ -85,6 +85,9 @@ fn load_embedded_schema(version: &str, schema_key: &str) -> Option<MessageSchema
         ("v2_3", "RRA_O18") => parse_schema_json(include_str!("../schemas/v2_3/RRA_O18.json")),
         ("v2_3", "OUL_R21") => parse_schema_json(include_str!("../schemas/v2_3/OUL_R21.json")),
         ("v2_3", "OML_O21") => parse_schema_json(include_str!("../schemas/v2_3/OML_O21.json")),
+        ("v2_3", "VXU_V04") => parse_schema_json(include_str!("../schemas/v2_3/VXU_V04.json")),
+        ("v2_3", "PPR_PC1") => parse_schema_json(include_str!("../schemas/v2_3/PPR_PC1.json")),
+        ("v2_3", "OMP_O09") => parse_schema_json(include_str!("../schemas/v2_3/OMP_O09.json")),
 
         // V2.4 schemas - ADT messages
         ("v2_4", "ADT_A01") => parse_schema_json(include_str!("../schemas/v2_4/ADT_A01.json")),
@@ -131,6 +134,9 @@ fn load_embedded_schema(version: &str, schema_key: &str) -> Option<MessageSchema
         ("v2_4", "RRA_O18") => parse_schema_json(include_str!("../schemas/v2_4/RRA_O18.json")),
         ("v2_4", "OUL_R21") => parse_schema_json(include_str!("../schemas/v2_4/OUL_R21.json")),
         ("v2_4", "OML_O21") => parse_schema_json(include_str!("../schemas/v2_4/OML_O21.json")),
+        ("v2_4", "VXU_V04") => parse_schema_json(include_str!("../schemas/v2_4/VXU_V04.json")),
+        ("v2_4", "PPR_PC1") => parse_schema_json(include_str!("../schemas/v2_4/PPR_PC1.json")),
+        ("v2_4", "OMP_O09") => parse_schema_json(include_str!("../schemas/v2_4/OMP_O09.json")),
 
         // V2.5 schemas - ADT messages
         ("v2_5", "ADT_A01") => parse_schema_json(include_str!("../schemas/v2_5/ADT_A01.json")),
@@ -177,6 +183,9 @@ fn load_embedded_schema(version: &str, schema_key: &str) -> Option<MessageSchema
         ("v2_5", "RRA_O18") => parse_schema_json(include_str!("../schemas/v2_5/RRA_O18.json")),
         ("v2_5", "OUL_R21") => parse_schema_json(include_str!("../schemas/v2_5/OUL_R21.json")),
         ("v2_5", "OML_O21") => parse_schema_json(include_str!("../schemas/v2_5/OML_O21.json")),
+        ("v2_5", "VXU_V04") => parse_schema_json(include_str!("../schemas/v2_5/VXU_V04.json")),
+        ("v2_5", "PPR_PC1") => parse_schema_json(include_str!("../schemas/v2_5/PPR_PC1.json")),
+        ("v2_5", "OMP_O09") => parse_schema_json(include_str!("../schemas/v2_5/OMP_O09.json")),
 
         // V2.6 schemas - ADT messages
         ("v2_6", "ADT_A01") => parse_schema_json(include_str!("../schemas/v2_6/ADT_A01.json")),
@@ -223,6 +232,9 @@ fn load_embedded_schema(version: &str, schema_key: &str) -> Option<MessageSchema
         ("v2_6", "RRA_O18") => parse_schema_json(include_str!("../schemas/v2_6/RRA_O18.json")),
         ("v2_6", "OUL_R21") => parse_schema_json(include_str!("../schemas/v2_6/OUL_R21.json")),
         ("v2_6", "OML_O21") => parse_schema_json(include_str!("../schemas/v2_6/OML_O21.json")),
+        ("v2_6", "VXU_V04") => parse_schema_json(include_str!("../schemas/v2_6/VXU_V04.json")),
+        ("v2_6", "PPR_PC1") => parse_schema_json(include_str!("../schemas/v2_6/PPR_PC1.json")),
+        ("v2_6", "OMP_O09") => parse_schema_json(include_str!("../schemas/v2_6/OMP_O09.json")),
 
         // V2.7 schemas - ADT messages
         ("v2_7", "ADT_A01") => parse_schema_json(include_str!("../schemas/v2_7/ADT_A01.json")),
@@ -269,6 +281,9 @@ fn load_embedded_schema(version: &str, schema_key: &str) -> Option<MessageSchema
         ("v2_7", "RRA_O18") => parse_schema_json(include_str!("../schemas/v2_7/RRA_O18.json")),
         ("v2_7", "OUL_R21") => parse_schema_json(include_str!("../schemas/v2_7/OUL_R21.json")),
         ("v2_7", "OML_O21") => parse_schema_json(include_str!("../schemas/v2_7/OML_O21.json")),
+        ("v2_7", "VXU_V04") => parse_schema_json(include_str!("../schemas/v2_7/VXU_V04.json")),
+        ("v2_7", "PPR_PC1") => parse_schema_json(include_str!("../schemas/v2_7/PPR_PC1.json")),
+        ("v2_7", "OMP_O09") => parse_schema_json(include_str!("../schemas/v2_7/OMP_O09.json")),
 
         // V2.8 schemas - ADT messages
         ("v2_8", "ADT_A01") => parse_schema_json(include_str!("../schemas/v2_8/ADT_A01.json")),
@@ -315,6 +330,9 @@ fn load_embedded_schema(version: &str, schema_key: &str) -> Option<MessageSchema
         ("v2_8", "RRA_O18") => parse_schema_json(include_str!("../schemas/v2_8/RRA_O18.json")),
         ("v2_8", "OUL_R21") => parse_schema_json(include_str!("../schemas/v2_8/OUL_R21.json")),
         ("v2_8", "OML_O21") => parse_schema_json(include_str!("../schemas/v2_8/OML_O21.json")),
+        ("v2_8", "VXU_V04") => parse_schema_json(include_str!("../schemas/v2_8/VXU_V04.json")),
+        ("v2_8", "PPR_PC1") => parse_schema_json(include_str!("../schemas/v2_8/PPR_PC1.json")),
+        ("v2_8", "OMP_O09") => parse_schema_json(include_str!("../schemas/v2_8/OMP_O09.json")),
 
         _ => None,
     }
@@ -357,6 +375,12 @@ pub fn list_available_schemas(version: Version) -> Vec<String> {
         "OUL^R21".to_string(), "OML^O21".to_string(),
         // Master File
         "MFN^M01".to_string(),
+        // Immunization
+        "VXU^V04".to_string(),
+        // Patient Problem
+        "PPR^PC1".to_string(),
+        // Pharmacy Order
+        "OMP^O09".to_string(),
     ];
 
     // All versions currently have the same set of schemas
@@ -512,6 +536,103 @@ mod tests {
         assert_eq!(schema.trigger_event, "O18");
         assert!(schema.segments.contains_key("MSH"));
         assert!(schema.segments.contains_key("MSA"));
+    }
+
+    #[test]
+    fn test_load_vxu_v04_schema() {
+        let schema = load_schema(Version::V2_5, "VXU", "V04").unwrap();
+        assert_eq!(schema.message_type, "VXU");
+        assert_eq!(schema.trigger_event, "V04");
+        assert!(schema.segments.contains_key("MSH"));
+        assert!(schema.segments.contains_key("PID"));
+        assert!(schema.segments.contains_key("ORC"));
+        assert!(schema.segments.contains_key("RXA"));
+        assert!(schema.segments.contains_key("RXR"));
+        // PV1 is optional in VXU (unlike the pharmacy administration messages)
+        assert!(!schema.segments["PV1"].required);
+    }
+
+    #[test]
+    fn test_load_vxu_v04_all_versions() {
+        for version in [
+            Version::V2_3,
+            Version::V2_4,
+            Version::V2_5,
+            Version::V2_6,
+            Version::V2_7,
+            Version::V2_8,
+        ] {
+            let schema = load_schema(version, "VXU", "V04").unwrap();
+            assert_eq!(schema.message_type, "VXU");
+            assert_eq!(schema.trigger_event, "V04");
+            assert!(schema.segments.contains_key("RXA"));
+        }
+        assert!(list_available_schemas(Version::V2_5).contains(&"VXU^V04".to_string()));
+    }
+
+    #[test]
+    fn test_load_ppr_pc1_schema() {
+        let schema = load_schema(Version::V2_5, "PPR", "PC1").unwrap();
+        assert_eq!(schema.message_type, "PPR");
+        assert_eq!(schema.trigger_event, "PC1");
+        assert!(schema.segments.contains_key("MSH"));
+        assert!(schema.segments.contains_key("PID"));
+        assert!(schema.segments.contains_key("PV1"));
+        assert!(schema.segments.contains_key("PRB"));
+        assert!(schema.segments.contains_key("VAR"));
+        assert!(schema.segments["PRB"].required);
+        assert!(schema.segments["PRB"].repeating);
+    }
+
+    #[test]
+    fn test_load_ppr_pc1_all_versions() {
+        for version in [
+            Version::V2_3,
+            Version::V2_4,
+            Version::V2_5,
+            Version::V2_6,
+            Version::V2_7,
+            Version::V2_8,
+        ] {
+            let schema = load_schema(version, "PPR", "PC1").unwrap();
+            assert_eq!(schema.message_type, "PPR");
+            assert_eq!(schema.trigger_event, "PC1");
+            assert!(schema.segments.contains_key("PRB"));
+        }
+        assert!(list_available_schemas(Version::V2_5).contains(&"PPR^PC1".to_string()));
+    }
+
+    #[test]
+    fn test_load_omp_o09_schema() {
+        let schema = load_schema(Version::V2_5, "OMP", "O09").unwrap();
+        assert_eq!(schema.message_type, "OMP");
+        assert_eq!(schema.trigger_event, "O09");
+        assert!(schema.segments.contains_key("MSH"));
+        assert!(schema.segments.contains_key("PID"));
+        assert!(schema.segments.contains_key("ORC"));
+        assert!(schema.segments.contains_key("RXO"));
+        assert!(schema.segments.contains_key("RXR"));
+        assert!(schema.segments["RXO"].required);
+        // RXR is required in OMP orders (unlike the administration messages)
+        assert!(schema.segments["RXR"].required);
+    }
+
+    #[test]
+    fn test_load_omp_o09_all_versions() {
+        for version in [
+            Version::V2_3,
+            Version::V2_4,
+            Version::V2_5,
+            Version::V2_6,
+            Version::V2_7,
+            Version::V2_8,
+        ] {
+            let schema = load_schema(version, "OMP", "O09").unwrap();
+            assert_eq!(schema.message_type, "OMP");
+            assert_eq!(schema.trigger_event, "O09");
+            assert!(schema.segments.contains_key("RXO"));
+        }
+        assert!(list_available_schemas(Version::V2_5).contains(&"OMP^O09".to_string()));
     }
 
     #[test]

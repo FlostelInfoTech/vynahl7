@@ -1091,4 +1091,168 @@ mod tests {
         assert_eq!(result.errors[0].location, "MSH-18");
         assert!(result.errors[0].message.contains("GBK"));
     }
+
+    #[test]
+    fn test_validate_vxu_v04_from_builder() {
+        use vyna_hl7_core::builders::vxu::{ImmunizationDose, VxuV04Builder};
+
+        let message = VxuV04Builder::new(Version::V2_5)
+            .sending_application("SEND")
+            .sending_facility("SFAC")
+            .receiving_application("RECV")
+            .receiving_facility("RFAC")
+            .patient_id("12345")
+            .patient_name("Smith", "John")
+            .add_immunization(
+                ImmunizationDose::new("08^HepB adult^CVX", "20240101100000")
+                    .amount("1.0")
+                    .route("IM^Intramuscular"),
+            )
+            .build()
+            .unwrap();
+
+        let validator = Validator::for_message_type(Version::V2_5, "VXU", "V04").unwrap();
+        let result = validator.validate(&message);
+        // Two global quirks affect every message type (the stock
+        // schema_validation example reports the same on plain ADT^A01):
+        // MSH-9.3 is schema-required though wires carry 2 components, and
+        // the ID datatype rule rejects the dot in "2.5". Everything else,
+        // in particular every VXU segment and required field, must be clean.
+        let unexpected: Vec<_> = result
+            .errors
+            .iter()
+            .filter(|e| e.location != "MSH[0]-9-3" && e.location != "MSH[0]-12-1")
+            .collect();
+        assert!(unexpected.is_empty(), "errors: {unexpected:?}");
+    }
+
+    #[test]
+    fn test_validate_ppr_pc1_from_builder() {
+        use vyna_hl7_core::builders::ppr::{PprPc1Builder, Problem};
+
+        let message = PprPc1Builder::new(Version::V2_5)
+            .sending_application("SEND")
+            .sending_facility("SFAC")
+            .receiving_application("RECV")
+            .receiving_facility("RFAC")
+            .patient_id("12345")
+            .patient_name("Smith", "John")
+            .patient_class("O")
+            .add_problem(
+                // Short text: builders store composites via from_value, so the
+                // whole string counts against the 20-char component limit.
+                Problem::new("38341003^HTN^SCT", "PROB-1", "20240101100000")
+                    .note("Stage 1, monitor"),
+            )
+            .build()
+            .unwrap();
+
+        let validator = Validator::for_message_type(Version::V2_5, "PPR", "PC1").unwrap();
+        let result = validator.validate(&message);
+        // Only the two known global quirks may remain (see VXU test):
+        // MSH-9.3 schema-required and the ID rule rejecting "2.5".
+        let unexpected: Vec<_> = result
+            .errors
+            .iter()
+            .filter(|e| e.location != "MSH[0]-9-3" && e.location != "MSH[0]-12-1")
+            .collect();
+        assert!(unexpected.is_empty(), "errors: {unexpected:?}");
+    }
+
+    #[test]
+    fn test_validate_ppr_pc1_missing_problem_is_invalid() {
+        use vyna_hl7_core::builders::ppr::PprPc1Builder;
+
+        let message = PprPc1Builder::new(Version::V2_5)
+            .patient_id("12345")
+            .patient_name("Smith", "John")
+            .patient_class("O")
+            .build()
+            .unwrap();
+
+        let validator = Validator::for_message_type(Version::V2_5, "PPR", "PC1").unwrap();
+        let result = validator.validate(&message);
+        assert!(!result.is_valid());
+        assert!(
+            result.errors.iter().any(|e| e.message.contains("PRB")),
+            "errors: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_validate_omp_o09_from_builder() {
+        use vyna_hl7_core::builders::omp::{MedicationOrder, OmpO09Builder};
+
+        let message = OmpO09Builder::new(Version::V2_5)
+            .sending_application("SEND")
+            .sending_facility("SFAC")
+            .receiving_application("RECV")
+            .receiving_facility("RFAC")
+            .patient_id("12345")
+            .patient_name("Smith", "John")
+            .patient_class("O")
+            .add_order(
+                // Short texts: builders store composites via from_value, so the
+                // whole string counts against the 20-char component limit.
+                MedicationOrder::new("00093-0058^Loraz^NDC", "PO").amount_minimum("1"),
+            )
+            .build()
+            .unwrap();
+
+        let validator = Validator::for_message_type(Version::V2_5, "OMP", "O09").unwrap();
+        let result = validator.validate(&message);
+        // Only the two known global quirks may remain (see VXU test):
+        // MSH-9.3 schema-required and the ID rule rejecting "2.5".
+        let unexpected: Vec<_> = result
+            .errors
+            .iter()
+            .filter(|e| e.location != "MSH[0]-9-3" && e.location != "MSH[0]-12-1")
+            .collect();
+        assert!(unexpected.is_empty(), "errors: {unexpected:?}");
+    }
+
+    #[test]
+    fn test_validate_omp_o09_missing_order_is_invalid() {
+        use vyna_hl7_core::builders::omp::OmpO09Builder;
+
+        let message = OmpO09Builder::new(Version::V2_5)
+            .patient_id("12345")
+            .patient_name("Smith", "John")
+            .patient_class("O")
+            .build()
+            .unwrap();
+
+        let validator = Validator::for_message_type(Version::V2_5, "OMP", "O09").unwrap();
+        let result = validator.validate(&message);
+        assert!(!result.is_valid());
+        assert!(
+            result.errors.iter().any(|e| e.message.contains("RXO")
+                || e.message.contains("RXR")
+                || e.message.contains("ORC")),
+            "errors: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_validate_vxu_v04_missing_order_is_invalid() {
+        use vyna_hl7_core::builders::vxu::VxuV04Builder;
+
+        let message = VxuV04Builder::new(Version::V2_5)
+            .patient_id("12345")
+            .patient_name("Smith", "John")
+            .build()
+            .unwrap();
+
+        let validator = Validator::for_message_type(Version::V2_5, "VXU", "V04").unwrap();
+        let result = validator.validate(&message);
+        assert!(!result.is_valid());
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.message.contains("ORC") || e.message.contains("RXA"))
+        );
+    }
 }
