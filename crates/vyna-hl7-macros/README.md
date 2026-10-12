@@ -14,9 +14,7 @@ This crate is reserved for future procedural macro implementations. Currently co
 
 ## Current Status
 
-All macros return empty token streams. Use the `vyna-hl7-custom` crate's `z_segment!` declarative macro for custom segment definitions in the meantime.
-
-See [ROADMAP.md](../../ROADMAP.md) for planned enhancements.
+`#[derive(Segment)]` and `#[derive(Message)]` generate `from_segment`/`to_segment` conversions. Use the `vyna-hl7-custom` crate's `z_segment!` declarative macro for custom segment definitions.
 
 ## License
 
