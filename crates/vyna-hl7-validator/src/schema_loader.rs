@@ -57,6 +57,7 @@ fn load_embedded_schema(version: &str, schema_key: &str) -> Option<MessageSchema
         ("v2_3", "ADT_A17") => parse_schema_json(include_str!("../schemas/v2_3/ADT_A17.json")),
         ("v2_3", "ADT_A28") => parse_schema_json(include_str!("../schemas/v2_3/ADT_A28.json")),
         ("v2_3", "ADT_A31") => parse_schema_json(include_str!("../schemas/v2_3/ADT_A31.json")),
+        ("v2_3", "ADT_A34") => parse_schema_json(include_str!("../schemas/v2_3/ADT_A34.json")),
         ("v2_3", "ADT_A40") => parse_schema_json(include_str!("../schemas/v2_3/ADT_A40.json")),
         // V2.3 - Other message types
         ("v2_3", "ORU_R01") => parse_schema_json(include_str!("../schemas/v2_3/ORU_R01.json")),
@@ -106,6 +107,7 @@ fn load_embedded_schema(version: &str, schema_key: &str) -> Option<MessageSchema
         ("v2_4", "ADT_A17") => parse_schema_json(include_str!("../schemas/v2_4/ADT_A17.json")),
         ("v2_4", "ADT_A28") => parse_schema_json(include_str!("../schemas/v2_4/ADT_A28.json")),
         ("v2_4", "ADT_A31") => parse_schema_json(include_str!("../schemas/v2_4/ADT_A31.json")),
+        ("v2_4", "ADT_A34") => parse_schema_json(include_str!("../schemas/v2_4/ADT_A34.json")),
         ("v2_4", "ADT_A40") => parse_schema_json(include_str!("../schemas/v2_4/ADT_A40.json")),
         // V2.4 - Other message types
         ("v2_4", "ORU_R01") => parse_schema_json(include_str!("../schemas/v2_4/ORU_R01.json")),
@@ -155,6 +157,7 @@ fn load_embedded_schema(version: &str, schema_key: &str) -> Option<MessageSchema
         ("v2_5", "ADT_A17") => parse_schema_json(include_str!("../schemas/v2_5/ADT_A17.json")),
         ("v2_5", "ADT_A28") => parse_schema_json(include_str!("../schemas/v2_5/ADT_A28.json")),
         ("v2_5", "ADT_A31") => parse_schema_json(include_str!("../schemas/v2_5/ADT_A31.json")),
+        ("v2_5", "ADT_A34") => parse_schema_json(include_str!("../schemas/v2_5/ADT_A34.json")),
         ("v2_5", "ADT_A40") => parse_schema_json(include_str!("../schemas/v2_5/ADT_A40.json")),
         // V2.5 - Other message types
         ("v2_5", "ORU_R01") => parse_schema_json(include_str!("../schemas/v2_5/ORU_R01.json")),
@@ -204,6 +207,7 @@ fn load_embedded_schema(version: &str, schema_key: &str) -> Option<MessageSchema
         ("v2_6", "ADT_A17") => parse_schema_json(include_str!("../schemas/v2_6/ADT_A17.json")),
         ("v2_6", "ADT_A28") => parse_schema_json(include_str!("../schemas/v2_6/ADT_A28.json")),
         ("v2_6", "ADT_A31") => parse_schema_json(include_str!("../schemas/v2_6/ADT_A31.json")),
+        ("v2_6", "ADT_A34") => parse_schema_json(include_str!("../schemas/v2_6/ADT_A34.json")),
         ("v2_6", "ADT_A40") => parse_schema_json(include_str!("../schemas/v2_6/ADT_A40.json")),
         // V2.6 - Other message types
         ("v2_6", "ORU_R01") => parse_schema_json(include_str!("../schemas/v2_6/ORU_R01.json")),
@@ -253,6 +257,7 @@ fn load_embedded_schema(version: &str, schema_key: &str) -> Option<MessageSchema
         ("v2_7", "ADT_A17") => parse_schema_json(include_str!("../schemas/v2_7/ADT_A17.json")),
         ("v2_7", "ADT_A28") => parse_schema_json(include_str!("../schemas/v2_7/ADT_A28.json")),
         ("v2_7", "ADT_A31") => parse_schema_json(include_str!("../schemas/v2_7/ADT_A31.json")),
+        ("v2_7", "ADT_A34") => parse_schema_json(include_str!("../schemas/v2_7/ADT_A34.json")),
         ("v2_7", "ADT_A40") => parse_schema_json(include_str!("../schemas/v2_7/ADT_A40.json")),
         // V2.7 - Other message types
         ("v2_7", "ORU_R01") => parse_schema_json(include_str!("../schemas/v2_7/ORU_R01.json")),
@@ -302,6 +307,7 @@ fn load_embedded_schema(version: &str, schema_key: &str) -> Option<MessageSchema
         ("v2_8", "ADT_A17") => parse_schema_json(include_str!("../schemas/v2_8/ADT_A17.json")),
         ("v2_8", "ADT_A28") => parse_schema_json(include_str!("../schemas/v2_8/ADT_A28.json")),
         ("v2_8", "ADT_A31") => parse_schema_json(include_str!("../schemas/v2_8/ADT_A31.json")),
+        ("v2_8", "ADT_A34") => parse_schema_json(include_str!("../schemas/v2_8/ADT_A34.json")),
         ("v2_8", "ADT_A40") => parse_schema_json(include_str!("../schemas/v2_8/ADT_A40.json")),
         // V2.8 - Other message types
         ("v2_8", "ORU_R01") => parse_schema_json(include_str!("../schemas/v2_8/ORU_R01.json")),
@@ -352,7 +358,7 @@ pub fn list_available_schemas(version: Version) -> Vec<String> {
         "ADT^A07".to_string(), "ADT^A08".to_string(), "ADT^A09".to_string(),
         "ADT^A10".to_string(), "ADT^A11".to_string(), "ADT^A12".to_string(),
         "ADT^A13".to_string(), "ADT^A17".to_string(), "ADT^A28".to_string(),
-        "ADT^A31".to_string(), "ADT^A40".to_string(),
+        "ADT^A31".to_string(), "ADT^A34".to_string(), "ADT^A40".to_string(),
         // Order messages
         "ORU^R01".to_string(),
         "ORM^O01".to_string(),
@@ -408,6 +414,38 @@ mod tests {
         assert_eq!(schema.version, "2.5");
         assert!(schema.segments.contains_key("MSH"));
         assert!(schema.segments.contains_key("PID"));
+    }
+
+    #[test]
+    fn test_load_adt_a34_schema() {
+        let schema = load_schema(Version::V2_5, "ADT", "A34").unwrap();
+        assert_eq!(schema.message_type, "ADT");
+        assert_eq!(schema.trigger_event, "A34");
+        assert!(schema.segments.contains_key("MSH"));
+        assert!(schema.segments.contains_key("EVN"));
+        assert!(schema.segments.contains_key("PID"));
+        assert!(schema.segments.contains_key("MRG"));
+        assert!(schema.segments["MRG"].required);
+        // A34 merges patient ID only: no visit segments.
+        assert!(!schema.segments.contains_key("PV1"));
+    }
+
+    #[test]
+    fn test_load_adt_a34_all_versions() {
+        for version in [
+            Version::V2_3,
+            Version::V2_4,
+            Version::V2_5,
+            Version::V2_6,
+            Version::V2_7,
+            Version::V2_8,
+        ] {
+            let schema = load_schema(version, "ADT", "A34").unwrap();
+            assert_eq!(schema.message_type, "ADT");
+            assert_eq!(schema.trigger_event, "A34");
+            assert!(schema.segments.contains_key("MRG"));
+        }
+        assert!(list_available_schemas(Version::V2_5).contains(&"ADT^A34".to_string()));
     }
 
     #[test]

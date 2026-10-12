@@ -107,6 +107,11 @@ impl AdtBuilder {
     pub fn a40(version: Version) -> AdtA40Builder {
         AdtA40Builder::new(version)
     }
+
+    /// Create ADT^A34 - Merge Patient - Patient ID Only
+    pub fn a34(version: Version) -> AdtA34Builder {
+        AdtA34Builder::new(version)
+    }
 }
 
 /// Builder for ADT^A01 - Admit/Visit Notification
@@ -1200,5 +1205,209 @@ impl AdtA40Builder {
 
     pub fn build(self) -> Result<Message> {
         self.base.build()
+    }
+}
+
+/// Set a segment field, ignoring the impossible index-0 error.
+fn set_field(segment: &mut Segment, index: usize, value: &str) {
+    let _ = segment.set_field(index, Field::from_value(value));
+}
+
+/// Builder for ADT^A34 - Merge Patient - Patient ID Only
+///
+/// Unlike the other ADT wrappers, this builder has its own `build`: A34
+/// carries no visit segments, and it must emit the required MRG segment
+/// holding the prior (deprecated) patient identifiers.
+pub struct AdtA34Builder {
+    base: AdtA01Builder,
+    prior_patient_id: Option<String>,
+    prior_patient_name: Option<(String, String)>,
+}
+
+impl AdtA34Builder {
+    pub fn new(version: Version) -> Self {
+        let mut base = AdtA01Builder::new(version);
+        base.base = MessageBuilder::new(version, "ADT", "A34");
+        Self {
+            base,
+            prior_patient_id: None,
+            prior_patient_name: None,
+        }
+    }
+
+    pub fn sending_application(mut self, app: &str) -> Self {
+        self.base = self.base.sending_application(app);
+        self
+    }
+
+    pub fn sending_facility(mut self, facility: &str) -> Self {
+        self.base = self.base.sending_facility(facility);
+        self
+    }
+
+    pub fn receiving_application(mut self, app: &str) -> Self {
+        self.base = self.base.receiving_application(app);
+        self
+    }
+
+    pub fn receiving_facility(mut self, facility: &str) -> Self {
+        self.base = self.base.receiving_facility(facility);
+        self
+    }
+
+    pub fn control_id(mut self, id: &str) -> Self {
+        self.base = self.base.control_id(id);
+        self
+    }
+
+    pub fn processing_id(mut self, id: &str) -> Self {
+        self.base = self.base.processing_id(id);
+        self
+    }
+
+    /// Set the surviving (correct) patient ID (PID-3).
+    pub fn patient_id(mut self, id: &str) -> Self {
+        self.base = self.base.patient_id(id);
+        self
+    }
+
+    pub fn patient_name(mut self, family: &str, given: &str) -> Self {
+        self.base = self.base.patient_name(family, given);
+        self
+    }
+
+    pub fn date_of_birth(mut self, dob: &str) -> Self {
+        self.base = self.base.date_of_birth(dob);
+        self
+    }
+
+    pub fn sex(mut self, sex: &str) -> Self {
+        self.base = self.base.sex(sex);
+        self
+    }
+
+    /// Set the deprecated patient ID being merged away (MRG-1, required).
+    pub fn prior_patient_id(mut self, id: &str) -> Self {
+        self.prior_patient_id = Some(id.to_string());
+        self
+    }
+
+    pub fn prior_patient_name(mut self, family: &str, given: &str) -> Self {
+        self.prior_patient_name = Some((family.to_string(), given.to_string()));
+        self
+    }
+
+    pub fn build(mut self) -> Result<Message> {
+        let control_id = self
+            .base
+            .control_id
+            .take()
+            .unwrap_or_else(generate_control_id);
+
+        let msh = self.base.base.create_msh(
+            &self.base.sending_app,
+            &self.base.sending_facility,
+            &self.base.receiving_app,
+            &self.base.receiving_facility,
+            &control_id,
+            &self.base.processing_id,
+        )?;
+        self.base.base.message.add_segment(msh);
+
+        let evn = self.base.base.create_evn("A34", None)?;
+        self.base.base.message.add_segment(evn);
+
+        // PID segment, sparse: unset fields stay absent instead of ""
+        // placeholders, so optional composite fields do not trip
+        // required-component checks during validation.
+        let mut pid = Segment::new("PID");
+        set_field(&mut pid, 1, "1");
+        if let Some(id) = self.base.patient_id.as_deref() {
+            set_field(&mut pid, 3, id);
+        }
+        if let Some((family, given)) = self.base.patient_name.as_ref() {
+            set_field(&mut pid, 5, &format!("{family}^{given}"));
+        }
+        if let Some(dob) = self.base.dob.as_deref() {
+            set_field(&mut pid, 7, dob);
+        }
+        if let Some(sex) = self.base.sex.as_deref() {
+            set_field(&mut pid, 8, sex);
+        }
+        self.base.base.message.add_segment(pid);
+
+        // MRG segment (MRG-1 prior patient ID is schema-required)
+        let mut mrg = Segment::new("MRG");
+        set_field(&mut mrg, 1, self.prior_patient_id.as_deref().unwrap_or(""));
+        if let Some((family, given)) = self.prior_patient_name.as_ref() {
+            set_field(&mut mrg, 7, &format!("{family}^{given}"));
+        }
+        self.base.base.message.add_segment(mrg);
+
+        Ok(self.base.base.build())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn minimal_builder() -> AdtA34Builder {
+        AdtBuilder::a34(Version::V2_5)
+            .sending_application("SEND")
+            .sending_facility("SFAC")
+            .receiving_application("RECV")
+            .receiving_facility("RFAC")
+            .control_id("MSG001")
+            .patient_id("NEW123")
+            .patient_name("Smith", "John")
+            .prior_patient_id("OLD456")
+    }
+
+    #[test]
+    fn test_a34_builds_merge_without_visit() {
+        let message = minimal_builder().build().unwrap();
+
+        let msh = message.get_segment_by_id("MSH").unwrap();
+        let msg_type = msh
+            .get_field(9)
+            .unwrap()
+            .get_repetition(0)
+            .unwrap()
+            .full_value();
+        assert_eq!(msg_type.as_deref(), Some("ADT^A34"));
+
+        let evn = message.get_segment_by_id("EVN").unwrap();
+        assert_eq!(evn.get_field_value(1), Some("A34"));
+
+        let pid = message.get_segment_by_id("PID").unwrap();
+        assert_eq!(pid.get_field_value(3), Some("NEW123"));
+
+        let mrg = message.get_segment_by_id("MRG").unwrap();
+        assert_eq!(mrg.get_field_value(1), Some("OLD456"));
+
+        // Patient ID only: no visit segments.
+        assert!(message.get_segment_by_id("PV1").is_none());
+    }
+
+    #[test]
+    fn test_a34_prior_name_is_optional() {
+        let without = minimal_builder().build().unwrap();
+        assert!(
+            without
+                .get_segment_by_id("MRG")
+                .unwrap()
+                .get_field(7)
+                .is_none()
+        );
+
+        let with = minimal_builder()
+            .prior_patient_name("Smyth", "Jon")
+            .build()
+            .unwrap();
+        assert_eq!(
+            with.get_segment_by_id("MRG").unwrap().get_field_value(7),
+            Some("Smyth^Jon")
+        );
     }
 }
