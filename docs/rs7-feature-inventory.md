@@ -6,6 +6,10 @@ reset version to 0.1.0"). The 89 rs7-era commits (2025-10-07 to
 file preserves what rs7 had built, so the provenance of the inherited
 code is not lost.
 
+Post-fork removals: the DICOM test-panel tab (SCU/SCP, C-ECHO/C-STORE/
+C-FIND) was removed to keep VynaHL7 HL7-only; the `dicom-*` dependencies
+are gone and no DICOM code remains in the project.
+
 ## Workspace at Fork (17 crates)
 
 | Crate | Purpose |

@@ -51,12 +51,6 @@ futures = "0.3"
 glob = "0.3"  # For file pattern matching
 rand = "0.10"  # For key generation (OsRng for russh server keys)
 
-# DICOM support
-dicom-core = "0.10"
-dicom-object = "0.10"
-dicom-ul = "0.10"
-dicom-encoding = "0.10"
-
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

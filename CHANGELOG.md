@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- DICOM support removed from the test panel (SCU/SCP tab, `dicom-*` dependencies) to keep the project HL7-only
+
 ## [0.3.0] - 2026-10-12
 
 ### Fixed

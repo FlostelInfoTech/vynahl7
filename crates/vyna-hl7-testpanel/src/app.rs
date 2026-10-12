@@ -4,7 +4,7 @@ use eframe::egui::{self, Color32, RichText, Stroke};
 use vyna_hl7_core::CharacterSet;
 use crate::logo;
 use crate::tabs::{
-    BuilderTab, DicomTab, FhirTab, FtpTab, HttpTab, MllpTab, ParserTab, TerserTab, ValidatorTab,
+    BuilderTab, FhirTab, FtpTab, HttpTab, MllpTab, ParserTab, TerserTab, ValidatorTab,
     XmlTab,
 };
 use std::path::PathBuf;
@@ -22,7 +22,6 @@ pub enum ActiveTab {
     Ftp,
     Fhir,
     Xml,
-    Dicom,
 }
 
 impl ActiveTab {
@@ -37,7 +36,6 @@ impl ActiveTab {
             ActiveTab::Ftp => "FTP",
             ActiveTab::Fhir => "FHIR",
             ActiveTab::Xml => "XML",
-            ActiveTab::Dicom => "DICOM",
         }
     }
 
@@ -52,7 +50,6 @@ impl ActiveTab {
             ActiveTab::Ftp => "\u{1F4C1}",         // Folder
             ActiveTab::Fhir => "\u{1F525}",        // Fire (FHIR)
             ActiveTab::Xml => "\u{1F4C4}",         // Document
-            ActiveTab::Dicom => "\u{1F3E5}",       // Hospital
         }
     }
 
@@ -67,7 +64,6 @@ impl ActiveTab {
             ActiveTab::Ftp => "Transfer files via FTP/SFTP (Ctrl+7)",
             ActiveTab::Fhir => "Convert to/from FHIR R4 (Ctrl+8)",
             ActiveTab::Xml => "Convert between ER7 and XML (Ctrl+9)",
-            ActiveTab::Dicom => "DICOM medical imaging (Ctrl+0)",
         }
     }
 
@@ -81,8 +77,6 @@ impl ActiveTab {
             ActiveTab::Http,
             ActiveTab::Ftp,
             ActiveTab::Fhir,
-            ActiveTab::Xml,
-            ActiveTab::Dicom,
         ]
     }
 }
@@ -99,7 +93,6 @@ pub struct VynaHL7TestPanel {
     ftp_tab: FtpTab,
     fhir_tab: FhirTab,
     xml_tab: XmlTab,
-    dicom_tab: DicomTab,
     show_about: bool,
     show_shortcuts: bool,
     current_file: Option<PathBuf>,
@@ -119,7 +112,6 @@ impl VynaHL7TestPanel {
             ftp_tab: FtpTab::default(),
             fhir_tab: FhirTab::default(),
             xml_tab: XmlTab::default(),
-            dicom_tab: DicomTab::default(),
             show_about: false,
             show_shortcuts: false,
             current_file: None,
@@ -166,7 +158,6 @@ impl VynaHL7TestPanel {
                             ActiveTab::Ftp => self.ftp_tab.set_message(content),
                             ActiveTab::Fhir => self.fhir_tab.set_message(content),
                             ActiveTab::Xml => self.xml_tab.set_message(content),
-                            ActiveTab::Dicom => self.dicom_tab.set_message(&content),
                             ActiveTab::Builder => {} // Builder doesn't support open
                         }
                         self.current_file = Some(path.clone());
@@ -217,7 +208,6 @@ impl VynaHL7TestPanel {
                 ActiveTab::Ftp => self.ftp_tab.get_message(),
                 ActiveTab::Fhir => self.fhir_tab.get_message(),
                 ActiveTab::Xml => self.xml_tab.get_message(),
-                ActiveTab::Dicom => self.dicom_tab.get_message(),
             };
 
             // Normalize line endings to CR for HL7
@@ -259,8 +249,6 @@ impl VynaHL7TestPanel {
                     self.active_tab = ActiveTab::Fhir;
                 } else if i.key_pressed(egui::Key::Num9) {
                     self.active_tab = ActiveTab::Xml;
-                } else if i.key_pressed(egui::Key::Num0) {
-                    self.active_tab = ActiveTab::Dicom;
                 } else if i.key_pressed(egui::Key::O) {
                     open_file = true;
                 } else if i.key_pressed(egui::Key::S) {
@@ -420,7 +408,6 @@ impl eframe::App for VynaHL7TestPanel {
                 ActiveTab::Ftp => self.ftp_tab.ui(ui, &ctx),
                 ActiveTab::Fhir => self.fhir_tab.ui(ui),
                 ActiveTab::Xml => self.xml_tab.ui(ui),
-                ActiveTab::Dicom => self.dicom_tab.ui(ui),
             }
         });
 
