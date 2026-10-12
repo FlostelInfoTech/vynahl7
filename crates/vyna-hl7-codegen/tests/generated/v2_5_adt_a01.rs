@@ -61,7 +61,7 @@ pub struct Msh {
     pub message_type_trigger_event: String,
     /// MSH-9.3 Message Type / Message Structure (ID)
     #[hl7(field = 9, component = 3)]
-    pub message_type_message_structure: String,
+    pub message_type_message_structure: Option<String>,
     /// MSH-10 Message Control ID (ST)
     #[hl7(field = 10)]
     pub message_control_id: String,

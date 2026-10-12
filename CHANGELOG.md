@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- MSH-9.3 (Message Structure) is now optional in all schemas: real wires carry 2 MSH-9 components, and the library's own builders emit 2
+- `AdtA40Builder` emits EVN-1 `A40` (was `A01`), the required PV1 segment, and the MRG segment with repeatable prior IDs/names
+
+### Added
+
+- WASM bindings accept HL7 versions 2.1 and 2.2
+
 ## [0.2.0] - 2026-10-12
 
 ### Added

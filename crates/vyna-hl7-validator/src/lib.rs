@@ -1293,17 +1293,9 @@ mod tests {
 
         let validator = Validator::for_message_type(Version::V2_5, "VXU", "V04").unwrap();
         let result = validator.validate(&message);
-        // One global quirk affects every message type (the stock
-        // schema_validation example reports the same on plain ADT^A01):
-        // MSH-9.3 is schema-required though wires carry 2 components.
-        // Everything else,
-        // in particular every VXU segment and required field, must be clean.
-        let unexpected: Vec<_> = result
-            .errors
-            .iter()
-            .filter(|e| e.location != "MSH[0]-9-3")
-            .collect();
-        assert!(unexpected.is_empty(), "errors: {unexpected:?}");
+        // Builder output must validate with zero errors: MSH-9.3 is
+        // optional (wires carry 2 components) and dotted IDs are legal.
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
     }
 
     #[test]
@@ -1426,14 +1418,7 @@ mod tests {
 
         let validator = Validator::for_message_type(Version::V2_5, "PPR", "PC1").unwrap();
         let result = validator.validate(&message);
-        // Only the two known global quirks may remain (see VXU test):
-        // MSH-9.3 schema-required and the ID rule rejecting "2.5".
-        let unexpected: Vec<_> = result
-            .errors
-            .iter()
-            .filter(|e| e.location != "MSH[0]-9-3")
-            .collect();
-        assert!(unexpected.is_empty(), "errors: {unexpected:?}");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
     }
 
     #[test]
@@ -1479,14 +1464,7 @@ mod tests {
 
         let validator = Validator::for_message_type(Version::V2_5, "OMP", "O09").unwrap();
         let result = validator.validate(&message);
-        // Only the two known global quirks may remain (see VXU test):
-        // MSH-9.3 schema-required and the ID rule rejecting "2.5".
-        let unexpected: Vec<_> = result
-            .errors
-            .iter()
-            .filter(|e| e.location != "MSH[0]-9-3")
-            .collect();
-        assert!(unexpected.is_empty(), "errors: {unexpected:?}");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
     }
 
     #[test]
@@ -1529,14 +1507,7 @@ mod tests {
 
         let validator = Validator::for_message_type(Version::V2_5, "ADT", "A34").unwrap();
         let result = validator.validate(&message);
-        // Only the two known global quirks may remain (see VXU test):
-        // MSH-9.3 schema-required and the ID rule rejecting "2.5".
-        let unexpected: Vec<_> = result
-            .errors
-            .iter()
-            .filter(|e| e.location != "MSH[0]-9-3")
-            .collect();
-        assert!(unexpected.is_empty(), "errors: {unexpected:?}");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
     }
 
     #[test]
@@ -1550,6 +1521,50 @@ mod tests {
             .unwrap();
 
         let validator = Validator::for_message_type(Version::V2_5, "ADT", "A34").unwrap();
+        let result = validator.validate(&message);
+        assert!(!result.is_valid());
+        assert!(
+            result.errors.iter().any(|e| e.location.starts_with("MRG")),
+            "errors: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_validate_adt_a40_from_builder() {
+        use vyna_hl7_core::builders::adt::AdtBuilder;
+
+        let message = AdtBuilder::a40(Version::V2_5)
+            .sending_application("SEND")
+            .sending_facility("SFAC")
+            .receiving_application("RECV")
+            .receiving_facility("RFAC")
+            .patient_id("NEW123")
+            .patient_name("Smith", "John")
+            .patient_class("I")
+            .add_prior_patient_id("OLD456")
+            .add_prior_patient_id("OLD789")
+            .add_prior_patient_name("Smyth", "Jon")
+            .build()
+            .unwrap();
+
+        let validator = Validator::for_message_type(Version::V2_5, "ADT", "A40").unwrap();
+        let result = validator.validate(&message);
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn test_validate_adt_a40_missing_prior_id_is_invalid() {
+        use vyna_hl7_core::builders::adt::AdtBuilder;
+
+        let message = AdtBuilder::a40(Version::V2_5)
+            .patient_id("NEW123")
+            .patient_name("Smith", "John")
+            .patient_class("I")
+            .build()
+            .unwrap();
+
+        let validator = Validator::for_message_type(Version::V2_5, "ADT", "A40").unwrap();
         let result = validator.validate(&message);
         assert!(!result.is_valid());
         assert!(

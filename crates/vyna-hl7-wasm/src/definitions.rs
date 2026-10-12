@@ -11,11 +11,13 @@ use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
 /// Supported HL7 versions exposed to JavaScript
-const SUPPORTED_VERSIONS: &[&str] = &["2.3", "2.4", "2.5", "2.6", "2.7", "2.8"];
+const SUPPORTED_VERSIONS: &[&str] = &["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8"];
 
 /// Convert a version string like "2.5" to the vyna_hl7_core::Version enum
 fn parse_version(version: &str) -> Result<Version, JsValue> {
     match version {
+        "2.1" => Ok(Version::V2_1),
+        "2.2" => Ok(Version::V2_2),
         "2.3" => Ok(Version::V2_3),
         "2.4" => Ok(Version::V2_4),
         "2.5" => Ok(Version::V2_5),
@@ -541,6 +543,8 @@ mod tests {
         // parse_version returns Result<Version, JsValue> but JsValue panics on
         // non-wasm32 targets. Test the underlying logic instead.
         let version_map: &[(&str, bool)] = &[
+            ("2.1", true),
+            ("2.2", true),
             ("2.3", true),
             ("2.4", true),
             ("2.5", true),
@@ -580,7 +584,9 @@ mod tests {
 
     #[test]
     fn test_supported_versions() {
-        assert_eq!(SUPPORTED_VERSIONS.len(), 6);
+        assert_eq!(SUPPORTED_VERSIONS.len(), 8);
+        assert!(SUPPORTED_VERSIONS.contains(&"2.1"));
+        assert!(SUPPORTED_VERSIONS.contains(&"2.2"));
         assert!(SUPPORTED_VERSIONS.contains(&"2.3"));
         assert!(SUPPORTED_VERSIONS.contains(&"2.7"));
         assert!(SUPPORTED_VERSIONS.contains(&"2.8"));
