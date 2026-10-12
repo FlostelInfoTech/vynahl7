@@ -362,5 +362,5 @@ This software is proprietary and confidential. Unauthorized copying, distributio
 
 ## Related Projects
 
-- [vyna-hl7](https://gitlab.flostel.com/alexshao/vyna-hl7) - The core HL7 v2.x library for Rust
+- [vyna-hl7](https://gitlab.flostel.com/alexshao/VynaHL7) - The core HL7 v2.x library for Rust
 - [vyna-hl7-wasm](../vyna-hl7-wasm) - WebAssembly bindings for browser/Node.js

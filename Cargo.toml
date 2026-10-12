@@ -86,9 +86,9 @@ version = "0.2.0"
 edition = "2024"
 authors = ["Alex SHAO Fan <alex.shaofan@flostel.com>"]
 license = "LicenseRef-Proprietary"
-repository = "https://gitlab.flostel.com/alexshao/vyna-hl7"
-homepage = "https://gitlab.flostel.com/alexshao/vyna-hl7"
-documentation = "https://gitlab.flostel.com/alexshao/vyna-hl7"
+repository = "https://gitlab.flostel.com/alexshao/VynaHL7"
+homepage = "https://gitlab.flostel.com/alexshao/VynaHL7"
+documentation = "https://gitlab.flostel.com/alexshao/VynaHL7"
 keywords = ["hl7", "healthcare", "medical", "interoperability"]
 categories = ["parsing", "network-programming", "healthcare"]
 

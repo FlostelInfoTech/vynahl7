@@ -335,10 +335,10 @@ This software is proprietary and confidential. Unauthorized copying, distributio
 
 ## Contributing
 
-This crate is developed in the private [VynaHL7 repository](https://gitlab.flostel.com/alexshao/vyna-hl7). Internal contributors: please create a branch and submit a merge request.
+This crate is developed in the private [VynaHL7 repository](https://gitlab.flostel.com/alexshao/VynaHL7). Internal contributors: please create a branch and submit a merge request.
 
 ## Resources
 
-- [VynaHL7 Main Repository](https://gitlab.flostel.com/alexshao/vyna-hl7)
+- [VynaHL7 Main Repository](https://gitlab.flostel.com/alexshao/VynaHL7)
 - [HL7 v2.x Documentation](https://www.hl7.org/implement/standards/product_brief.cfm?product_id=185)
 - [WebAssembly Documentation](https://webassembly.org/)

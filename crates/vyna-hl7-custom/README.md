@@ -666,4 +666,4 @@ This software is proprietary and confidential. Unauthorized copying, distributio
 
 ## Contributing
 
-This crate is developed in the private [VynaHL7 repository](https://gitlab.flostel.com/alexshao/vyna-hl7). Internal contributors: please create a branch and submit a merge request.
+This crate is developed in the private [VynaHL7 repository](https://gitlab.flostel.com/alexshao/VynaHL7). Internal contributors: please create a branch and submit a merge request.
