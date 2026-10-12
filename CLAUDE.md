@@ -74,6 +74,9 @@ vynahl7 validate message.hl7
 vynahl7 extract message.hl7 PID-5 PID-7 PID-8
 vynahl7 convert message.hl7 --to json --pretty
 vynahl7 info message.hl7
+vynahl7 send message.hl7 --to mllp://127.0.0.1:2575
+vynahl7 send message.hl7 --to http://127.0.0.1:8080/hl7 --user u --password p
+vynahl7 diff old.hl7 new.hl7 [--format json] [--ignore MSH-7,MSH-10]  # exit 1 when different
 ```
 
 ### Benchmarking

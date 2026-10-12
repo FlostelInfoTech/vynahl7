@@ -1,13 +1,14 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use colored::Colorize;
-use vyna_hl7_core::{CharacterSet, Version};
-use vyna_hl7_parser::parse_message;
-use vyna_hl7_terser::Terser;
-use vyna_hl7_validator::{Validator, schema_loader};
 use serde_json::json;
 use std::fs;
 use std::io::{self, Read};
+use std::time::Duration;
+use vyna_hl7_core::{CharacterSet, Version, diff::DiffKind};
+use vyna_hl7_parser::parse_message;
+use vyna_hl7_terser::Terser;
+use vyna_hl7_validator::{Validator, schema_loader};
 
 #[derive(Parser)]
 #[command(name = "vynahl7")]
@@ -91,9 +92,72 @@ enum Commands {
         #[arg(value_name = "FILE")]
         input: String,
     },
+
+    /// Send a message and print the acknowledgment
+    Send {
+        /// Input file path (use '-' for stdin)
+        #[arg(value_name = "FILE")]
+        input: String,
+
+        /// Destination: mllp://host:port or http(s)://host[:port]/path
+        #[arg(long, value_name = "URL")]
+        to: String,
+
+        /// HTTP basic-auth username
+        #[arg(long, value_name = "USER")]
+        user: Option<String>,
+
+        /// HTTP basic-auth password
+        #[arg(long, value_name = "PASSWORD")]
+        password: Option<String>,
+
+        /// Overall timeout in seconds
+        #[arg(long, value_name = "SECS", default_value = "30")]
+        timeout: u64,
+
+        /// Use TLS (requires --ca-cert; build with --features tls)
+        #[arg(long)]
+        tls: bool,
+
+        /// CA certificate PEM file for TLS server verification
+        #[arg(long, value_name = "PEM")]
+        ca_cert: Option<String>,
+
+        /// Client certificate PEM file for mutual TLS
+        #[arg(long, value_name = "PEM")]
+        client_cert: Option<String>,
+
+        /// Client key PEM file for mutual TLS
+        #[arg(long, value_name = "PEM")]
+        client_key: Option<String>,
+
+        /// TLS server name for SNI (MLLP; defaults to the host)
+        #[arg(long, value_name = "NAME")]
+        server_name: Option<String>,
+    },
+
+    /// Show structural differences between two messages
+    Diff {
+        /// Original message file
+        #[arg(value_name = "OLD")]
+        old: String,
+
+        /// New message file
+        #[arg(value_name = "NEW")]
+        new: String,
+
+        /// Output format: text, json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+
+        /// Terser paths to ignore (comma-separated, e.g. MSH-7,MSH-10)
+        #[arg(long, value_name = "PATHS")]
+        ignore: Option<String>,
+    },
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let cli = Cli::parse();
     let charset = cli
         .charset
@@ -118,10 +182,41 @@ fn main() -> Result<()> {
             paths,
             format,
         } => extract_command(&input, &paths, &format, charset)?,
-        Commands::Convert { input, to, pretty } => {
-            convert_command(&input, &to, pretty, charset)?
-        }
+        Commands::Convert { input, to, pretty } => convert_command(&input, &to, pretty, charset)?,
         Commands::Info { input } => info_command(&input, charset)?,
+        Commands::Send {
+            input,
+            to,
+            user,
+            password,
+            timeout,
+            tls,
+            ca_cert,
+            client_cert,
+            client_key,
+            server_name,
+        } => {
+            send_command(
+                &input,
+                &to,
+                user.as_deref(),
+                password.as_deref(),
+                timeout,
+                tls,
+                ca_cert.as_deref(),
+                client_cert.as_deref(),
+                client_key.as_deref(),
+                server_name.as_deref(),
+                charset,
+            )
+            .await?;
+        }
+        Commands::Diff {
+            old,
+            new,
+            format,
+            ignore,
+        } => diff_command(&old, &new, &format, ignore.as_deref(), charset)?,
     }
 
     Ok(())
@@ -143,18 +238,21 @@ fn read_input(input: &str, charset: Option<CharacterSet>) -> Result<String> {
     }
 }
 
-fn parse_command(input: &str, format: &str, detailed: bool, charset: Option<CharacterSet>) -> Result<()> {
+fn parse_command(
+    input: &str,
+    format: &str,
+    detailed: bool,
+    charset: Option<CharacterSet>,
+) -> Result<()> {
     let content = read_input(input, charset)?;
     let message = parse_message(&content).context("Failed to parse HL7 message")?;
 
     // Try to load schema for field/component names
     let schema = {
         let version = message.get_version().unwrap_or(Version::V2_5);
-        message
-            .get_message_type()
-            .and_then(|(msg_type, trigger)| {
-                schema_loader::load_schema(version, &msg_type, &trigger).ok()
-            })
+        message.get_message_type().and_then(|(msg_type, trigger)| {
+            schema_loader::load_schema(version, &msg_type, &trigger).ok()
+        })
     };
 
     match format {
@@ -217,10 +315,30 @@ fn parse_command(input: &str, format: &str, detailed: bool, charset: Option<Char
         }
         "pretty" => {
             println!("{}", "Message Structure:".bold().green());
-            println!("  Version: {}", message.get_version().map(|v| format!("{:?}", v)).unwrap_or("Unknown".to_string()).cyan());
-            println!("  Type: {}", message.get_message_type().map(|(m, e)| format!("{}^{}", m, e)).unwrap_or("Unknown".to_string()).cyan());
-            println!("  Control ID: {}", message.get_control_id().unwrap_or("N/A").cyan());
-            println!("  Segments: {}", message.segments.len().to_string().yellow());
+            println!(
+                "  Version: {}",
+                message
+                    .get_version()
+                    .map(|v| format!("{:?}", v))
+                    .unwrap_or("Unknown".to_string())
+                    .cyan()
+            );
+            println!(
+                "  Type: {}",
+                message
+                    .get_message_type()
+                    .map(|(m, e)| format!("{}^{}", m, e))
+                    .unwrap_or("Unknown".to_string())
+                    .cyan()
+            );
+            println!(
+                "  Control ID: {}",
+                message.get_control_id().unwrap_or("N/A").cyan()
+            );
+            println!(
+                "  Segments: {}",
+                message.segments.len().to_string().yellow()
+            );
 
             if detailed {
                 println!();
@@ -230,7 +348,12 @@ fn parse_command(input: &str, format: &str, detailed: bool, charset: Option<Char
                         Some(def) => format!("{} ({})", segment.id.bold(), def.name),
                         None => format!("{}", segment.id.bold()),
                     };
-                    println!("  {}. {} - {} fields", idx + 1, seg_label, segment.fields.len());
+                    println!(
+                        "  {}. {} - {} fields",
+                        idx + 1,
+                        seg_label,
+                        segment.fields.len()
+                    );
                     for (field_idx, field) in segment.fields.iter().enumerate() {
                         let field_num = field_idx + 1;
                         // MSH-1 (field separator) and MSH-2 (encoding characters)
@@ -246,10 +369,14 @@ fn parse_command(input: &str, format: &str, detailed: bool, charset: Option<Char
                         let field_def = seg_def.and_then(|d| d.fields.get(&field_num));
                         match field_def {
                             Some(fd) => {
-                                println!("      {}-{} {} ({}): {}",
-                                    segment.id, field_num,
-                                    fd.name.yellow(), fd.data_type.bright_black(),
-                                    encoded.cyan());
+                                println!(
+                                    "      {}-{} {} ({}): {}",
+                                    segment.id,
+                                    field_num,
+                                    fd.name.yellow(),
+                                    fd.data_type.bright_black(),
+                                    encoded.cyan()
+                                );
                                 // Show component breakdown for composite types
                                 if let Some(components) = &fd.components {
                                     let comp_parts: Vec<&str> = encoded.split('^').collect();
@@ -259,17 +386,27 @@ fn parse_command(input: &str, format: &str, detailed: bool, charset: Option<Char
                                                 continue;
                                             }
                                             let comp_num = format!("{}", i + 1);
-                                            let comp_name = components.get(&comp_num)
+                                            let comp_name = components
+                                                .get(&comp_num)
                                                 .map(|c| c.name.as_str())
                                                 .unwrap_or("?");
-                                            println!("        .{} {}: {}",
-                                                i + 1, comp_name.bright_black(), val);
+                                            println!(
+                                                "        .{} {}: {}",
+                                                i + 1,
+                                                comp_name.bright_black(),
+                                                val
+                                            );
                                         }
                                     }
                                 }
                             }
                             None => {
-                                println!("      {}-{}: {}", segment.id, field_num, encoded.bright_black());
+                                println!(
+                                    "      {}-{}: {}",
+                                    segment.id,
+                                    field_num,
+                                    encoded.bright_black()
+                                );
                             }
                         }
                     }
@@ -279,8 +416,20 @@ fn parse_command(input: &str, format: &str, detailed: bool, charset: Option<Char
         _ => {
             // Default text format
             println!("HL7 Message Parsed Successfully");
-            println!("Version: {}", message.get_version().map(|v| format!("{:?}", v)).unwrap_or("Unknown".to_string()));
-            println!("Message Type: {}", message.get_message_type().map(|(m, e)| format!("{}^{}", m, e)).unwrap_or("Unknown".to_string()));
+            println!(
+                "Version: {}",
+                message
+                    .get_version()
+                    .map(|v| format!("{:?}", v))
+                    .unwrap_or("Unknown".to_string())
+            );
+            println!(
+                "Message Type: {}",
+                message
+                    .get_message_type()
+                    .map(|(m, e)| format!("{}^{}", m, e))
+                    .unwrap_or("Unknown".to_string())
+            );
             println!("Control ID: {}", message.get_control_id().unwrap_or("N/A"));
             println!("Segments: {}", message.segments.len());
 
@@ -301,7 +450,12 @@ fn parse_command(input: &str, format: &str, detailed: bool, charset: Option<Char
     Ok(())
 }
 
-fn validate_command(input: &str, version: Option<&str>, format: &str, charset: Option<CharacterSet>) -> Result<()> {
+fn validate_command(
+    input: &str,
+    version: Option<&str>,
+    format: &str,
+    charset: Option<CharacterSet>,
+) -> Result<()> {
     let content = read_input(input, charset)?;
     let message = parse_message(&content).context("Failed to parse HL7 message")?;
 
@@ -332,20 +486,28 @@ fn validate_command(input: &str, version: Option<&str>, format: &str, charset: O
 
     match format {
         "json" => {
-            let errors_json: Vec<_> = result.errors.iter().map(|e| {
-                json!({
-                    "location": e.location,
-                    "message": e.message,
-                    "type": format!("{:?}", e.error_type),
+            let errors_json: Vec<_> = result
+                .errors
+                .iter()
+                .map(|e| {
+                    json!({
+                        "location": e.location,
+                        "message": e.message,
+                        "type": format!("{:?}", e.error_type),
+                    })
                 })
-            }).collect();
+                .collect();
 
-            let warnings_json: Vec<_> = result.warnings.iter().map(|w| {
-                json!({
-                    "location": w.location,
-                    "message": w.message,
+            let warnings_json: Vec<_> = result
+                .warnings
+                .iter()
+                .map(|w| {
+                    json!({
+                        "location": w.location,
+                        "message": w.message,
+                    })
                 })
-            }).collect();
+                .collect();
 
             let json = json!({
                 "valid": result.is_valid(),
@@ -386,7 +548,12 @@ fn validate_command(input: &str, version: Option<&str>, format: &str, charset: O
     Ok(())
 }
 
-fn extract_command(input: &str, paths: &[String], format: &str, charset: Option<CharacterSet>) -> Result<()> {
+fn extract_command(
+    input: &str,
+    paths: &[String],
+    format: &str,
+    charset: Option<CharacterSet>,
+) -> Result<()> {
     let content = read_input(input, charset)?;
     let message = parse_message(&content).context("Failed to parse HL7 message")?;
     let terser = Terser::new(&message);
@@ -415,7 +582,12 @@ fn extract_command(input: &str, paths: &[String], format: &str, charset: Option<
     Ok(())
 }
 
-fn convert_command(input: &str, to: &str, pretty: bool, charset: Option<CharacterSet>) -> Result<()> {
+fn convert_command(
+    input: &str,
+    to: &str,
+    pretty: bool,
+    charset: Option<CharacterSet>,
+) -> Result<()> {
     let content = read_input(input, charset)?;
     let message = parse_message(&content).context("Failed to parse HL7 message")?;
 
@@ -485,16 +657,48 @@ fn info_command(input: &str, charset: Option<CharacterSet>) -> Result<()> {
     println!("{}", "=".repeat(50).bright_black());
 
     println!("\n{}", "Header Information:".bold());
-    println!("  Version:              {}", message.get_version().map(|v| format!("{:?}", v)).unwrap_or("Unknown".to_string()).cyan());
-    println!("  Message Type:         {}", message.get_message_type().map(|(m, e)| format!("{}^{}", m, e)).unwrap_or("Unknown".to_string()).cyan());
-    println!("  Control ID:           {}", message.get_control_id().unwrap_or("N/A").cyan());
-    println!("  Sending Application:  {}", message.get_sending_application().unwrap_or("N/A").cyan());
-    println!("  Sending Facility:     {}", message.get_sending_facility().unwrap_or("N/A").cyan());
-    println!("  Receiving Application: {}", message.get_receiving_application().unwrap_or("N/A").cyan());
-    println!("  Receiving Facility:   {}", message.get_receiving_facility().unwrap_or("N/A").cyan());
+    println!(
+        "  Version:              {}",
+        message
+            .get_version()
+            .map(|v| format!("{:?}", v))
+            .unwrap_or("Unknown".to_string())
+            .cyan()
+    );
+    println!(
+        "  Message Type:         {}",
+        message
+            .get_message_type()
+            .map(|(m, e)| format!("{}^{}", m, e))
+            .unwrap_or("Unknown".to_string())
+            .cyan()
+    );
+    println!(
+        "  Control ID:           {}",
+        message.get_control_id().unwrap_or("N/A").cyan()
+    );
+    println!(
+        "  Sending Application:  {}",
+        message.get_sending_application().unwrap_or("N/A").cyan()
+    );
+    println!(
+        "  Sending Facility:     {}",
+        message.get_sending_facility().unwrap_or("N/A").cyan()
+    );
+    println!(
+        "  Receiving Application: {}",
+        message.get_receiving_application().unwrap_or("N/A").cyan()
+    );
+    println!(
+        "  Receiving Facility:   {}",
+        message.get_receiving_facility().unwrap_or("N/A").cyan()
+    );
 
     println!("\n{}", "Message Structure:".bold());
-    println!("  Total Segments:       {}", message.segments.len().to_string().yellow());
+    println!(
+        "  Total Segments:       {}",
+        message.segments.len().to_string().yellow()
+    );
 
     // Count segment types
     let mut segment_counts = std::collections::HashMap::new();
@@ -502,19 +706,289 @@ fn info_command(input: &str, charset: Option<CharacterSet>) -> Result<()> {
         *segment_counts.entry(&segment.id).or_insert(0) += 1;
     }
 
-    println!("  Segment Types:        {}", segment_counts.len().to_string().yellow());
+    println!(
+        "  Segment Types:        {}",
+        segment_counts.len().to_string().yellow()
+    );
     println!("\n  Segment Breakdown:");
     let mut sorted_segments: Vec<_> = segment_counts.iter().collect();
     sorted_segments.sort_by(|a, b| a.0.cmp(b.0));
     for (id, count) in sorted_segments {
-        println!("    {} x {}", count.to_string().bright_white(), id.bright_cyan());
+        println!(
+            "    {} x {}",
+            count.to_string().bright_white(),
+            id.bright_cyan()
+        );
     }
 
     // Calculate message size
     let encoded = message.encode();
     println!("\n{}", "Size Information:".bold());
-    println!("  Encoded Size:         {} bytes", encoded.len().to_string().yellow());
-    println!("  Average Segment Size: {} bytes", (encoded.len() / message.segments.len()).to_string().yellow());
+    println!(
+        "  Encoded Size:         {} bytes",
+        encoded.len().to_string().yellow()
+    );
+    println!(
+        "  Average Segment Size: {} bytes",
+        (encoded.len() / message.segments.len())
+            .to_string()
+            .yellow()
+    );
 
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn send_command(
+    input: &str,
+    to: &str,
+    user: Option<&str>,
+    password: Option<&str>,
+    timeout_secs: u64,
+    tls: bool,
+    ca_cert: Option<&str>,
+    client_cert: Option<&str>,
+    client_key: Option<&str>,
+    server_name: Option<&str>,
+    charset: Option<CharacterSet>,
+) -> Result<()> {
+    let content = read_input(input, charset)?;
+    let message = parse_message(&content).context("Failed to parse HL7 message")?;
+    let timeout = Duration::from_secs(timeout_secs.max(1));
+
+    let ack = if let Some(addr) = to.strip_prefix("mllp://") {
+        if user.is_some() || password.is_some() {
+            bail!("--user/--password are HTTP-only; MLLP has no authentication");
+        }
+        send_mllp(
+            &message,
+            addr,
+            timeout,
+            tls,
+            ca_cert,
+            client_cert,
+            client_key,
+            server_name,
+        )
+        .await?
+    } else if to.starts_with("http://") || to.starts_with("https://") {
+        if server_name.is_some() {
+            bail!("--server-name is MLLP-only");
+        }
+        send_http(
+            &message,
+            to,
+            user,
+            password,
+            timeout,
+            tls,
+            ca_cert,
+            client_cert,
+            client_key,
+        )
+        .await?
+    } else {
+        bail!("--to must start with mllp://, http://, or https:// (got '{to}')");
+    };
+
+    println!("{}", ack.encode().replace('\r', "\n").trim_end());
+
+    // Negative acknowledgments fail the command so scripts can rely on it.
+    let terser = Terser::new(&ack);
+    let code = terser.get("MSA-1").unwrap_or(None).unwrap_or_default();
+    if !matches!(code, "AA" | "CA") {
+        let text = terser.get("MSA-3").unwrap_or(None).unwrap_or_default();
+        bail!("negative acknowledgment {code}: {text}");
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn send_mllp(
+    message: &vyna_hl7_core::Message,
+    addr: &str,
+    timeout: Duration,
+    tls: bool,
+    ca_cert: Option<&str>,
+    client_cert: Option<&str>,
+    client_key: Option<&str>,
+    server_name: Option<&str>,
+) -> Result<vyna_hl7_core::Message> {
+    use vyna_hl7_mllp::MllpClient;
+
+    if !tls {
+        if ca_cert.is_some() || client_cert.is_some() || client_key.is_some() {
+            bail!("--ca-cert/--client-cert/--client-key require --tls");
+        }
+        let mut client = tokio::time::timeout(timeout, MllpClient::connect(addr))
+            .await
+            .context("MLLP connect timed out")?
+            .context("MLLP connect failed")?;
+        return tokio::time::timeout(timeout, client.send_message(message))
+            .await
+            .context("MLLP send timed out")?
+            .context("MLLP send failed");
+    }
+
+    #[cfg(not(feature = "tls"))]
+    {
+        let _ = (ca_cert, client_cert, client_key, server_name, timeout);
+        bail!("TLS support requires building with --features tls");
+    }
+    #[cfg(feature = "tls")]
+    {
+        use vyna_hl7_mllp::tls::TlsClientConfig;
+
+        let ca = ca_cert.context("--tls requires --ca-cert")?;
+        let tls_config = match (client_cert, client_key) {
+            (Some(cert), Some(key)) => TlsClientConfig::with_mtls(ca, cert, key)?,
+            (None, None) => TlsClientConfig::with_ca_cert(ca)?,
+            _ => bail!("mutual TLS needs both --client-cert and --client-key"),
+        };
+        let name = server_name
+            .map(str::to_string)
+            .or_else(|| addr.rsplit(':').nth(1).map(str::to_string))
+            .context("cannot determine TLS server name; pass --server-name")?;
+        let mut client =
+            tokio::time::timeout(timeout, MllpClient::connect_tls(addr, &name, tls_config))
+                .await
+                .context("MLLP+TLS connect timed out")?
+                .context("MLLP+TLS connect failed")?;
+        tokio::time::timeout(timeout, client.send_message(message))
+            .await
+            .context("MLLP send timed out")?
+            .context("MLLP send failed")
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn send_http(
+    message: &vyna_hl7_core::Message,
+    endpoint: &str,
+    user: Option<&str>,
+    password: Option<&str>,
+    timeout: Duration,
+    tls: bool,
+    ca_cert: Option<&str>,
+    client_cert: Option<&str>,
+    client_key: Option<&str>,
+) -> Result<vyna_hl7_core::Message> {
+    use vyna_hl7_http::HttpClient;
+
+    let mut client = HttpClient::new(endpoint).context("invalid HTTP endpoint")?;
+    if let (Some(user), Some(password)) = (user, password) {
+        client = client.with_auth(user.to_string(), password.to_string());
+    } else if user.is_some() || password.is_some() {
+        bail!("--user and --password must be given together");
+    }
+    client = client.with_timeout(timeout).context("invalid timeout")?;
+
+    if tls {
+        #[cfg(not(feature = "tls"))]
+        {
+            let _ = (ca_cert, client_cert, client_key);
+            bail!("TLS support requires building with --features tls");
+        }
+        #[cfg(feature = "tls")]
+        {
+            use vyna_hl7_http::tls::TlsClientConfig;
+
+            let ca = ca_cert.context("--tls requires --ca-cert")?;
+            let tls_config = match (client_cert, client_key) {
+                (Some(cert), Some(key)) => TlsClientConfig::with_mtls(ca, cert, key)?,
+                (None, None) => TlsClientConfig::with_ca_cert(ca)?,
+                _ => bail!("mutual TLS needs both --client-cert and --client-key"),
+            };
+            client = client.with_tls(tls_config).context("invalid TLS config")?;
+        }
+    } else if ca_cert.is_some() || client_cert.is_some() || client_key.is_some() {
+        bail!("--ca-cert/--client-cert/--client-key require --tls");
+    }
+
+    tokio::time::timeout(timeout, client.send_message(message))
+        .await
+        .context("HTTP send timed out")?
+        .context("HTTP send failed")
+}
+
+fn diff_command(
+    old_path: &str,
+    new_path: &str,
+    format: &str,
+    ignore: Option<&str>,
+    charset: Option<CharacterSet>,
+) -> Result<()> {
+    let old_text = read_input(old_path, charset)?;
+    let new_text = read_input(new_path, charset)?;
+    let old = parse_message(&old_text).context("Failed to parse OLD message")?;
+    let new = parse_message(&new_text).context("Failed to parse NEW message")?;
+    let ignore: Vec<String> = ignore
+        .map(|s| s.split(',').map(|p| p.trim().to_string()).collect())
+        .unwrap_or_default();
+    let diffs = vyna_hl7_core::diff::diff_messages_ignoring(&old, &new, &ignore);
+
+    match format {
+        "json" => {
+            let differences: Vec<_> = diffs
+                .iter()
+                .map(|d| {
+                    json!({
+                        "path": d.path,
+                        "kind": match d.kind {
+                            DiffKind::Added => "added",
+                            DiffKind::Removed => "removed",
+                            DiffKind::Changed => "changed",
+                        },
+                        "old": d.old,
+                        "new": d.new,
+                    })
+                })
+                .collect();
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "different": !diffs.is_empty(),
+                    "count": diffs.len(),
+                    "differences": differences,
+                }))?
+            );
+        }
+        "text" => {
+            if diffs.is_empty() {
+                println!("{}", "No differences".green().bold());
+            } else {
+                for d in &diffs {
+                    match d.kind {
+                        DiffKind::Added => println!(
+                            "{} {}: {}",
+                            "+".green().bold(),
+                            d.path.cyan(),
+                            d.new.as_deref().unwrap_or("").green()
+                        ),
+                        DiffKind::Removed => println!(
+                            "{} {}: {}",
+                            "-".red().bold(),
+                            d.path.cyan(),
+                            d.old.as_deref().unwrap_or("").red()
+                        ),
+                        DiffKind::Changed => println!(
+                            "{} {}: {} {} {}",
+                            "~".yellow().bold(),
+                            d.path.cyan(),
+                            d.old.as_deref().unwrap_or("").red(),
+                            "->".dimmed(),
+                            d.new.as_deref().unwrap_or("").green()
+                        ),
+                    }
+                }
+            }
+        }
+        other => bail!("Unknown diff format '{other}' (expected text or json)"),
+    }
+
+    // diff exit convention: 1 when the messages differ.
+    if !diffs.is_empty() {
+        std::process::exit(1);
+    }
     Ok(())
 }

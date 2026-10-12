@@ -12,6 +12,7 @@ pub mod batch;
 pub mod builders;
 pub mod charset;
 pub mod delimiters;
+pub mod diff;
 pub mod encoding;
 pub mod error;
 pub mod field;

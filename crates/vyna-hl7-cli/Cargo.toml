@@ -21,6 +21,9 @@ vyna-hl7-core.workspace = true
 vyna-hl7-parser.workspace = true
 vyna-hl7-validator.workspace = true
 vyna-hl7-terser.workspace = true
+vyna-hl7-mllp.workspace = true
+vyna-hl7-http = { workspace = true, features = ["auth"] }
+tokio.workspace = true
 
 # CLI
 clap = { version = "4.5", features = ["derive", "cargo"] }
@@ -42,3 +45,9 @@ colored = "3.0.0"
 [features]
 default = []
 fhir = ["dep:vyna-hl7-fhir"]
+tls = ["vyna-hl7-mllp/tls", "vyna-hl7-http/tls"]
+
+[dev-dependencies]
+tokio.workspace = true
+vyna-hl7-mllp = { workspace = true, features = ["testing"] }
+vyna-hl7-http = { workspace = true, features = ["testing", "auth"] }
