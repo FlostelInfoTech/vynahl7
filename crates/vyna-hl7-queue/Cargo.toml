@@ -1,0 +1,22 @@
+[package]
+name = "vyna-hl7-queue"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish = false
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Durable store-and-forward queue for HL7 v2.x messages"
+
+[dependencies]
+vyna-hl7-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+vyna-hl7-parser.workspace = true
