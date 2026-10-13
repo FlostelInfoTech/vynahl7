@@ -1,5 +1,6 @@
 //! Specimen converter - SPM segment to FHIR Specimen resource
 
+use super::patient::{valid_hl7_date, valid_hl7_time};
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
 use crate::resources::specimen::*;
@@ -266,30 +267,43 @@ impl SpecimenConverter {
         // all-ASCII-digit prefix makes the `&str` slices below safe.
         let bytes = datetime.as_bytes();
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
-            Ok(format!(
-                "{}-{}-{}T{}:{}:{}",
-                &datetime[0..4],
-                &datetime[4..6],
-                &datetime[6..8],
-                &datetime[8..10],
-                &datetime[10..12],
-                &datetime[12..14]
-            ))
+            if valid_hl7_date(&datetime[0..8]) && valid_hl7_time(&datetime[8..14]) {
+                Ok(format!(
+                    "{}-{}-{}T{}:{}:{}",
+                    &datetime[0..4],
+                    &datetime[4..6],
+                    &datetime[6..8],
+                    &datetime[8..10],
+                    &datetime[10..12],
+                    &datetime[12..14]
+                ))
+            } else {
+                Err(Self::invalid_datetime(datetime))
+            }
         } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
-            // Date only
-            Ok(format!(
-                "{}-{}-{}",
-                &datetime[0..4],
-                &datetime[4..6],
-                &datetime[6..8]
-            ))
+            // Date only; still requires a real calendar date.
+            if valid_hl7_date(&datetime[0..8]) {
+                Ok(format!(
+                    "{}-{}-{}",
+                    &datetime[0..4],
+                    &datetime[4..6],
+                    &datetime[6..8]
+                ))
+            } else {
+                Err(Self::invalid_datetime(datetime))
+            }
         } else {
-            Err(ConversionError::InvalidFormat(
-                "SPM-17/SPM-18".to_string(),
-                "SPM".to_string(),
-                format!("Invalid datetime format: {}", datetime),
-            ))
+            Err(Self::invalid_datetime(datetime))
         }
+    }
+
+    /// Redacted bad-datetime error: field location + reason only, never the value.
+    fn invalid_datetime(_datetime: &str) -> ConversionError {
+        ConversionError::InvalidFormat(
+            "SPM-17/SPM-18".to_string(),
+            "SPM".to_string(),
+            "expected YYYYMMDDHHMMSS calendar datetime or YYYYMMDD date".to_string(),
+        )
     }
 
     /// Extract specimen type from SPM-4 field
@@ -453,6 +467,26 @@ mod tests {
             SpecimenConverter::convert_datetime("20240315100000").unwrap(),
             "2024-03-15T10:00:00"
         );
+    }
+
+    #[test]
+    fn test_impossible_calendar_datetime_dropped() {
+        assert!(SpecimenConverter::convert_datetime("20240230100000").is_err());
+
+        // SPM-17/SPM-18 are ancillary: an impossible date is dropped,
+        // never emitted, while the resource still converts.
+        let hl7 = "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||OML^O21|MSG123|P|2.5\r\
+                   PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+                   SPM|1|SPEC123||BLD^Blood^HL70487|||ANP^Venipuncture^HL70488\
+                   |LA^Left Arm^HL70163||||5.0^mL|||||20240230100000";
+
+        let message = parse_message(hl7).unwrap();
+        let specimens = SpecimenConverter::convert_all(&message).unwrap();
+
+        assert_eq!(specimens.len(), 1);
+        let collection = specimens[0].collection.as_ref().unwrap();
+        assert_eq!(collection.collected_date_time, None);
+        assert!(collection.quantity.is_some());
     }
 
     #[test]

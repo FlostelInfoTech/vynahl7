@@ -2,8 +2,11 @@
 //!
 //! [`Redactor`] rewrites protected health information (PHI) in place using
 //! explicit, auditable rules. [`Redactor::safe_harbor`] ships a profile
-//! covering the HIPAA Safe Harbor identifiers across the common segments
-//! (names, addresses, telecom, dates, IDs, account and visit numbers).
+//! covering the HIPAA Safe Harbor identifiers (names, addresses, telecom,
+//! dates, IDs, account and visit numbers) across 34 segments: ACC, AL1,
+//! BLG, CTD, DG1, EVN, FT1, GT1, IN1, IN2, IN3, MRG, MSH, NK1, OBR, OBX,
+//! ORC, PD1, PDA, PID, PR1, PRB, PRD, PV1, ROL, RXA, RXD, RXE, RXO, SCH,
+//! SPM, STF, TQ1, TXA.
 //!
 //! ```rust
 //! use vyna_hl7_parser::parse_message;
@@ -32,11 +35,14 @@
 //!   identifier fields.
 //! - [`Strategy::DateShift`] preserves the time-of-day and any trailing
 //!   precision; values it cannot parse are removed rather than left in place.
-//! - Free-text segments (NTE, OBX-5) are deliberately **not** in the default
-//!   profile: blunt removal would destroy clinical notes, and real scrubbing
-//!   needs NLP. Site-defined Z-segments are likewise **not** covered —
-//!   their layout is site-specific, so the profile cannot know which
-//!   fields hold PHI. Add explicit rules if your policy requires it.
+//! - Free-text segments (NTE) and OBX-5 observation values are deliberately
+//!   **not** in the default profile: blunt removal would destroy clinical
+//!   notes, and real scrubbing needs NLP. Site-defined Z-segments are
+//!   likewise **not** covered — their layout is site-specific, so the
+//!   profile cannot know which fields hold PHI. Segments outside the
+//!   34 listed above (e.g. ARQ, AUT, FAC, IAM, LAN, MFA, PRC, RFI, UB1,
+//!   UB2, VAR) are also **not** covered. Add explicit rules if your
+//!   policy requires them.
 
 use chrono::{Duration, NaiveDate};
 use hmac::{Hmac, KeyInit, Mac};
@@ -203,8 +209,9 @@ impl Redactor {
 
     /// Append the Safe Harbor profile rules (see module docs).
     ///
-    /// Free-text notes (NTE, OBX-5) and site-defined Z-segments are not
-    /// covered; add explicit [`Rule`]s when your policy requires them.
+    /// Free-text notes (NTE, OBX-5), site-defined Z-segments, and any
+    /// segment outside the 34 covered ones are not covered; add explicit
+    /// [`Rule`]s when your policy requires them.
     pub fn with_safe_harbor_rules(mut self) -> Self {
         self.rules.extend(safe_harbor_rules());
         self
@@ -212,10 +219,10 @@ impl Redactor {
 
     /// Redactor with the full Safe Harbor profile.
     ///
-    /// Covers the common segments (see module docs). Free-text notes
-    /// (NTE, OBX-5) and site-defined Z-segments are intentionally left
-    /// untouched — add explicit [`Rule`]s for them when your policy
-    /// requires it:
+    /// Covers the 34 segments listed in the module docs. Free-text notes
+    /// (NTE, OBX-5), site-defined Z-segments, and uncovered segments are
+    /// intentionally left untouched — add explicit [`Rule`]s for them
+    /// when your policy requires it:
     ///
     /// ```rust
     /// use vyna_hl7_redact::{Redactor, Rule, Strategy};
@@ -440,6 +447,8 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("PID", 4),
         ("PID", 18),
         ("PID", 21),
+        ("PD1", 10),
+        ("PV1", 5),
         ("PV1", 19),
         ("PV1", 50),
         ("ORC", 2),
@@ -447,7 +456,12 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("OBR", 2),
         ("OBR", 3),
         ("GT1", 2),
+        ("GT1", 29),
         ("IN1", 36),
+        ("IN1", 49),
+        ("NK1", 33),
+        ("BLG", 3),
+        ("IN3", 2),
         ("MRG", 1),
         ("MRG", 2),
         ("MRG", 3),
@@ -478,22 +492,76 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("NK1", 2),
         ("NK1", 5),
         ("NK1", 6),
+        ("NK1", 26),
+        ("NK1", 30),
+        ("NK1", 31),
+        ("NK1", 37),
+        ("NK1", 38),
         ("PV1", 7),
         ("PV1", 8),
         ("PV1", 9),
         ("PV1", 17),
+        ("PV1", 52),
+        ("EVN", 5),
+        ("ORC", 10),
+        ("ORC", 11),
         ("ORC", 12),
+        ("ORC", 14),
+        ("ORC", 19),
+        ("ORC", 23),
+        ("OBR", 10),
         ("OBR", 16),
+        ("OBR", 17),
+        ("OBR", 28),
         ("OBX", 16),
         ("RXA", 10),
         ("RXO", 14),
         ("RXO", 15),
+        ("RXD", 10),
+        ("RXE", 13),
+        ("RXE", 14),
         ("GT1", 3),
         ("GT1", 4),
         ("GT1", 6),
         ("GT1", 7),
+        ("GT1", 12),
+        ("GT1", 16),
+        ("GT1", 18),
         ("GT1", 19),
+        ("GT1", 42),
+        ("GT1", 45),
+        ("GT1", 46),
+        ("GT1", 56),
         ("IN1", 16),
+        ("IN1", 30),
+        ("IN1", 52),
+        ("IN2", 2),
+        ("SCH", 12),
+        ("SCH", 13),
+        ("SCH", 16),
+        ("SCH", 17),
+        ("ROL", 4),
+        ("ROL", 12),
+        ("PR1", 8),
+        ("PR1", 11),
+        ("PR1", 12),
+        ("CTD", 2),
+        ("CTD", 5),
+        ("FT1", 20),
+        ("FT1", 21),
+        ("FT1", 24),
+        ("ACC", 7),
+        ("PDA", 5),
+        ("PDA", 7),
+        ("PDA", 8),
+        ("IN3", 3),
+        ("IN3", 8),
+        ("IN3", 14),
+        ("IN3", 15),
+        ("IN3", 16),
+        ("IN3", 19),
+        ("IN3", 21),
+        ("IN3", 25),
         ("MRG", 7),
         ("DG1", 16),
         ("STF", 3),
@@ -507,6 +575,7 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("TXA", 9),
         ("TXA", 10),
         ("TXA", 11),
+        ("TXA", 23),
     ];
     let shifted: &[(&str, usize)] = &[
         ("MSH", 7),
@@ -545,6 +614,8 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("IN1", 13),
         ("IN1", 14),
         ("IN1", 15),
+        ("IN1", 18),
+        ("NK1", 16),
         ("AL1", 6),
         ("SPM", 17),
         ("SPM", 18),
@@ -557,6 +628,13 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("TXA", 6),
         ("TXA", 7),
         ("TXA", 8),
+        ("PDA", 4),
+        ("IN3", 6),
+        ("IN3", 7),
+        ("IN3", 9),
+        ("IN3", 10),
+        ("IN3", 13),
+        ("IN3", 22),
     ];
     let mut rules = Vec::new();
     for (segment, field) in hashed {
@@ -569,15 +647,29 @@ fn safe_harbor_rules() -> Vec<Rule> {
         rules.push(Rule::field(segment, *field, DateShift));
     }
     // Addresses: drop street/city/geo, generalize ZIP to 3 digits, keep
-    // state/country/type. Applies to PID-11, NK1-4, GT1-5, STF-11,
-    // PRD-3, PRD-11.
+    // state/country/type. Applies to PID-11, NK1-4/32, GT1-5/17,
+    // STF-11, PRD-3/11, IN1-19, ORC-22/24, SCH-14/18, ROL-11,
+    // CTD-3, RXD-31, RXE-41/43, ACC-11.
     for (segment, field) in [
         ("PID", 11),
         ("NK1", 4),
+        ("NK1", 32),
         ("GT1", 5),
+        ("GT1", 17),
         ("STF", 11),
         ("PRD", 3),
         ("PRD", 11),
+        ("IN1", 19),
+        ("ORC", 22),
+        ("ORC", 24),
+        ("SCH", 14),
+        ("SCH", 18),
+        ("ROL", 11),
+        ("CTD", 3),
+        ("RXD", 31),
+        ("RXE", 41),
+        ("RXE", 43),
+        ("ACC", 11),
     ] {
         for component in [1, 2, 3, 8, 9, 10] {
             rules.push(Rule::component(segment, field, component, Remove));
@@ -1114,5 +1206,352 @@ mod tests {
         assert!(debug.contains(&key.len().to_string()));
         // A missing key reports None.
         assert!(format!("{:?}", Redactor::new()).contains("None"));
+    }
+
+    /// Build `ID|f1|f2|...` with 1-based field numbers for tests.
+    fn seg(id: &str, fields: &[(usize, &str)]) -> String {
+        let max = fields.iter().map(|(n, _)| *n).max().unwrap_or(0);
+        let mut parts = vec![String::new(); max];
+        for (n, val) in fields {
+            parts[n - 1] = val.to_string();
+        }
+        format!("{}|{}", id, parts.join("|"))
+    }
+
+    /// Parse MSH plus `segments`, redact with Safe Harbor, return it.
+    fn redact_segments(segments: &[String]) -> Message {
+        let mut text = String::from("MSH|^~\\&|A|B|C|D|20240101120000||ADT^A01|MSG001|P|2.5");
+        for s in segments {
+            text.push('\r');
+            text.push_str(s);
+        }
+        let mut message = parse_message(&text).unwrap();
+        Redactor::safe_harbor(b"site-secret", 30)
+            .redact(&mut message)
+            .unwrap();
+        message
+    }
+
+    /// Full `^`-joined value of a field's first repetition (or "").
+    fn full_value_of(segment: &Segment, field: usize) -> String {
+        segment
+            .get_field(field)
+            .and_then(|f| f.repetitions.first())
+            .and_then(|r| r.full_value())
+            .unwrap_or_default()
+    }
+
+    /// An XAD field was generalized: street/city gone, ZIP-3 kept.
+    fn assert_address_generalized(segment: &Segment, field: usize, zip3: &str) {
+        let addr = segment.get_field(field).unwrap().get_repetition(0).unwrap();
+        assert_eq!(addr.get_component(0).unwrap().value(), Some(""));
+        assert_eq!(addr.get_component(2).unwrap().value(), Some(""));
+        assert_eq!(addr.get_component(4).unwrap().value(), Some(zip3));
+    }
+
+    #[test]
+    fn safe_harbor_redacts_guarantor_insured_kin_identifiers() {
+        let key = b"site-secret";
+        let message = redact_segments(&[
+            seg(
+                "GT1",
+                &[
+                    (12, "123-45-6789"),
+                    (16, "Employer^Acme"),
+                    (17, "789 Corp Ave^^NYC^NY^10001^USA"),
+                    (18, "555-0200"),
+                    (29, "EMPID456"),
+                    (42, "Mother^Maiden"),
+                    (45, "Contact^Cathy"),
+                    (46, "555-0300"),
+                    (56, "Boston"),
+                ],
+            ),
+            seg(
+                "IN1",
+                &[
+                    (18, "19800101"),
+                    (19, "123 Main St^^Springfield^IL^62701^USA"),
+                    (49, "INS999"),
+                    (52, "Springfield"),
+                ],
+            ),
+            seg(
+                "NK1",
+                &[
+                    (16, "19800101"),
+                    (26, "Maiden^Mary"),
+                    (30, "Contact^Carl"),
+                    (31, "555-0100"),
+                    (32, "456 Oak St^^Chicago^IL^60601^USA"),
+                    (33, "NKID123"),
+                    (37, "987-65-4321"),
+                    (38, "Chicago"),
+                ],
+            ),
+            seg("PV1", &[(5, "PREADMIT1")]),
+            seg("PD1", &[(10, "DUP123")]),
+        ]);
+
+        // Guarantor SSN, employer identity, contacts, birth place gone.
+        let gt1 = message.get_segment_by_id("GT1").unwrap();
+        for field in [12, 16, 18, 42, 45, 46, 56] {
+            assert!(gt1.get_field_value(field).is_none(), "GT1-{field}");
+        }
+        assert_address_generalized(gt1, 17, "100");
+        assert_eq!(full_value_of(gt1, 29), hash_of(key, "EMPID456"));
+
+        // Insured DOB shifted, address generalized, ID hashed.
+        let in1 = message.get_segment_by_id("IN1").unwrap();
+        assert_eq!(in1.get_field_value(18), Some("19800131"));
+        assert_address_generalized(in1, 19, "627");
+        assert_eq!(full_value_of(in1, 49), hash_of(key, "INS999"));
+        assert!(in1.get_field_value(52).is_none());
+
+        // Next of kin DOB shifted, names/phones/SSN gone, IDs hashed.
+        let nk1 = message.get_segment_by_id("NK1").unwrap();
+        assert_eq!(nk1.get_field_value(16), Some("19800131"));
+        for field in [26, 30, 31, 37, 38] {
+            assert!(nk1.get_field_value(field).is_none(), "NK1-{field}");
+        }
+        assert_address_generalized(nk1, 32, "606");
+        assert_eq!(full_value_of(nk1, 33), hash_of(key, "NKID123"));
+
+        // Preadmit and duplicate-patient IDs hashed, not kept.
+        let pv1 = message.get_segment_by_id("PV1").unwrap();
+        assert_eq!(full_value_of(pv1, 5), hash_of(key, "PREADMIT1"));
+        let pd1 = message.get_segment_by_id("PD1").unwrap();
+        assert_eq!(full_value_of(pd1, 10), hash_of(key, "DUP123"));
+    }
+
+    #[test]
+    fn safe_harbor_redacts_staff_provider_callback_identity() {
+        let message = redact_segments(&[
+            seg(
+                "ORC",
+                &[
+                    (10, "EN1^Enter^Eve"),
+                    (11, "VF1^Verify^Victor"),
+                    (14, "555-0400"),
+                    (19, "AC1^Action^Amy"),
+                    (22, "100 Hosp Rd^^Denver^CO^80201^USA"),
+                    (23, "555-0500"),
+                    (24, "200 Doc Ln^^Denver^CO^80202^USA"),
+                ],
+            ),
+            seg("EVN", &[(5, "OP123^Operator^Olivia")]),
+            seg(
+                "OBR",
+                &[
+                    (10, "COL1^Collector^Cal"),
+                    (17, "555-0600"),
+                    (28, "CC1^Copy^Cora"),
+                ],
+            ),
+            seg("PV1", &[(52, "OTH1^Other^Owen")]),
+            seg("IN1", &[(30, "VER1^Verifier^Vera")]),
+            seg("TXA", &[(23, "DIST1^Dist^Dan")]),
+        ]);
+
+        let orc = message.get_segment_by_id("ORC").unwrap();
+        for field in [10, 11, 14, 19, 23] {
+            assert!(orc.get_field_value(field).is_none(), "ORC-{field}");
+        }
+        assert_address_generalized(orc, 22, "802");
+        assert_address_generalized(orc, 24, "802");
+
+        let evn = message.get_segment_by_id("EVN").unwrap();
+        assert!(evn.get_field_value(5).is_none());
+
+        let obr = message.get_segment_by_id("OBR").unwrap();
+        for field in [10, 17, 28] {
+            assert!(obr.get_field_value(field).is_none(), "OBR-{field}");
+        }
+
+        let pv1 = message.get_segment_by_id("PV1").unwrap();
+        assert!(pv1.get_field_value(52).is_none());
+        let in1 = message.get_segment_by_id("IN1").unwrap();
+        assert!(in1.get_field_value(30).is_none());
+        let txa = message.get_segment_by_id("TXA").unwrap();
+        assert!(txa.get_field_value(23).is_none());
+    }
+
+    #[test]
+    fn safe_harbor_covers_schedule_role_procedure_pharmacy_segments() {
+        let key = b"site-secret";
+        let message = redact_segments(&[
+            seg("IN2", &[(2, "111-22-3333")]),
+            seg(
+                "SCH",
+                &[
+                    (12, "PL1^Placer^Pete"),
+                    (13, "555-0700"),
+                    (14, "300 Sched St^^Austin^TX^78701^USA"),
+                    (16, "FL1^Filler^Fiona"),
+                    (17, "555-0800"),
+                    (18, "400 Fill Ave^^Austin^TX^78702^USA"),
+                ],
+            ),
+            seg(
+                "ROL",
+                &[
+                    (4, "RP1^Role^Rita"),
+                    (11, "500 Role Rd^^Seattle^WA^98101^USA"),
+                    (12, "555-0900"),
+                ],
+            ),
+            seg(
+                "PR1",
+                &[
+                    (8, "AN1^Anes^Anna"),
+                    (11, "SU1^Surg^Sam"),
+                    (12, "PP1^Proc^Paul"),
+                ],
+            ),
+            seg(
+                "CTD",
+                &[
+                    (2, "Contact^Chris"),
+                    (3, "600 Contact Ct^^Miami^FL^33101^USA"),
+                    (5, "555-1000"),
+                ],
+            ),
+            seg(
+                "RXD",
+                &[
+                    (10, "DP1^Dispense^Dave"),
+                    (31, "700 Pharm Pl^^Boston^MA^02101^USA"),
+                ],
+            ),
+            seg(
+                "RXE",
+                &[
+                    (13, "DEA123^Doc^Dan"),
+                    (14, "PH1^Pharm^Phil"),
+                    (41, "800 Disp Dr^^Boston^MA^02102^USA"),
+                    (43, "900 Deliver Dr^^Boston^MA^02103^USA"),
+                ],
+            ),
+            seg(
+                "FT1",
+                &[
+                    (20, "PB1^Perf^Pat"),
+                    (21, "OB1^Order^Omar"),
+                    (24, "EB1^Enter^Ed"),
+                ],
+            ),
+            seg("BLG", &[(3, "ACCT777")]),
+            seg(
+                "ACC",
+                &[
+                    (7, "EN2^Enter^Erin"),
+                    (11, "1000 Acc Ave^^Dallas^TX^75201^USA"),
+                ],
+            ),
+        ]);
+
+        let in2 = message.get_segment_by_id("IN2").unwrap();
+        assert!(in2.get_field_value(2).is_none());
+
+        let sch = message.get_segment_by_id("SCH").unwrap();
+        for field in [12, 13, 16, 17] {
+            assert!(sch.get_field_value(field).is_none(), "SCH-{field}");
+        }
+        assert_address_generalized(sch, 14, "787");
+        assert_address_generalized(sch, 18, "787");
+
+        let rol = message.get_segment_by_id("ROL").unwrap();
+        assert!(rol.get_field_value(4).is_none());
+        assert!(rol.get_field_value(12).is_none());
+        assert_address_generalized(rol, 11, "981");
+
+        let pr1 = message.get_segment_by_id("PR1").unwrap();
+        for field in [8, 11, 12] {
+            assert!(pr1.get_field_value(field).is_none(), "PR1-{field}");
+        }
+
+        let ctd = message.get_segment_by_id("CTD").unwrap();
+        assert!(ctd.get_field_value(2).is_none());
+        assert!(ctd.get_field_value(5).is_none());
+        assert_address_generalized(ctd, 3, "331");
+
+        let rxd = message.get_segment_by_id("RXD").unwrap();
+        assert!(rxd.get_field_value(10).is_none());
+        assert_address_generalized(rxd, 31, "021");
+
+        let rxe = message.get_segment_by_id("RXE").unwrap();
+        assert!(rxe.get_field_value(13).is_none());
+        assert!(rxe.get_field_value(14).is_none());
+        assert_address_generalized(rxe, 41, "021");
+        assert_address_generalized(rxe, 43, "021");
+
+        let ft1 = message.get_segment_by_id("FT1").unwrap();
+        for field in [20, 21, 24] {
+            assert!(ft1.get_field_value(field).is_none(), "FT1-{field}");
+        }
+
+        let blg = message.get_segment_by_id("BLG").unwrap();
+        assert_eq!(full_value_of(blg, 3), hash_of(key, "ACCT777"));
+
+        let acc = message.get_segment_by_id("ACC").unwrap();
+        assert!(acc.get_field_value(7).is_none());
+        assert_address_generalized(acc, 11, "752");
+    }
+
+    #[test]
+    fn safe_harbor_covers_death_and_certification_segments() {
+        let key = b"site-secret";
+        let message = redact_segments(&[
+            seg(
+                "PDA",
+                &[
+                    (4, "20240101120000"),
+                    (5, "DC1^Cert^Cid"),
+                    (7, "20240101^20240102"),
+                    (8, "AU1^Autopsy^Al"),
+                ],
+            ),
+            seg(
+                "IN3",
+                &[
+                    (2, "CERT999"),
+                    (3, "CB1^Cert^Cory"),
+                    (6, "20240101"),
+                    (7, "20240102"),
+                    (8, "OP2^Oper^Odin"),
+                    (9, "20240103"),
+                    (10, "20240203"),
+                    (13, "20240104"),
+                    (14, "RV1^Review^Ruth"),
+                    (15, "Cert Contact"),
+                    (16, "555-1100"),
+                    (19, "555-1200"),
+                    (21, "Case Manager"),
+                    (22, "20240105"),
+                    (25, "SO1^Second^Sid"),
+                ],
+            ),
+        ]);
+
+        // Death certificate date shifted; certifier, autopsy range and
+        // performer removed (the DR range is removed, not half-shifted).
+        let pda = message.get_segment_by_id("PDA").unwrap();
+        assert_eq!(pda.get_field_value(4), Some("20240131120000"));
+        for field in [5, 7, 8] {
+            assert!(pda.get_field_value(field).is_none(), "PDA-{field}");
+        }
+
+        // Certification number hashed, dates shifted, contacts gone.
+        let in3 = message.get_segment_by_id("IN3").unwrap();
+        assert_eq!(full_value_of(in3, 2), hash_of(key, "CERT999"));
+        assert_eq!(in3.get_field_value(6), Some("20240131"));
+        assert_eq!(in3.get_field_value(7), Some("20240201"));
+        assert_eq!(in3.get_field_value(9), Some("20240202"));
+        assert_eq!(in3.get_field_value(10), Some("20240304"));
+        assert_eq!(in3.get_field_value(13), Some("20240203"));
+        assert_eq!(in3.get_field_value(22), Some("20240204"));
+        for field in [3, 8, 14, 15, 16, 19, 21, 25] {
+            assert!(in3.get_field_value(field).is_none(), "IN3-{field}");
+        }
     }
 }

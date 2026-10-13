@@ -1,5 +1,6 @@
 //! Medication converter - RXA segment to FHIR MedicationAdministration resource
 
+use super::patient::{valid_hl7_date, valid_hl7_time};
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
 use crate::resources::medication::*;
@@ -190,6 +191,7 @@ impl MedicationConverter {
             "CP" => "completed".to_string(),
             "PA" => "stopped".to_string(),
             "NA" => "entered-in-error".to_string(),
+            "RE" => "not-done".to_string(),
             _ => "completed".to_string(),
         }
     }
@@ -199,29 +201,43 @@ impl MedicationConverter {
         // all-ASCII-digit prefix makes the `&str` slices below safe.
         let bytes = datetime.as_bytes();
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
-            Ok(format!(
-                "{}-{}-{}T{}:{}:{}",
-                &datetime[0..4],
-                &datetime[4..6],
-                &datetime[6..8],
-                &datetime[8..10],
-                &datetime[10..12],
-                &datetime[12..14]
-            ))
+            if valid_hl7_date(&datetime[0..8]) && valid_hl7_time(&datetime[8..14]) {
+                Ok(format!(
+                    "{}-{}-{}T{}:{}:{}",
+                    &datetime[0..4],
+                    &datetime[4..6],
+                    &datetime[6..8],
+                    &datetime[8..10],
+                    &datetime[10..12],
+                    &datetime[12..14]
+                ))
+            } else {
+                Err(Self::invalid_datetime(datetime))
+            }
         } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
-            Ok(format!(
-                "{}-{}-{}",
-                &datetime[0..4],
-                &datetime[4..6],
-                &datetime[6..8]
-            ))
+            // Date only; still requires a real calendar date.
+            if valid_hl7_date(&datetime[0..8]) {
+                Ok(format!(
+                    "{}-{}-{}",
+                    &datetime[0..4],
+                    &datetime[4..6],
+                    &datetime[6..8]
+                ))
+            } else {
+                Err(Self::invalid_datetime(datetime))
+            }
         } else {
-            Err(ConversionError::InvalidFormat(
-                "datetime".to_string(),
-                "RXA".to_string(),
-                format!("Invalid datetime format: {}", datetime),
-            ))
+            Err(Self::invalid_datetime(datetime))
         }
+    }
+
+    /// Redacted bad-datetime error: field location + reason only, never the value.
+    fn invalid_datetime(_datetime: &str) -> ConversionError {
+        ConversionError::InvalidFormat(
+            "datetime".to_string(),
+            "RXA".to_string(),
+            "expected YYYYMMDDHHMMSS calendar datetime or YYYYMMDD date".to_string(),
+        )
     }
 }
 
@@ -306,6 +322,33 @@ mod tests {
         let coding = &medication.code.unwrap().coding.unwrap()[0];
         assert_eq!(coding.code.as_deref(), Some("1191"));
         assert_eq!(coding.display.as_deref(), Some("ASPIRIN"));
+    }
+
+    #[test]
+    fn test_refused_status_maps_to_not_done() {
+        // RXA-20 "RE" (refused) must match ImmunizationConverter: not-done.
+        let hl7 = "MSH|^~\\&|Pharmacy|Hospital|EMR|Hospital|20240315||RAS^O17|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000||1191^ASPIRIN^NDC|100|MG|||||||||||||RE";
+
+        let message = parse_message(hl7).unwrap();
+        let administrations = MedicationConverter::convert_all(&message).unwrap();
+
+        assert_eq!(administrations.len(), 1);
+        assert_eq!(administrations[0].status, "not-done");
+    }
+
+    #[test]
+    fn test_impossible_calendar_datetime_rejected() {
+        assert!(MedicationConverter::convert_datetime("20240230100000").is_err());
+        assert!(MedicationConverter::convert_datetime("20240315250000").is_err());
+
+        let hl7 = "MSH|^~\\&|Pharmacy|Hospital|EMR|Hospital|20240315||RAS^O17|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240230100000||1191^ASPIRIN^NDC|100|MG|||||||||||||CP";
+
+        let message = parse_message(hl7).unwrap();
+        assert!(MedicationConverter::convert_all(&message).is_err());
     }
 
     #[test]

@@ -1,5 +1,6 @@
 //! Immunization converter - RXA segment to FHIR Immunization resource
 
+use super::patient::{valid_hl7_date, valid_hl7_time};
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
 use crate::resources::immunization::*;
@@ -264,42 +265,59 @@ impl ImmunizationConverter {
         // all-ASCII-digit prefix makes the `&str` slices below safe.
         let bytes = datetime.as_bytes();
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
-            Ok(format!(
-                "{}-{}-{}T{}:{}:{}",
-                &datetime[0..4],
-                &datetime[4..6],
-                &datetime[6..8],
-                &datetime[8..10],
-                &datetime[10..12],
-                &datetime[12..14]
-            ))
+            if valid_hl7_date(&datetime[0..8]) && valid_hl7_time(&datetime[8..14]) {
+                Ok(format!(
+                    "{}-{}-{}T{}:{}:{}",
+                    &datetime[0..4],
+                    &datetime[4..6],
+                    &datetime[6..8],
+                    &datetime[8..10],
+                    &datetime[10..12],
+                    &datetime[12..14]
+                ))
+            } else {
+                Err(Self::invalid_datetime(datetime))
+            }
         } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
-            // Date only
-            Ok(format!(
-                "{}-{}-{}",
-                &datetime[0..4],
-                &datetime[4..6],
-                &datetime[6..8]
-            ))
+            // Date only; still requires a real calendar date.
+            if valid_hl7_date(&datetime[0..8]) {
+                Ok(format!(
+                    "{}-{}-{}",
+                    &datetime[0..4],
+                    &datetime[4..6],
+                    &datetime[6..8]
+                ))
+            } else {
+                Err(Self::invalid_datetime(datetime))
+            }
         } else {
-            Err(ConversionError::InvalidFormat(
-                "RXA-3".to_string(),
-                "RXA".to_string(),
-                format!("Invalid datetime format: {}", datetime),
-            ))
+            Err(Self::invalid_datetime(datetime))
         }
+    }
+
+    /// Redacted bad-datetime error: field location + reason only, never the value.
+    fn invalid_datetime(_datetime: &str) -> ConversionError {
+        ConversionError::InvalidFormat(
+            "RXA-3".to_string(),
+            "RXA".to_string(),
+            "expected YYYYMMDDHHMMSS calendar datetime or YYYYMMDD date".to_string(),
+        )
     }
 
     /// Convert HL7 date (YYYYMMDD) to FHIR date format
     fn convert_date(date: &str) -> ConversionResult<String> {
         let bytes = date.as_bytes();
-        if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
+        if bytes.len() >= 8
+            && bytes[..8].iter().all(|b| b.is_ascii_digit())
+            && valid_hl7_date(&date[0..8])
+        {
             Ok(format!("{}-{}-{}", &date[0..4], &date[4..6], &date[6..8]))
         } else {
             Err(ConversionError::InvalidFormat(
                 "RXA-16".to_string(),
                 "RXA".to_string(),
-                format!("Invalid date format: {}", date),
+                // Redacted: never embed the source value (may be PHI).
+                "expected YYYYMMDD calendar date or YYYY year".to_string(),
             ))
         }
     }
@@ -429,6 +447,20 @@ mod tests {
     fn test_non_ascii_datetime_returns_error_without_panic() {
         assert!(ImmunizationConverter::convert_datetime("123\u{e9}56789012").is_err());
         assert!(ImmunizationConverter::convert_date("12\u{e9}\u{e9}5678").is_err());
+    }
+
+    #[test]
+    fn test_impossible_calendar_datetime_rejected() {
+        assert!(ImmunizationConverter::convert_datetime("20240230100000").is_err());
+        assert!(ImmunizationConverter::convert_date("20240230").is_err());
+
+        // RXA-3 is a primary timestamp: an impossible date must fail.
+        let hl7 = "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|MSG123|P|2.5\r\
+                   PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240230100000||08^HepB adult^CVX|1.0|mL||||||||||||CP";
+
+        let message = parse_message(hl7).unwrap();
+        assert!(ImmunizationConverter::convert_all(&message).is_err());
     }
 
     #[test]

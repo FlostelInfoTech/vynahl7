@@ -2,6 +2,7 @@
 //!
 //! Based on HL7 v2-to-FHIR mapping: <https://build.fhir.org/ig/HL7/v2-to-fhir/ConceptMap-segment-obx-to-observation.html>
 
+use super::patient::{valid_hl7_date, valid_hl7_time};
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
 use crate::resources::observation::*;
@@ -353,15 +354,16 @@ impl ObservationConverter {
         // all-ASCII-digit prefix makes the `&str` slices below safe.
         let bytes = date.as_bytes();
         if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
-            Ok(format!("{}-{}-{}", &date[0..4], &date[4..6], &date[6..8]))
+            // Full-date precision requires a real calendar date.
+            if valid_hl7_date(&date[0..8]) {
+                Ok(format!("{}-{}-{}", &date[0..4], &date[4..6], &date[6..8]))
+            } else {
+                Err(Self::invalid_date(date))
+            }
         } else if bytes.len() >= 4 && bytes[..4].iter().all(|b| b.is_ascii_digit()) {
             Ok(date[0..4].to_string())
         } else {
-            Err(ConversionError::InvalidFormat(
-                "date".to_string(),
-                "OBX".to_string(),
-                format!("Invalid date format: {}", date),
-            ))
+            Err(Self::invalid_date(date))
         }
     }
 
@@ -369,24 +371,42 @@ impl ObservationConverter {
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
         let bytes = datetime.as_bytes();
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
-            Ok(format!(
-                "{}-{}-{}T{}:{}:{}",
-                &datetime[0..4],
-                &datetime[4..6],
-                &datetime[6..8],
-                &datetime[8..10],
-                &datetime[10..12],
-                &datetime[12..14]
-            ))
+            if valid_hl7_date(&datetime[0..8]) && valid_hl7_time(&datetime[8..14]) {
+                Ok(format!(
+                    "{}-{}-{}T{}:{}:{}",
+                    &datetime[0..4],
+                    &datetime[4..6],
+                    &datetime[6..8],
+                    &datetime[8..10],
+                    &datetime[10..12],
+                    &datetime[12..14]
+                ))
+            } else {
+                Err(Self::invalid_datetime(datetime))
+            }
         } else if bytes.len() >= 8 {
             Self::convert_date(datetime)
         } else {
-            Err(ConversionError::InvalidFormat(
-                "datetime".to_string(),
-                "OBX".to_string(),
-                format!("Invalid datetime format: {}", datetime),
-            ))
+            Err(Self::invalid_datetime(datetime))
         }
+    }
+
+    /// Redacted bad-date error: field location + reason only, never the value.
+    fn invalid_date(_date: &str) -> ConversionError {
+        ConversionError::InvalidFormat(
+            "date".to_string(),
+            "OBX".to_string(),
+            "expected YYYYMMDD calendar date or YYYY year".to_string(),
+        )
+    }
+
+    /// Redacted bad-datetime error: field location + reason only, never the value.
+    fn invalid_datetime(_datetime: &str) -> ConversionError {
+        ConversionError::InvalidFormat(
+            "datetime".to_string(),
+            "OBX".to_string(),
+            "expected YYYYMMDDHHMMSS calendar datetime or YYYYMMDD date".to_string(),
+        )
     }
 }
 
@@ -468,6 +488,28 @@ mod tests {
             ObservationConverter::convert_datetime("20240315100000").unwrap(),
             "2024-03-15T10:00:00"
         );
+    }
+
+    #[test]
+    fn test_invalid_datetime_error_redacts_source_value() {
+        let err = ObservationConverter::convert_datetime("junkjunk").unwrap_err();
+        let msg = err.to_string();
+        assert!(!msg.contains("junkjunk"), "error leaks source: {msg}");
+        assert!(msg.contains("OBX"));
+    }
+
+    #[test]
+    fn test_impossible_calendar_datetime_rejected() {
+        assert!(ObservationConverter::convert_date("20240230").is_err());
+        assert!(ObservationConverter::convert_datetime("20240230100000").is_err());
+        assert!(ObservationConverter::convert_datetime("20240315250000").is_err());
+
+        // OBX-14 is a primary timestamp: an impossible date must fail.
+        let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ORU^R01|12345|P|2.5\r\
+                   OBX|1|NM|WBC^White Blood Count^LN||7.5|mg/dL|||||F|||20240230100000";
+
+        let message = parse_message(hl7).unwrap();
+        assert!(ObservationConverter::convert_all(&message).is_err());
     }
 
     #[test]

@@ -2,6 +2,7 @@
 //!
 //! Based on HL7 v2-to-FHIR mapping: <https://build.fhir.org/ig/HL7/v2-to-fhir/ConceptMap-segment-pv1-to-encounter.html>
 
+use super::patient::{valid_hl7_date, valid_hl7_time};
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
 use crate::resources::encounter::*;
@@ -368,29 +369,43 @@ impl EncounterConverter {
         // all-ASCII-digit prefix makes the `&str` slices below safe.
         let bytes = datetime.as_bytes();
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
-            Ok(format!(
-                "{}-{}-{}T{}:{}:{}",
-                &datetime[0..4],
-                &datetime[4..6],
-                &datetime[6..8],
-                &datetime[8..10],
-                &datetime[10..12],
-                &datetime[12..14]
-            ))
+            if valid_hl7_date(&datetime[0..8]) && valid_hl7_time(&datetime[8..14]) {
+                Ok(format!(
+                    "{}-{}-{}T{}:{}:{}",
+                    &datetime[0..4],
+                    &datetime[4..6],
+                    &datetime[6..8],
+                    &datetime[8..10],
+                    &datetime[10..12],
+                    &datetime[12..14]
+                ))
+            } else {
+                Err(Self::invalid_datetime(datetime))
+            }
         } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
-            Ok(format!(
-                "{}-{}-{}",
-                &datetime[0..4],
-                &datetime[4..6],
-                &datetime[6..8]
-            ))
+            // Date only; still requires a real calendar date.
+            if valid_hl7_date(&datetime[0..8]) {
+                Ok(format!(
+                    "{}-{}-{}",
+                    &datetime[0..4],
+                    &datetime[4..6],
+                    &datetime[6..8]
+                ))
+            } else {
+                Err(Self::invalid_datetime(datetime))
+            }
         } else {
-            Err(ConversionError::InvalidFormat(
-                "datetime".to_string(),
-                "PV1".to_string(),
-                format!("Invalid datetime format: {}", datetime),
-            ))
+            Err(Self::invalid_datetime(datetime))
         }
+    }
+
+    /// Redacted bad-datetime error: field location + reason only, never the value.
+    fn invalid_datetime(_datetime: &str) -> ConversionError {
+        ConversionError::InvalidFormat(
+            "datetime".to_string(),
+            "PV1".to_string(),
+            "expected YYYYMMDDHHMMSS calendar datetime or YYYYMMDD date".to_string(),
+        )
     }
 }
 
@@ -457,6 +472,28 @@ mod tests {
         let encounter = EncounterConverter::convert(&message).unwrap();
         assert_eq!(encounter.period.unwrap().start, None);
         assert!(EncounterConverter::convert_datetime("123\u{e9}56789012").is_err());
+    }
+
+    #[test]
+    fn test_impossible_admit_datetime_dropped() {
+        assert!(EncounterConverter::convert_datetime("20240230100000").is_err());
+
+        // PV1-44/PV1-45 are ancillary: an impossible date is dropped,
+        // never emitted, while the encounter still converts.
+        let mut pv1 = String::from("PV1|1|I");
+        for _ in 3..44 {
+            pv1.push('|');
+        }
+        pv1.push_str("|20240230100000");
+        let hl7 = format!(
+            "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+             PID|1||MRN123^^^MRN||DOE^JOHN||19800101|M\r\
+             {pv1}"
+        );
+
+        let message = parse_message(&hl7).unwrap();
+        let encounter = EncounterConverter::convert(&message).unwrap();
+        assert_eq!(encounter.period.unwrap().start, None);
     }
 
     #[test]

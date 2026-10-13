@@ -51,6 +51,7 @@ use serde_json::Value;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
 
+use crate::converters::patient::{valid_hl7_date, valid_hl7_time};
 use crate::error::{ConversionError, ConversionResult};
 
 /// Shipped example mappings, embedded at compile time.
@@ -409,7 +410,8 @@ impl MappingEngine {
                 ConversionError::InvalidFormat(
                     rule.target.clone(),
                     mapping.resource_type.clone(),
-                    format!("cannot format '{text}'"),
+                    // Redacted: never embed the source value (may be PHI).
+                    "cannot format value as date/datetime".to_string(),
                 )
             })?;
             value = Value::String(formatted);
@@ -542,7 +544,10 @@ fn format_date(text: &str) -> Option<String> {
     // Byte-slice checks on `[u8]` never split a char boundary, and an
     // all-ASCII-digit prefix makes the `&str` slices below safe.
     let bytes = text.as_bytes();
-    if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
+    if bytes.len() >= 8
+        && bytes[..8].iter().all(|b| b.is_ascii_digit())
+        && valid_hl7_date(&text[0..8])
+    {
         return Some(format!("{}-{}-{}", &text[0..4], &text[4..6], &text[6..8]));
     }
     None
@@ -552,15 +557,19 @@ fn format_date(text: &str) -> Option<String> {
 fn format_datetime(text: &str) -> Option<String> {
     let bytes = text.as_bytes();
     if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
-        Some(format!(
-            "{}-{}-{}T{}:{}:{}",
-            &text[0..4],
-            &text[4..6],
-            &text[6..8],
-            &text[8..10],
-            &text[10..12],
-            &text[12..14]
-        ))
+        if valid_hl7_date(&text[0..8]) && valid_hl7_time(&text[8..14]) {
+            Some(format!(
+                "{}-{}-{}T{}:{}:{}",
+                &text[0..4],
+                &text[4..6],
+                &text[6..8],
+                &text[8..10],
+                &text[10..12],
+                &text[12..14]
+            ))
+        } else {
+            None
+        }
     } else {
         format_date(text)
     }
@@ -589,6 +598,30 @@ mod tests {
             format_datetime("20240315100000"),
             Some("2024-03-15T10:00:00".to_string())
         );
+    }
+
+    #[test]
+    fn engine_rejects_impossible_calendar_dates() {
+        assert_eq!(format_date("20240230"), None);
+        assert_eq!(format_datetime("20240230100000"), None);
+        assert_eq!(format_datetime("20240315250000"), None);
+
+        // An impossible date must error, not emit "2024-02-30".
+        let message = parse_message(
+            "MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1||7||Smith^John||20240230|M",
+        )
+        .unwrap();
+        let mapping = Mapping::from_yaml(
+            r#"
+resourceType: Patient
+fields:
+  - target: birthDate
+    source: PID-7
+    format: date
+"#,
+        )
+        .unwrap();
+        assert!(MappingEngine::apply(&mapping, &message).is_err());
     }
 
     #[test]

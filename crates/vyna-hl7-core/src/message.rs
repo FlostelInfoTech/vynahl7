@@ -235,9 +235,13 @@ impl Message {
     }
 
     /// Check if this is an acknowledgment message (ACK)
+    ///
+    /// Only MSH-9-1 (the message type) is consulted, so genuine ACKs with
+    /// a bare MSH-9 (`ACK` with no trigger component) are recognized.
     pub fn is_acknowledgment(&self) -> bool {
-        self.get_message_type()
-            .map(|(msg_type, _)| msg_type == "ACK")
+        self.get_msh()
+            .and_then(|msh| msh.get_field_value(9))
+            .map(|msg_type| msg_type == "ACK")
             .unwrap_or(false)
     }
 }
@@ -470,6 +474,53 @@ mod tests {
 
         let encoded = msg.encode();
         assert!(encoded.starts_with("MSH|^~\\&|"));
+    }
+
+    fn create_msh_with_type(msh9: Field) -> Segment {
+        let mut msh = Segment::new("MSH");
+        msh.add_field(Field::from_value("^~\\&")); // MSH-1: encoding characters
+        msh.add_field(Field::from_value("")); // MSH-2: empty placeholder
+        msh.add_field(Field::from_value("SendingApp")); // MSH-3
+        msh.add_field(Field::from_value("SendingFac")); // MSH-4
+        msh.add_field(Field::from_value("ReceivingApp")); // MSH-5
+        msh.add_field(Field::from_value("ReceivingFac")); // MSH-6
+        msh.add_field(Field::from_value("20240115120000")); // MSH-7
+        msh.add_field(Field::from_value("")); // MSH-8
+        msh.add_field(msh9); // MSH-9
+        msh
+    }
+
+    fn create_message_with_type(msh9: Field) -> Message {
+        let mut msg = Message::new();
+        msg.add_segment(create_msh_with_type(msh9));
+        msg
+    }
+
+    #[test]
+    fn test_is_acknowledgment_with_bare_msh9() {
+        // AckBuilder without a trigger event emits MSH-9 as a single
+        // component ("ACK"); it must still be recognized as an ACK.
+        let msg = create_message_with_type(Field::from_value("ACK"));
+        assert!(msg.is_acknowledgment());
+    }
+
+    #[test]
+    fn test_is_acknowledgment_with_trigger() {
+        let msg = create_message_with_type(Field::from_delimited("ACK^A01"));
+        assert!(msg.is_acknowledgment());
+    }
+
+    #[test]
+    fn test_is_acknowledgment_false_for_non_ack() {
+        let msg = create_message_with_type(Field::from_delimited("ADT^A01"));
+        assert!(!msg.is_acknowledgment());
+    }
+
+    #[test]
+    fn test_is_acknowledgment_false_without_msh9() {
+        let mut msg = Message::new();
+        msg.add_segment(create_test_msh());
+        assert!(!msg.is_acknowledgment());
     }
 
     #[test]

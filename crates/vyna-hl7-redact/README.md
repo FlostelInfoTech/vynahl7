@@ -6,9 +6,15 @@ Safe Harbor de-identification for HL7 v2.x messages.
 
 `vyna-hl7-redact` rewrites protected health information (PHI) in place
 using explicit, auditable rules. `Redactor::safe_harbor` ships a
-profile covering the HIPAA Safe Harbor identifiers across the common
-segments (names, addresses, telecom, dates, IDs, account and visit
-numbers).
+profile covering the HIPAA Safe Harbor identifiers (names, addresses,
+telecom, dates, IDs, account and visit numbers) across 34 segments:
+ACC, AL1, BLG, CTD, DG1, EVN, FT1, GT1, IN1, IN2, IN3, MRG, MSH, NK1,
+OBR, OBX, ORC, PD1, PDA, PID, PR1, PRB, PRD, PV1, ROL, RXA, RXD, RXE,
+RXO, SCH, SPM, STF, TQ1, TXA.
+
+Not covered: free-text notes (NTE, OBX-5), site-defined Z-segments,
+and segments outside the list above. Add explicit `Rule`s when your
+policy requires them.
 
 ## Features
 
