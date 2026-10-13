@@ -738,14 +738,35 @@ mod tests {
         assert_eq!(hits, ["segment", "segment", "field", "field"]);
     }
 
+    #[test]
+    fn native_shapes_back_wasm_prefix_assertions() {
+        // Locks the d.ts shapes the wasm prefix assertions below rely
+        // on: `TableValue` keeps code/description/deprecated and PID-5
+        // keeps name "Patient Name" with data type "XPN", so the wasm
+        // `JSON.stringify` prefixes (no premature `}`) must hold.
+        let registry = TableRegistry::new();
+        let table = registry.get_table("0001").expect("table 0001 exists");
+        let male = table.values.get("M").expect("M in table 0001");
+        assert_eq!(male.code, "M");
+        assert_eq!(male.description, "Male");
+        assert!(!male.deprecated);
+        let schema = load_schema(Version::V2_5, "ADT", "A01").expect("ADT_A01");
+        let pid = schema.segments.get("PID").expect("PID in ADT_A01");
+        let field5 = pid.fields.get(&5).expect("PID-5 exists");
+        assert_eq!(field5.name, "Patient Name");
+        assert_eq!(field5.data_type, "XPN");
+    }
+
     #[cfg(target_arch = "wasm32")]
     #[wasm_bindgen_test]
     fn test_vocabulary_table_serializes_values_as_object() {
         // Pre-fix `values` was an ES Map (`values["M"]` undefined,
-        // stringified as `{}`); d.ts promises a `Record`.
+        // stringified as `{}`); d.ts promises a `Record`. Prefix (no
+        // closing brace): each value also carries `description` and
+        // `deprecated` per d.ts `TableValue`.
         let json = crate::test_stringify(&get_vocabulary_table("0001").unwrap());
         assert!(
-            json.contains("\"M\":{\"code\":\"M\"}"),
+            json.contains("\"M\":{\"code\":\"M\""),
             "not an object: {json}"
         );
     }
@@ -755,11 +776,13 @@ mod tests {
     fn test_message_definition_uses_string_field_keys() {
         // Pre-fix `segments`/`fields` were nested ES Maps (stringified
         // as `{}`); d.ts promises nested `Record`s with string keys.
+        // Prefix (no closing brace): each field also carries
+        // `dataType` etc. per d.ts `FieldDefinition`.
         let def = get_message_definition("2.5", "ADT", "A01").unwrap();
         let json = crate::test_stringify(&def);
         assert!(json.contains("\"PID\":"), "segments not an object: {json}");
         assert!(
-            json.contains("\"5\":{\"name\":\"Patient Name\"}"),
+            json.contains("\"5\":{\"name\":\"Patient Name\""),
             "bad keys: {json}"
         );
     }
@@ -770,10 +793,12 @@ mod tests {
         // Pre-fix `fields` was an ES Map and missing `max_length` was
         // `undefined` (dropped from JSON); d.ts wants string keys and
         // `maxLength: number | null` (PID-20 has no max length).
+        // Prefix (no closing brace): each field also carries
+        // `dataType` etc. per d.ts `FieldDefinition`.
         let def = get_segment_definition("2.5", "PID").unwrap();
         let json = crate::test_stringify(&def);
         assert!(
-            json.contains("\"5\":{\"name\":\"Patient Name\"}"),
+            json.contains("\"5\":{\"name\":\"Patient Name\""),
             "bad keys: {json}"
         );
         assert!(json.contains("\"20\":"), "PID-20 missing: {json}");

@@ -1,15 +1,26 @@
 # PRB problem list entry -> FHIR Condition.
-# Mirrors ConditionConverter for PRB segments: exact JSON parity is asserted
-# in mapping.rs tests. The system map matches the converter's coding-system
-# table; unmapped systems fall back to `urn:oid:{value}` like the converter.
+# Mirrors ConditionConverter for a single coded PRB: exact JSON parity is
+# asserted in mapping.rs tests. The system map matches the converter's
+# coding-system table; unmapped systems fall back to `urn:oid:{value}`.
+# DG1-only messages fall back to DG1-3 for the code; display/system still
+# require PRB-3 (the `when` gate takes no fallback). Multi-problem messages
+# emit one resource: repeat is single-segment, so `repeat: PRB` would drop
+# DG1-only messages entirely. Text-only CWE emits no code: a `code.text`
+# rule cannot be gated on an empty PRB-3, and an ungated one would break
+# coded parity (the converter sets text only when uncoded).
 resourceType: Condition
 fields:
   - target: code.coding[0].code
     source: PRB-3
+    fallback_source: DG1-3
   - target: code.coding[0].display
     source: PRB-3-2
+    fallback_source: DG1-3-2
+    when: PRB-3
   - target: code.coding[0].system
     source: PRB-3-3
+    fallback_source: DG1-3-3
+    when: PRB-3
     map:
       CVX: http://hl7.org/fhir/sid/cvx
       NDC: http://hl7.org/fhir/sid/ndc

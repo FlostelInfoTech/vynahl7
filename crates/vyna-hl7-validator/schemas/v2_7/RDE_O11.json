@@ -180,7 +180,7 @@
             "3": {
               "name": "Message Structure",
               "data_type": "ID",
-              "required": true,
+              "required": false,
               "max_length": 7,
               "table_id": "0354"
             }
@@ -1317,7 +1317,7 @@
             "5": {
               "name": "Identifier Type Code",
               "data_type": "ID",
-              "required": true,
+              "required": false,
               "max_length": 5,
               "table_id": "0203"
             },
@@ -2773,7 +2773,7 @@
             "5": {
               "name": "Identifier Type Code",
               "data_type": "ID",
-              "required": true,
+              "required": false,
               "max_length": 5,
               "table_id": "0203"
             },
@@ -2869,7 +2869,7 @@
             "5": {
               "name": "Identifier Type Code",
               "data_type": "ID",
-              "required": true,
+              "required": false,
               "max_length": 5,
               "table_id": "0203"
             },
@@ -5269,7 +5269,7 @@
             "5": {
               "name": "Identifier Type Code",
               "data_type": "ID",
-              "required": true,
+              "required": false,
               "max_length": 5,
               "table_id": "0203"
             },
@@ -7673,7 +7673,7 @@
             "5": {
               "name": "Identifier Type Code",
               "data_type": "ID",
-              "required": true,
+              "required": false,
               "max_length": 5,
               "table_id": "0203"
             },
@@ -9386,7 +9386,7 @@
             "5": {
               "name": "Identifier Type Code",
               "data_type": "ID",
-              "required": true,
+              "required": false,
               "max_length": 5,
               "table_id": "0203"
             },
@@ -11202,7 +11202,7 @@
             "5": {
               "name": "Identifier Type Code",
               "data_type": "ID",
-              "required": true,
+              "required": false,
               "max_length": 5,
               "table_id": "0203"
             },
@@ -11402,7 +11402,7 @@
             "5": {
               "name": "Identifier Type Code",
               "data_type": "ID",
-              "required": true
+              "required": false
             },
             "6": {
               "name": "Assigning Facility",
@@ -14738,7 +14738,7 @@
             "5": {
               "name": "Identifier Type Code",
               "data_type": "ID",
-              "required": true,
+              "required": false,
               "max_length": 5,
               "table_id": "0203"
             },
@@ -15311,7 +15311,7 @@
             "5": {
               "name": "Identifier Type Code",
               "data_type": "ID",
-              "required": true,
+              "required": false,
               "max_length": 5,
               "table_id": "0203"
             },

@@ -515,7 +515,29 @@ impl MllpClient {
     ///
     /// The message is encoded in the character set declared in its MSH-18
     /// (HL7 table 0211), defaulting to UTF-8 when MSH-18 is empty.
+    ///
+    /// Fails without sending when a complete frame is already buffered:
+    /// ACKs must arrive after the request, so a pre-send buffered frame
+    /// is stale and would be misattributed to this send. Do not reuse
+    /// the client after a mid-exchange read timeout either: a late ACK
+    /// for the timed-out request may arrive after the retry. Open a new
+    /// connection instead.
     pub async fn send_message(&mut self, message: &Message) -> Result<Message> {
+        // Fail loudly on a pre-send buffered frame instead of silently
+        // returning a stale pipelined response for this request.
+        {
+            let mut probe = self.pending.clone();
+            match take_complete_frame(&mut probe, self.max_message_size) {
+                Ok(Some(_)) => {
+                    return Err(Error::Mllp(
+                        "stale buffered frame before send; open a new connection".to_string(),
+                    ));
+                }
+                Err(e) => return Err(e),
+                Ok(None) => {}
+            }
+        }
+
         // Encode message in its declared character set
         let hl7_bytes = message.encode_bytes()?;
 
@@ -1401,5 +1423,63 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Pipelined extra ACK for request 1 must not be silently returned
+    /// as the ACK for request 2: the second send fails loudly instead.
+    #[tokio::test]
+    async fn test_send_rejects_stale_buffered_frame() {
+        async fn read_frame(socket: &mut TcpStream) -> Vec<u8> {
+            let mut buf = Vec::new();
+            let mut chunk = [0u8; 1024];
+            loop {
+                let n = socket.read(&mut chunk).await.unwrap();
+                assert!(n > 0, "peer closed before sending frame");
+                buf.extend_from_slice(&chunk[..n]);
+                if let Some(pos) = buf.iter().position(|b| *b == 0x0B) {
+                    buf.drain(..pos);
+                    break;
+                }
+            }
+            loop {
+                for i in 0..buf.len().saturating_sub(1) {
+                    if buf[i] == 0x1C && buf[i + 1] == 0x0D {
+                        return buf.drain(..i + 2).collect();
+                    }
+                }
+                let n = socket.read(&mut chunk).await.unwrap();
+                assert!(n > 0, "peer closed mid-frame");
+                buf.extend_from_slice(&chunk[..n]);
+            }
+        }
+
+        let ack1 = "MSH|^~\\&|R|F|S|F|20240115120100||ACK^A01^ACK|ACK1|P|2.5\rMSA|AA|REQ1\r";
+        let stale = "MSH|^~\\&|R|F|S|F|20240115120100||ACK^A01^ACK|ACK-STALE|P|2.5\rMSA|AA|STALE\r";
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let server_task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let _req1 = read_frame(&mut socket).await;
+            let mut both = MllpFrame::wrap(ack1);
+            both.extend_from_slice(&MllpFrame::wrap(stale));
+            socket.write_all(&both).await.unwrap();
+            // Client must refuse to send request 2 once the stale frame
+            // is buffered, so this read must time out.
+            let second =
+                tokio::time::timeout(Duration::from_millis(500), read_frame(&mut socket)).await;
+            assert!(second.is_err(), "stale frame did not block send #2");
+        });
+
+        let mut client = MllpClient::connect(&addr).await.unwrap();
+        let req1 = parse_message("MSH|^~\\&|S|F|R|F|20240115||||ADT^A01|REQ1|P|2.5\r").unwrap();
+        let req2 = parse_message("MSH|^~\\&|S|F|R|F|20240115||||ADT^A01|REQ2|P|2.5\r").unwrap();
+        let first = client.send_message(&req1).await.unwrap();
+        assert_eq!(first.get_control_id(), Some("ACK1"));
+        let err = client.send_message(&req2).await.unwrap_err();
+        assert!(
+            err.to_string().contains("stale buffered"),
+            "unexpected: {err}"
+        );
+        server_task.await.unwrap();
     }
 }

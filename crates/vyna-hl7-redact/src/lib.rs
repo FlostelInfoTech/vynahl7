@@ -2137,4 +2137,58 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn safe_harbor_prd_audit_matches_v2plus_reference() {
+        // PRD audit: field names, numbers and datatypes verified against
+        // the HL7 v2+ PRD segment reference (PRD is absent from our
+        // validator schemas, so nothing else cross-checks it). Every
+        // person-identity field has its profile-consistent rule: names
+        // (2 XPN), telecom (5, 13 XTN) and org name (10 XON) removed;
+        // addresses (3, 11 XAD) generalized; identifiers (7 PLN) hashed;
+        // role dates (8, 9 DTM) shifted. Coded fields (1, 6, 14 CWE) and
+        // facility locations (4, 12 PL, like the uncovered PV1-3) stay.
+        let key = b"site-secret";
+        let message = redact_segments(&[seg(
+            "PRD",
+            &[
+                (1, "PP"),
+                (2, "House^Greg"),
+                (3, "221 B St^^Princeton^NJ^08540^USA"),
+                (4, "ER^R1^B2^FAC"),
+                (5, "555-0200"),
+                (6, "PH"),
+                (7, "NPI1234567"),
+                (8, "20200101"),
+                (9, "20250101"),
+                (10, "Princeton Hospital"),
+                (11, "1 Hospital Dr^^Princeton^NJ^08540^USA"),
+                (12, "MAIN^WING^FAC"),
+                (13, "555-0300"),
+                (14, "EM"),
+            ],
+        )]);
+        let prd = message.get_segment_by_id("PRD").unwrap();
+        for field in [2, 5, 10, 13] {
+            assert!(prd.get_field_value(field).is_none(), "PRD-{field} survives");
+        }
+        assert_address_generalized(prd, 3, "085");
+        assert_address_generalized(prd, 11, "085");
+        assert_eq!(
+            full_value_of(prd, 7),
+            hash_of(key, "NPI1234567"),
+            "PRD-7 identifiers survive verbatim"
+        );
+        assert_eq!(prd.get_field_value(8), Some("20200131"));
+        assert_eq!(prd.get_field_value(9), Some("20250131"));
+        for (field, expected) in [(1, "PP"), (6, "PH"), (14, "EM")] {
+            assert_eq!(
+                prd.get_field_value(field),
+                Some(expected),
+                "PRD-{field} must be kept"
+            );
+        }
+        assert_eq!(full_value_of(prd, 4), "ER^R1^B2^FAC");
+        assert_eq!(full_value_of(prd, 12), "MAIN^WING^FAC");
+    }
 }

@@ -436,7 +436,10 @@ impl Validator {
             self.emit(
                 result,
                 "MSH-12".to_string(),
-                format!("Message version '{raw}' is not a supported HL7 version"),
+                format!(
+                    "Message version '{}' is not a supported HL7 version",
+                    truncate_value(raw)
+                ),
                 ValidationErrorType::InvalidValue,
             );
         }
@@ -876,6 +879,19 @@ fn field_table_code<'a>(
         Some(value)
     } else {
         Some(value)
+    }
+}
+
+/// Cap an echoed value at 32 chars plus its length, keeping short
+/// values verbatim so existing diagnostics are unchanged.
+fn truncate_value(value: &str) -> String {
+    const MAX: usize = 32;
+    let count = value.chars().count();
+    if count <= MAX {
+        value.to_string()
+    } else {
+        let head: String = value.chars().take(MAX).collect();
+        format!("{head}... ({} chars total)", count)
     }
 }
 
@@ -2546,5 +2562,21 @@ mod tests {
             "errors: {:?}",
             result.errors
         );
+    }
+
+    #[test]
+    fn test_unsupported_version_echo_is_truncated() {
+        let garbage = "G".repeat(300);
+        let text = format!("MSH|^~\\&|S|F|R|D|20240115||ADT^A01|1|P|{garbage}\rPID|1");
+        let message = vyna_hl7_parser::parse_message(&text).unwrap();
+        let validator = Validator::for_message_type(Version::V2_5, "ADT", "A01").unwrap();
+        let result = validator.validate(&message);
+        let err = result
+            .errors
+            .iter()
+            .find(|e| e.message.contains("not a supported HL7 version"))
+            .expect("expected an unsupported-version error");
+        assert!(!err.message.contains(&garbage), "must not echo full value");
+        assert!(err.message.contains("300 chars total"), "{}", err.message);
     }
 }

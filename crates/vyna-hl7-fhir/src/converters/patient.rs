@@ -46,7 +46,7 @@ impl PatientConverter {
         if let Ok(Some(dob)) = terser.get("PID-7")
             && !dob.is_empty()
         {
-            patient.birth_date = Some(Self::convert_date(dob)?);
+            patient.birth_date = Some(Self::convert_date(dob, "PID-7")?);
         }
 
         // PID-8: Administrative Sex -> Patient.gender
@@ -91,10 +91,16 @@ impl PatientConverter {
         // PID-30: Patient Death Indicator -> Patient.deceased
         // FHIR deceased[x] is a choice: emit exactly one. The date wins
         // when present; the boolean applies only without a death date.
-        if let Ok(Some(death_date)) = terser.get("PID-29")
-            && !death_date.is_empty()
-        {
-            patient.deceased_date_time = Some(Self::convert_datetime(death_date)?);
+        // Lenient by design (ancillary timestamp, like RXA-22/PV1-44):
+        // an invalid PID-29 is dropped while the patient still converts.
+        let death_date = terser
+            .get("PID-29")
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty())
+            .and_then(|d| Self::convert_datetime(d, "PID-29").ok());
+        if let Some(deceased) = death_date {
+            patient.deceased_date_time = Some(deceased);
         } else if let Ok(Some(death_ind)) = terser.get("PID-30") {
             // An explicit N means known alive, not unknown.
             if death_ind == "Y" {
@@ -529,8 +535,9 @@ impl PatientConverter {
     /// Convert HL7 v2 date format (YYYYMMDD) to FHIR date format (YYYY-MM-DD)
     ///
     /// Partial precision is preserved: `YYYYMM` becomes `YYYY-MM` and
-    /// `YYYY` stays a year, since FHIR dates accept both.
-    fn convert_date(date: &str) -> ConversionResult<String> {
+    /// `YYYY` stays a year, since FHIR dates accept both. `field` names
+    /// the source (e.g. `PID-7`) for error locations.
+    fn convert_date(date: &str, field: &str) -> ConversionResult<String> {
         // A zone suffix cannot apply to a date (FHIR dates carry no
         // zone), so convert the stem alone.
         let (stem, _) = split_hl7_offset(date);
@@ -543,27 +550,28 @@ impl PatientConverter {
             if valid_hl7_date(&stem[0..8]) {
                 Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
             } else {
-                Err(Self::invalid_date_format())
+                Err(Self::invalid_date_format(field))
             }
         } else if bytes.len() >= 6 && bytes[..6].iter().all(|b| b.is_ascii_digit()) {
             // Month precision, with the same impossible-date policy.
             if valid_hl7_year_month(&stem[0..6]) {
                 Ok(format!("{}-{}", &stem[0..4], &stem[4..6]))
             } else {
-                Err(Self::invalid_date_format())
+                Err(Self::invalid_date_format(field))
             }
         } else if bytes.len() >= 4 && bytes[..4].iter().all(|b| b.is_ascii_digit()) {
             Ok(stem[0..4].to_string())
         } else {
-            Err(Self::invalid_date_format())
+            Err(Self::invalid_date_format(field))
         }
     }
 
     /// Convert HL7 v2 datetime format to FHIR datetime format
     ///
     /// `YYYYMMDDHHMM` keeps its minutes (`YYYY-MM-DDTHH:MM`) and a
-    /// trailing HL7 zone (`±HHMM`) is preserved as `±HH:MM`.
-    fn convert_datetime(datetime: &str) -> ConversionResult<String> {
+    /// trailing HL7 zone (`±HHMM`) is preserved as `±HH:MM`. `field`
+    /// names the source (e.g. `PID-29`) for error locations.
+    fn convert_datetime(datetime: &str, field: &str) -> ConversionResult<String> {
         let (stem, offset) = split_hl7_offset(datetime);
         let zone = offset.as_deref().unwrap_or("");
         let bytes = stem.as_bytes();
@@ -582,7 +590,7 @@ impl PatientConverter {
                     zone
                 ))
             } else {
-                Err(Self::invalid_datetime_format())
+                Err(Self::invalid_datetime_format(field))
             }
         } else if bytes.len() >= 12 && bytes[..12].iter().all(|b| b.is_ascii_digit()) {
             if valid_hl7_date(&stem[0..8]) && valid_hl7_hour_min(&stem[8..12]) {
@@ -596,30 +604,30 @@ impl PatientConverter {
                     zone
                 ))
             } else {
-                Err(Self::invalid_datetime_format())
+                Err(Self::invalid_datetime_format(field))
             }
         } else if bytes.len() >= 4 {
             // Date, month, or year precision, like the mapping engine.
-            Self::convert_date(stem)
+            Self::convert_date(stem, field)
         } else {
-            Err(Self::invalid_datetime_format())
+            Err(Self::invalid_datetime_format(field))
         }
     }
 
     /// Redacted bad-date error: field location + reason only, never the value.
-    fn invalid_date_format() -> ConversionError {
+    fn invalid_date_format(field: &str) -> ConversionError {
         ConversionError::InvalidFormat(
             "date".to_string(),
-            "PID-7".to_string(),
+            field.to_string(),
             "expected YYYYMMDD calendar date, YYYYMM month, or YYYY year".to_string(),
         )
     }
 
     /// Redacted bad-datetime error: field location + reason only, never the value.
-    fn invalid_datetime_format() -> ConversionError {
+    fn invalid_datetime_format(field: &str) -> ConversionError {
         ConversionError::InvalidFormat(
             "datetime".to_string(),
-            "PID".to_string(),
+            field.to_string(),
             "expected YYYYMMDDHHMMSS calendar datetime".to_string(),
         )
     }
@@ -824,15 +832,15 @@ mod tests {
 
     #[test]
     fn test_non_digit_dob_returns_error() {
-        assert!(PatientConverter::convert_date("abcdefgh").is_err());
-        assert!(PatientConverter::convert_date("1980abcd").is_ok());
+        assert!(PatientConverter::convert_date("abcdefgh", "PID-7").is_err());
+        assert!(PatientConverter::convert_date("1980abcd", "PID-7").is_ok());
         assert_eq!(
-            PatientConverter::convert_date("19800101").unwrap(),
+            PatientConverter::convert_date("19800101", "PID-7").unwrap(),
             "1980-01-01"
         );
-        assert!(PatientConverter::convert_datetime("not-a-datetime").is_err());
+        assert!(PatientConverter::convert_datetime("not-a-datetime", "PID-29").is_err());
         assert_eq!(
-            PatientConverter::convert_datetime("20240315100000").unwrap(),
+            PatientConverter::convert_datetime("20240315100000", "PID-29").unwrap(),
             "2024-03-15T10:00:00"
         );
     }
@@ -910,35 +918,36 @@ mod tests {
 
     #[test]
     fn test_impossible_calendar_dates_rejected() {
-        assert!(PatientConverter::convert_date("20241345").is_err());
-        assert!(PatientConverter::convert_date("20240230").is_err());
-        assert!(PatientConverter::convert_date("20240015").is_err());
+        assert!(PatientConverter::convert_date("20241345", "PID-7").is_err());
+        assert!(PatientConverter::convert_date("20240230", "PID-7").is_err());
+        assert!(PatientConverter::convert_date("20240015", "PID-7").is_err());
         assert_eq!(
-            PatientConverter::convert_date("20240229").unwrap(),
+            PatientConverter::convert_date("20240229", "PID-7").unwrap(),
             "2024-02-29"
         );
         assert_eq!(
-            PatientConverter::convert_date("19800101").unwrap(),
+            PatientConverter::convert_date("19800101", "PID-7").unwrap(),
             "1980-01-01"
         );
-        assert!(PatientConverter::convert_datetime("20240315250000").is_err());
-        assert!(PatientConverter::convert_datetime("20240230100000").is_err());
+        assert!(PatientConverter::convert_datetime("20240315250000", "PID-29").is_err());
+        assert!(PatientConverter::convert_datetime("20240230100000", "PID-29").is_err());
         assert_eq!(
-            PatientConverter::convert_datetime("20240315100000").unwrap(),
+            PatientConverter::convert_datetime("20240315100000", "PID-29").unwrap(),
             "2024-03-15T10:00:00"
         );
     }
 
     #[test]
     fn test_invalid_date_error_redacts_source_value() {
-        let err = PatientConverter::convert_date("nonsense").unwrap_err();
+        let err = PatientConverter::convert_date("nonsense", "PID-7").unwrap_err();
         let msg = err.to_string();
         assert!(!msg.contains("nonsense"), "error leaks source: {msg}");
         assert!(msg.contains("PID-7"));
 
-        let err = PatientConverter::convert_datetime("bad-dt!!").unwrap_err();
+        let err = PatientConverter::convert_datetime("bad-dt!!", "PID-29").unwrap_err();
         let msg = err.to_string();
         assert!(!msg.contains("bad-dt!!"), "error leaks source: {msg}");
+        assert!(msg.contains("PID-29"));
     }
 
     #[test]
@@ -1015,14 +1024,26 @@ mod tests {
 
     #[test]
     fn test_convert_date_preserves_year_month_precision() {
-        assert_eq!(PatientConverter::convert_date("198001").unwrap(), "1980-01");
-        assert_eq!(PatientConverter::convert_date("202402").unwrap(), "2024-02");
+        assert_eq!(
+            PatientConverter::convert_date("198001", "PID-7").unwrap(),
+            "1980-01"
+        );
+        assert_eq!(
+            PatientConverter::convert_date("202402", "PID-7").unwrap(),
+            "2024-02"
+        );
         // Impossible month is an error, like an impossible day.
-        assert!(PatientConverter::convert_date("198013").is_err());
-        assert!(PatientConverter::convert_date("198000").is_err());
+        assert!(PatientConverter::convert_date("198013", "PID-7").is_err());
+        assert!(PatientConverter::convert_date("198000", "PID-7").is_err());
         // Year fallback still applies below month precision.
-        assert_eq!(PatientConverter::convert_date("1980").unwrap(), "1980");
-        assert_eq!(PatientConverter::convert_date("1980abcd").unwrap(), "1980");
+        assert_eq!(
+            PatientConverter::convert_date("1980", "PID-7").unwrap(),
+            "1980"
+        );
+        assert_eq!(
+            PatientConverter::convert_date("1980abcd", "PID-7").unwrap(),
+            "1980"
+        );
 
         let hl7 = "MSH|^~\\&|A|B|C|D|20240315||ADT^A01|1|P|2.5\r\
              PID|1||ID||DOE^JOHN||198001|M";
@@ -1034,28 +1055,28 @@ mod tests {
     #[test]
     fn test_convert_datetime_preserves_minutes_and_zone() {
         assert_eq!(
-            PatientConverter::convert_datetime("202403151000").unwrap(),
+            PatientConverter::convert_datetime("202403151000", "PID-29").unwrap(),
             "2024-03-15T10:00"
         );
         assert_eq!(
-            PatientConverter::convert_datetime("20240315100000+0500").unwrap(),
+            PatientConverter::convert_datetime("20240315100000+0500", "PID-29").unwrap(),
             "2024-03-15T10:00:00+05:00"
         );
         assert_eq!(
-            PatientConverter::convert_datetime("202403151000-0500").unwrap(),
+            PatientConverter::convert_datetime("202403151000-0500", "PID-29").unwrap(),
             "2024-03-15T10:00-05:00"
         );
         // A date carries no zone: the stem converts without it.
         assert_eq!(
-            PatientConverter::convert_datetime("20240315+0500").unwrap(),
+            PatientConverter::convert_datetime("20240315+0500", "PID-29").unwrap(),
             "2024-03-15"
         );
         // An out-of-range zone is ignored; the stem still converts.
         assert_eq!(
-            PatientConverter::convert_datetime("20240315100000+9999").unwrap(),
+            PatientConverter::convert_datetime("20240315100000+9999", "PID-29").unwrap(),
             "2024-03-15T10:00:00"
         );
-        assert!(PatientConverter::convert_datetime("202403152500").is_err());
+        assert!(PatientConverter::convert_datetime("202403152500", "PID-29").is_err());
 
         let mut fields = vec![String::new(); 30];
         fields[0] = "1".to_string();
@@ -1154,9 +1175,12 @@ mod tests {
 
     #[test]
     fn test_convert_datetime_accepts_year_and_month_precision() {
-        assert_eq!(PatientConverter::convert_datetime("2024").unwrap(), "2024");
         assert_eq!(
-            PatientConverter::convert_datetime("202401").unwrap(),
+            PatientConverter::convert_datetime("2024", "PID-29").unwrap(),
+            "2024"
+        );
+        assert_eq!(
+            PatientConverter::convert_datetime("202401", "PID-29").unwrap(),
             "2024-01"
         );
         // End to end: a year PID-29 no longer fails the conversion.
@@ -1169,17 +1193,48 @@ mod tests {
     #[test]
     fn test_convert_datetime_preserves_fractional_seconds() {
         assert_eq!(
-            PatientConverter::convert_datetime("20240315100000.123").unwrap(),
+            PatientConverter::convert_datetime("20240315100000.123", "PID-29").unwrap(),
             "2024-03-15T10:00:00.123"
         );
         assert_eq!(
-            PatientConverter::convert_datetime("20240315100000.123+0500").unwrap(),
+            PatientConverter::convert_datetime("20240315100000.123+0500", "PID-29").unwrap(),
             "2024-03-15T10:00:00.123+05:00"
         );
         // A bare dot with no digits is not a fraction.
         assert_eq!(
-            PatientConverter::convert_datetime("20240315100000.").unwrap(),
+            PatientConverter::convert_datetime("20240315100000.", "PID-29").unwrap(),
             "2024-03-15T10:00:00"
         );
+    }
+
+    #[test]
+    fn test_invalid_pid29_dropped_while_patient_converts() {
+        // PID-29 is ancillary (like RXA-22/PV1-44): an impossible
+        // date is dropped, not a conversion failure.
+        let mut fields = vec![String::new(); 30];
+        fields[0] = "1".to_string();
+        fields[2] = "67890^^^MRN".to_string();
+        fields[4] = "DOE^JOHN".to_string();
+        fields[6] = "19800101".to_string();
+        fields[7] = "M".to_string();
+        fields[28] = "20240230".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|A|B|C|D|20240315||ADT^A01|1|P|2.5\rPID|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let patient = PatientConverter::convert(&message).unwrap();
+        assert_eq!(patient.deceased_date_time, None);
+        assert_eq!(patient.deceased_boolean, None);
+        assert_eq!(patient.birth_date.as_deref(), Some("1980-01-01"));
+    }
+
+    #[test]
+    fn test_date_error_names_calling_field() {
+        // A PID-29 failure must not be misattributed to PID-7.
+        let err = PatientConverter::convert_datetime("20240230", "PID-29").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("PID-29"), "wrong location: {msg}");
+        assert!(!msg.contains("PID-7"), "wrong location: {msg}");
     }
 }

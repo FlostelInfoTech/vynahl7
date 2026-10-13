@@ -32,6 +32,26 @@ jobs:
       - name: WASM target check
         run: cargo build -p vyna-hl7-wasm --target wasm32-unknown-unknown
 
+  # Browser suite for vyna-hl7-wasm: the #[cfg(target_arch = "wasm32")]
+  # wasm_bindgen_test bodies are not even compiled by `cargo test`, so
+  # they need the wasm-pack headless-firefox runner documented in the
+  # wasm README's Run Tests section.
+  wasm-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Install wasm-pack
+        run: cargo install wasm-pack
+      - uses: browser-actions/setup-firefox@latest
+      - uses: browser-actions/setup-geckodriver@latest
+      - name: WASM browser tests
+        working-directory: crates/vyna-hl7-wasm
+        run: wasm-pack test --headless --firefox
+
   # Optional features the default build never exercises: targeted combos
   # only (one row per shipped feature plus combined rows), not a powerset.
   feature-combos:

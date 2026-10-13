@@ -343,8 +343,46 @@ impl EncounterConverter {
             return None;
         }
 
-        // Get practitioner name (component 2 = family name, 1-based indexing)
-        let name = terser.get(&format!("{}-2", path)).ok().flatten();
+        // XCN name parts for display, like PractitionerConverter
+        // text: prefix (6), given (3) + middle (4), family (2).
+        let family = terser
+            .get(&format!("{}-2", path))
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty());
+        let given = terser
+            .get(&format!("{}-3", path))
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty());
+        let middle = terser
+            .get(&format!("{}-4", path))
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty());
+        let prefix = terser
+            .get(&format!("{}-6", path))
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty());
+        let mut display_parts = Vec::new();
+        if let Some(prefix) = prefix {
+            display_parts.push(prefix.to_string());
+        }
+        if let Some(given) = given {
+            display_parts.push(given.to_string());
+        }
+        if let Some(middle) = middle {
+            display_parts.push(middle.to_string());
+        }
+        if let Some(family) = family {
+            display_parts.push(family.to_string());
+        }
+        let display = if display_parts.is_empty() {
+            None
+        } else {
+            Some(display_parts.join(" "))
+        };
 
         let role_display = match role_code {
             "ATND" => "Attending",
@@ -370,7 +408,7 @@ impl EncounterConverter {
                 reference: Some(format!("Practitioner/{}", id)),
                 type_: Some("Practitioner".to_string()),
                 identifier: None,
-                display: name.map(|s| s.to_string()),
+                display,
             }),
         })
     }
@@ -668,5 +706,31 @@ mod tests {
             EncounterConverter::convert_datetime("1980").unwrap(),
             "1980"
         );
+    }
+
+    #[test]
+    fn test_participant_display_includes_given_name() {
+        // PV1-7 family + given both appear in display.
+        let mut pv1 = vec![String::new(); 10];
+        pv1[0] = "1".to_string();
+        pv1[1] = "I".to_string();
+        pv1[6] = "123^SMITH^JANE".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+             PID|1||MRN123^^^MRN||DOE^JOHN||19800101|M\rPV1|{}",
+            pv1.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let encounter = EncounterConverter::convert(&message).unwrap();
+        let participant = &encounter.participant.as_ref().unwrap()[0];
+        let display = participant
+            .individual
+            .as_ref()
+            .unwrap()
+            .display
+            .as_deref()
+            .unwrap();
+        assert!(display.contains("SMITH"), "family missing: {display}");
+        assert!(display.contains("JANE"), "given missing: {display}");
     }
 }

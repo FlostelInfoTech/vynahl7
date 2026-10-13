@@ -511,6 +511,8 @@ fn inner_generic_type(ty: &Type) -> Option<&Type> {
 /// `subcomponent =` and `repetition =` are not supported and are rejected:
 /// map the whole field or a single component instead. Unknown keys and
 /// non-positive positions are compile errors, reported at the attribute.
+/// Fields 1 and 2 cannot be mapped on `MSH`, `FHS`, or `BHS`: they hold
+/// the message delimiters, which encode derives from `Delimiters`.
 ///
 /// # Field types
 ///
@@ -621,6 +623,22 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
                 ),
             ));
         };
+
+        if matches!(segment_id.as_str(), "MSH" | "FHS" | "BHS") && matches!(field_num, 1 | 2) {
+            // MSH/FHS/BHS fields 1 and 2 are the message delimiters:
+            // encode derives them from Delimiters and skips the stored
+            // fields, so a mapping here would silently drop writes and
+            // read the placeholder back. Reject at derive time like the
+            // TerserMut::set, template-engine, and codegen guards.
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "field `{field_name}` maps to {segment_id}-{field_num}, \
+                     but fields 1 and 2 of {segment_id} hold the message \
+                     delimiters and cannot be mapped",
+                ),
+            ));
+        }
 
         let is_optional = is_option_type(field_type) || attrs.optional;
         let is_repeating = is_vec_type(field_type);
@@ -1898,6 +1916,36 @@ mod tests {
         ))
         .unwrap_err();
         assert!(err_message(err).contains("overlapping"));
+    }
+
+    #[test]
+    fn segment_impl_rejects_delimiter_fields_on_msh_fhs_bhs() {
+        // Fields 1 and 2 of MSH/FHS/BHS are the message delimiters:
+        // encode skips the stored fields, so a mapping would silently
+        // drop writes and read the placeholder back.
+        for id in ["MSH", "FHS", "BHS"] {
+            for num in [1, 2] {
+                let source = format!(
+                    "#[hl7(id = \"{id}\")] struct S {{ \
+                     #[hl7(field = {num})] x: String }}",
+                );
+                let err = derive_segment_impl(parse_input(&source)).unwrap_err();
+                assert!(
+                    err_message(err).contains("delimiters"),
+                    "id={id} field={num}"
+                );
+            }
+        }
+
+        // Neighboring fields and other segments still expand.
+        derive_segment_impl(parse_input(
+            "#[hl7(id = \"MSH\")] struct S { #[hl7(field = 3)] x: String }",
+        ))
+        .expect("MSH field 3 must expand");
+        derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { #[hl7(field = 1)] x: String }",
+        ))
+        .expect("PID field 1 must expand");
     }
 
     #[test]

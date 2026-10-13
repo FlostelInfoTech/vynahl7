@@ -47,6 +47,8 @@ use vyna_hl7_core::field::{Component, Field, Repetition, SubComponent};
 use vyna_hl7_core::message::Message;
 use vyna_hl7_core::segment::Segment;
 
+use crate::truncate_id;
+
 /// Events emitted by the streaming parser
 #[derive(Debug, Clone)]
 pub enum SegmentEvent<'a> {
@@ -210,6 +212,14 @@ impl<'a> StreamingParser<'a> {
                 )));
             }
         };
+        // Delimiters are ASCII-only, like the strict path: multibyte
+        // separators or encoding characters are rejected, not framed.
+        if !field_sep.is_ascii() || !encoding_chars.bytes().all(|b| b.is_ascii()) {
+            return Some(Err(Error::parse_at(
+                "MSH segment has invalid encoding characters",
+                ErrorLocation::new().line(self.current_line),
+            )));
+        }
         let msh_sep = after_msh.get(..sep_len).unwrap_or("");
 
         let delimiters = match Delimiters::from_encoding_characters(field_sep, encoding_chars) {
@@ -419,7 +429,8 @@ impl<'a> StreamingParser<'a> {
             return Some(Err(Error::parse_at(
                 format!(
                     "Segment ID must be 3 characters, got {} ('{}')",
-                    id_len, segment_id
+                    id_len,
+                    truncate_id(segment_id)
                 ),
                 ErrorLocation::new().line(self.current_line),
             )));
@@ -1044,6 +1055,26 @@ mod tests {
         // A 3-character ID still parses.
         let ok = "MSH|^~\\&|APP\rPID|1||PAT001\r";
         assert!(parse_streaming(ok).is_ok());
+    }
+
+    #[test]
+    fn test_streaming_long_segment_id_truncated_like_strict() {
+        let long_id = "A".repeat(200);
+        let hl7 = format!("MSH|^~\\&|APP\r{long_id}|x\r");
+        let stream_err = parse_streaming(&hl7).unwrap_err().to_string();
+        assert!(!stream_err.contains(&long_id), "must not echo full id");
+        assert!(stream_err.contains("200 chars total"), "{stream_err}");
+        let strict_err = crate::parse_message(&hl7).unwrap_err().to_string();
+        assert!(strict_err.contains("200 chars total"), "{strict_err}");
+    }
+
+    #[test]
+    fn test_streaming_multibyte_separator_rejected_like_strict() {
+        // ASCII-only delimiters: streaming rejects the multibyte
+        // separator exactly as the strict path does.
+        let input = "MSHé^~\\&éS";
+        assert!(crate::parse_message(input).is_err());
+        assert!(parse_streaming(input).is_err());
     }
 
     #[test]

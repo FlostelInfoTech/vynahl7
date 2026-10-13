@@ -186,18 +186,30 @@ impl Segment {
         if self.id.len() != 3 {
             return Err(Error::InvalidSegment(format!(
                 "Segment ID must be 3 characters, got: {}",
-                self.id
+                truncate_id(&self.id)
             )));
         }
 
         if !self.id.chars().all(|c| c.is_ascii_alphanumeric()) {
             return Err(Error::InvalidSegment(format!(
                 "Segment ID must be alphanumeric, got: {}",
-                self.id
+                truncate_id(&self.id)
             )));
         }
 
         Ok(())
+    }
+}
+
+/// Cap an echoed id at 32 chars plus length; short ids stay verbatim.
+fn truncate_id(value: &str) -> String {
+    const MAX: usize = 32;
+    let count = value.chars().count();
+    if count <= MAX {
+        value.to_string()
+    } else {
+        let head: String = value.chars().take(MAX).collect();
+        format!("{head}... ({} chars total)", count)
     }
 }
 
@@ -332,5 +344,17 @@ mod tests {
 
         let invalid_chars = Segment::new("PI!");
         assert!(invalid_chars.validate_id().is_err());
+    }
+
+    #[test]
+    fn test_validate_id_truncates_long_echo() {
+        let long = "B".repeat(200);
+        let err = Segment::new(&long).validate_id().unwrap_err().to_string();
+        assert!(!err.contains(&long), "must not echo full id: {err}");
+        assert!(err.contains("200 chars total"), "{err}");
+        assert!(err.contains(&"B".repeat(32)), "{err}");
+        // Short ids stay verbatim.
+        let err = Segment::new("PI").validate_id().unwrap_err().to_string();
+        assert!(err.contains("PI"), "{err}");
     }
 }

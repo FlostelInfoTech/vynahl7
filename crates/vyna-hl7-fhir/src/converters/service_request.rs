@@ -162,14 +162,17 @@ impl ServiceRequestConverter {
             });
         }
 
-        // Try to find corresponding OBR segment for additional fields
-        // OBR segments typically follow ORC segments in order messages
-        let obr_path = |field: &str| {
-            if orc_index == 0 {
-                format!("OBR-{}", field)
-            } else {
-                format!("OBR({})-{}", orc_index + 1, field)
-            }
+        // The OBR for this order is the first one at/after its ORC in
+        // message order, up to the next ORC (mirrors
+        // DiagnosticReportConverter result linking). Index pairing
+        // misattributes fields when an order lacks its OBR.
+        let obr_paired = Self::paired_index(message, orc_index, "OBR");
+        let obr_path = |field: &str| match obr_paired {
+            Some(0) => format!("OBR-{field}"),
+            Some(i) => format!("OBR({})-{field}", i + 1),
+            // No OBR in this order group: index 0 is rejected by the
+            // terser (1-based), so every OBR read below yields nothing.
+            None => format!("OBR(0)-{field}"),
         };
 
         // OBR-4: Universal Service Identifier -> code. Empty is
@@ -220,11 +223,11 @@ impl ServiceRequestConverter {
             service_request.priority = Some(Self::convert_priority(priority_code));
         } else {
             // TQ1-9: Priority (alternative location), paired with this
-            // order by index so the Nth order reads the Nth TQ1.
-            let tq1_path = if orc_index == 0 {
-                "TQ1-9".to_string()
-            } else {
-                format!("TQ1({})-9", orc_index + 1)
+            // order's group like the OBR above.
+            let tq1_path = match Self::paired_index(message, orc_index, "TQ1") {
+                Some(0) => "TQ1-9".to_string(),
+                Some(i) => format!("TQ1({})-9", i + 1),
+                None => "TQ1(0)-9".to_string(),
             };
             if let Ok(Some(tq1_priority)) = terser.get(&tq1_path)
                 && !tq1_priority.is_empty()
@@ -267,7 +270,7 @@ impl ServiceRequestConverter {
             && !reason_code.is_empty()
         {
             let mut coding = Coding {
-                system: Some("http://terminology.hl7.org/CodeSystem/v2-0340".to_string()),
+                system: None,
                 code: Some(reason_code.to_string()),
                 display: None,
                 version: None,
@@ -278,6 +281,13 @@ impl ServiceRequestConverter {
                 && !reason_text.is_empty()
             {
                 coding.display = Some(reason_text.to_string());
+            }
+
+            // OBR-31-3: Coding system selects the system URI, like OBR-4-3.
+            if let Ok(Some(system)) = terser.get(&format!("{}-3", obr_path("31")))
+                && !system.is_empty()
+            {
+                coding.system = Some(convert_coding_system(system));
             }
 
             service_request.reason_code = Some(vec![CodeableConcept {
@@ -294,6 +304,35 @@ impl ServiceRequestConverter {
         }
 
         Ok(service_request)
+    }
+
+    /// 0-based terser index of the first `segment` at/after the
+    /// `orc_index`-th ORC in message order, up to (excluding) the next
+    /// ORC; `None` when the order group has none.
+    fn paired_index(message: &Message, orc_index: usize, segment: &str) -> Option<usize> {
+        let orc_positions: Vec<usize> = message
+            .segments
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.id == "ORC")
+            .map(|(i, _)| i)
+            .collect();
+        let &orc_pos = orc_positions.get(orc_index)?;
+        let end = message.segments[orc_pos + 1..]
+            .iter()
+            .position(|s| s.id == "ORC")
+            .map(|p| orc_pos + 1 + p)
+            .unwrap_or(message.segments.len());
+        let rel = message.segments[orc_pos + 1..end]
+            .iter()
+            .position(|s| s.id == segment)?;
+        let pos = orc_pos + 1 + rel;
+        Some(
+            message.segments[..pos]
+                .iter()
+                .filter(|s| s.id == segment)
+                .count(),
+        )
     }
 
     /// Convert HL7 v2 ORC-5 order status to FHIR ServiceRequest status
@@ -878,6 +917,68 @@ mod tests {
         assert_eq!(
             ServiceRequestConverter::convert_datetime("1980").unwrap(),
             "1980"
+        );
+    }
+
+    #[test]
+    fn test_obr_and_tq1_pair_by_order_group_not_index() {
+        // O2 has no OBR/TQ1: it must not inherit O3's GLU code and
+        // priority, and O3 must keep its own.
+        let tq1 = |priority: &str| {
+            let mut fields = vec![String::new(); 9];
+            fields[0] = "1".to_string();
+            fields[8] = priority.to_string();
+            format!("TQ1|{}", fields.join("|"))
+        };
+        let hl7 = format!(
+            "MSH|^~\\&|CPOE|H|LAB|H|20240315||ORM^O01|M|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+             ORC|NW|O1|||A\rOBR|1|O1||CBC^Complete Blood Count^LN\r{}\r\
+             ORC|NW|O2|||A\r\
+             ORC|NW|O3|||A\rOBR|1|O3||GLU^Glucose^LN\r{}",
+            tq1("S"),
+            tq1("R")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let requests = ServiceRequestConverter::convert_all(&message).unwrap();
+        assert_eq!(requests.len(), 3);
+        let code = |i: usize| {
+            requests[i].code.as_ref().unwrap().coding.as_ref().unwrap()[0]
+                .code
+                .clone()
+        };
+        assert_eq!(code(0).as_deref(), Some("CBC"));
+        assert_eq!(requests[0].priority.as_deref(), Some("stat"));
+        assert_eq!(requests[1].code, None);
+        assert_eq!(requests[1].priority, None);
+        assert_eq!(code(2).as_deref(), Some("GLU"));
+        assert_eq!(requests[2].priority.as_deref(), Some("routine"));
+    }
+
+    #[test]
+    fn test_reason_system_reads_obr31_3_via_shared_table() {
+        // OBR-31-3 selects the reason system like OBR-4-3 does for code.
+        let mut obr = vec![String::new(); 31];
+        obr[0] = "1".to_string();
+        obr[1] = "O1".to_string();
+        obr[3] = "CBC^Complete Blood Count^LN".to_string();
+        obr[30] = "I10^Hypertension^ICD10".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|CPOE|H|LAB|H|20240315||ORM^O01|M|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rORC|NW|O1|||A\rOBR|{}",
+            obr.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let requests = ServiceRequestConverter::convert_all(&message).unwrap();
+        let coding = &requests[0].reason_code.as_ref().unwrap()[0]
+            .coding
+            .as_ref()
+            .unwrap()[0];
+        assert_eq!(coding.code.as_deref(), Some("I10"));
+        assert_eq!(coding.display.as_deref(), Some("Hypertension"));
+        assert_eq!(
+            coding.system.as_deref(),
+            Some("http://hl7.org/fhir/sid/icd-10")
         );
     }
 }

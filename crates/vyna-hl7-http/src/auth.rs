@@ -314,6 +314,9 @@ pub fn verify_jwt(
     // RFC 7519 s4.1.5: a JWT MUST NOT be accepted before nbf.
     // jsonwebtoken defaults validate_nbf to false, so enable it.
     validation.validate_nbf = true;
+    // Pin exp as required so a dependency default change cannot
+    // silently start accepting never-expiring tokens.
+    validation.set_required_spec_claims(&["exp"]);
 
     if let Some(ref issuer) = config.issuer {
         validation.set_issuer(&[issuer]);
@@ -642,5 +645,30 @@ mod jwt_tests {
 
         assert!(verify_jwt_from_header("Basic dXNlcjpwYXNz", &config()).is_err());
         assert!(verify_jwt_from_header("Bearer not-a-jwt", &config()).is_err());
+    }
+
+    #[test]
+    fn test_verify_jwt_missing_exp_rejected() {
+        // Never-expiring tokens stay rejected even if the
+        // jsonwebtoken default for required_spec_claims changes.
+        let no_exp = JwtClaims {
+            sub: "user-123".to_string(),
+            iss: Some("https://auth.example.com".to_string()),
+            aud: Some("vyna-hl7".to_string()),
+            exp: None,
+            nbf: None,
+            iat: None,
+            jti: None,
+        };
+        let token = mint(&no_exp, Algorithm::HS256);
+        let err = verify_jwt(&token, &config()).unwrap_err();
+        assert!(
+            matches!(
+                err.kind(),
+                jsonwebtoken::errors::ErrorKind::MissingRequiredClaim(name)
+                    if name == "exp"
+            ),
+            "unexpected error: {err:?}"
+        );
     }
 }

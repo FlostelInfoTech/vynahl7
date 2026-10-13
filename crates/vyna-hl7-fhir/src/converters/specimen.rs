@@ -119,7 +119,9 @@ impl SpecimenConverter {
         // SPM-17: Specimen Collection Date/Time (DR) -> collection.
         // A valued range end emits collectedPeriod; a single
         // component keeps collectedDateTime. Lenient by design
-        // (see crate docs "Invalid datetime handling").
+        // (see crate docs "Invalid datetime handling"): each bound
+        // parses independently, so one invalid bound keeps the
+        // other as datetime (both valid still emit a period).
         let spm17_start = terser
             .get(&spm_path("17"))
             .ok()
@@ -130,25 +132,25 @@ impl SpecimenConverter {
             .ok()
             .flatten()
             .filter(|s| !s.is_empty());
-        match (spm17_start, spm17_end) {
+        let start_dt = spm17_start.and_then(|s| Self::convert_datetime(s).ok());
+        let end_dt = spm17_end.and_then(|s| Self::convert_datetime(s).ok());
+        match (start_dt, end_dt) {
             (Some(start), Some(end)) => {
-                if let (Ok(start_dt), Ok(end_dt)) =
-                    (Self::convert_datetime(start), Self::convert_datetime(end))
-                {
-                    collection.collected_period = Some(Period {
-                        start: Some(start_dt),
-                        end: Some(end_dt),
-                    });
-                    has_collection = true;
-                }
+                collection.collected_period = Some(Period {
+                    start: Some(start),
+                    end: Some(end),
+                });
+                has_collection = true;
             }
             (Some(start), None) => {
-                if let Ok(collected_time) = Self::convert_datetime(start) {
-                    collection.collected_date_time = Some(collected_time);
-                    has_collection = true;
-                }
+                collection.collected_date_time = Some(start);
+                has_collection = true;
             }
-            _ => {}
+            (None, Some(end)) => {
+                collection.collected_date_time = Some(end);
+                has_collection = true;
+            }
+            (None, None) => {}
         }
 
         // SPM-7: Specimen Collection Method -> collection.method
@@ -864,5 +866,47 @@ mod tests {
             Some("2024-01-01")
         );
         assert_eq!(collection.collected_period, None);
+    }
+
+    #[test]
+    fn test_spm17_partial_range_keeps_valid_bound() {
+        // Range with one invalid bound keeps the valid one
+        // (per-bound leniency, like Encounter).
+        let mut fields = vec![String::new(); 30];
+        fields[0] = "1".to_string();
+        fields[1] = "SPEC123".to_string();
+        fields[3] = "BLD^Blood^HL70487".to_string();
+        fields[16] = "20240315100000^garbage".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||OML^O21|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rSPM|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let spec = &SpecimenConverter::convert_all(&message).unwrap()[0];
+        let collection = spec.collection.as_ref().unwrap();
+        assert_eq!(
+            collection.collected_date_time.as_deref(),
+            Some("2024-03-15T10:00:00")
+        );
+
+        // End-only range keeps the valid end.
+        let mut fields = vec![String::new(); 30];
+        fields[0] = "1".to_string();
+        fields[1] = "SPEC123".to_string();
+        fields[3] = "BLD^Blood^HL70487".to_string();
+        fields[16] = "^20240315120000".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||OML^O21|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rSPM|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let spec = &SpecimenConverter::convert_all(&message).unwrap()[0];
+        let collection = spec.collection.as_ref().unwrap();
+        assert_eq!(
+            collection.collected_date_time.as_deref(),
+            Some("2024-03-15T12:00:00")
+        );
     }
 }

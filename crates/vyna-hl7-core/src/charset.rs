@@ -66,7 +66,8 @@ impl CharacterSet {
                     .to_string(),
             )),
             "ISO IR87" | "ISO IR159" => Err(Error::Decoding(format!(
-                "character set '{first}' is not supported ({SUPPORTED_SETS})"
+                "character set '{}' is not supported ({SUPPORTED_SETS})",
+                truncate_declaration(first)
             ))),
             "WINDOWS-1252" | "WINDOWS1252" => Ok(Self::Iso8859(1)),
             _ => {
@@ -78,12 +79,14 @@ impl CharacterSet {
                                 .to_string(),
                         )),
                         _ => Err(Error::Decoding(format!(
-                            "unsupported character set '{first}' in MSH-18 ({SUPPORTED_SETS})"
+                            "unsupported character set '{}' in MSH-18 ({SUPPORTED_SETS})",
+                            truncate_declaration(first)
                         ))),
                     };
                 }
                 Err(Error::Decoding(format!(
-                    "unsupported character set '{first}' in MSH-18 ({SUPPORTED_SETS})"
+                    "unsupported character set '{}' in MSH-18 ({SUPPORTED_SETS})",
+                    truncate_declaration(first)
                 )))
             }
         }
@@ -300,6 +303,18 @@ fn single_byte_encoding(number: u8) -> Option<&'static encoding_rs::Encoding> {
         15 => Some(ISO_8859_15),
         16 => Some(ISO_8859_16),
         _ => None,
+    }
+}
+
+/// Cap an echoed MSH-18 declaration at 32 chars plus length.
+fn truncate_declaration(value: &str) -> String {
+    const MAX: usize = 32;
+    let count = value.chars().count();
+    if count <= MAX {
+        value.to_string()
+    } else {
+        let head: String = value.chars().take(MAX).collect();
+        format!("{head}... ({} chars total)", count)
     }
 }
 
@@ -636,5 +651,19 @@ mod tests {
         ] {
             assert_eq!(CharacterSet::from_iana(&set.iana_name()).unwrap(), set);
         }
+    }
+
+    #[test]
+    fn test_from_msh18_truncates_long_declaration_in_error() {
+        let long = "Z".repeat(300);
+        let err = CharacterSet::from_msh18(&long).unwrap_err().to_string();
+        assert!(!err.contains(&long), "must not echo full value: {err}");
+        assert!(err.contains("300 chars total"), "{err}");
+        assert!(err.contains(&"Z".repeat(32)), "{err}");
+        // Short declarations stay verbatim.
+        let err = CharacterSet::from_msh18("BOGUS-CHARSET")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("BOGUS-CHARSET"), "{err}");
     }
 }

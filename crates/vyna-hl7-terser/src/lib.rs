@@ -163,10 +163,11 @@ impl<'a> TerserMut<'a> {
     ///
     /// Returns [`Error::terser_path`](Error::terser_path) when the path is
     /// malformed, uses a 0 index (all path indices are 1-based),
-    /// addresses an index beyond `MAX_SET_INDEX` (10,000), or writes
-    /// field 1 or 2 of `MSH`, `FHS`, or `BHS`: those hold the message
-    /// delimiters, which live on the message, not the field, and encode
-    /// would silently drop anything written there.
+    /// addresses an index beyond `MAX_SET_INDEX` (10,000), creates a
+    /// segment id that is not 3 ASCII alphanumeric characters, or
+    /// writes field 1 or 2 of `MSH`, `FHS`, or `BHS`: those hold the
+    /// message delimiters, which live on the message, not the field,
+    /// and encode would silently drop anything written there.
     pub fn set(&mut self, path: &str, value: &str) -> Result<()> {
         let parsed_path = TerserPath::parse(path)?;
 
@@ -243,6 +244,18 @@ impl<'a> TerserMut<'a> {
 
         if let Some(&pos) = positions.get(index) {
             return Ok(pos);
+        }
+
+        // A new occurrence must carry a valid segment id (3 ASCII
+        // alnum, like Segment::validate_id): without this, set("AB-5")
+        // appends a segment that fails validation. Checked before any
+        // insertion, so a rejection leaves the message untouched. Reads
+        // stay lenient (Terser::get returns Ok(None) for absent ids).
+        if segment_id.len() != 3 || !segment_id.bytes().all(|b| b.is_ascii_alphanumeric()) {
+            return Err(Error::terser_path(format!(
+                "Invalid segment id '{segment_id}': must be 3 ASCII \
+                 alphanumeric characters",
+            )));
         }
 
         // Gap-fill: create every missing occurrence up to `index`.
@@ -670,6 +683,31 @@ mod tests {
         let before = message.segments.len();
         assert!(TerserMut::new(&mut message).set("PID -5", "x").is_err());
         assert_eq!(message.segments.len(), before);
+    }
+
+    #[test]
+    fn test_set_rejects_invalid_segment_id_without_mutation() {
+        // A new occurrence must carry a valid segment id (3 ASCII
+        // alnum): creating "AB" would fail Segment::validate_id.
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\r";
+        let mut message = parse_message(hl7).unwrap();
+        let before = message.segments.len();
+        for path in ["AB-5", "AB(2)-5", "ABCD-5", "A!-5"] {
+            assert!(
+                TerserMut::new(&mut message).set(path, "x").is_err(),
+                "{path} must fail"
+            );
+        }
+        assert_eq!(message.segments.len(), before);
+        assert!(message.get_segments_by_id("AB").is_empty());
+
+        // Reads stay lenient: an absent id is Ok(None), not an error.
+        let terser = Terser::new(&message);
+        assert_eq!(terser.get("AB-5").unwrap(), None);
+
+        // A valid new id still creates its occurrence.
+        TerserMut::new(&mut message).set("ZZZ-5", "x").unwrap();
+        assert_eq!(Terser::new(&message).get("ZZZ-5").unwrap(), Some("x"));
     }
 
     #[test]

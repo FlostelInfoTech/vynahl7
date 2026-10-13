@@ -210,6 +210,13 @@ impl XmlEncoder {
     ) -> XmlResult<()> {
         let field_name = format!("{}.{}", segment_id, field_num);
 
+        // A present field with zero repetitions still occupies its numbered
+        // slot: emit one empty element so decode keeps the field.
+        if field.repetitions.is_empty() && self.config.include_empty_fields {
+            writer.write_event(Event::Empty(BytesStart::new(&field_name)))?;
+            return Ok(());
+        }
+
         // Every repetition gets its own element, even when empty:
         // repetition position is order-based (unlike numbered
         // fields/components), so skipping one would shift the rest.
@@ -548,6 +555,29 @@ mod tests {
                 assert_eq!(back.encode(), message.encode(), "wire {wire:?}");
             }
         }
+    }
+
+    #[test]
+    fn test_include_empty_fields_emits_element_for_field_without_repetitions() {
+        use crate::XmlDecoder;
+
+        // A present-but-empty field (zero repetitions) must still emit one
+        // <SEG.F/> element when include_empty_fields is set; otherwise
+        // decode drops the field and the round-trip differs.
+        let mut message = Message::new();
+        let mut pid = Segment::new("PID");
+        let _ = pid.set_field(5, Field::new());
+        message.add_segment(pid);
+
+        let encoder = XmlEncoder::with_config(XmlEncoderConfig {
+            include_empty_fields: true,
+            ..Default::default()
+        });
+        let xml = encoder.encode(&message).unwrap();
+        assert!(xml.contains("<PID.5/>"), "missing empty element: {xml}");
+
+        let back = XmlDecoder::new().decode(&xml).unwrap();
+        assert!(back.segments[0].get_field(5).is_some());
     }
 
     #[test]

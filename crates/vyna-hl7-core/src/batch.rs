@@ -135,9 +135,13 @@ impl FileHeader {
         // FHS-12: Reference control ID
         fhs.add_field(Field::from_value(self.reference_control_id.as_deref().unwrap_or("")));
 
-        // FHS-13: Sending network address (v2.6+)
-        if let Some(ref addr) = self.sending_network_address {
-            fhs.add_field(Field::from_value(addr));
+        // FHS-13: Sending network address (v2.6+). The slot is
+        // always emitted when FHS-14 is present so the receiving
+        // address cannot shift left into field 13.
+        if self.sending_network_address.is_some() || self.receiving_network_address.is_some() {
+            fhs.add_field(Field::from_value(
+                self.sending_network_address.as_deref().unwrap_or(""),
+            ));
         }
 
         // FHS-14: Receiving network address (v2.6+)
@@ -255,9 +259,13 @@ impl BatchHeader {
         // BHS-12: Reference control ID
         bhs.add_field(Field::from_value(self.reference_control_id.as_deref().unwrap_or("")));
 
-        // BHS-13: Sending network address (v2.6+)
-        if let Some(ref addr) = self.sending_network_address {
-            bhs.add_field(Field::from_value(addr));
+        // BHS-13: Sending network address (v2.6+). The slot is
+        // always emitted when BHS-14 is present so the receiving
+        // address cannot shift left into field 13.
+        if self.sending_network_address.is_some() || self.receiving_network_address.is_some() {
+            bhs.add_field(Field::from_value(
+                self.sending_network_address.as_deref().unwrap_or(""),
+            ));
         }
 
         // BHS-14: Receiving network address (v2.6+)
@@ -764,5 +772,27 @@ mod tests {
 
         assert_eq!(file.batch_count(), 2);
         assert_eq!(file.total_message_count(), 5);
+    }
+
+    #[test]
+    fn test_file_header_receiving_only_stays_in_field_14() {
+        let mut header = FileHeader::new();
+        header.receiving_network_address = Some("RECVONLY".to_string());
+        let segment = header.to_segment();
+        assert_eq!(segment.get_field_value(13), Some(""));
+        assert_eq!(segment.get_field_value(14), Some("RECVONLY"));
+        let encoded = segment.encode(&crate::Delimiters::default());
+        assert!(encoded.ends_with("|||RECVONLY"), "{encoded}");
+    }
+
+    #[test]
+    fn test_batch_header_receiving_only_stays_in_field_14() {
+        let mut header = BatchHeader::new();
+        header.receiving_network_address = Some("RECVONLY".to_string());
+        let segment = header.to_segment();
+        assert_eq!(segment.get_field_value(13), Some(""));
+        assert_eq!(segment.get_field_value(14), Some("RECVONLY"));
+        let encoded = segment.encode(&crate::Delimiters::default());
+        assert!(encoded.ends_with("|||RECVONLY"), "{encoded}");
     }
 }

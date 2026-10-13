@@ -1946,6 +1946,7 @@ impl TableRegistry {
         table_0104.add_value("2.7.1", "2.7.1", false);
         table_0104.add_value("2.8", "2.8", false);
         table_0104.add_value("2.8.1", "2.8.1", false);
+        table_0104.add_value("2.8.2", "2.8.2", false);
         self.add_table(table_0104);
 
         // HL7 Table 0105 - Source of Comment
@@ -8145,5 +8146,21 @@ mod tests {
             .unwrap()
             .to_string();
         assert!(msg.contains("'ZZ'"), "{msg}");
+    }
+
+    #[test]
+    fn test_table_0104_accepts_every_supported_version() {
+        // Table 0104 (Version ID) must accept each supported Version,
+        // including the latest 2.8.2.
+        let registry = TableRegistry::new();
+        for version in [
+            "2.1", "2.2", "2.3", "2.3.1", "2.4", "2.5", "2.5.1", "2.6", "2.7", "2.7.1", "2.8",
+            "2.8.1", "2.8.2",
+        ] {
+            assert!(
+                registry.validate("0104", version).is_valid(),
+                "version {version} should be a valid table 0104 code"
+            );
+        }
     }
 }

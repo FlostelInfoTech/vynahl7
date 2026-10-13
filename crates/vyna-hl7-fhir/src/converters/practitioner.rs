@@ -163,6 +163,13 @@ impl PractitionerConverter {
             .ok()
             .flatten()
             .filter(|s| !s.is_empty());
+        // XCN-10: Name Type Code (HL7 table 0200) mapped to
+        // FHIR HumanName.use; absent keeps the official default.
+        let name_type = terser
+            .get(&format!("{}-10", base_path))
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty());
         if family.is_some()
             || given.is_some()
             || middle.is_some()
@@ -170,7 +177,14 @@ impl PractitionerConverter {
             || prefix.is_some()
         {
             let mut name = HumanName {
-                use_: Some("official".to_string()),
+                use_: Some(match name_type {
+                    Some("L") => "official".to_string(),
+                    Some("M") => "maiden".to_string(),
+                    Some("N") => "nickname".to_string(),
+                    Some("T") => "temp".to_string(),
+                    Some(_) => "usual".to_string(),
+                    None => "official".to_string(),
+                }),
                 text: None,
                 family: family.map(|s| s.to_string()),
                 given: None,
@@ -394,5 +408,17 @@ mod tests {
         let names = practitioner.name.as_ref().unwrap();
         assert_eq!(names[0].family, None);
         assert_eq!(names[0].given, Some(vec!["JOHN".to_string()]));
+    }
+
+    #[test]
+    fn test_xcn10_maiden_maps_to_maiden_use() {
+        // XCN-10 M (maiden, HL7 table 0200) maps to maiden use.
+        let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                   PID|1||MRN123|||DOE^JOHN||19800101|M\r\
+                   PV1|1|I|||||123^SMITH^JANE^^^^^^^M";
+        let message = parse_message(hl7).unwrap();
+        let practitioner = PractitionerConverter::convert_attending_doctor(&message).unwrap();
+        let name = &practitioner.name.as_ref().unwrap()[0];
+        assert_eq!(name.use_.as_deref(), Some("maiden"));
     }
 }

@@ -162,6 +162,38 @@ impl MedicationConverter {
             });
         }
 
+        // RXR-1: Route -> dosage.route, paired with this RXA by
+        // order like ImmunizationConverter pairs RXR-2.
+        if let Some(route_path) = Self::rxr_route_path(message, rxa_index)
+            && let Ok(Some(route_code)) = terser.get(&route_path)
+            && !route_code.is_empty()
+        {
+            let mut coding = Coding {
+                system: Some("http://terminology.hl7.org/CodeSystem/v2-0162".to_string()),
+                code: Some(route_code.to_string()),
+                display: None,
+                version: None,
+            };
+            if let Ok(Some(route_text)) = terser.get(&format!("{route_path}-2"))
+                && !route_text.is_empty()
+            {
+                coding.display = Some(route_text.to_string());
+            }
+            let route = CodeableConcept {
+                coding: Some(vec![coding]),
+                text: None,
+            };
+            match admin.dosage.as_mut() {
+                Some(dosage) => dosage.route = Some(route),
+                None => {
+                    admin.dosage = Some(MedicationAdministrationDosage {
+                        route: Some(route),
+                        dose: None,
+                    });
+                }
+            }
+        }
+
         // Link to patient
         if let Ok(Some(patient_id)) = terser.get("PID-3")
             && !patient_id.is_empty()
@@ -175,6 +207,45 @@ impl MedicationConverter {
         }
 
         Ok(admin)
+    }
+
+    /// Terser path of the RXR-1 paired with the Nth RXA, if any.
+    ///
+    /// Pairing is by segment order: the first RXR at/after the RXA,
+    /// up to the next RXA. When the RXA index is absent, pairing is
+    /// impossible and the first RXR is used instead; with no RXR at
+    /// all there is no route.
+    fn rxr_route_path(message: &Message, rxa_index: usize) -> Option<String> {
+        let mut rxr_ordinals: Vec<(usize, usize)> = Vec::new();
+        let mut rxa_positions: Vec<usize> = Vec::new();
+        for (pos, segment) in message.segments.iter().enumerate() {
+            if segment.id == "RXR" {
+                rxr_ordinals.push((pos, rxr_ordinals.len() + 1));
+            } else if segment.id == "RXA" {
+                rxa_positions.push(pos);
+            }
+        }
+        if rxr_ordinals.is_empty() {
+            return None;
+        }
+        let path_for = |ordinal: usize| {
+            if ordinal == 1 {
+                "RXR-1".to_string()
+            } else {
+                format!("RXR({ordinal})-1")
+            }
+        };
+        let Some(rxa_pos) = rxa_positions.get(rxa_index).copied() else {
+            return Some(path_for(1));
+        };
+        let end = rxa_positions
+            .get(rxa_index + 1)
+            .copied()
+            .unwrap_or(usize::MAX);
+        rxr_ordinals
+            .iter()
+            .find(|(pos, _)| *pos >= rxa_pos && *pos < end)
+            .map(|(_, ordinal)| path_for(*ordinal))
     }
 
     /// Convert RXA-5 (Administered Code) to a standalone FHIR
@@ -590,5 +661,20 @@ mod tests {
             MedicationConverter::convert_datetime("1980").unwrap(),
             "1980"
         );
+    }
+
+    #[test]
+    fn test_dosage_route_from_paired_rxr1() {
+        // RXR-1 route pairs with RXA by order.
+        let hl7 = "MSH|^~\\&|Pharmacy|Hospital|EMR|Hospital|20240315||RAS^O17|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000||1191^ASPIRIN^NDC|100|MG||||||||||||CP\r\
+                   RXR|IM^Intramuscular";
+        let message = parse_message(hl7).unwrap();
+        let admin = &MedicationConverter::convert_all(&message).unwrap()[0];
+        let route = admin.dosage.as_ref().unwrap().route.as_ref().unwrap();
+        let coding = route.coding.as_ref().unwrap();
+        assert_eq!(coding[0].code.as_deref(), Some("IM"));
+        assert_eq!(coding[0].display.as_deref(), Some("Intramuscular"));
     }
 }

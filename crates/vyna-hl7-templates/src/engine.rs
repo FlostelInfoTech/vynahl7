@@ -143,8 +143,9 @@ impl TemplateEngine {
     ) -> Result<Segment> {
         // Template positions follow HL7 numbering: position N lands in
         // fields[N-1], matching parsed messages, get_field, and encode.
-        // (For MSH, encode skips fields[0] and fields[1], which are the
-        // separator and encoding characters, never template positions.)
+        // (For MSH/FHS/BHS, encode skips fields[0] and fields[1], which
+        // are the separator and encoding characters, never template
+        // positions.)
         let mut fields = Vec::new();
 
         // Process field templates if present
@@ -154,17 +155,19 @@ impl TemplateEngine {
                     "Field position must be 1-based (got 0)",
                 ));
             }
-            if seg_template.id == "MSH"
+            if matches!(seg_template.id.as_str(), "MSH" | "FHS" | "BHS")
                 && (field_templates.contains_key(&1) || field_templates.contains_key(&2))
             {
-                // MSH-1/MSH-2 are the delimiters: encode derives them
-                // from the message delimiters and drops anything built
-                // here, so templating them is rejected, not ignored.
-                return Err(Error::substitution(
-                    "MSH-1 and MSH-2 hold the message delimiters and \
+                // MSH/FHS/BHS fields 1 and 2 are the delimiters: encode
+                // derives them from the message delimiters and drops
+                // anything built here, so templating them is rejected,
+                // not ignored.
+                let id = seg_template.id.as_str();
+                return Err(Error::substitution(format!(
+                    "{id}-1 and {id}-2 hold the message delimiters and \
                      cannot be set from a template (delimiters come \
                      from encoding)",
-                ));
+                )));
             }
             // Get the maximum field position to size the fields vector
             let max_pos = field_templates.keys().max().copied().unwrap_or(0);
@@ -186,11 +189,11 @@ impl TemplateEngine {
             }
         }
 
-        // MSH positions 1 and 2 are the delimiter placeholders, which no
-        // template may set (rejected above): fill them from the message
-        // delimiters like the parser does, so built MSH has the same
-        // shape as parsed MSH instead of empty fields.
-        if seg_template.id == "MSH" {
+        // MSH/FHS/BHS positions 1 and 2 are the delimiter
+        // placeholders, which no template may set (rejected above):
+        // fill them from the message delimiters like the parser does,
+        // so built headers have the same shape as parsed ones.
+        if matches!(seg_template.id.as_str(), "MSH" | "FHS" | "BHS") {
             let delimiters = Delimiters::default();
             while fields.len() < 2 {
                 fields.push(Field::new());
@@ -885,7 +888,7 @@ mod tests {
             );
         }
 
-        // Other segments keep position 1: only MSH reserves it.
+        // Other segments keep position 1: only MSH/FHS/BHS reserve it.
         let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
         let mut pid = SegmentTemplate::new("PID");
         pid.add_field(1, FieldTemplate::new().with_default("1"));
@@ -895,6 +898,47 @@ mod tests {
             message.get_segment_by_id("PID").unwrap().get_field_value(1),
             Some("1")
         );
+    }
+
+    #[test]
+    fn test_create_message_rejects_fhs_bhs_delimiter_fields() {
+        // Like MSH, FHS/BHS fields 1 and 2 are the delimiters: encode
+        // skips the stored fields, so templating them is rejected.
+        for id in ["FHS", "BHS"] {
+            for pos in [1, 2] {
+                let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+                let mut header = SegmentTemplate::new(id);
+                header.add_field(pos, FieldTemplate::new().with_default("X"));
+                template.add_segment(header);
+
+                let engine = TemplateEngine::new();
+                let result = engine.create_message(&template);
+                assert!(result.is_err(), "{id}-{pos} must be rejected");
+                assert!(
+                    result.unwrap_err().to_string().contains("delimiters"),
+                    "{id}-{pos} error must name the delimiters"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_engine_fhs_bhs_carry_delimiter_placeholders() {
+        // Like the parser, engine-built FHS/BHS hold the delimiter
+        // placeholders at fields 1 and 2, so readers see the same
+        // shape on built and parsed headers.
+        for id in ["FHS", "BHS"] {
+            let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+            let mut header = SegmentTemplate::new(id);
+            header.add_field(3, FieldTemplate::new().with_default("APP"));
+            template.add_segment(header);
+
+            let message = TemplateEngine::new().create_message(&template).unwrap();
+            let built = message.get_segment_by_id(id).unwrap();
+            assert_eq!(built.get_field_value(1), Some("|"));
+            assert_eq!(built.get_field_value(2), Some("^~\\&"));
+            assert_eq!(built.get_field_value(3), Some("APP"));
+        }
     }
 
     #[test]

@@ -99,7 +99,12 @@ pub fn substring(value: &str, ctx: &TransformContext) -> Result<String> {
         .and_then(|s| s.parse::<usize>().ok())
         .ok_or_else(|| Error::transform_fn("substring requires 'start' in context"))?;
 
-    let length = ctx.get_data("length").and_then(|s| s.parse::<usize>().ok());
+    let length = match ctx.get_data("length") {
+        None => None,
+        Some(raw) => Some(raw.parse::<usize>().map_err(|_| {
+            Error::transform_fn("substring requires 'length' to be a number when present")
+        })?),
+    };
 
     let chars: Vec<char> = value.chars().collect();
 
@@ -726,6 +731,17 @@ mod tests {
         for good in ["20240315", "2024031512", "202403151230", "20240315123045"] {
             assert_eq!(format_date(good, &ctx).unwrap(), "2024-03-15");
         }
+    }
+
+    #[test]
+    fn test_substring_rejects_unparseable_length() {
+        // An invalid length must error like an invalid start, not fall
+        // back to end-of-string by silently ignoring the bad value.
+        let ctx = TransformContext::new()
+            .add_data("start".to_string(), "0".to_string())
+            .add_data("length".to_string(), "abc".to_string());
+
+        assert!(substring("SMITH", &ctx).is_err());
     }
 
     #[test]

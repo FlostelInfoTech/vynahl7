@@ -2,6 +2,7 @@
 //!
 //! Based on HL7 v2-to-FHIR mapping: <https://build.fhir.org/ig/HL7/v2-to-fhir/ConceptMap-segment-obx-to-observation.html>
 
+use super::coding_systems::convert_coding_system;
 use super::patient::{
     hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time,
     valid_hl7_year_month,
@@ -92,7 +93,7 @@ impl ObservationConverter {
             if let Ok(Some(system)) = terser.get(&format!("{}-3", code_path))
                 && !system.is_empty()
             {
-                coding.system = Some(Self::convert_coding_system(system));
+                coding.system = Some(convert_coding_system(system));
             }
 
             CodeableConcept {
@@ -325,7 +326,7 @@ impl ObservationConverter {
                 if let Ok(Some(system)) = terser.get(&format!("{}-3", value_path))
                     && !system.is_empty()
                 {
-                    coding.system = Some(Self::convert_coding_system(system));
+                    coding.system = Some(convert_coding_system(system));
                 }
 
                 observation.value_codeable_concept = Some(CodeableConcept {
@@ -373,18 +374,6 @@ impl ObservationConverter {
             _ => "final",
         }
         .to_string()
-    }
-
-    /// Convert HL7 v2 coding system to FHIR system URI
-    fn convert_coding_system(system: &str) -> String {
-        match system {
-            "LN" | "LNC" => "http://loinc.org".to_string(),
-            "SNM" | "SCT" => "http://snomed.info/sct".to_string(),
-            "ICD9" => "http://hl7.org/fhir/sid/icd-9-cm".to_string(),
-            "ICD10" => "http://hl7.org/fhir/sid/icd-10".to_string(),
-            "CPT" => "http://www.ama-assn.org/go/cpt".to_string(),
-            _ => format!("urn:oid:{}", system),
-        }
     }
 
     /// Convert HL7 v2 date format (YYYYMMDD) to FHIR date format (YYYY-MM-DD)
@@ -762,5 +751,34 @@ mod tests {
             ObservationConverter::convert_datetime("1980").unwrap(),
             "1980"
         );
+    }
+
+    #[test]
+    fn test_coding_system_uses_shared_table_for_drug_systems() {
+        // CVX/NDC/MVX/RXNORM must resolve via the shared table, not
+        // the `urn:oid:` fallback, on both code and value.
+        for (system, expected) in [
+            ("CVX", "http://hl7.org/fhir/sid/cvx"),
+            ("NDC", "http://hl7.org/fhir/sid/ndc"),
+            ("MVX", "http://hl7.org/fhir/sid/mvx"),
+            ("RXNORM", "http://www.nlm.nih.gov/research/umls/rxnorm"),
+        ] {
+            let hl7 = format!(
+                "MSH|^~\\&|A|B|C|D|20240315||ORU^R01|1|P|2.5\r\
+                 OBX|1|CE|MED^Med^{system}||MED^Med^{system}|||||||F"
+            );
+            let message = parse_message(&hl7).unwrap();
+            let obs = &ObservationConverter::convert_all(&message).unwrap()[0];
+            let code = &obs.code.coding.as_ref().unwrap()[0];
+            assert_eq!(code.system.as_deref(), Some(expected), "code {system}");
+            let value = obs
+                .value_codeable_concept
+                .as_ref()
+                .unwrap()
+                .coding
+                .as_ref()
+                .unwrap();
+            assert_eq!(value[0].system.as_deref(), Some(expected), "value {system}");
+        }
     }
 }

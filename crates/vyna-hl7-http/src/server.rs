@@ -304,6 +304,12 @@ impl HttpServer {
 
     /// Start the HTTPS server with TLS/mTLS
     ///
+    /// HTTP/1-only: served via hyper `http1::Builder` with no ALPN `h2`
+    /// negotiation. Do not combine with
+    /// [`HttpClient::with_http2_only`](crate::HttpClient::with_http2_only):
+    /// an h2-prior-knowledge client fails loudly against this endpoint.
+    /// The plain-HTTP [`serve`](Self::serve) path accepts the same client.
+    ///
     /// # Arguments
     /// * `addr` - The address to bind to (e.g., "127.0.0.1:8443" or "0.0.0.0:8443")
     ///
@@ -342,6 +348,7 @@ impl HttpServer {
     /// Serve HTTPS on an already-bound listener until `shutdown` fires.
     ///
     /// Used by `MockHttpServer` so integration tests exercise the real TLS path.
+    /// HTTP/1-only (see [`serve_tls`](Self::serve_tls)): h2 clients fail here.
     #[cfg(feature = "tls")]
     pub(crate) async fn serve_tls_on(
         self,

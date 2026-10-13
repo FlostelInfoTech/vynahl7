@@ -31,6 +31,17 @@ including ADT_A28/A31/A34/A40, MFN, SIU, pharmacy, and laboratory;
 v2.2 skips 20, still lacking SIU, pharmacy, laboratory, VXU, PPR, and
 OMP); the loader falls back to v2.3 for those keys.
 
+## Deliberate deviations from the standard text
+
+- MSG-3 (Message Structure, MSH-9-3) and CX-5 (Identifier Type Code,
+  e.g. PID-3-5) are `required: false` everywhere, although the v2.6+
+  letter marks them Required. The installed base overwhelmingly sends
+  2-part MSH-9 and typeless CX identifiers, and HAPI's default
+  validation accepts both; requiring them would make strict mode
+  reject nearly all real traffic, including this library's own
+  builder output. Revisit if a formal-profile validation mode is
+  added.
+
 ## Schema Format
 
 Each schema is a JSON file with the following structure:

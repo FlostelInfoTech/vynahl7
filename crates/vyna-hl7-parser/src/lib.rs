@@ -231,6 +231,10 @@ fn skip_leading_blank_lines(input: &str) -> &str {
 }
 
 /// Extract delimiters with configuration options
+///
+/// Delimiters are ASCII-only: the byte-oriented header offsets and the
+/// MLLP framing around them cannot address multibyte separators. Both
+/// parse paths reject non-ASCII MSH-1/MSH-2 alike.
 fn extract_delimiters_with_config(input: &str, config: &ParserConfig) -> Result<Delimiters> {
     if !input.starts_with("MSH") {
         return Err(Error::parse("Message must start with MSH segment"));
@@ -256,6 +260,10 @@ fn extract_delimiters_with_config(input: &str, config: &ParserConfig) -> Result<
         Some(s) => s,
         None => return Err(Error::parse("MSH segment has invalid encoding characters")),
     };
+
+    if !field_sep.is_ascii() || !encoding_chars.bytes().all(|b| b.is_ascii()) {
+        return Err(Error::parse("MSH segment has invalid encoding characters"));
+    }
 
     // In lenient mode, allow non-standard encoding characters
     if encoding_chars.len() < 4 && !config.allow_non_standard_encoding_chars {
@@ -303,7 +311,8 @@ fn is_msh_segment(seg_str: &str) -> bool {
 }
 
 /// Cap an echoed id at 32 chars plus length; short ids stay verbatim.
-fn truncate_id(value: &str) -> String {
+/// Shared with the streaming path so both truncate alike.
+pub(crate) fn truncate_id(value: &str) -> String {
     const MAX: usize = 32;
     let count = value.chars().count();
     if count <= MAX {
@@ -334,17 +343,31 @@ fn parse_msh_segment_with_config(
     // Add MSH-2 (encoding characters)
     segment.add_field(Field::from_value(delimiters.encoding_characters()));
 
-    // Parse the rest of the fields. Only the bare eight-byte header
-    // has no content fields; 'MSH|^~\&|' falls through so the empty
-    // remainder yields one explicit empty MSH-3.
-    let field_start = 9;
-    if input.len() < field_start {
+    // Parse the rest of the fields. Only the bare header (no bytes
+    // past the encoding characters) has no content fields;
+    // 'MSH|^~\&|' falls through so the empty remainder yields one
+    // explicit empty MSH-3. The byte after the encoding characters
+    // must be the field separator: slicing past anything else would
+    // silently drop a byte (e.g. 'MSH|^~\&XAPP' lost the 'X').
+    let header_end =
+        3 + delimiters.field_separator.len_utf8() + delimiters.encoding_characters().len();
+    if input.len() < header_end {
         return Ok((segment, warnings));
     }
-
-    let rest = match input.get(field_start..) {
-        Some(rest) => rest,
+    let after_header = match input.get(header_end..) {
+        Some(after_header) => after_header,
         None => return Err(Error::parse("MSH segment has invalid encoding characters")),
+    };
+    if after_header.is_empty() {
+        return Ok((segment, warnings));
+    }
+    let rest = match after_header.strip_prefix(delimiters.field_separator) {
+        Some(rest) => rest,
+        None => {
+            return Err(Error::parse(
+                "expected field separator after encoding characters",
+            ));
+        }
     };
     let field_strings: Vec<&str> = rest.split(delimiters.field_separator).collect();
 
@@ -853,7 +876,7 @@ fn parse_fhs_segment(input: &str, delimiters: &Delimiters) -> Result<FileHeader>
         sending_facility: segment.get_field_value(4).map(String::from),
         receiving_application: segment.get_field_value(5).map(String::from),
         receiving_facility: segment.get_field_value(6).map(String::from),
-        creation_datetime: parse_datetime_field(segment.get_field_value(7)),
+        creation_datetime: parse_datetime_field("FHS-7", segment.get_field_value(7))?,
         security: segment.get_field_value(8).map(String::from),
         file_name_id: segment.get_field_value(9).map(String::from),
         comment: segment.get_field_value(10).map(String::from),
@@ -875,7 +898,7 @@ fn parse_bhs_segment(input: &str, delimiters: &Delimiters) -> Result<BatchHeader
         sending_facility: segment.get_field_value(4).map(String::from),
         receiving_application: segment.get_field_value(5).map(String::from),
         receiving_facility: segment.get_field_value(6).map(String::from),
-        creation_datetime: parse_datetime_field(segment.get_field_value(7)),
+        creation_datetime: parse_datetime_field("BHS-7", segment.get_field_value(7))?,
         security: segment.get_field_value(8).map(String::from),
         batch_name_id_type: segment.get_field_value(9).map(String::from),
         comment: segment.get_field_value(10).map(String::from),
@@ -894,10 +917,12 @@ fn parse_bhs_segment(input: &str, delimiters: &Delimiters) -> Result<BatchHeader
 fn parse_trailer_count(label: &str, value: Option<&str>) -> Result<Option<usize>> {
     match value.map(str::trim) {
         None | Some("") => Ok(None),
-        Some(text) => text
-            .parse::<usize>()
-            .map(Some)
-            .map_err(|_| Error::parse(format!("Invalid {label}: '{text}' is not a number"))),
+        Some(text) => text.parse::<usize>().map(Some).map_err(|_| {
+            Error::parse(format!(
+                "Invalid {label}: '{}' is not a number",
+                truncate_id(text)
+            ))
+        }),
     }
 }
 
@@ -917,6 +942,33 @@ fn parse_fts_segment(input: &str, delimiters: &Delimiters) -> Result<FileTrailer
         batch_count,
         comment,
     })
+}
+
+/// HL7 NM (Numeric) grammar check: optional sign, digits, at most
+/// one decimal point, at least one digit.
+///
+/// Deliberately not `f64` parsing, which accepts `NaN`, infinities,
+/// and exponents that the NM grammar forbids.
+fn is_valid_nm(value: &str) -> bool {
+    let digits = value.strip_prefix(['+', '-']).unwrap_or(value);
+    if digits.is_empty() {
+        return false;
+    }
+    let mut seen_dot = false;
+    let mut seen_digit = false;
+    for c in digits.chars() {
+        if c == '.' {
+            if seen_dot {
+                return false;
+            }
+            seen_dot = true;
+        } else if c.is_ascii_digit() {
+            seen_digit = true;
+        } else {
+            return false;
+        }
+    }
+    seen_digit
 }
 
 /// Parse BTS (Batch Trailer Segment)
@@ -943,9 +995,16 @@ fn parse_bts_segment(input: &str, delimiters: &Delimiters) -> Result<BatchTraile
                 if text.is_empty() {
                     continue;
                 }
+                if !is_valid_nm(text) {
+                    return Err(Error::parse(format!(
+                        "Invalid BTS-3 batch total: '{}' is not a number",
+                        truncate_id(text)
+                    )));
+                }
                 let total = text.parse::<f64>().map_err(|_| {
                     Error::parse(format!(
-                        "Invalid BTS-3 batch total: '{text}' is not a number"
+                        "Invalid BTS-3 batch total: '{}' is not a number",
+                        truncate_id(text)
                     ))
                 })?;
                 totals.push(total);
@@ -984,14 +1043,17 @@ fn parse_segment_like_msh(
     // Add field 2 (encoding characters)
     segment.add_field(Field::from_value(delimiters.encoding_characters()));
 
-    // Parse the rest of the fields starting after "XXX|^~\&"
-    let field_start = 9; // "XXX|^~\&|".len()
-    if input.len() <= field_start {
+    // Parse the rest of the fields starting after "XXX|^~\&". The
+    // byte after the encoding characters must be the field
+    // separator: slicing past anything else would silently drop it.
+    let header_end =
+        3 + delimiters.field_separator.len_utf8() + delimiters.encoding_characters().len();
+    if input.len() <= header_end {
         return Ok(segment);
     }
 
-    let rest = match input.get(field_start..) {
-        Some(rest) => rest,
+    let after_header = match input.get(header_end..) {
+        Some(after_header) => after_header,
         None => {
             return Err(Error::parse(format!(
                 "{} segment has invalid encoding characters",
@@ -999,6 +1061,20 @@ fn parse_segment_like_msh(
             )));
         }
     };
+    let rest = match after_header.strip_prefix(delimiters.field_separator) {
+        Some(rest) => rest,
+        None => {
+            return Err(Error::parse(format!(
+                "expected field separator after encoding characters in {} segment",
+                segment_type
+            )));
+        }
+    };
+    if rest.is_empty() {
+        // A lone trailing separator ("BHS|^~\&|") carries no content
+        // fields, matching the historical boundary.
+        return Ok(segment);
+    }
     let field_strings: Vec<&str> = rest.split(delimiters.field_separator).collect();
 
     // Add remaining fields
@@ -1015,38 +1091,46 @@ fn parse_segment_like_msh(
 /// HL7 datetime formats:
 /// - TS (v2.3-v2.5): YYYYMMDDHHMMSS[.SSSS][+/-ZZZZ]
 /// - DTM (v2.6+): YYYY[MM[DD[HH[MM[SS[.S[S[S[S]]]]]]]]][+/-ZZZZ]
-fn parse_datetime_field(value: Option<&str>) -> Option<NaiveDateTime> {
-    value.and_then(|s| {
-        if s.is_empty() {
-            return None;
-        }
+///
+/// A present but unparseable value is a parse error naming the field;
+/// only absent or empty values yield `None`, so bad header datetimes
+/// can no longer vanish into an empty re-encoded field.
+fn parse_datetime_field(label: &str, value: Option<&str>) -> Result<Option<NaiveDateTime>> {
+    let Some(s) = value else {
+        return Ok(None);
+    };
+    if s.is_empty() {
+        return Ok(None);
+    }
 
-        // Remove timezone offset if present (we use NaiveDateTime)
-        let datetime_str = s
-            .split('+')
-            .next()
-            .and_then(|s| s.split('-').next())
-            .unwrap_or(s);
+    // Remove timezone offset if present (we use NaiveDateTime)
+    let datetime_str = s
+        .split('+')
+        .next()
+        .and_then(|s| s.split('-').next())
+        .unwrap_or(s);
 
-        // Try various datetime formats
-        // Full: YYYYMMDDHHMMSS
-        if datetime_str.len() >= 14
-            && let Some(prefix) = datetime_str.get(..14)
-            && let Ok(dt) = NaiveDateTime::parse_from_str(prefix, "%Y%m%d%H%M%S")
-        {
-            return Some(dt);
-        }
+    // Try various datetime formats
+    // Full: YYYYMMDDHHMMSS
+    if datetime_str.len() >= 14
+        && let Some(prefix) = datetime_str.get(..14)
+        && let Ok(dt) = NaiveDateTime::parse_from_str(prefix, "%Y%m%d%H%M%S")
+    {
+        return Ok(Some(dt));
+    }
 
-        // Date only: YYYYMMDD
-        if datetime_str.len() >= 8
-            && let Some(prefix) = datetime_str.get(..8)
-            && let Ok(date) = chrono::NaiveDate::parse_from_str(prefix, "%Y%m%d")
-        {
-            return date.and_hms_opt(0, 0, 0);
-        }
+    // Date only: YYYYMMDD
+    if datetime_str.len() >= 8
+        && let Some(prefix) = datetime_str.get(..8)
+        && let Ok(date) = chrono::NaiveDate::parse_from_str(prefix, "%Y%m%d")
+    {
+        return Ok(date.and_hms_opt(0, 0, 0));
+    }
 
-        None
-    })
+    Err(Error::parse(format!(
+        "Invalid {label} creation date/time: '{}' is not a valid date/time",
+        truncate_id(s)
+    )))
 }
 
 #[cfg(test)]
@@ -1254,6 +1338,98 @@ mod tests {
     }
 
     #[test]
+    fn test_msh_missing_separator_after_encoding_chars_errors() {
+        // The byte after MSH-2 must be the field separator; slicing
+        // past it silently dropped the 'X' (MSH-3 parsed as 'APP').
+        let err = parse_message("MSH|^~\\&XAPP|FAC|\rPID|1")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("expected field separator after encoding characters"),
+            "{err}"
+        );
+        // Bare headers and the trailing-separator form still parse.
+        assert!(parse_message("MSH|^~\\&").is_ok());
+        let msg = parse_message("MSH|^~\\&|").unwrap();
+        assert_eq!(msg.segments[0].get_field_value(3), Some(""));
+    }
+
+    #[test]
+    fn test_batch_header_missing_separator_after_encoding_chars_errors() {
+        let delims = Delimiters::default();
+        for (label, input) in [("BHS", "BHS|^~\\&XAPP|FAC"), ("FHS", "FHS|^~\\&XAPP|FAC")] {
+            let err = parse_segment_like_msh(label, input, &delims)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                err.contains("expected field separator after encoding characters"),
+                "{label}: {err}"
+            );
+        }
+        // A lone trailing separator still carries no content fields.
+        let segment = parse_segment_like_msh("BHS", "BHS|^~\\&|", &delims).unwrap();
+        assert_eq!(segment.field_count(), 2);
+    }
+
+    #[test]
+    fn test_trailer_count_echo_is_truncated() {
+        let delims = Delimiters::default();
+        let digits = "9".repeat(300);
+        for input in [format!("BTS|{digits}"), format!("FTS|{digits}")] {
+            let err = match &input[..3] {
+                "BTS" => parse_bts_segment(&input, &delims).unwrap_err().to_string(),
+                _ => parse_fts_segment(&input, &delims).unwrap_err().to_string(),
+            };
+            assert!(!err.contains(&digits), "must not echo full count");
+            assert!(err.contains("300 chars total"), "{err}");
+        }
+        // Long BTS-3 echoes are capped as well.
+        let junk = "z".repeat(300);
+        let err = parse_bts_segment(&format!("BTS|1||{junk}"), &delims)
+            .unwrap_err()
+            .to_string();
+        assert!(!err.contains(&junk), "must not echo full total");
+        assert!(err.contains("300 chars total"), "{err}");
+    }
+
+    #[test]
+    fn test_parse_bts_rejects_non_nm_float_spellings() {
+        // f64 parses these, but the HL7 NM grammar forbids NaN,
+        // infinities, and exponents.
+        let delims = Delimiters::default();
+        for total in ["NaN", "inf", "-inf", "1e5", "Infinity", "nan"] {
+            let err = parse_bts_segment(&format!("BTS|1||{total}"), &delims)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("not a number"), "{total}: {err}");
+        }
+        // Genuine NM values still parse.
+        let trailer = parse_bts_segment("BTS|1||-12.5~+3~0.25", &delims).unwrap();
+        assert_eq!(trailer.totals, vec![-12.5, 3.0, 0.25]);
+    }
+
+    #[test]
+    fn test_batch_header_garbage_datetime_errors() {
+        let msh = "MSH|^~\\&|S|F|R|D|20240115||ADT^A01|1|P|2.5";
+        let batch_text = format!("BHS|^~\\&|S|F|R|D|garbage-datetime||B1\r{msh}\rPID|1\rBTS|1");
+        let err = parse_batch(&batch_text).unwrap_err().to_string();
+        assert!(err.contains("BHS-7"), "{err}");
+        assert!(err.contains("garbage-datetime"), "{err}");
+        // Empty BHS-7 still means "no timestamp", not an error.
+        let ok_text = format!("BHS|^~\\&|S|F|R|D|||B1\r{msh}\rPID|1\rBTS|1");
+        let batch = parse_batch(&ok_text).unwrap();
+        assert!(batch.header.creation_datetime.is_none());
+    }
+
+    #[test]
+    fn test_multibyte_delimiters_rejected_by_both_paths() {
+        // ASCII-only delimiters: strict and streaming agree.
+        let input = "MSHé^~\\&éS";
+        assert!(parse_message(input).is_err());
+        assert!(parse_streaming(input).is_err());
+    }
+
+    #[test]
     fn test_strict_parse_rejects_unterminated_escape() {
         // Unterminated escapes error like other malformed escapes do.
         let err = parse_message("MSH|^~\\&|A|B|||20250115||ADT^A01|1|P|2.5\rPID|1||X\\X0D")
@@ -1375,7 +1551,7 @@ FTS|5";
     #[test]
     fn test_parse_datetime_field() {
         // Full timestamp
-        let dt1 = parse_datetime_field(Some("20240315143000"));
+        let dt1 = parse_datetime_field("BHS-7", Some("20240315143000")).unwrap();
         assert!(dt1.is_some());
         let dt1 = dt1.unwrap();
         assert_eq!(dt1.year(), 2024);
@@ -1386,7 +1562,7 @@ FTS|5";
         assert_eq!(dt1.second(), 0);
 
         // Date only
-        let dt2 = parse_datetime_field(Some("20240315"));
+        let dt2 = parse_datetime_field("BHS-7", Some("20240315")).unwrap();
         assert!(dt2.is_some());
         let dt2 = dt2.unwrap();
         assert_eq!(dt2.year(), 2024);
@@ -1394,12 +1570,19 @@ FTS|5";
         assert_eq!(dt2.day(), 15);
 
         // Empty
-        let dt3 = parse_datetime_field(Some(""));
+        let dt3 = parse_datetime_field("BHS-7", Some("")).unwrap();
         assert!(dt3.is_none());
 
         // None
-        let dt4 = parse_datetime_field(None);
+        let dt4 = parse_datetime_field("BHS-7", None).unwrap();
         assert!(dt4.is_none());
+
+        // Garbage names the field instead of vanishing into None.
+        let err = parse_datetime_field("BHS-7", Some("garbage-datetime"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("BHS-7"), "{err}");
+        assert!(err.contains("garbage-datetime"), "{err}");
     }
 
     #[test]
@@ -1615,10 +1798,10 @@ BTS|1";
     }
 
     #[test]
-    fn test_non_ascii_datetime_field_returns_none_without_panic() {
-        assert_eq!(parse_datetime_field(Some("2024010é123456")), None);
-        assert_eq!(parse_datetime_field(Some("20240é15")), None);
-        assert_eq!(parse_datetime_field(Some("éééééééééééééééé")), None);
+    fn test_non_ascii_datetime_field_returns_error_without_panic() {
+        assert!(parse_datetime_field("BHS-7", Some("2024010é123456")).is_err());
+        assert!(parse_datetime_field("BHS-7", Some("20240é15")).is_err());
+        assert!(parse_datetime_field("BHS-7", Some("éééééééééééééééé")).is_err());
     }
 
     #[test]
