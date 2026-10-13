@@ -24,7 +24,6 @@ serde = ["dep:serde", "dep:serde_json", "chrono/serde"]
 
 [dev-dependencies]
 proptest.workspace = true
-vyna-hl7-parser.workspace = true
 criterion = "0.8"
 
 [[bench]]

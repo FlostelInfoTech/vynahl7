@@ -16,9 +16,17 @@
 //!
 //! ```rust
 //! use vyna_hl7_core::builders::ack::AckBuilder;
-//! use vyna_hl7_parser::parse_message;
+//! use vyna_hl7_core::builders::adt::AdtA01Builder;
+//! use vyna_hl7_core::Version;
 //!
-//! let incoming = parse_message("MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|MSG001|P|2.5\rPID|1|12345").unwrap();
+//! let incoming = AdtA01Builder::new(Version::V2_5)
+//!     .sending_application("SendApp")
+//!     .sending_facility("SendFac")
+//!     .receiving_application("RecApp")
+//!     .receiving_facility("RecFac")
+//!     .control_id("MSG001")
+//!     .build()
+//!     .unwrap();
 //!
 //! // Create a successful acknowledgment
 //! let ack = AckBuilder::for_message(&incoming)
@@ -38,9 +46,15 @@
 //!
 //! ```rust
 //! use vyna_hl7_core::builders::ack::{AckBuilder, ErrorSeverity};
-//! use vyna_hl7_parser::parse_message;
+//! use vyna_hl7_core::builders::adt::AdtA01Builder;
+//! use vyna_hl7_core::Version;
 //!
-//! let incoming = parse_message("MSH|^~\\&|App|Fac|||20240315||ADT^A01|MSG001|P|2.5").unwrap();
+//! let incoming = AdtA01Builder::new(Version::V2_5)
+//!     .sending_application("App")
+//!     .sending_facility("Fac")
+//!     .control_id("MSG001")
+//!     .build()
+//!     .unwrap();
 //!
 //! let ack = AckBuilder::for_message(&incoming)
 //!     .reject("Required field missing")
@@ -216,9 +230,17 @@ impl AckBuilder {
     ///
     /// ```rust
     /// use vyna_hl7_core::builders::ack::AckBuilder;
-    /// use vyna_hl7_parser::parse_message;
+    /// use vyna_hl7_core::builders::adt::AdtA01Builder;
+    /// use vyna_hl7_core::Version;
     ///
-    /// let incoming = parse_message("MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|MSG001|P|2.5").unwrap();
+    /// let incoming = AdtA01Builder::new(Version::V2_5)
+    ///     .sending_application("SendApp")
+    ///     .sending_facility("SendFac")
+    ///     .receiving_application("RecApp")
+    ///     .receiving_facility("RecFac")
+    ///     .control_id("MSG001")
+    ///     .build()
+    ///     .unwrap();
     /// let ack = AckBuilder::for_message(&incoming)
     ///     .accept()
     ///     .build()
@@ -729,9 +751,15 @@ impl AckBuilder {
     ///
     /// ```rust
     /// use vyna_hl7_core::builders::ack::AckBuilder;
-    /// use vyna_hl7_parser::parse_message;
+    /// use vyna_hl7_core::builders::adt::AdtA01Builder;
+    /// use vyna_hl7_core::Version;
     ///
-    /// let msg = parse_message("MSH|^~\\&|App|Fac|||20240315||ADT^A01|123|P|2.5").unwrap();
+    /// let msg = AdtA01Builder::new(Version::V2_5)
+    ///     .sending_application("App")
+    ///     .sending_facility("Fac")
+    ///     .control_id("123")
+    ///     .build()
+    ///     .unwrap();
     /// let ack = AckBuilder::accept_message(&msg).unwrap();
     /// ```
     pub fn accept_message(message: &Message) -> Result<Message> {

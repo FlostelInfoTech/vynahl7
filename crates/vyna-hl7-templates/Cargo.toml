@@ -20,8 +20,5 @@ serde_json.workspace = true
 serde_yaml.workspace = true
 regex.workspace = true
 
-[dev-dependencies]
-vyna-hl7-terser.workspace = true
-
 [features]
 default = []

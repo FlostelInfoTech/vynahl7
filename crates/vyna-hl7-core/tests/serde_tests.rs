@@ -2,13 +2,48 @@
 #![cfg(feature = "serde")]
 
 use vyna_hl7_core::{Delimiters, Field, Message, Segment};
-use vyna_hl7_parser::parse_message;
 
-const ADT: &str = "MSH|^~\\&|SEND|SFAC|RECV|RFAC|20240101120000||ADT^A01|MSG001|P|2.5\rPID|1||PAT1^^^HOSP^MR~PAT2^^^CLIN^PI||Smith^John^A||19800101|M\rPV1|1|I\r";
+/// MSH/PID/PV1 message with repeating PID-3 and a three-part XPN name.
+///
+/// Built by hand so core's tests don't depend on the parser crate (core
+/// is the lower layer; the dependency would also block publishing).
+fn fixture() -> Message {
+    let mut message = Message::default();
+
+    let mut msh = Segment::new("MSH");
+    msh.set_field(1, Field::from_value("|")).unwrap();
+    msh.set_field(2, Field::from_value("^~\\&")).unwrap();
+    msh.set_field(3, Field::from_value("SEND")).unwrap();
+    msh.set_field(4, Field::from_value("SFAC")).unwrap();
+    msh.set_field(5, Field::from_value("RECV")).unwrap();
+    msh.set_field(6, Field::from_value("RFAC")).unwrap();
+    msh.set_field(7, Field::from_value("20240101120000")).unwrap();
+    msh.set_field(9, Field::from_delimited("ADT^A01")).unwrap();
+    msh.set_field(10, Field::from_value("MSG001")).unwrap();
+    msh.set_field(11, Field::from_value("P")).unwrap();
+    msh.set_field(12, Field::from_value("2.5")).unwrap();
+    message.add_segment(msh);
+
+    let mut pid = Segment::new("PID");
+    pid.set_field(1, Field::from_value("1")).unwrap();
+    pid.set_field(3, Field::from_delimited("PAT1^^^HOSP^MR~PAT2^^^CLIN^PI"))
+        .unwrap();
+    pid.set_field(5, Field::from_delimited("Smith^John^A")).unwrap();
+    pid.set_field(7, Field::from_value("19800101")).unwrap();
+    pid.set_field(8, Field::from_value("M")).unwrap();
+    message.add_segment(pid);
+
+    let mut pv1 = Segment::new("PV1");
+    pv1.set_field(1, Field::from_value("1")).unwrap();
+    pv1.set_field(2, Field::from_value("I")).unwrap();
+    message.add_segment(pv1);
+
+    message
+}
 
 #[test]
 fn message_json_round_trip_preserves_everything() {
-    let message = parse_message(ADT).unwrap();
+    let message = fixture();
     let json = serde_json::to_string(&message).unwrap();
     let back: Message = serde_json::from_str(&json).unwrap();
 
@@ -18,7 +53,7 @@ fn message_json_round_trip_preserves_everything() {
 
 #[test]
 fn message_json_shape_is_structural() {
-    let message = parse_message(ADT).unwrap();
+    let message = fixture();
     let json: serde_json::Value = serde_json::to_value(&message).unwrap();
 
     assert_eq!(json["segments"][0]["id"], "MSH");
@@ -36,7 +71,7 @@ fn message_json_shape_is_structural() {
 
 #[test]
 fn custom_delimiters_survive_the_round_trip() {
-    let message = parse_message(ADT).unwrap();
+    let message = fixture();
     let mut custom = message.clone();
     custom.delimiters = Delimiters::from_encoding_characters('#', "^~\\&").unwrap();
 
@@ -49,7 +84,7 @@ fn custom_delimiters_survive_the_round_trip() {
 
 #[test]
 fn segment_and_field_round_trip() {
-    let message = parse_message(ADT).unwrap();
+    let message = fixture();
     let pid = message.get_segment_by_id("PID").unwrap();
 
     let json = serde_json::to_string(pid).unwrap();
