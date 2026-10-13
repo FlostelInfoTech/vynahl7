@@ -97,12 +97,12 @@ impl PatientConverter {
         let mut identifiers = Vec::new();
 
         // Try to get all repetitions of PID-3
-        // Note: Terser uses 0-based component indexing
+        // Note: Terser uses 1-based indexing throughout
         for rep in 0..10 {
             let id_path = if rep == 0 {
-                "PID-3".to_string()  // PID-3-1 (ID) -> use PID-3 or PID-3-0
+                "PID-3".to_string() // first repetition; whole-field read returns component 1 (ID)
             } else {
-                format!("PID-3({})", rep)
+                format!("PID-3({})", rep + 1)
             };
 
             if let Ok(Some(id_value)) = terser.get(&id_path) {
@@ -118,22 +118,22 @@ impl PatientConverter {
                     assigner: None,
                 };
 
-                // PID-3-4: Assigning Authority (component index 3 in 0-based)
+                // PID-3-4: Assigning Authority (component 4, 1-based indexing)
                 let authority_path = if rep == 0 {
-                    "PID-3-3".to_string()
+                    "PID-3-4".to_string()
                 } else {
-                    format!("PID-3({})-3", rep)
+                    format!("PID-3({})-4", rep + 1)
                 };
                 if let Ok(Some(authority)) = terser.get(&authority_path)
                     && !authority.is_empty() {
                         identifier.system = Some(format!("urn:oid:{}", authority));
                     }
 
-                // PID-3-5: Identifier Type Code (component index 4 in 0-based)
+                // PID-3-5: Identifier Type Code (component 5, 1-based indexing)
                 let type_path = if rep == 0 {
-                    "PID-3-4".to_string()
+                    "PID-3-5".to_string()
                 } else {
-                    format!("PID-3({})-4", rep)
+                    format!("PID-3({})-5", rep + 1)
                 };
                 if let Ok(Some(id_type)) = terser.get(&type_path)
                     && !id_type.is_empty() {
@@ -266,7 +266,7 @@ impl PatientConverter {
             let street_path = if rep == 0 {
                 "PID-11-1".to_string()  // PID-11-1 (Street, component 1)
             } else {
-                format!("PID-11({})-1", rep)
+                format!("PID-11({})-1", rep + 1)
             };
 
             if let Ok(Some(street)) = terser.get(&street_path) {
@@ -289,7 +289,7 @@ impl PatientConverter {
                 let other_path = if rep == 0 {
                     "PID-11-2".to_string()
                 } else {
-                    format!("PID-11({})-2", rep)
+                    format!("PID-11({})-2", rep + 1)
                 };
                 if let Ok(Some(other)) = terser.get(&other_path)
                     && !other.is_empty()
@@ -301,7 +301,7 @@ impl PatientConverter {
                 let city_path = if rep == 0 {
                     "PID-11-3".to_string()
                 } else {
-                    format!("PID-11({})-3", rep)
+                    format!("PID-11({})-3", rep + 1)
                 };
                 if let Ok(Some(city)) = terser.get(&city_path)
                     && !city.is_empty() {
@@ -312,7 +312,7 @@ impl PatientConverter {
                 let state_path = if rep == 0 {
                     "PID-11-4".to_string()
                 } else {
-                    format!("PID-11({})-4", rep)
+                    format!("PID-11({})-4", rep + 1)
                 };
                 if let Ok(Some(state)) = terser.get(&state_path)
                     && !state.is_empty() {
@@ -323,7 +323,7 @@ impl PatientConverter {
                 let zip_path = if rep == 0 {
                     "PID-11-5".to_string()
                 } else {
-                    format!("PID-11({})-5", rep)
+                    format!("PID-11({})-5", rep + 1)
                 };
                 if let Ok(Some(zip)) = terser.get(&zip_path)
                     && !zip.is_empty() {
@@ -334,7 +334,7 @@ impl PatientConverter {
                 let country_path = if rep == 0 {
                     "PID-11-6".to_string()
                 } else {
-                    format!("PID-11({})-6", rep)
+                    format!("PID-11({})-6", rep + 1)
                 };
                 if let Ok(Some(country)) = terser.get(&country_path)
                     && !country.is_empty() {
@@ -345,7 +345,7 @@ impl PatientConverter {
                 let type_path = if rep == 0 {
                     "PID-11-7".to_string()
                 } else {
-                    format!("PID-11({})-7", rep)
+                    format!("PID-11({})-7", rep + 1)
                 };
                 if let Ok(Some(addr_type)) = terser.get(&type_path) {
                     address.use_ = Some(match addr_type {
@@ -492,5 +492,51 @@ mod tests {
         assert_eq!(addresses[0].postal_code, Some("62701".to_string()));
         assert_eq!(addresses[0].country, Some("USA".to_string()));
         assert_eq!(addresses[0].use_, Some("home".to_string()));
+    }
+
+    #[test]
+    fn test_identifiers_read_every_repetition_with_authority_and_type() {
+        // PID-3 is CX: component 1 = ID, 4 = assigning authority, 5 = type.
+        let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                   PID|1||12345^^^HOSP^MR~67890^^^CLINIC^SS|||DOE^JOHN||19800101|M";
+
+        let message = parse_message(hl7).unwrap();
+        let patient = PatientConverter::convert(&message).unwrap();
+        let ids = patient.identifier.as_ref().unwrap();
+
+        assert_eq!(ids.len(), 2);
+        assert_eq!(ids[0].value.as_deref(), Some("12345"));
+        assert_eq!(ids[0].system.as_deref(), Some("urn:oid:HOSP"));
+        assert_eq!(type_code(&ids[0]).as_deref(), Some("MR"));
+        assert_eq!(ids[1].value.as_deref(), Some("67890"));
+        assert_eq!(ids[1].system.as_deref(), Some("urn:oid:CLINIC"));
+        assert_eq!(type_code(&ids[1]).as_deref(), Some("SS"));
+
+        fn type_code(id: &Identifier) -> Option<String> {
+            id.type_
+                .as_ref()
+                .unwrap()
+                .coding
+                .as_ref()
+                .unwrap()
+                .first()
+                .unwrap()
+                .code
+                .clone()
+        }
+    }
+
+    #[test]
+    fn test_address_reads_second_repetition() {
+        let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                   PID|1||MRN123^^^MRN||SMITH^JANE||19900215|F|||123 Main St^^Springfield^IL^62701^USA^^H~456 Oak Ave^^Chicago^IL^60601^USA^^W";
+
+        let message = parse_message(hl7).unwrap();
+        let patient = PatientConverter::convert(&message).unwrap();
+        let addresses = patient.address.as_ref().unwrap();
+
+        assert_eq!(addresses.len(), 2);
+        assert_eq!(addresses[1].city, Some("Chicago".to_string()));
+        assert_eq!(addresses[1].postal_code, Some("60601".to_string()));
     }
 }

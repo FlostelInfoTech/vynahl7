@@ -153,7 +153,7 @@ impl ServiceRequestConverter {
             };
 
             // Component 1: Service text/display
-            if let Ok(Some(service_text)) = terser.get(&format!("{}-1", obr_path("4"))) {
+            if let Ok(Some(service_text)) = terser.get(&format!("{}-2", obr_path("4"))) {
                 coding.display = Some(service_text.to_string());
             }
 
@@ -201,7 +201,7 @@ impl ServiceRequestConverter {
             };
 
             // Component 1: Reason text
-            if let Ok(Some(reason_text)) = terser.get(&format!("{}-1", obr_path("31"))) {
+            if let Ok(Some(reason_text)) = terser.get(&format!("{}-2", obr_path("31"))) {
                 coding.display = Some(reason_text.to_string());
             }
 

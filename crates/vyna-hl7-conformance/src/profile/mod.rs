@@ -473,6 +473,8 @@ pub struct FieldProfile {
     pub components: Option<Vec<ComponentProfile>>,
     /// Value set binding
     pub value_set: Option<ValueSetBinding>,
+    /// HL7 item number (e.g., "00108"); identifies the data item, not its position
+    pub item_no: Option<String>,
 }
 
 impl FieldProfile {
@@ -488,6 +490,7 @@ impl FieldProfile {
             table_id: None,
             components: None,
             value_set: None,
+            item_no: None,
         }
     }
 
@@ -507,6 +510,7 @@ impl FieldProfile {
             table_id: None,
             components: None,
             value_set: None,
+            item_no: None,
         }
     }
 

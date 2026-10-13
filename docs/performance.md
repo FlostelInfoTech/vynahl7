@@ -313,9 +313,10 @@ let name = terser.get("PID-5-1")?;
 let name = terser.get("PID-5-1")?;
 ```
 
-**Performance Impact:**
-- First access: ~100ns
-- Cached access: ~50ns (2x faster)
+**Performance Impact** (from `cached_terser_bench`, 10 paths x 5
+accesses; absolute numbers vary by machine):
+- Uncached repeated lookup: ~80ns
+- Cached lookup: ~60ns (~1.4x faster)
 - Memory overhead: ~100 bytes per cached path
 
 #### Cache Warming

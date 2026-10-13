@@ -46,8 +46,9 @@ pub type MessageHandler = Arc<dyn Fn(Message) -> Result<Message> + Send + Sync>;
 /// });
 ///
 /// let server = HttpServer::new()
-///     .with_handler(handler)
-///     .with_auth("username".into(), "password".into());
+///     .with_handler(handler);
+/// # #[cfg(feature = "auth")]
+/// # let server = server.with_auth("username".into(), "password".into());
 ///
 /// server.serve("127.0.0.1:8080").await?;
 /// # Ok(())
@@ -89,9 +90,13 @@ impl HttpServer {
 
     /// Enable HTTP Basic Authentication
     ///
+    /// Requires the `auth` feature; without it every authenticated request
+    /// would fail, so the method is only available with the feature enabled.
+    ///
     /// # Arguments
     /// * `username` - Required username
     /// * `password` - Required password
+    #[cfg(feature = "auth")]
     pub fn with_auth(mut self, username: String, password: String) -> Self {
         self.auth = Some((username, password));
         self
@@ -234,6 +239,24 @@ impl HttpServer {
     /// ```
     #[cfg(feature = "tls")]
     pub async fn serve_tls(self, addr: &str) -> Result<()> {
+        // Bind server
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+
+        println!("HTTPS server listening on {} (TLS enabled)", addr);
+
+        let (_shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        self.serve_tls_on(listener, shutdown_rx).await
+    }
+
+    /// Serve HTTPS on an already-bound listener until `shutdown` fires.
+    ///
+    /// Used by `MockHttpServer` so integration tests exercise the real TLS path.
+    #[cfg(feature = "tls")]
+    pub(crate) async fn serve_tls_on(
+        self,
+        listener: tokio::net::TcpListener,
+        mut shutdown: tokio::sync::oneshot::Receiver<()>,
+    ) -> Result<()> {
         // Extract TLS config or return error
         let tls_config = self.tls_config.clone()
             .ok_or_else(|| Error::InvalidUrl("TLS not configured. Use with_tls() first.".to_string()))?;
@@ -257,42 +280,50 @@ impl HttpServer {
         // Create TLS acceptor
         let tls_acceptor = TlsAcceptor::from(tls_config.config.clone());
 
-        // Bind server
-        let listener = tokio::net::TcpListener::bind(addr).await?;
-
-        println!("HTTPS server listening on {} (TLS enabled)", addr);
-
         // Accept connections and handle them with TLS
         loop {
-            let (tcp_stream, _remote_addr) = listener.accept().await?;
+            tokio::select! {
+                res = listener.accept() => {
+                    let (tcp_stream, _remote_addr) = res?;
 
-            // Clone acceptor and app for the task
-            let tls_acceptor = tls_acceptor.clone();
-            let app = app.clone();
+                    // Clone acceptor and app for the task
+                    let tls_acceptor = tls_acceptor.clone();
+                    let app = app.clone();
 
-            tokio::spawn(async move {
-                // Perform TLS handshake
-                match tls_acceptor.accept(tcp_stream).await {
-                    Ok(tls_stream) => {
-                        // Serve the connection using hyper
-                        let tower_service = app;
-                        let hyper_service = hyper::service::service_fn(move |request| {
-                            tower_service.clone().call(request)
-                        });
+                    tokio::spawn(async move {
+                        // Perform TLS handshake
+                        match tls_acceptor.accept(tcp_stream).await {
+                            Ok(tls_stream) => {
+                                // Serve the connection using hyper
+                                let tower_service = app;
+                                let hyper_service = hyper::service::service_fn(move |request| {
+                                    tower_service.clone().call(request)
+                                });
 
-                        if let Err(err) = hyper::server::conn::http1::Builder::new()
-                            .serve_connection(hyper_util::rt::TokioIo::new(tls_stream), hyper_service)
-                            .await
-                        {
-                            eprintln!("Error serving connection: {}", err);
+                                if let Err(err) = hyper::server::conn::http1::Builder::new()
+                                    .serve_connection(hyper_util::rt::TokioIo::new(tls_stream), hyper_service)
+                                    .await
+                                {
+                                    eprintln!("Error serving connection: {}", err);
+                                }
+                            }
+                            Err(err) => {
+                                eprintln!("TLS handshake failed: {}", err);
+                            }
                         }
-                    }
-                    Err(err) => {
-                        eprintln!("TLS handshake failed: {}", err);
-                    }
+                    });
                 }
-            });
+                _ = &mut shutdown => break,
+            }
         }
+
+        Ok(())
+    }
+
+    /// True when a TLS configuration was provided via `with_tls`.
+    #[cfg(feature = "tls")]
+    pub(crate) fn has_tls(&self) -> bool {
+        self.tls_config.is_some()
     }
 }
 
@@ -419,6 +450,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "auth")]
     fn test_with_auth() {
         let server = HttpServer::new()
             .with_auth("user".to_string(), "pass".to_string());

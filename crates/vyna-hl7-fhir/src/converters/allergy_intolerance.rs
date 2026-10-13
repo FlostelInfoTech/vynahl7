@@ -51,14 +51,27 @@ impl AllergyIntoleranceConverter {
             format!("AL1({})-3", al1_index + 1)
         };
         if let Ok(Some(code)) = terser.get(&code_path) {
+            // AL1-3-2: description text, AL1-3-3: coding system (1-based indexing)
+            let text = terser
+                .get(&format!("{code_path}-2"))
+                .ok()
+                .flatten()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            let system = terser
+                .get(&format!("{code_path}-3"))
+                .ok()
+                .flatten()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
             allergy.code = Some(CodeableConcept {
                 coding: Some(vec![Coding {
-                    system: None,
+                    system,
                     version: None,
                     code: Some(code.to_string()),
-                    display: None,
+                    display: text.clone(),
                 }]),
-                text: Some(code.to_string()),
+                text: text.or_else(|| Some(code.to_string())),
             });
         }
 
@@ -155,5 +168,37 @@ mod tests {
         };
         assert_eq!(code(&allergies[0]).as_deref(), Some("1191"));
         assert_eq!(code(&allergies[1]).as_deref(), Some("716"));
+    }
+
+    #[test]
+    fn test_allergy_reads_description_and_system() {
+        // AL1-3 is CWE: component 1 = code, 2 = text, 3 = coding system.
+        let hl7 = "MSH|^~\\&|System|Hospital|EMR|Hospital|20240315||ADT^A01|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   AL1|1|DA|1191^ASPIRIN^RXNORM|SV";
+
+        let message = parse_message(hl7).unwrap();
+        let allergies = AllergyIntoleranceConverter::convert_all(&message).unwrap();
+        let concept = allergies[0].code.as_ref().unwrap();
+        let coding = &concept.coding.as_ref().unwrap()[0];
+
+        assert_eq!(coding.code.as_deref(), Some("1191"));
+        assert_eq!(coding.display.as_deref(), Some("ASPIRIN"));
+        assert_eq!(coding.system.as_deref(), Some("RXNORM"));
+        assert_eq!(concept.text.as_deref(), Some("ASPIRIN"));
+    }
+
+    #[test]
+    fn test_allergy_text_falls_back_to_code() {
+        let hl7 = "MSH|^~\\&|System|Hospital|EMR|Hospital|20240315||ADT^A01|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   AL1|1|DA|PENICILLIN|SV";
+
+        let message = parse_message(hl7).unwrap();
+        let allergies = AllergyIntoleranceConverter::convert_all(&message).unwrap();
+        let concept = allergies[0].code.as_ref().unwrap();
+
+        assert_eq!(concept.text.as_deref(), Some("PENICILLIN"));
+        assert_eq!(concept.coding.as_ref().unwrap()[0].display.as_deref(), None);
     }
 }

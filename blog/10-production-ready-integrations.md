@@ -77,7 +77,7 @@ fn process_batch(messages: Vec<Message>) {
         // Pre-warm cache for known fields
         terser.warm_cache(&["PID-5-1", "PID-5-2", "PID-7", "PID-8", "PV1-2"]).ok();
 
-        // Access is now 5-10x faster
+        // Access is now faster (measured ~1.4x on repeated lookups)
         let name = terser.get("PID-5-1").ok().flatten();
         let dob = terser.get("PID-7").ok().flatten();
         // ...
@@ -349,6 +349,25 @@ PID|1||123456||DOE^JOHN||19800515|M";
 
 ```rust
 use vyna_hl7_mllp::testing::MockMllpServer;
+use vyna_hl7_core::{Message, Segment, Field};
+
+fn create_ack(original: &Message, ack_code: &str) -> Message {
+    let mut ack = Message::default();
+    let mut msh = Segment::new("MSH");
+    msh.fields.push(Field::from_value("|"));
+    msh.fields.push(Field::from_value("^~\\&"));
+    ack.segments.push(msh);
+    let mut msa = Segment::new("MSA");
+    msa.fields.push(Field::from_value(ack_code));
+    let control_id = original
+        .get_segments_by_id("MSH").first()
+        .and_then(|msh| msh.get_field(10))
+        .and_then(|f| f.value().map(str::to_string))
+        .unwrap_or_default();
+    msa.fields.push(Field::from_value(&control_id));
+    ack.segments.push(msa);
+    ack
+}
 
 #[tokio::test]
 async fn test_end_to_end_flow() {

@@ -1,16 +1,12 @@
 # vyna-hl7-macros
 
-Procedural macros for HL7 message processing (placeholder for future implementation).
+Procedural macros for HL7 message processing.
 
-## Status
-
-This crate is reserved for future procedural macro implementations. Currently contains placeholder derive macros.
-
-## Planned Features (Phase 5)
+## Features
 
 - `#[derive(Segment)]` - Type-safe segment definitions
 - `#[derive(Message)]` - Complete message structures
-- `#[hl7_type]` - Composite data type macros
+- `#[hl7_type]` - Composite data type attribute macro
 
 ## Current Status
 

@@ -118,7 +118,7 @@ impl SpecimenConverter {
             };
 
             // Component 1: Method text
-            if let Ok(Some(method_text)) = terser.get(&format!("{}-1", spm_path("7"))) {
+            if let Ok(Some(method_text)) = terser.get(&format!("{}-2", spm_path("7"))) {
                 coding.display = Some(method_text.to_string());
             }
 
@@ -139,7 +139,7 @@ impl SpecimenConverter {
             };
 
             // Component 1: Site text
-            if let Ok(Some(site_text)) = terser.get(&format!("{}-1", spm_path("8"))) {
+            if let Ok(Some(site_text)) = terser.get(&format!("{}-2", spm_path("8"))) {
                 coding.display = Some(site_text.to_string());
             }
 
@@ -184,7 +184,7 @@ impl SpecimenConverter {
             };
 
             // Component 1: Condition text
-            if let Ok(Some(condition_text)) = terser.get(&format!("{}-1", spm_path("24"))) {
+            if let Ok(Some(condition_text)) = terser.get(&format!("{}-2", spm_path("24"))) {
                 coding.display = Some(condition_text.to_string());
             }
 
@@ -213,7 +213,7 @@ impl SpecimenConverter {
                 version: None,
             };
 
-            if let Ok(Some(container_text)) = terser.get(&format!("{}-1", spm_path("15"))) {
+            if let Ok(Some(container_text)) = terser.get(&format!("{}-2", spm_path("15"))) {
                 coding.display = Some(container_text.to_string());
             }
 
@@ -288,7 +288,7 @@ impl SpecimenConverter {
         };
 
         // Component 1: Specimen type text/display
-        if let Ok(Some(display)) = terser.get(&format!("{}-1", base_path)) {
+        if let Ok(Some(display)) = terser.get(&format!("{}-2", base_path)) {
             coding.display = Some(display.to_string());
         }
 

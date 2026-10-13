@@ -97,7 +97,7 @@ impl ConditionConverter {
                 display: None,
             };
 
-            if let Ok(Some(text)) = terser.get(&format!("{}-1", code_path)) {
+            if let Ok(Some(text)) = terser.get(&format!("{}-2", code_path)) {
                 coding.display = Some(text.to_string());
             }
 

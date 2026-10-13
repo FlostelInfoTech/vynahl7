@@ -180,7 +180,8 @@ impl<'a> BulkTerser<'a> {
         }
 
         let segment_part = parts[0]; // e.g., "PID"
-        let field_part = parts[1]; // e.g., "11"
+        // e.g., "11" from "11(*)".
+        let field_part = parts[1].strip_suffix("(*)").unwrap_or(parts[1]);
         let after_wildcard = &parts[2..].join("-"); // e.g., "1" or "1-2"
 
         // Extract segment ID and optional index
@@ -213,15 +214,22 @@ impl<'a> BulkTerser<'a> {
         if let Some(field) = segment.get_field(field_idx) {
             // Iterate over all repetitions
             for (rep_idx, _rep) in field.repetitions.iter().enumerate() {
+                // Terser paths are 1-based; rep_idx is the 0-based Vec position.
                 let resolved_path = if segment_idx == 0 {
-                    format!("{}-{}({})-{}", segment_id, field_idx, rep_idx, after_wildcard)
+                    format!(
+                        "{}-{}({})-{}",
+                        segment_id,
+                        field_idx,
+                        rep_idx + 1,
+                        after_wildcard
+                    )
                 } else {
                     format!(
                         "{}({})-{}({})-{}",
                         segment_id,
                         segment_idx + 1,
                         field_idx,
-                        rep_idx,
+                        rep_idx + 1,
                         after_wildcard
                     )
                 };
@@ -354,6 +362,24 @@ OBX|3|CE|K||4.2^mmol/L";
         assert_eq!(units[0].1, "mg/dL");
         assert_eq!(units[1].1, "mmol/L");
         assert_eq!(units[2].1, "mmol/L");
+    }
+
+    #[test]
+    fn test_get_pattern_field_repetition_wildcard() {
+        let hl7 =
+            "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\rPID|1||PAT001||DOE^JOHN~SMITH^JANE\r";
+
+        let message = parse_message(hl7).unwrap();
+        let bulk = BulkTerser::new(&message);
+
+        // Repetition paths are 1-based: (1) is the first repetition.
+        let values = bulk.get_pattern("PID-5(*)-1").unwrap();
+
+        assert_eq!(values.len(), 2);
+        assert_eq!(values[0].0, "PID-5(1)-1");
+        assert_eq!(values[0].1, "DOE");
+        assert_eq!(values[1].0, "PID-5(2)-1");
+        assert_eq!(values[1].1, "SMITH");
     }
 
     #[test]

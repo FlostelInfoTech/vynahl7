@@ -5,7 +5,7 @@ Terser API for easy HL7 field access using path notation. The Terser provides a 
 ## Features
 
 - **Path-based field access** - Use simple paths like `PID-5-1` or `OBX(2)-5`
-- **Cached access** - CachedTerser provides 5-10x performance improvement for repeated access
+- **Cached access** - CachedTerser provides faster repeated access by caching parsed paths
 - **Bulk extraction** - Extract multiple fields at once with BulkTerser
 - **Pattern matching** - Use wildcards to extract data from repeating segments
 - **Iterator API** - Iterate over fields, components, and repetitions
@@ -93,7 +93,7 @@ terser.set("PID-11-4", "MA")?;
 
 ## Cached Terser (Performance)
 
-CachedTerser provides 5-10x performance improvement for repeated access to the same fields by caching parsed paths.
+CachedTerser speeds up repeated access to the same fields by caching parsed paths.
 
 ```rust
 use vyna_hl7_terser::CachedTerser;
@@ -113,9 +113,9 @@ for _ in 0..1000 {
 - Repeatedly accessing the same fields within a single message
 - Performance-critical code paths
 
-**Benchmark results** (from `cargo bench`):
-- Regular Terser: ~200-300 ns per lookup
-- Cached Terser: ~20-40 ns per cached lookup (5-10x faster)
+**Benchmark results** (from `cargo bench -p vyna-hl7-terser --bench cached_terser_bench`):
+- Regular Terser: ~80 ns per lookup
+- Cached Terser: ~60 ns per cached lookup (~1.4x faster)
 
 ## Bulk Field Extraction
 

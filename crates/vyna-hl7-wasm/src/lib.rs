@@ -120,7 +120,7 @@ pub fn encode_message(message: &WasmMessage) -> String {
 ///
 /// ```javascript
 /// const name = getTerserValue(message, "PID-5");
-/// const family = getTerserValue(message, "PID-5-0");
+/// const family = getTerserValue(message, "PID-5-1");
 /// ```
 #[wasm_bindgen(js_name = getTerserValue)]
 pub fn get_terser_value(message: &WasmMessage, path: &str) -> Result<Option<String>, JsValue> {
@@ -141,7 +141,7 @@ pub fn get_terser_value(message: &WasmMessage, path: &str) -> Result<Option<Stri
 /// # Example
 ///
 /// ```javascript
-/// setTerserValue(message, "PID-5-0", "SMITH");
+/// setTerserValue(message, "PID-5-1", "SMITH");
 /// ```
 #[wasm_bindgen(js_name = setTerserValue)]
 pub fn set_terser_value(message: &mut WasmMessage, path: &str, value: &str) -> Result<(), JsValue> {
@@ -225,7 +225,10 @@ mod tests {
                    PID|1||MRN123||DOE^JOHN||19800101|M";
 
         let msg = parse_message(hl7).unwrap();
+        // A whole-field read returns the first component.
         let value = get_terser_value(&msg, "PID-5").unwrap();
-        assert_eq!(value, Some("DOE^JOHN".to_string()));
+        assert_eq!(value, Some("DOE".to_string()));
+        let given = get_terser_value(&msg, "PID-5-2").unwrap();
+        assert_eq!(given, Some("JOHN".to_string()));
     }
 }

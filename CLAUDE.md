@@ -4,7 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-VynaHL7 is a comprehensive Rust library for parsing, validating, and creating HL7 v2.x healthcare messages, inspired by the Java HAPI library. The project uses a workspace architecture with 10 specialized crates.
+VynaHL7 is a comprehensive Rust library for parsing, validating, and creating HL7 v2.x healthcare messages, inspired by the Java HAPI library. The project uses a workspace architecture with 23 specialized crates.
+
+Specs live in `docs/` and are the authority — read them before designing:
+
+- `docs/requirements.md` — numbered requirements with verification pointers
+- `docs/design.md` — architecture, crate catalog, component designs, key decisions
+- `docs/integration.md` — install, quickstarts, transports, troubleshooting
+- `docs/sbom/` — supply-chain record (regenerate when dependencies change)
+- `crates/vyna-hl7-validator/schemas/README.md` — schema provenance and layout
+
+Living-doc rule: code changes update the matching spec in the same commit
+(new builder → SRS ID + SDS + `builder_conformance.rs` test; behavior
+change → CHANGELOG entry). Full rules: `docs/README.md`.
 
 ## Build, Test, and Development Commands
 
@@ -70,7 +82,6 @@ cargo install --path crates/vyna-hl7-cli
 
 # CLI commands
 vynahl7 parse message.hl7 --format pretty
-vynahl7 validate message.hl7
 vynahl7 validate message.hl7            # strict: HL7 specification compliance (default)
 vynahl7 validate message.hl7 --strict   # restates the default explicitly
 vynahl7 validate message.hl7 --standard # strict except version drift warns
@@ -93,6 +104,8 @@ cargo bench -p vyna-hl7-parser
 cargo bench -p vyna-hl7-terser
 ```
 
+When making changes that could affect performance, run benchmarks before and after (see `docs/performance.md`).
+
 ### WebAssembly
 ```bash
 # Build WASM package
@@ -101,124 +114,31 @@ wasm-pack build --target web
 wasm-pack build --target nodejs
 ```
 
-## Architecture
-
-### Workspace Structure
-
-```
-vyna-hl7/
-├── vyna-hl7-core       - Core data structures (Message, Segment, Field, Component, Subcomponent)
-├── vyna-hl7-parser     - HL7 message parser (delimiter-based parsing)
-├── vyna-hl7-validator  - Schema-based validation, data type validation, vocabulary validation
-├── vyna-hl7-terser     - Path-based field access API (similar to HAPI's Terser)
-├── vyna-hl7-mllp       - MLLP protocol for intra-organization network transmission
-├── vyna-hl7-http       - HTTP transport for inter-organization communication
-├── vyna-hl7-fhir       - HL7 v2 to FHIR R4 conversion (9 converters)
-├── vyna-hl7-wasm       - WebAssembly bindings for JavaScript/TypeScript
-├── vyna-hl7-cli        - Command-line interface for message analysis
-└── vyna-hl7-macros     - Derive macros for message types (placeholder)
-```
-
-### Core Concepts
-
-**Message Hierarchy:**
-```
-Message
-  └─ Segment (MSH, PID, OBX, etc.)
-       └─ Field (separated by |)
-            └─ Repetition (separated by ~)
-                 └─ Component (separated by ^)
-                      └─ Subcomponent (separated by &)
-```
-
-**Supported HL7 Versions:** v2.1 (23 messages), v2.2 (27 messages), v2.3, v2.3.1, v2.4, v2.5, v2.5.1, v2.6, v2.7, v2.7.1, v2.8, v2.8.1, v2.8.2 (message types introduced after 2.2 validate against v2.3 structures)
-
-**Message Types:** ADT (A01-A40), SIU (S12-S15), MDM (T01-T04), DFT (P03, P11), QRY (A19, Q01-Q02), BAR (P01-P02), Pharmacy (RDE, RAS, RDS, RGV, RRD, RRA), Laboratory (OUL, OML), ORM, ORU, ACK, MFN
-
-### Key Design Patterns
-
-**Builders Pattern:**
-The project uses fluent builders for message creation. Builders are located in `vyna-hl7-core/src/builders/`:
-- `adt.rs` - ADT message builders (A01-A13, A17, A28, A31, A40)
-- `siu.rs` - Scheduling messages
-- `orm.rs`, `oru.rs` - Order/result messages
-- `pharmacy.rs`, `laboratory.rs` - Specialized message builders
-- `bar.rs` - Billing messages (P01, P02); `mfn.rs` - Master file notifications (M01)
-- `fields.rs` - Complex field builders (XPN, XAD, XTN, CX, XCN)
-
-**Validation Architecture:**
-Three-layer validation system in `vyna-hl7-validator`:
-1. Schema validation - Message structure against HL7 standards (JSON schemas in `schemas/v2_X/`)
-2. Data type validation - Format checking (dates, times, numerics, coded values) in `datatype.rs`
-3. Vocabulary validation - Code set validation against HL7 tables (Table 0001, etc.) in `vocabulary.rs`
-
-**Terser API:**
-Field access uses path notation (e.g., `PID-5-1`, `OBX(2)-5`). Two implementations:
-- `Terser` - Standard field access
-- `CachedTerser` - 5-10x faster for repeated access to same fields
-
-**Parser Design:**
-Uses delimiter-based splitting with minimal allocations. The `optimized.rs` module contains pre-allocation strategies for common patterns.
-
-## Important Implementation Details
+## Gotchas (read before touching message code)
 
 ### Terser Path Notation
 
-**IMPORTANT: Terser segment indexing is 1-based** (e.g., `OBX(1)` for first OBX, `OBX(2)` for second OBX). This matches HAPI conventions and HL7's 1-based field numbering.
+**Terser path indexing is 1-based throughout** (e.g., `OBX(1)` for first OBX, `PID-11(1)` for first repetition), matching HAPI conventions. Component `0` and repetition `(0)` are invalid; only the internal `Vec` storage is 0-based.
 
-Path examples:
-- `PID-5` - PID segment, field 5
-- `PID-5-1` - PID segment, field 5, component 1
-- `PID-5-1-2` - PID segment, field 5, component 1, subcomponent 2
-- `OBX(1)-5` - First OBX segment, field 5
-- `OBX(2)-5` - Second OBX segment, field 5
-- `PID-11(1)-1` - PID segment, field 11, second repetition, component 1
-
-**Note:** Repetition indexing remains 0-based internally (first repetition is index 0).
+Path examples: `PID-5`, `PID-5-1`, `PID-5-1-2`, `OBX(1)-5`, `PID-11(2)-1` (second repetition).
 
 ### MSH Segment Field Numbering
 
-**IMPORTANT: The MSH segment has special field numbering.** Unlike all other segments, MSH-1 is the Field Separator character itself (typically `|`), and MSH-2 contains the four Encoding Characters (typically `^~\&`). This means:
+**MSH-1 is the Field Separator character itself** (typically `|`), and MSH-2 contains the four Encoding Characters (typically `^~\&`). Field counting is offset by one compared to other segments: in `MSH|^~\&|SendApp|...`, MSH-3 is `SendApp` and MSH-9 is the message type.
 
-- `MSH|^~\&|...` — the `|` after `MSH` is MSH-1 (field separator), and `^~\&` is MSH-2 (encoding characters)
-- MSH-1 is NOT the first value after the first `|`; it IS the `|` delimiter itself
-- The remaining MSH fields (MSH-3 onward) follow normal counting: MSH-3 is the Sending Application, MSH-4 is the Sending Facility, etc.
-- When parsing MSH, field counting is offset by one compared to other segments because MSH-1 occupies the delimiter position
+### Builder Conformance
 
-For example, in: `MSH|^~\&|SendApp|SendFac|RecvApp|RecvFac|20230101||ADT^A01|123|P|2.5`
-- MSH-1 = `|` (field separator)
-- MSH-2 = `^~\&` (encoding characters)
-- MSH-3 = `SendApp`
-- MSH-9 = `ADT^A01` (message type)
+Builder conformance tests live in `vyna-hl7-validator/tests/builder_conformance.rs` — never in core (core must not depend on the validator). Composite builder inputs go through `Field::from_delimited` (structure); `Field::from_value` is literal-only (delimiters escaped). Free-text fields (NTE, descriptions) always stay literal.
+
+### Validation Posture
+
+Validation is strict by default (every finding class errors, including MSH-12 drift). `standard()`/`lenient()` contexts and `table_registry_mut` site-table extensions are the explicit escape hatches. The parser never validates; only the `validate` command and Validator API do.
+
+## Repository Conventions
 
 ### Workspace Dependencies
 
 All shared dependencies are defined in the root `Cargo.toml` under `[workspace.dependencies]`. When adding dependencies to individual crates, use `dep.workspace = true` to reference the workspace version.
-
-### Schema Organization
-
-Validation schemas are JSON files organized by HL7 version:
-```
-crates/vyna-hl7-validator/schemas/
-├── v2_3/
-├── v2_4/
-├── v2_5/
-├── v2_6/
-├── v2_7/
-└── v2_8/
-```
-
-Each contains message-specific schemas (e.g., `ADT_A01.json`, `ORU_R01.json`).
-
-### Performance Considerations
-
-The library is optimized for high-throughput processing:
-- Zero-copy parsing with minimal allocations
-- CachedTerser for repeated field access (5-10x faster)
-- Pre-allocation strategies in parser
-- Typical performance: 40,000-100,000 messages/sec depending on size
-
-When making changes that could affect performance, run benchmarks before and after.
 
 ### Error Handling
 
@@ -262,7 +182,7 @@ async fn test_mllp_with_mock_server() {
 }
 ```
 
-**MockHttpServer** (vyna-hl7-http):
+**MockHttpServer** (vyna-hl7-http, requires `--features "testing,auth"` for `with_auth`):
 ```rust
 use vyna_hl7_http::testing::MockHttpServer;
 use vyna_hl7_http::HttpClient;
@@ -313,10 +233,12 @@ async fn test_with_tls() {
 
     // Use certificates for testing...
 
-    // Automatic cleanup via Drop trait
+    // Explicit cleanup removes the temp dir
     certs.cleanup();
 }
 ```
+
+HTTP mock-server TLS is covered by `test_mock_server_with_tls_serves_https` (in `vyna-hl7-http/src/testing.rs`, needs `--features "tls,testing"` plus `openssl` for cert generation).
 
 #### Testing Best Practices
 
@@ -333,50 +255,8 @@ async fn test_with_tls() {
 
 - `testing`: Enables MockMllpServer and MockHttpServer
 - `tls`: Enables TLS/mTLS support for testing secure connections
-- Combine features: `cargo test --features "tls,testing"`
-
-## Network Protocols
-
-### MLLP (Minimal Lower Layer Protocol)
-Intra-organization communication on TCP. MLLP frames messages with:
-- Start byte: 0x0B (VT)
-- End bytes: 0x1C 0x0D (FS CR)
-
-Implementation in `vyna-hl7-mllp` uses Tokio for async I/O. For streaming pipelines, `codec::MllpCodec` implements `tokio_util` `Decoder`/`Encoder` for use with `Framed` (`MllpFramed` alias); it mirrors `receive_message` semantics (noise skipping, first `FS CR` terminates, size limit).
-
-**TLS/mTLS Support:**
-- `TlsServerConfig::new()` - Basic TLS with server certificate
-- `TlsServerConfig::with_mtls()` - Mutual TLS with client certificate verification
-- `TlsClientConfig::with_ca_cert()` - Client with CA certificate
-- `TlsClientConfig::with_mtls()` - Client with client certificate for mTLS
-- Feature flag: `tls`
-
-### HTTP Transport
-Inter-organization communication using HL7-over-HTTP. Implementation in `vyna-hl7-http` supports:
-- Basic authentication
-- Configurable timeouts
-- Automatic ACK generation
-
-**TLS/mTLS Support:**
-- `HttpServer::with_tls()` and `.serve_tls()` for HTTPS
-- `HttpClient::new_tls()` for HTTPS clients
-- Both basic TLS and mutual TLS (client certificate) supported
-- Feature flag: `tls`
-
-## FHIR Conversion
-
-Located in `vyna-hl7-fhir`, provides converters from HL7 v2 to FHIR R4:
-- Patient (PID → Patient)
-- Observation (OBX → Observation)
-- Encounter (PV1 → Encounter)
-- DiagnosticReport (OBR → DiagnosticReport)
-- Practitioner (PV1/ORC → Practitioner)
-- AllergyIntolerance (AL1 → AllergyIntolerance)
-- MedicationAdministration (RXA → MedicationAdministration)
-- Condition (PRB/DG1 → Condition)
-- Procedure (PR1 → Procedure)
-
-Each converter is in a separate module and uses the standard FHIR R4 resource structure.
+- `auth` (http): Enables server-side Basic auth (`HttpServer::with_auth`, `MockHttpServer::with_auth`)
+- Combine features: `cargo test --features "tls,testing,auth"`
 
 ## Edition and Toolchain
 

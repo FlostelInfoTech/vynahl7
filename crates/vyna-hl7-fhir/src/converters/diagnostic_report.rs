@@ -51,14 +51,14 @@ impl DiagnosticReportConverter {
                 display: None,
             };
 
-            // OBR-4-2: Text (component 1 in 0-based)
-            if let Ok(Some(text)) = terser.get(&format!("{}-1", code_path))
+            // OBR-4-2: Text (component 2, 1-based indexing)
+            if let Ok(Some(text)) = terser.get(&format!("{}-2", code_path))
                 && !text.is_empty() {
                     coding.display = Some(text.to_string());
                 }
 
-            // OBR-4-3: Coding System (component 2 in 0-based)
-            if let Ok(Some(system)) = terser.get(&format!("{}-2", code_path))
+            // OBR-4-3: Coding System (component 3, 1-based indexing)
+            if let Ok(Some(system)) = terser.get(&format!("{}-3", code_path))
                 && !system.is_empty() {
                     coding.system = Some(Self::convert_coding_system(system));
                 }

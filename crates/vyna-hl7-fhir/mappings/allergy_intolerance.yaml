@@ -15,8 +15,13 @@ fields:
     default: environment
   - target: code.coding[0].code
     source: AL1-3
+  - target: code.coding[0].display
+    source: AL1-3-2
+  - target: code.coding[0].system
+    source: AL1-3-3
   - target: code.text
-    source: AL1-3
+    source: AL1-3-2
+    fallback_source: AL1-3
   - target: patient.reference
     source: PID-3
     template: "Patient/{value}"

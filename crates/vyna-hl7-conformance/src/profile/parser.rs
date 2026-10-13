@@ -208,15 +208,19 @@ impl ProfileParser {
         let mut segment = SegmentProfile::new(name, usage, cardinality);
         segment.long_name = long_name;
 
-        // Parse child Field elements
+        // Parse child Field elements; position is the 1-based ordinal of the
+        // Field element within its segment, not the HL7 ItemNo (which is a
+        // global data-item identifier, e.g. PID-5 is item 00108).
         let mut buf = Vec::new();
         let mut depth = 1;
+        let mut position = 0;
 
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(ref e)) => {
                     if e.name().as_ref() == "Field" {
-                        let field = Self::parse_field_element(e)?;
+                        position += 1;
+                        let field = Self::parse_field_element(e, position)?;
                         segment.add_field(field);
                     }
                     depth += 1;
@@ -224,7 +228,8 @@ impl ProfileParser {
                 Ok(Event::Empty(ref e))
                     // Handle self-closing tags like <Field ... />
                     if e.name().as_ref() == "Field" => {
-                        let field = Self::parse_field_element(e)?;
+                        position += 1;
+                        let field = Self::parse_field_element(e, position)?;
                         segment.add_field(field);
                     }
                 Ok(Event::End(ref e)) => {
@@ -244,7 +249,10 @@ impl ProfileParser {
     }
 
     /// Parse Field element
-    fn parse_field_element(element: &quick_xml::events::BytesStart) -> Result<FieldProfile> {
+    fn parse_field_element(
+        element: &quick_xml::events::BytesStart,
+        position: usize,
+    ) -> Result<FieldProfile> {
         let mut name = None;
         let mut usage = None;
         let mut min = None;
@@ -282,17 +290,11 @@ impl ProfileParser {
         let usage = Usage::from_str(&usage_str)?;
         let cardinality = Self::parse_cardinality_from_min_max(&min_str, &max_str)?;
 
-        // Parse ItemNo to get position (remove leading zeros)
-        let position = if let Some(item_no_str) = item_no {
-            item_no_str.trim_start_matches('0').parse::<usize>().unwrap_or(1)
-        } else {
-            1
-        };
-
         let mut field = FieldProfile::new(position, usage, cardinality);
         field.name = name;
         field.datatype = datatype;
         field.length = length.and_then(|l| l.parse::<usize>().ok());
+        field.item_no = item_no;
 
         Ok(field)
     }
@@ -407,7 +409,12 @@ mod tests {
         let pid = &profile.message.segments[1];
         assert_eq!(pid.name, "PID");
         assert_eq!(pid.fields.len(), 1);
-        assert_eq!(pid.fields[0].position, 3);
+        // Position is the 1-based ordinal within the segment; the HL7 item
+        // number (00003) is preserved separately and is not a position.
+        assert_eq!(pid.fields[0].position, 1);
+        assert_eq!(pid.fields[0].item_no, Some("00003".to_string()));
+        assert_eq!(msh.fields[1].position, 2);
+        assert_eq!(msh.fields[1].item_no, Some("00002".to_string()));
     }
 
     #[test]

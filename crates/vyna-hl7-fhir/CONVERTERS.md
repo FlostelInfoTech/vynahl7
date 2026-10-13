@@ -331,12 +331,12 @@ The converters automatically map HL7 v2 coding systems to FHIR URIs:
 
 ## Component Indexing
 
-⚠️ **Important:** All converters use 0-based component indexing.
+Terser paths are 1-based throughout, matching the HL7 standard.
 
 Example for PID-5 (Patient Name: "DOE^JOHN^A"):
-- PID-5 or PID-5-0 → "DOE" (component 1 in HL7 standard)
-- PID-5-1 → "JOHN" (component 2 in HL7 standard)
-- PID-5-2 → "A" (component 3 in HL7 standard)
+- PID-5 or PID-5-1 → "DOE" (component 1)
+- PID-5-2 → "JOHN" (component 2)
+- PID-5-3 → "A" (component 3)
 
 See `TERSER_INDEXING.md` for complete details.
 

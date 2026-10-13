@@ -77,6 +77,7 @@ impl ActiveTab {
             ActiveTab::Http,
             ActiveTab::Ftp,
             ActiveTab::Fhir,
+            ActiveTab::Xml,
         ]
     }
 }

@@ -138,7 +138,7 @@ let rule = ValidationRule::new(
 engine.add_rule(rule);
 
 // Validate message against rules
-let result = engine.validate(&message)?;
+let result = engine.validate(&message);
 ```
 
 ## Complete Validation

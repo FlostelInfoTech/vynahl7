@@ -461,11 +461,11 @@ let hl7_string = message.encode();
 ```
 
 The parser:
-- Handles all HL7 versions (2.3 - 2.7.1)
+- Handles HL7 versions 2.1 through 2.8.2
 - Supports custom delimiters
 - Processes escape sequences
 - Performs zero-copy parsing where possible
-- Achieves 40,000-100,000 messages/second
+- Achieves tens of thousands of messages/second (measured ~60,000/sec small ADT; see `docs/performance.md`)
 
 ## Summary
 

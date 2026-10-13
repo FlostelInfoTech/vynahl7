@@ -61,8 +61,8 @@ impl MedicationConverter {
                 display: None,
             };
 
-            // Component 1: Text (0-based)
-            if let Ok(Some(text)) = terser.get(&format!("{}-1", code_path)) {
+            // Component 2: Text (1-based indexing)
+            if let Ok(Some(text)) = terser.get(&format!("{}-2", code_path)) {
                 coding.display = Some(text.to_string());
             }
 
@@ -194,5 +194,26 @@ mod tests {
         };
         assert_eq!(code(&administrations[0]).as_deref(), Some("1191"));
         assert_eq!(code(&administrations[1]).as_deref(), Some("104375"));
+    }
+
+    #[test]
+    fn test_medication_display_reads_component_2() {
+        // RXA-5 is CWE: component 1 = code, component 2 = text (1-based).
+        let hl7 = "MSH|^~\\&|Pharmacy|Hospital|EMR|Hospital|20240315||RAS^O17|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000||1191^ASPIRIN^NDC|100|MG||||||||||||CP";
+
+        let message = parse_message(hl7).unwrap();
+        let administrations = MedicationConverter::convert_all(&message).unwrap();
+        let coding = &administrations[0]
+            .medication_codeable_concept
+            .as_ref()
+            .unwrap()
+            .coding
+            .as_ref()
+            .unwrap()[0];
+
+        assert_eq!(coding.code.as_deref(), Some("1191"));
+        assert_eq!(coding.display.as_deref(), Some("ASPIRIN"));
     }
 }

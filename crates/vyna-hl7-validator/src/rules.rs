@@ -211,6 +211,9 @@ impl ValidationRule {
     }
 
     /// Set the condition for this rule
+    ///
+    /// The condition returns `true` when the message passes; a `false`
+    /// result records a violation with this rule's name and severity.
     pub fn with_condition<F>(mut self, condition: F) -> Self
     where
         F: Fn(&Message) -> bool + Send + Sync + 'static,

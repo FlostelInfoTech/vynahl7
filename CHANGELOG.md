@@ -7,14 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-13
+
 ### Added
 
 - Living SDLC documentation: requirements specification (`docs/requirements.md`), design specification (`docs/design.md`), integration guide (`docs/integration.md` with executed snippets), CycloneDX SBOM (`docs/sbom/`), and a documentation index with update rules (`docs/README.md`)
 - `scripts/merge_sbom.py` merges per-crate CycloneDX files into one workspace SBOM
+- Declarative FHIR mappings gain a `fallback_source` rule key (second Terser path tried when `source` resolves nothing); the shipped allergy table uses it for `code.text`
+
+### Changed
+
+- **Breaking**: server-side `with_auth` (`HttpServer`, `MockHttpServer`) now requires the `auth` feature; without it the method does not exist (previously every authenticated request failed with 500 at runtime)
+- **Breaking**: `FieldProfile` gains an `item_no` field preserving the HL7 item number (update struct literals)
+- Measured performance figures replace estimates: cached Terser ~60ns (~1.4x), small ADT ~60k msg/s, medium ORU ~19k msg/s
 
 ### Fixed
 
 - Documentation staleness: 23-crate workspace map (was 10), 12+4 FHIR converters (was 9), ADT A34, full v2.1–v2.8.2 version list, BAR/MFN builder coverage, and a broken `with_strict_mode` blog snippet now using `ValidationContext`
+- FHIR converters used 0-based Terser paths: displays now read component 2, coding systems component 3, repetitions/segments 1-based (patient identifiers/authority/type, medication, procedure, diagnostic report, condition, specimen, service request, immunization, encounter, allergy with description/system reads)
+- `BulkTerser` repetition wildcards (`PID-5(*)-1`) always errored; `(*)` is now parsed and expanded 1-based
+- WASM `extractPatientDemographics`/`extractObservations` indexing: family/given names, per-segment reads, and test names
+- `MockHttpServer::with_tls` was silently ignored; the mock now serves real HTTPS with `https://` URLs (new `serve_tls_on`)
+- Conformance profile `ItemNo` misused as field position; position is now the 1-based element ordinal
+- `RetryConfig::new(0, _)` panicked; attempts clamp to a minimum of 1
+- Test panel XML tab missing from the tab bar (`ActiveTab::all()`)
+- SRS/SDS/guide corrections (converter count, derive names, `HttpClient::with_tls`, echo-by-design transports), README rules snippet/throughput/crate map, blog WASM/TLS/perf claims, crate READMEs, RFC 0001 deviations, and `TERSER_INDEXING.md` rewritten to 1-based truth
 
 ## [0.7.0] - 2026-10-13
 
@@ -131,7 +148,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial VynaHL7 release (Vyna Healthcare product family internal library), forked from rs7 1.6.1 with versioning restarted at 0.1.0
 - Renamed project from rs7 to VynaHL7: all crates renamed from `rs7-*` to `vyna-hl7-*`, Rust paths from `rs7_*` to `vyna_hl7_*`, CLI binary to `vynahl7`, and documentation updated accordingly
 
-[Unreleased]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.5.0...HEAD
+[Unreleased]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.8.0...HEAD
+[0.8.0]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.7.0...v0.8.0
+[0.7.0]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.6.0...v0.7.0
+[0.6.0]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.5.1...v0.6.0
+[0.5.1]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.5.0...v0.5.1
 [0.5.0]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.4.0...v0.5.0
 [0.4.0]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.3.0...v0.4.0
 [0.3.0]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.2.0...v0.3.0

@@ -31,9 +31,9 @@ cargo install --path crates/vyna-hl7-testpanel
 vyna-hl7-testpanel
 ```
 
-## The Seven Tabs
+## The Nine Tabs
 
-The Test Panel organizes functionality into seven focused tabs:
+The Test Panel organizes functionality into nine focused tabs:
 
 ### 1. Parser Tab - Understand Any Message
 
@@ -149,7 +149,27 @@ Built-in MLLP server and client for network testing:
 
 **Use Case:** Testing MLLP connections without setting up separate tools.
 
-### 6. FHIR Tab - HL7 v2 to FHIR Conversion
+### 6. HTTP Tab - HL7 over HTTP
+
+Send and receive HL7 messages via HTTP/HTTPS:
+
+- POST messages to a configurable HTTP/HTTPS endpoint
+- Client authentication options (none/basic/API key/bearer)
+- View response messages and status codes
+
+**Use Case:** Testing inter-organization HTTP interfaces without curl.
+
+### 7. FTP Tab - File Transfer Testing
+
+Transfer HL7 batch files via FTP or SFTP (client and server modes):
+
+- Upload/download message files
+- Embedded test server for loopback testing
+- Transfer logging with timestamps
+
+**Use Case:** Validating file-drop integrations before go-live.
+
+### 8. FHIR Tab - HL7 v2 to FHIR Conversion
 
 Convert HL7 v2 messages to FHIR R4 resources:
 
@@ -176,7 +196,7 @@ Convert HL7 v2 messages to FHIR R4 resources:
 
 **Use Case:** Bridging legacy HL7 v2 systems with modern FHIR APIs.
 
-### 7. XML Tab - Format Conversion
+### 9. XML Tab - Format Conversion
 
 Convert between HL7 pipe-delimited (ER7) and XML formats:
 

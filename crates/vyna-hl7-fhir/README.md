@@ -26,8 +26,8 @@ Converter library for transforming HL7 v2.x messages to FHIR R4 resources.
   - ServiceRequest (ORC → ServiceRequest) - **100% tested** ✨ NEW
   - Specimen (SPM → Specimen) - **100% tested** ✨ NEW
 - Error handling and conversion result types
-- Complete test suite - **All 33 tests passing ✅**
-- Terser 0-based component indexing - **Fixed and documented** (see TERSER_INDEXING.md)
+- Complete test suite, including converter regression and mapping-parity tests ✅
+- Terser 1-based path indexing (see TERSER_INDEXING.md)
 - **Working examples** - ADT, ORU, VXU, ORM, and OML message conversion demos (see EXAMPLES.md)
 
 ### Future Enhancements 📋
@@ -61,7 +61,7 @@ vyna-hl7-fhir/
 │   ├── convert_vxu.rs        # VXU^V04 immunization record example ✨ NEW
 │   ├── convert_orm.rs        # ORM^O01 laboratory order example ✨ NEW
 │   └── convert_oml.rs        # OML^O21 specimen collection example ✨ NEW
-├── TERSER_INDEXING.md        # Component indexing documentation (0-based)
+├── TERSER_INDEXING.md        # Path indexing documentation (1-based)
 ├── EXAMPLES.md               # Detailed examples documentation
 └── README.md                 # This file
 ```
@@ -88,7 +88,7 @@ println!("{}", json);
 
 ## Converters
 
-All converters use 0-based component indexing as documented in TERSER_INDEXING.md.
+All converters use 1-based Terser paths as documented in TERSER_INDEXING.md.
 
 ### PatientConverter (PID → Patient)
 - PID-3 → identifier, PID-5 → name, PID-7 → birthDate
@@ -203,13 +203,13 @@ cargo run --example convert_oml -p vyna-hl7-fhir
 
 ## Component Indexing
 
-⚠️ **Important**: The Terser API uses 0-based component indexing, not 1-based HL7 standard numbering.
+Terser paths are 1-based, matching HL7 standard numbering.
 
 For example:
-- HL7 PID-5-1 (Family Name) → Terser path `PID-5` or `PID-5-0`
-- HL7 PID-5-2 (Given Name) → Terser path `PID-5-1`
+- HL7 PID-5-1 (Family Name) → Terser path `PID-5` or `PID-5-1`
+- HL7 PID-5-2 (Given Name) → Terser path `PID-5-2`
 
-See `TERSER_INDEXING.md` for complete details. All converters have been updated and tested with correct 0-based indexing.
+See `TERSER_INDEXING.md` for complete details.
 
 ## Testing
 

@@ -119,6 +119,9 @@ pub struct FieldRule {
     /// Only apply when this terser path resolves to a non-empty value.
     #[serde(default)]
     pub when: Option<String>,
+    /// Second terser path tried when `source` resolves to nothing.
+    #[serde(default)]
+    pub fallback_source: Option<String>,
 }
 
 /// One step of a parsed target path: an object key with an optional index.
@@ -170,7 +173,11 @@ impl Mapping {
                 }
                 _ => {}
             }
-            for (name, path) in [("source", &rule.source), ("when", &rule.when)] {
+            for (name, path) in [
+                ("source", &rule.source),
+                ("when", &rule.when),
+                ("fallback_source", &rule.fallback_source),
+            ] {
                 if let Some(path) = path
                     && !is_terser_path(path)
                 {
@@ -351,10 +358,17 @@ impl MappingEngine {
         repetition: usize,
     ) -> ConversionResult<Option<Value>> {
         let mut value = match (&rule.source, &rule.constant) {
-            (Some(source), _) => match Self::resolve(terser, mapping, source, repetition) {
-                Some(text) => Value::String(text),
-                None => return Ok(None),
-            },
+            (Some(source), _) => {
+                let resolved = Self::resolve(terser, mapping, source, repetition).or_else(|| {
+                    rule.fallback_source
+                        .as_ref()
+                        .and_then(|f| Self::resolve(terser, mapping, f, repetition))
+                });
+                match resolved {
+                    Some(text) => Value::String(text),
+                    None => return Ok(None),
+                }
+            }
             (None, Some(constant)) => constant.clone(),
             (None, None) => return Ok(None),
         };
@@ -777,6 +791,30 @@ fields:
 
         assert_eq!(declarative.len(), 1);
         assert_eq!(declarative[0], serde_json::to_value(&coded[0]).unwrap());
+    }
+
+    #[test]
+    fn fallback_source_used_when_primary_resolves_nothing() {
+        let message = parse_message(
+            "MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1||7\rAL1|1|DA|PENICILLIN|SV",
+        )
+        .unwrap();
+
+        let mapping = Mapping::from_yaml(
+            "resourceType: AllergyIntolerance\nfields:\n  - target: code.text\n    source: AL1-3-2\n    fallback_source: AL1-3\n",
+        )
+        .unwrap();
+        let declarative = MappingEngine::apply(&mapping, &message).unwrap();
+        assert_eq!(declarative[0]["code"]["text"], "PENICILLIN");
+    }
+
+    #[test]
+    fn invalid_fallback_source_rejected_at_load() {
+        let err = Mapping::from_yaml(
+            "resourceType: X\nfields:\n  - target: a\n    source: PID-3\n    fallback_source: nope\n",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("fallback_source"), "{err}");
     }
 
     #[test]

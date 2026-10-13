@@ -2,9 +2,9 @@
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
   "version": 1,
-  "serialNumber": "urn:uuid:817364d2-cdf8-4f5a-bc83-1dc60ec47dba",
+  "serialNumber": "urn:uuid:f23b98ad-d510-47c6-9d2c-a5545572c6f5",
   "metadata": {
-    "timestamp": "2026-10-13T03:10:10.151468090Z",
+    "timestamp": "2026-10-13T04:28:24.552901094Z",
     "tools": [
       {
         "vendor": "CycloneDX",
@@ -20,10 +20,10 @@
     ],
     "component": {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7#vyna-hl7@0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7#vyna-hl7@0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "Comprehensive HL7 v2.x library for Rust - parsing, validation, and MLLP support",
       "scope": "required",
       "licenses": [
@@ -31,7 +31,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7@0.7.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7@0.8.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -49,10 +49,10 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///home/fan/Code/VynaHL7#vyna-hl7@0.7.0 bin-target-0",
+          "bom-ref": "path+file:///home/fan/Code/VynaHL7#vyna-hl7@0.8.0 bin-target-0",
           "name": "vyna_hl7",
-          "version": "0.7.0",
-          "purl": "pkg:cargo/vyna-hl7@0.7.0?download_url=file://.#src/lib.rs"
+          "version": "0.8.0",
+          "purl": "pkg:cargo/vyna-hl7@0.8.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
@@ -66,10 +66,10 @@
   "components": [
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7#vyna-hl7@0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7#vyna-hl7@0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "Comprehensive HL7 v2.x library for Rust - parsing, validation, and MLLP support",
       "scope": "required",
       "licenses": [
@@ -77,7 +77,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7@0.7.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7@0.8.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -95,19 +95,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///home/fan/Code/VynaHL7#vyna-hl7@0.7.0 bin-target-0",
+          "bom-ref": "path+file:///home/fan/Code/VynaHL7#vyna-hl7@0.8.0 bin-target-0",
           "name": "vyna_hl7",
-          "version": "0.7.0",
-          "purl": "pkg:cargo/vyna-hl7@0.7.0?download_url=file://.#src/lib.rs"
+          "version": "0.8.0",
+          "purl": "pkg:cargo/vyna-hl7@0.8.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-batch#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-batch#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-batch",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "HL7 v2.x batch file building, lenient intake parsing, and file-drop transports (filesystem, FTP, SFTP)",
       "scope": "required",
       "licenses": [
@@ -115,7 +115,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-batch@0.7.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-batch@0.8.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -133,19 +133,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-batch#0.7.0 bin-target-0",
+          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-batch#0.8.0 bin-target-0",
           "name": "vyna_hl7_batch",
-          "version": "0.7.0",
-          "purl": "pkg:cargo/vyna-hl7-batch@0.7.0?download_url=file://.#src/lib.rs"
+          "version": "0.8.0",
+          "purl": "pkg:cargo/vyna-hl7-batch@0.8.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "application",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-cli#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-cli#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-cli",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "Command-line interface for VynaHL7 HL7 v2.x library",
       "scope": "required",
       "licenses": [
@@ -153,7 +153,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-cli@0.7.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-cli@0.8.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -171,19 +171,19 @@
       "components": [
         {
           "type": "application",
-          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-cli#0.7.0 bin-target-0",
+          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-cli#0.8.0 bin-target-0",
           "name": "vynahl7",
-          "version": "0.7.0",
-          "purl": "pkg:cargo/vyna-hl7-cli@0.7.0?download_url=file://.#src/main.rs"
+          "version": "0.8.0",
+          "purl": "pkg:cargo/vyna-hl7-cli@0.8.0?download_url=file://.#src/main.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-codegen#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-codegen#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-codegen",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "Schema-driven code generation for HAPI-style typed HL7 models",
       "scope": "required",
       "licenses": [
@@ -191,7 +191,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-codegen@0.7.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-codegen@0.8.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -209,19 +209,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-codegen#0.7.0 bin-target-0",
+          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-codegen#0.8.0 bin-target-0",
           "name": "vyna_hl7_codegen",
-          "version": "0.7.0",
-          "purl": "pkg:cargo/vyna-hl7-codegen@0.7.0?download_url=file://.#src/lib.rs"
+          "version": "0.8.0",
+          "purl": "pkg:cargo/vyna-hl7-codegen@0.8.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-conformance#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-conformance#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-conformance",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "HL7 v2.x conformance profile validation for VynaHL7",
       "scope": "required",
       "licenses": [
@@ -229,7 +229,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-conformance@0.7.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-conformance@0.8.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -247,19 +247,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-conformance#0.7.0 bin-target-0",
+          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-conformance#0.8.0 bin-target-0",
           "name": "vyna_hl7_conformance",
-          "version": "0.7.0",
-          "purl": "pkg:cargo/vyna-hl7-conformance@0.7.0?download_url=file://.#src/lib.rs"
+          "version": "0.8.0",
+          "purl": "pkg:cargo/vyna-hl7-conformance@0.8.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-convert#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-convert#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-convert",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "Schema-driven cross-version conversion for HL7 v2.x messages",
       "scope": "required",
       "licenses": [
@@ -267,7 +267,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-convert@0.7.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-convert@0.8.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -285,19 +285,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-convert#0.7.0 bin-target-0",
+          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-convert#0.8.0 bin-target-0",
           "name": "vyna_hl7_convert",
-          "version": "0.7.0",
-          "purl": "pkg:cargo/vyna-hl7-convert@0.7.0?download_url=file://.#src/lib.rs"
+          "version": "0.8.0",
+          "purl": "pkg:cargo/vyna-hl7-convert@0.8.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-core",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "Core data structures and traits for HL7 v2.x message handling",
       "scope": "required",
       "licenses": [
@@ -305,7 +305,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-core@0.7.0?download_url=file://crates/vyna-hl7-core",
+      "purl": "pkg:cargo/vyna-hl7-core@0.8.0?download_url=file://crates/vyna-hl7-core",
       "externalReferences": [
         {
           "type": "documentation",
@@ -323,10 +323,10 @@
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-custom#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-custom#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-custom",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "Framework for defining and registering custom Z-segments in HL7 v2.x messages",
       "scope": "required",
       "licenses": [
@@ -334,7 +334,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-custom@0.7.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-custom@0.8.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -352,19 +352,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-custom#0.7.0 bin-target-0",
+          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-custom#0.8.0 bin-target-0",
           "name": "vyna_hl7_custom",
-          "version": "0.7.0",
-          "purl": "pkg:cargo/vyna-hl7-custom@0.7.0?download_url=file://.#src/lib.rs"
+          "version": "0.8.0",
+          "purl": "pkg:cargo/vyna-hl7-custom@0.8.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-fhir#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-fhir#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-fhir",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "HL7 v2.x to FHIR R4 conversion library with 12 production-ready converters",
       "scope": "required",
       "licenses": [
@@ -372,7 +372,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-fhir@0.7.0?download_url=file://../vyna-hl7-fhir",
+      "purl": "pkg:cargo/vyna-hl7-fhir@0.8.0?download_url=file://../vyna-hl7-fhir",
       "externalReferences": [
         {
           "type": "documentation",
@@ -390,10 +390,10 @@
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-http#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-http#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-http",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "HTTP transport for HL7 v2.x messages (inter-organization communication)",
       "scope": "required",
       "licenses": [
@@ -401,7 +401,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-http@0.7.0?download_url=file://crates/vyna-hl7-http",
+      "purl": "pkg:cargo/vyna-hl7-http@0.8.0?download_url=file://crates/vyna-hl7-http",
       "externalReferences": [
         {
           "type": "documentation",
@@ -419,10 +419,10 @@
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-macros#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-macros#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-macros",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "Procedural macros for HL7 message types",
       "scope": "required",
       "licenses": [
@@ -430,7 +430,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-macros@0.7.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-macros@0.8.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -448,19 +448,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-macros#0.7.0 bin-target-0",
+          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-macros#0.8.0 bin-target-0",
           "name": "vyna_hl7_macros",
-          "version": "0.7.0",
-          "purl": "pkg:cargo/vyna-hl7-macros@0.7.0?download_url=file://.#src/lib.rs"
+          "version": "0.8.0",
+          "purl": "pkg:cargo/vyna-hl7-macros@0.8.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-mllp#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-mllp#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-mllp",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "MLLP (Minimal Lower Layer Protocol) support for HL7 message transmission",
       "scope": "required",
       "licenses": [
@@ -468,7 +468,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-mllp@0.7.0?download_url=file://crates/vyna-hl7-mllp",
+      "purl": "pkg:cargo/vyna-hl7-mllp@0.8.0?download_url=file://crates/vyna-hl7-mllp",
       "externalReferences": [
         {
           "type": "documentation",
@@ -486,10 +486,10 @@
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-orchestration#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-orchestration#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-orchestration",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "Message routing, orchestration, and workflow engine for HL7 v2.x messages",
       "scope": "required",
       "licenses": [
@@ -497,7 +497,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-orchestration@0.7.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-orchestration@0.8.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -515,19 +515,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-orchestration#0.7.0 bin-target-0",
+          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-orchestration#0.8.0 bin-target-0",
           "name": "vyna_hl7_orchestration",
-          "version": "0.7.0",
-          "purl": "pkg:cargo/vyna-hl7-orchestration@0.7.0?download_url=file://.#src/lib.rs"
+          "version": "0.8.0",
+          "purl": "pkg:cargo/vyna-hl7-orchestration@0.8.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-parser",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "Parser for HL7 v2.x messages",
       "scope": "required",
       "licenses": [
@@ -535,7 +535,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-parser@0.7.0?download_url=file://crates/vyna-hl7-parser",
+      "purl": "pkg:cargo/vyna-hl7-parser@0.8.0?download_url=file://crates/vyna-hl7-parser",
       "externalReferences": [
         {
           "type": "documentation",
@@ -553,10 +553,10 @@
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-queue#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-queue#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-queue",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "Durable store-and-forward queue for HL7 v2.x messages",
       "scope": "required",
       "licenses": [
@@ -564,7 +564,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-queue@0.7.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-queue@0.8.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -582,19 +582,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-queue#0.7.0 bin-target-0",
+          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-queue#0.8.0 bin-target-0",
           "name": "vyna_hl7_queue",
-          "version": "0.7.0",
-          "purl": "pkg:cargo/vyna-hl7-queue@0.7.0?download_url=file://.#src/lib.rs"
+          "version": "0.8.0",
+          "purl": "pkg:cargo/vyna-hl7-queue@0.8.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-redact#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-redact#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-redact",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "Safe Harbor de-identification for HL7 v2.x messages",
       "scope": "required",
       "licenses": [
@@ -602,7 +602,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-redact@0.7.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-redact@0.8.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -620,19 +620,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-redact#0.7.0 bin-target-0",
+          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-redact#0.8.0 bin-target-0",
           "name": "vyna_hl7_redact",
-          "version": "0.7.0",
-          "purl": "pkg:cargo/vyna-hl7-redact@0.7.0?download_url=file://.#src/lib.rs"
+          "version": "0.8.0",
+          "purl": "pkg:cargo/vyna-hl7-redact@0.8.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-templates#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-templates#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-templates",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "Message and segment templates for VynaHL7 HL7 library",
       "scope": "required",
       "licenses": [
@@ -640,7 +640,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-templates@0.7.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-templates@0.8.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -658,19 +658,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-templates#0.7.0 bin-target-0",
+          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-templates#0.8.0 bin-target-0",
           "name": "vyna_hl7_templates",
-          "version": "0.7.0",
-          "purl": "pkg:cargo/vyna-hl7-templates@0.7.0?download_url=file://.#src/lib.rs"
+          "version": "0.8.0",
+          "purl": "pkg:cargo/vyna-hl7-templates@0.8.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-terser",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "Terser API for easy HL7 field access using path notation",
       "scope": "required",
       "licenses": [
@@ -678,7 +678,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-terser@0.7.0?download_url=file://crates/vyna-hl7-terser",
+      "purl": "pkg:cargo/vyna-hl7-terser@0.8.0?download_url=file://crates/vyna-hl7-terser",
       "externalReferences": [
         {
           "type": "documentation",
@@ -696,10 +696,10 @@
     },
     {
       "type": "application",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-testpanel#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-testpanel#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-testpanel",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "GUI Test Panel for VynaHL7 HL7 Library - demonstrates parsing, building, validation, MLLP, and FHIR conversion",
       "scope": "required",
       "licenses": [
@@ -707,7 +707,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-testpanel@0.7.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-testpanel@0.8.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "vcs",
@@ -717,19 +717,19 @@
       "components": [
         {
           "type": "application",
-          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-testpanel#0.7.0 bin-target-0",
+          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-testpanel#0.8.0 bin-target-0",
           "name": "vyna-hl7-testpanel",
-          "version": "0.7.0",
-          "purl": "pkg:cargo/vyna-hl7-testpanel@0.7.0?download_url=file://.#src/main.rs"
+          "version": "0.8.0",
+          "purl": "pkg:cargo/vyna-hl7-testpanel@0.8.0?download_url=file://.#src/main.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-transform#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-transform#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-transform",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "Message transformation framework for HL7 v2.x messages",
       "scope": "required",
       "licenses": [
@@ -737,7 +737,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-transform@0.7.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-transform@0.8.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -755,19 +755,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-transform#0.7.0 bin-target-0",
+          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-transform#0.8.0 bin-target-0",
           "name": "vyna_hl7_transform",
-          "version": "0.7.0",
-          "purl": "pkg:cargo/vyna-hl7-transform@0.7.0?download_url=file://.#src/lib.rs"
+          "version": "0.8.0",
+          "purl": "pkg:cargo/vyna-hl7-transform@0.8.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-validator#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-validator#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-validator",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "Validation for HL7 v2.x messages against various standards",
       "scope": "required",
       "licenses": [
@@ -775,7 +775,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-validator@0.7.0?download_url=file://crates/vyna-hl7-validator",
+      "purl": "pkg:cargo/vyna-hl7-validator@0.8.0?download_url=file://crates/vyna-hl7-validator",
       "externalReferences": [
         {
           "type": "documentation",
@@ -793,10 +793,10 @@
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-wasm#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-wasm#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-wasm",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "WebAssembly bindings for VynaHL7 HL7 v2.x library",
       "scope": "required",
       "licenses": [
@@ -804,7 +804,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-wasm@0.7.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-wasm@0.8.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -822,19 +822,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-wasm#0.7.0 bin-target-0",
+          "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-wasm#0.8.0 bin-target-0",
           "name": "vyna_hl7_wasm",
-          "version": "0.7.0",
-          "purl": "pkg:cargo/vyna-hl7-wasm@0.7.0?download_url=file://.#src/lib.rs"
+          "version": "0.8.0",
+          "purl": "pkg:cargo/vyna-hl7-wasm@0.8.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-xml#0.7.0",
+      "bom-ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-xml#0.8.0",
       "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
       "name": "vyna-hl7-xml",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "XML encoding and decoding for HL7 v2.x messages",
       "scope": "required",
       "licenses": [
@@ -842,7 +842,7 @@
           "expression": "LicenseRef-Proprietary"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-xml@0.7.0?download_url=file://../vyna-hl7-xml",
+      "purl": "pkg:cargo/vyna-hl7-xml@0.8.0?download_url=file://../vyna-hl7-xml",
       "externalReferences": [
         {
           "type": "documentation",
@@ -25721,18 +25721,18 @@
   ],
   "dependencies": [
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7#vyna-hl7@0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7#vyna-hl7@0.8.0",
       "dependsOn": [
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-http#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-mllp#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-validator#0.7.0"
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-http#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-mllp#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-validator#0.8.0"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-batch#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-batch#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#russh@0.64.1",
@@ -25740,12 +25740,12 @@
         "registry+https://github.com/rust-lang/crates.io-index#suppaftp@12.2.0",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
         "registry+https://github.com/rust-lang/crates.io-index#tokio@1.53.2",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.7.0"
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.8.0"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-cli#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-cli#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#anyhow@1.0.104",
         "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.7",
@@ -25754,44 +25754,44 @@
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
         "registry+https://github.com/rust-lang/crates.io-index#tokio@1.53.2",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-fhir#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-http#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-mllp#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-validator#0.7.0"
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-fhir#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-http#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-mllp#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-validator#0.8.0"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-codegen#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-codegen#0.8.0",
       "dependsOn": [
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-validator#0.7.0"
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-validator#0.8.0"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-conformance#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-conformance#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#anyhow@1.0.104",
         "registry+https://github.com/rust-lang/crates.io-index#quick-xml@0.42.0",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-validator#0.7.0"
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-validator#0.8.0"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-convert#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-convert#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-validator#0.7.0"
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-validator#0.8.0"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#encoding_rs@0.8.42",
@@ -25801,19 +25801,19 @@
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-custom#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-custom#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#anyhow@1.0.104",
         "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#once_cell@1.21.4",
         "registry+https://github.com/rust-lang/crates.io-index#paste@1.0.15",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.7.0"
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.8.0"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-fhir#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-fhir#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#anyhow@1.0.104",
         "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
@@ -25821,13 +25821,13 @@
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
         "registry+https://github.com/rust-lang/crates.io-index#serde_yaml@0.9.34+deprecated",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.7.0"
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.8.0"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-http#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-http#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#anyhow@1.0.104",
         "registry+https://github.com/rust-lang/crates.io-index#async-channel@2.5.0",
@@ -25856,14 +25856,14 @@
         "registry+https://github.com/rust-lang/crates.io-index#tracing@0.1.44",
         "registry+https://github.com/rust-lang/crates.io-index#tracing-subscriber@0.3.23",
         "registry+https://github.com/rust-lang/crates.io-index#uuid@1.28.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.7.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.8.0",
         "registry+https://github.com/rust-lang/crates.io-index#webpki-roots@1.0.9"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-macros#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-macros#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#proc-macro2@1.0.107",
         "registry+https://github.com/rust-lang/crates.io-index#quote@1.0.47",
@@ -25871,7 +25871,7 @@
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-mllp#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-mllp#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#anyhow@1.0.104",
         "registry+https://github.com/rust-lang/crates.io-index#bytes@1.12.1",
@@ -25880,68 +25880,68 @@
         "registry+https://github.com/rust-lang/crates.io-index#tokio@1.53.2",
         "registry+https://github.com/rust-lang/crates.io-index#tokio-rustls@0.26.6",
         "registry+https://github.com/rust-lang/crates.io-index#tokio-util@0.7.20",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.7.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.8.0",
         "registry+https://github.com/rust-lang/crates.io-index#webpki-roots@1.0.9"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-orchestration#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-orchestration#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
         "registry+https://github.com/rust-lang/crates.io-index#tokio@1.53.2",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.7.0"
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.8.0"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0"
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-queue#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-queue#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0"
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-redact#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-redact#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#hmac@0.13.0",
         "registry+https://github.com/rust-lang/crates.io-index#sha2@0.11.0",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0"
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-templates#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-templates#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#regex@1.13.1",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
         "registry+https://github.com/rust-lang/crates.io-index#serde_yaml@0.9.34+deprecated",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.7.0"
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.8.0"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0"
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-testpanel#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-testpanel#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#async-trait@0.1.92",
         "registry+https://github.com/rust-lang/crates.io-index#base64@0.23.1",
@@ -25970,20 +25970,20 @@
         "registry+https://github.com/rust-lang/crates.io-index#unftp-sbe-fs@0.4.0",
         "registry+https://github.com/rust-lang/crates.io-index#usvg@0.48.1",
         "registry+https://github.com/rust-lang/crates.io-index#uuid@1.28.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-fhir#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-http#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-mllp#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-templates#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-validator#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-xml#0.7.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-fhir#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-http#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-mllp#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-templates#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-validator#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-xml#0.8.0",
         "registry+https://github.com/rust-lang/crates.io-index#winresource@0.1.34"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-transform#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-transform#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#regex@1.13.1",
@@ -25991,23 +25991,23 @@
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
         "registry+https://github.com/rust-lang/crates.io-index#serde_yaml@0.9.34+deprecated",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.7.0"
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.8.0"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-validator#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-validator#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
         "registry+https://github.com/rust-lang/crates.io-index#serde_yaml@0.9.34+deprecated",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.7.0"
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.8.0"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-wasm#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-wasm#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#console_error_panic_hook@0.1.7",
@@ -26015,21 +26015,21 @@
         "registry+https://github.com/rust-lang/crates.io-index#serde-wasm-bindgen@0.6.5",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-validator#0.7.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-terser#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-validator#0.8.0",
         "registry+https://github.com/rust-lang/crates.io-index#wasm-bindgen@0.2.129",
         "registry+https://github.com/rust-lang/crates.io-index#web-sys@0.3.106"
       ]
     },
     {
-      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-xml#0.7.0",
+      "ref": "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-xml#0.8.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#quick-xml@0.42.0",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.7.0",
-        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.7.0"
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-core#0.8.0",
+        "path+file:///home/fan/Code/VynaHL7/crates/vyna-hl7-parser#0.8.0"
       ]
     },
     {

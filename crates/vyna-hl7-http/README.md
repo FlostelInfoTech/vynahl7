@@ -454,9 +454,9 @@ match client.send_message(&message).await {
 ```rust
 let server = HttpServer::new()
     .with_handler(message_handler)           // Required: Message handler
-    .with_auth(username, password)           // Optional: Basic auth
-    .with_tls(tls_config)                    // Optional: TLS/mTLS
-    .with_compression();                     // Optional: Compression
+    .with_auth(username, password)           // Optional: Basic auth (needs `auth` feature)
+    .with_tls(tls_config)                    // Optional: TLS/mTLS (needs `tls` feature)
+    .with_compression();                     // Optional: Compression (needs `compression` feature)
 
 // HTTP
 server.serve("0.0.0.0:8080").await?;

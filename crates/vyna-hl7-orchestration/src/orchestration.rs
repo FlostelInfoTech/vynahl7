@@ -95,8 +95,10 @@ impl OrchestrationStep {
     ) -> Result<Message> {
         let mut attempts = 0;
         let mut last_error = None;
+        // The field is public, so clamp here too: a step always runs once.
+        let max_attempts = config.max_attempts.max(1);
 
-        while attempts < config.max_attempts {
+        while attempts < max_attempts {
             attempts += 1;
 
             match (self.handler)(message.clone()).await {
@@ -105,7 +107,7 @@ impl OrchestrationStep {
                 }
                 Err(e) => {
                     last_error = Some(e);
-                    if attempts < config.max_attempts {
+                    if attempts < max_attempts {
                         let delay = config.delay_ms * attempts as u64;
                         tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
                     }
@@ -135,9 +137,12 @@ pub struct RetryConfig {
 
 impl RetryConfig {
     /// Create a new retry configuration
+    ///
+    /// `max_attempts` counts the initial try, so values below 1 are clamped
+    /// to 1: a step always runs at least once and never panics on 0.
     pub fn new(max_attempts: usize, delay_ms: u64) -> Self {
         Self {
-            max_attempts,
+            max_attempts: max_attempts.max(1),
             delay_ms,
         }
     }
@@ -377,6 +382,32 @@ mod tests {
 
         let config = RetryConfig::none();
         assert_eq!(config.max_attempts, 1);
+    }
+
+    #[tokio::test]
+    async fn test_retry_config_zero_attempts_runs_once() {
+        // Zero is clamped: the step runs once and returns the error instead
+        // of panicking on an empty attempt history.
+        assert_eq!(RetryConfig::new(0, 10).max_attempts, 1);
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let counter_clone = counter.clone();
+        let mut orchestrator = MessageOrchestrator::new();
+        orchestrator.add_step_with_retry(
+            "zero_retry",
+            move |_msg| {
+                let counter = counter_clone.clone();
+                async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    Err::<Message, _>(OrchestrationError::custom("always fails"))
+                }
+            },
+            RetryConfig::new(0, 10),
+        );
+
+        let result = orchestrator.execute(create_test_message()).await;
+        assert!(result.is_err());
+        assert_eq!(counter.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

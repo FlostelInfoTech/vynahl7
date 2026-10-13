@@ -423,6 +423,7 @@ impl ConformanceValidator {
                         table_id: field_profile.table_id.clone(),
                         components: field_profile.components.clone(),
                         value_set: field_profile.value_set.clone(),
+                        item_no: field_profile.item_no.clone(),
                     };
                     self.validate_field_usage(FieldValidationContext {
                         segment_id,

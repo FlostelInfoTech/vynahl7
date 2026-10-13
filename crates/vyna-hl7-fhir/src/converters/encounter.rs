@@ -258,14 +258,14 @@ impl EncounterConverter {
 
     /// Create an encounter participant from practitioner info
     fn create_participant(terser: &Terser, path: &str, role_code: &str) -> Option<EncounterParticipant> {
-        // Get practitioner ID (component 0 in 0-based indexing)
+        // Get practitioner ID (whole-field read returns component 1)
         let id = terser.get(path).ok().flatten()?;
         if id.is_empty() {
             return None;
         }
 
-        // Get practitioner name (component 1 in 0-based indexing = family name)
-        let name = terser.get(&format!("{}-1", path)).ok().flatten();
+        // Get practitioner name (component 2 = family name, 1-based indexing)
+        let name = terser.get(&format!("{}-2", path)).ok().flatten();
 
         let role_display = match role_code {
             "ATND" => "Attending",

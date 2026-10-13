@@ -130,7 +130,7 @@ for phone in terser.iter_repetitions("PID", 13, 0) {
 
 ## CachedTerser for Performance
 
-When accessing the same fields repeatedly, `CachedTerser` provides 5-10x better performance by caching parsed paths and values:
+When accessing the same fields repeatedly, `CachedTerser` gives faster lookups by caching parsed paths and values (measured ~60ns vs ~80ns uncached, ~1.4x):
 
 ```rust
 use vyna_hl7_terser::CachedTerser;

@@ -360,19 +360,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ```rust
 use vyna_hl7_http::{HttpServer, HttpClient};
+use vyna_hl7_http::tls::{TlsServerConfig, TlsClientConfig};
 
 // HTTPS Server
+let tls_config = TlsServerConfig::new("server-cert.pem", "server-key.pem")?;
 let server = HttpServer::new()
     .with_handler(handler)
-    .with_tls("server-cert.pem", "server-key.pem");
+    .with_tls(tls_config);
 
 server.serve_tls("0.0.0.0:8443").await?;
 
 // HTTPS Client
-let client = HttpClient::new_tls(
-    "https://secure-gateway.hospital.org:8443",
-    "ca-cert.pem"
-)?;
+let tls_config = TlsClientConfig::with_ca_cert("ca-cert.pem")?;
+let client = HttpClient::new("https://secure-gateway.hospital.org:8443")?
+    .with_tls(tls_config)?;
 
 let ack = client.send_message(&message).await?;
 ```

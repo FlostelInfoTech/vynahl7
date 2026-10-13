@@ -58,8 +58,8 @@ PID|1||MRN123||DOE^JOHN^ALLEN||19800101|M|||123 Main St^^Boston^MA^02101||555-12
 
             // Extract fields using Terser paths
             const patientName = getTerserValue(message, "PID-5");
-            const familyName = getTerserValue(message, "PID-5-0");
-            const givenName = getTerserValue(message, "PID-5-1");
+            const familyName = getTerserValue(message, "PID-5-1");
+            const givenName = getTerserValue(message, "PID-5-2");
             const dob = getTerserValue(message, "PID-7");
 
             console.log("Patient:", familyName, givenName);
@@ -124,7 +124,7 @@ async function processHL7(hl7String: string): Promise<void> {
     console.log(`Processing ${messageType} from ${sendingApp}`);
 
     // Modify fields
-    setTerserValue(message, "PID-5-0", "SMITH");
+    setTerserValue(message, "PID-5-1", "SMITH");
 
     // Validate
     const result = validateMessage(message);
@@ -167,8 +167,8 @@ Get a single field value using Terser path notation.
 
 ```typescript
 const name = getTerserValue(message, "PID-5");
-const family = getTerserValue(message, "PID-5-0");  // First component
-const given = getTerserValue(message, "PID-5-1");   // Second component
+const family = getTerserValue(message, "PID-5-1");  // First component
+const given = getTerserValue(message, "PID-5-2");   // Second component
 ```
 
 #### `setTerserValue(message: WasmMessage, path: string, value: string): void`
@@ -176,7 +176,7 @@ const given = getTerserValue(message, "PID-5-1");   // Second component
 Set a field value.
 
 ```typescript
-setTerserValue(message, "PID-5-0", "SMITH");
+setTerserValue(message, "PID-5-1", "SMITH");
 setTerserValue(message, "PID-8", "F");
 ```
 
@@ -186,8 +186,8 @@ Get multiple values at once.
 
 ```typescript
 const values = getTerserValues(message, [
-    "PID-5-0",
     "PID-5-1",
+    "PID-5-2",
     "PID-7",
     "PID-8"
 ]);

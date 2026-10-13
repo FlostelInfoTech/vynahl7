@@ -38,7 +38,7 @@ impl ProcedureConverter {
         let code_path = if pr1_index == 0 {
             "PR1-3".to_string()
         } else {
-            format!("PR1({})-3", pr1_index)
+            format!("PR1({})-3", pr1_index + 1)
         };
         if let Ok(Some(code)) = terser.get(&code_path) {
             let mut coding = Coding {
@@ -48,13 +48,13 @@ impl ProcedureConverter {
                 display: None,
             };
 
-            // Component 1: Text (0-based)
-            if let Ok(Some(text)) = terser.get(&format!("{}-1", code_path)) {
+            // Component 1: Text (1-based indexing)
+            if let Ok(Some(text)) = terser.get(&format!("{}-2", code_path)) {
                 coding.display = Some(text.to_string());
             }
 
-            // Component 2: Coding System (0-based)
-            if let Ok(Some(system)) = terser.get(&format!("{}-2", code_path)) {
+            // Component 2: Coding System (1-based indexing)
+            if let Ok(Some(system)) = terser.get(&format!("{}-3", code_path)) {
                 coding.system = Some(Self::convert_coding_system(system));
             }
 
@@ -68,7 +68,7 @@ impl ProcedureConverter {
         let datetime_path = if pr1_index == 0 {
             "PR1-5".to_string()
         } else {
-            format!("PR1({})-5", pr1_index)
+            format!("PR1({})-5", pr1_index + 1)
         };
         if let Ok(Some(datetime)) = terser.get(&datetime_path) {
             procedure.performed_date_time = Some(Self::convert_datetime(datetime)?);
@@ -137,5 +137,41 @@ mod tests {
         assert_eq!(procedures.len(), 1);
         assert_eq!(procedures[0].resource_type, "Procedure");
         assert_eq!(procedures[0].status, "completed");
+    }
+
+    #[test]
+    fn test_convert_procedure_reads_each_segment_with_code_and_display() {
+        // PR1-3 is CWE: component 1 = code, 2 = text, 3 = coding system.
+        let hl7 = "MSH|^~\\&|System|Hospital|EMR|Hospital|20240315||ADT^A01|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   PR1|1||0016^Appendectomy^I9C||20240315100000\r\
+                   PR1|2||0017^Cholecystectomy^I9C||20240315110000";
+
+        let message = parse_message(hl7).unwrap();
+        let procedures = ProcedureConverter::convert_all(&message).unwrap();
+
+        assert_eq!(procedures.len(), 2);
+        let coding = |p: &Procedure| {
+            p.code
+                .as_ref()
+                .unwrap()
+                .coding
+                .as_ref()
+                .unwrap()
+                .first()
+                .cloned()
+                .unwrap()
+        };
+        let first = coding(&procedures[0]);
+        assert_eq!(first.code.as_deref(), Some("0016"));
+        assert_eq!(first.display.as_deref(), Some("Appendectomy"));
+        // Coding systems are mapped to FHIR URIs.
+        assert_eq!(
+            first.system.as_deref(),
+            Some("http://hl7.org/fhir/sid/icd-9-cm")
+        );
+        let second = coding(&procedures[1]);
+        assert_eq!(second.code.as_deref(), Some("0017"));
+        assert_eq!(second.display.as_deref(), Some("Cholecystectomy"));
     }
 }

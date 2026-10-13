@@ -12,7 +12,7 @@ MLLP (Minimal Lower Layer Protocol) support for HL7 v2.x message transmission ov
 - **MLLP Protocol**: Proper framing with Start Block (0x0B) and End Block (0x1C 0x0D)
 - **TLS/mTLS Support**: Secure transmission with optional client certificate authentication
 - **Client & Server**: Complete implementations for both roles
-- **Message Acknowledgment**: Automatic ACK generation and handling
+- **Message Acknowledgment**: Router-generated AA/AE/AR acknowledgments (`RouteResult`), auto-reject for unhandled routes
 - **Testing Utilities**: MockMllpServer for integration testing
 - **Connection Pooling**: Reuse connections for improved performance
 

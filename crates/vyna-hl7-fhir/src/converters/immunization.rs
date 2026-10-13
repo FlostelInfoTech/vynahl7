@@ -208,7 +208,7 @@ impl ImmunizationConverter {
             };
 
             // Component 1: Site text
-            if let Ok(Some(site_text)) = terser.get(&format!("{}-1", path("11"))) {
+            if let Ok(Some(site_text)) = terser.get(&format!("{}-2", path("11"))) {
                 coding.display = Some(site_text.to_string());
             }
 
@@ -304,7 +304,7 @@ impl ImmunizationConverter {
         };
 
         // Component 1: Vaccine text/display (1-based component indexing)
-        if let Ok(Some(display)) = terser.get(&format!("{}-1", base_path)) {
+        if let Ok(Some(display)) = terser.get(&format!("{}-2", base_path)) {
             coding.display = Some(display.to_string());
         }
 

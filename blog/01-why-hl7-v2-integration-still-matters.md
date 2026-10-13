@@ -48,7 +48,7 @@ Healthcare systems process millions of messages daily. Memory leaks and crashes 
 
 ### 2. Performance That Scales
 
-VynaHL7 can parse **40,000 to 100,000+ HL7 messages per second** depending on message complexity. This matters when you're processing hospital-wide ADT feeds, lab result streams, or real-time monitoring data. Our zero-copy parsing approach means minimal memory allocation during the parsing phase.
+VynaHL7 parses tens of thousands of HL7 messages per second depending on message complexity (measured ~60,000/sec for small ADT, ~19,000/sec for medium ORU; see `docs/performance.md`). This matters when you're processing hospital-wide ADT feeds, lab result streams, or real-time monitoring data. Our zero-copy parsing approach means minimal memory allocation during the parsing phase.
 
 ### 3. Type Safety for Complex Data Models
 

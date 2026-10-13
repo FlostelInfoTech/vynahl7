@@ -62,8 +62,8 @@ pub fn extract_patient_demographics(message: &WasmMessage) -> Result<JsValue, Js
     let demographics = Demographics {
         patient_id: terser.get("PID-2").ok().flatten().map(|s| s.to_string()),
         mrn: terser.get("PID-3").ok().flatten().map(|s| s.to_string()),
-        family_name: terser.get("PID-5-0").ok().flatten().map(|s| s.to_string()),
-        given_name: terser.get("PID-5-1").ok().flatten().map(|s| s.to_string()),
+        family_name: terser.get("PID-5-1").ok().flatten().map(|s| s.to_string()),
+        given_name: terser.get("PID-5-2").ok().flatten().map(|s| s.to_string()),
         date_of_birth: terser.get("PID-7").ok().flatten().map(|s| s.to_string()),
         gender: terser.get("PID-8").ok().flatten().map(|s| s.to_string()),
         address: terser.get("PID-11").ok().flatten().map(|s| s.to_string()),
@@ -109,17 +109,18 @@ pub fn extract_observations(message: &WasmMessage) -> Result<JsValue, JsValue> {
     let mut observations = Vec::new();
 
     for i in 0..obx_count {
+        // Terser segment indexes are 1-based: OBX(1) is the first OBX.
         let prefix = if i == 0 {
             "OBX".to_string()
         } else {
-            format!("OBX({})", i)
+            format!("OBX({})", i + 1)
         };
 
         let obs = Observation {
             set_id: terser.get(&format!("{}-1", prefix)).ok().flatten().map(|s| s.to_string()),
             value_type: terser.get(&format!("{}-2", prefix)).ok().flatten().map(|s| s.to_string()),
             identifier: terser.get(&format!("{}-3", prefix)).ok().flatten().map(|s| s.to_string()),
-            test_name: terser.get(&format!("{}-3-1", prefix)).ok().flatten().map(|s| s.to_string()),
+            test_name: terser.get(&format!("{}-3-2", prefix)).ok().flatten().map(|s| s.to_string()),
             value: terser.get(&format!("{}-5", prefix)).ok().flatten().map(|s| s.to_string()),
             units: terser.get(&format!("{}-6", prefix)).ok().flatten().map(|s| s.to_string()),
             reference_range: terser.get(&format!("{}-7", prefix)).ok().flatten().map(|s| s.to_string()),
@@ -133,4 +134,48 @@ pub fn extract_observations(message: &WasmMessage) -> Result<JsValue, JsValue> {
 
     serde_wasm_bindgen::to_value(&observations)
         .map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parse_message as parse_wasm;
+    use wasm_bindgen_test::*;
+
+    fn from_js(value: JsValue) -> serde_json::Value {
+        serde_wasm_bindgen::from_value(value).unwrap()
+    }
+
+    #[wasm_bindgen_test]
+    fn test_demographics_reads_1_based_name_components() {
+        let msg = parse_wasm(
+            "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+             PID|1||MRN123||DOE^JOHN||19800101|M",
+        )
+        .unwrap();
+
+        let demographics = from_js(extract_patient_demographics(&msg).unwrap());
+
+        assert_eq!(demographics["family_name"], "DOE");
+        assert_eq!(demographics["given_name"], "JOHN");
+        assert_eq!(demographics["mrn"], "MRN123");
+    }
+
+    #[wasm_bindgen_test]
+    fn test_observations_read_each_obx_segment_with_test_name() {
+        let msg = parse_wasm(
+            "MSH|^~\\&|App|Fac|RecApp|RecFac|20240315||ORU^R01|12345|P|2.5\r\
+             PID|1||MRN123||DOE^JOHN||19800101|M\r\
+             OBX|1|NM|GLU^Glucose^L||98|mg/dL|||||F\r\
+             OBX|2|NM|NA^Sodium^L||140|mmol/L|||||F",
+        )
+        .unwrap();
+
+        let observations = from_js(extract_observations(&msg).unwrap());
+
+        assert_eq!(observations[0]["value"], "98");
+        assert_eq!(observations[0]["test_name"], "Glucose");
+        assert_eq!(observations[1]["value"], "140");
+        assert_eq!(observations[1]["test_name"], "Sodium");
+    }
 }

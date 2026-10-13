@@ -18,14 +18,14 @@ A comprehensive Rust library for parsing, validating, and creating HL7 v2.x heal
 - **✅ Message Filtering**: Predicate-based filtering with AND/OR logic
 - **✅ Terser API**: Easy field access using path notation (e.g., `PID-5-1`, `OBX(2)-5`)
 - **✅ Encoding/Escaping**: Proper handling of HL7 escape sequences
-- **✅ Message Builders**: Fluent API for creating messages (ADT A01-A13/A17/A28/A31/A40, ORU, ORM, OUL, OML, RDE, RAS, RDS, RGV, RRA, RRD, SIU, MDM, DFT, QRY, QBP, RSP)
+- **✅ Message Builders**: Fluent API for creating messages (ADT A01-A13/A17/A28/A31/A34/A40, BAR, MFN, ORU, ORM, OUL, OML, RDE, RAS, RDS, RGV, RRA, RRD, SIU, MDM, DFT, QRY, QBP, RSP)
 - **✅ Complex Field Builders**: Builder patterns for composite data types (XPN, XAD, XTN, CX, XCN)
 - **✅ Message Types**: Support for ADT (A01-A40), SIU (S12-S15), MDM (T01-T04), DFT (P03, P11), QRY (A19, Q01-Q02), QBP (Q11/Q15/Q21/Q22), RSP (K11/K21/K22), BAR (P01-P02), Pharmacy (RDE, RAS, RDS, RGV, RRD, RRA), Laboratory (OUL, OML), MFN, ORM, ORU, ACK, and other message types
-- **✅ ACK Generation**: Automatic acknowledgment message creation
+- **✅ ACK Generation**: MLLP router auto-acknowledgment (AA/AE/AR); test panel auto-ACK toggle
 - **✅ MLLP Support**: Network transmission using Minimal Lower Layer Protocol (intra-organization) with TLS/mTLS security
 - **✅ HTTP Transport**: HL7-over-HTTP support for inter-organization communication with TLS/mTLS security
 - **✅ Testing Infrastructure**: Mock servers (MLLP & HTTP) and integration testing tools with automatic test certificate generation
-- **✅ FHIR Conversion**: Convert HL7 v2 messages to FHIR R4 resources - 12 production-ready converters (Patient, Observation, Encounter, DiagnosticReport, AllergyIntolerance, Condition, Procedure, Medication, Immunization, ServiceRequest, Specimen, and more)
+- **✅ FHIR Conversion**: Convert HL7 v2 messages to FHIR R4 resources - 12 production-ready converters (Patient, Observation, Encounter, DiagnosticReport, Practitioner, AllergyIntolerance, MedicationAdministration, Condition, Procedure, Immunization, ServiceRequest, Specimen)
 - **✅ Custom Z-Segments**: Type-safe framework for defining and parsing custom organization-specific Z-segments
 - **🚀 Fast and Safe**: Built with Rust for performance and memory safety
 - **📦 Modular Design**: Use only the components you need
@@ -40,6 +40,13 @@ vyna-hl7/
 ├── vyna-hl7-conformance   - Conformance profile validation (XML-based)
 ├── vyna-hl7-orchestration - Message routing, filtering, and workflow orchestration
 ├── vyna-hl7-terser        - Path-based field access API
+├── vyna-hl7-transform     - Message transformation framework
+├── vyna-hl7-templates     - Message and segment templates
+├── vyna-hl7-codegen       - Schema-driven code generation for typed models
+├── vyna-hl7-redact        - Safe Harbor de-identification
+├── vyna-hl7-convert       - Schema-driven cross-version conversion
+├── vyna-hl7-queue         - Durable store-and-forward queue
+├── vyna-hl7-batch         - Batch building, lenient intake, file-drop transports
 ├── vyna-hl7-custom        - Type-safe custom Z-segment framework
 ├── vyna-hl7-mllp          - MLLP protocol for network transmission (intra-organization)
 ├── vyna-hl7-http          - HTTP transport for inter-organization communication
@@ -95,16 +102,16 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-vyna-hl7-core = "0.7.0"
-vyna-hl7-parser = "0.7.0"
-vyna-hl7-terser = "0.7.0"
-vyna-hl7-validator = "0.7.0"
-vyna-hl7-conformance = "0.7.0"   # Optional: for conformance profile validation
-vyna-hl7-orchestration = "0.7.0" # Optional: for routing, filtering, and workflows
-vyna-hl7-custom = "0.7.0"        # Optional: for custom Z-segment support
-vyna-hl7-mllp = "0.7.0"          # Optional: for MLLP network support with TLS/mTLS (intra-organization)
-vyna-hl7-http = "0.7.0"          # Optional: for HTTP transport with TLS/mTLS (inter-organization)
-vyna-hl7-fhir = "0.7.0"          # Optional: for FHIR conversion (12 converters)
+vyna-hl7-core = "0.8.0"
+vyna-hl7-parser = "0.8.0"
+vyna-hl7-terser = "0.8.0"
+vyna-hl7-validator = "0.8.0"
+vyna-hl7-conformance = "0.8.0"   # Optional: for conformance profile validation
+vyna-hl7-orchestration = "0.8.0" # Optional: for routing, filtering, and workflows
+vyna-hl7-custom = "0.8.0"        # Optional: for custom Z-segment support
+vyna-hl7-mllp = "0.8.0"          # Optional: for MLLP network support with TLS/mTLS (intra-organization)
+vyna-hl7-http = "0.8.0"          # Optional: for HTTP transport with TLS/mTLS (inter-organization)
+vyna-hl7-fhir = "0.8.0"          # Optional: for FHIR conversion (12 converters)
 ```
 
 ### Parsing a Message
@@ -255,25 +262,25 @@ use vyna_hl7_terser::Terser;
 
 let mut engine = RulesEngine::new();
 
-// Add a custom rule
+// Add a custom rule: the condition returns true when the message passes
 let rule = ValidationRule::new(
     "patient_age_check",
     "Patients under 18 must have a guardian contact",
+    RuleSeverity::Error,
 )
-.with_severity(RuleSeverity::Error)
 .with_condition(|msg| {
     let terser = Terser::new(msg);
 
     // Check if patient is under 18
     if let Some(dob) = terser.get("PID-7").ok().flatten() {
         // Calculate age logic here...
-        // If under 18, check for guardian
+        // If under 18, a guardian is required
         if let Some(guardian) = terser.get("NK1-2").ok().flatten() {
-            return guardian.is_empty(); // Return true if violation
+            return !guardian.is_empty(); // Pass when a guardian is present
         }
-        return true; // No guardian found
+        return false; // No guardian found: violation
     }
-    false // No DOB, skip rule
+    true // No DOB, skip rule
 });
 
 engine.add_rule(rule);
@@ -281,10 +288,11 @@ engine.add_rule(rule);
 // Use pre-built cross-field validators
 engine.add_rule(
     CrossFieldValidator::if_then(
-        "PID-16", "M", "PID-17" // If married, religion code required
+        "marital_status_religion",
+        "If married, religion code required",
+        RuleSeverity::Warning,
+        "PID-16", "M", "PID-17",
     )
-    .with_name("marital_status_religion")
-    .with_severity(RuleSeverity::Warning)
 );
 
 // Validate message
@@ -557,7 +565,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tls_config = TlsClientConfig::with_ca_cert("ca-cert.pem")?;
-    let client = HttpClient::new_tls("https://example.com/hl7", tls_config)?;
+    let client = HttpClient::new("https://example.com/hl7")?.with_tls(tls_config)?;
 
     let ack = client.send_message(&message).await?;
 }
@@ -912,7 +920,8 @@ The Terser API uses a simple path notation for accessing fields:
 | `PID-5-1` | PID segment, field 5, component 1 |
 | `PID-5-1-2` | PID segment, field 5, component 1, subcomponent 2 |
 | `OBX(2)-5` | Second OBX segment (1-indexed), field 5 |
-| `PID-11(1)-1` | PID segment, field 11, second repetition, component 1 |
+| `PID-11(1)-1` | PID segment, field 11, first repetition, component 1 |
+| `PID-11(2)-1` | PID segment, field 11, second repetition, component 1 |
 
 ## HL7 Message Hierarchy
 
@@ -927,6 +936,8 @@ Message
 
 ## Supported HL7 Versions
 
+- HL7 v2.1
+- HL7 v2.2
 - HL7 v2.3
 - HL7 v2.3.1
 - HL7 v2.4
@@ -935,6 +946,9 @@ Message
 - HL7 v2.6
 - HL7 v2.7
 - HL7 v2.7.1
+- HL7 v2.8
+- HL7 v2.8.1
+- HL7 v2.8.2
 
 ## Supported Message Types
 
@@ -955,6 +969,7 @@ Message
 - **A17** - Swap Patients
 - **A28** - Add Person Information
 - **A31** - Update Person Information
+- **A34** - Merge Patient - Patient ID Only
 - **A40** - Merge Patient - Patient Identifier List
 
 ### SIU - Scheduling Information Unsolicited
@@ -1031,7 +1046,7 @@ cargo test -- --nocapture
 VynaHL7 is optimized for high-throughput message processing:
 
 - **Zero-copy parsing** with minimal allocations
-- **Cached Terser** for 5-10x faster repeated field access
+- **Cached Terser** for faster repeated field access (~1.4x measured)
 - **Optimized parsers** with pre-allocation for common patterns
 - **Benchmarking suite** for performance validation
 
@@ -1047,11 +1062,19 @@ cargo bench -p vyna-hl7-terser
 ```
 
 **Typical Performance:**
-- Small messages (3 segments): 2-5 µs parse time (~40,000 msg/sec)
-- Medium messages (8 segments): 8-12 µs parse time (~100,000 msg/sec)
-- Terser cached access: 50-100 ns (5-10x faster than first access)
+- Small messages (ADT, 3 segments): ~16 µs parse time (~60,000 msg/sec)
+- Medium messages (ORU, 13 segments): ~52 µs parse time (~19,000 msg/sec)
+- Terser cached access: ~60 ns (~1.4x faster than uncached)
 
-See [PERFORMANCE.md](PERFORMANCE.md) for detailed optimization guide.
+See [docs/performance.md](docs/performance.md) for detailed optimization guide.
+
+## Documentation
+
+- [Requirements specification](docs/requirements.md) — numbered functional/non-functional requirements
+- [Design specification](docs/design.md) — architecture, crate catalog, component designs
+- [Integration guide](docs/integration.md) — install, quickstarts, transports, troubleshooting
+- [SBOM](docs/sbom/) — CycloneDX supply-chain record + regeneration
+- [RFCs](docs/rfcs/) — design proposals; [blog](blog/) — tutorials
 
 ## Contributing
 
@@ -1059,14 +1082,15 @@ This is a private repository. Internal contributors, please:
 
 1. Create a feature branch
 2. Add tests for new functionality
-3. Ensure all tests pass
-4. Submit a merge request
+3. Update the living docs (`docs/`) and CHANGELOG for behavior changes
+4. Ensure all tests pass
+5. Submit a merge request
 
 ## Roadmap
 
 - [x] Complete schema definitions for all HL7 versions (v2.3-2.8) with full field and component definitions ✅
 - [x] Additional message type schemas (ADT A02-A40, SIU, MDM, DFT, QRY) ✅
-- [x] Message builders (ADT, ORM, ORU, SIU, MDM, DFT, QRY) ✅
+- [x] Message builders (ADT, BAR, MFN, ORM, ORU, SIU, MDM, DFT, QRY, QBP, RSP, pharmacy, laboratory, OMP, PPR, VXU, ACK) ✅
 - [x] Enhanced data type validation (format checking) ✅
 - [x] Vocabulary/code set validation ✅
 - [x] More message schemas (BAR, RAS, RDE, RDS, MFN) ✅
@@ -1076,7 +1100,7 @@ This is a private repository. Internal contributors, please:
 - [x] Laboratory message builders (OUL, OML) ✅
 - [x] Pharmacy message builders (RDE, RAS, RDS, RGV, RRD, RRA) ✅
 - [x] Complex field builder methods (XPN, XAD, XTN, CX, XCN) ✅
-- [x] HL7 FHIR conversion utilities ✅ (9 converters complete - see vyna-hl7-fhir/README.md)
+- [x] HL7 FHIR conversion utilities ✅ (12 forward + 4 reverse converters complete - see vyna-hl7-fhir/README.md)
 - [x] Performance optimizations ✅ (Cached Terser, optimized parsers, benchmarking suite)
 - [x] WebAssembly support ✅ (Full JavaScript/TypeScript bindings - see vyna-hl7-wasm/README.md)
 - [x] CLI tool for message analysis ✅ (5 commands: parse, validate, extract, convert, info - see vyna-hl7-cli/README.md)
@@ -1085,6 +1109,10 @@ This is a private repository. Internal contributors, please:
 - [x] Conformance profile validation ✅ (XML-based conformance profiles with usage, cardinality, and length validation - see vyna-hl7-conformance crate)
 - [x] Advanced validation rules engine ✅ (Flexible business validation with custom rules, cross-field validation, and severity levels - see vyna-hl7-validator crate)
 - [x] Message orchestration ✅ (Multi-step async workflows with retry logic, content-based routing, and message filtering - see vyna-hl7-orchestration crate)
+
+## Acknowledgments
+
+Developed with AI-assisted tooling ([Claude Code](https://claude.ai/code) and [Muse Code](https://www.muse.dev/)) alongside human design, review, and testing.
 
 ## License
 

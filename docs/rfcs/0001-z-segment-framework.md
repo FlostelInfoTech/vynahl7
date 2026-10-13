@@ -508,7 +508,7 @@ fn main() -> Result<()> {
     let message = parse_message(hl7)?;
 
     // Access Z-segments
-    if let Some(zpv_seg) = message.get_segment("ZPV") {
+    if let Some(zpv_seg) = message.get_segments_by_id("ZPV").first() {
         let zpv = ZPV::from_segment(zpv_seg)?;
         println!("Visit: {} - {}", zpv.visit_type, zpv.visit_number);
     }
@@ -520,15 +520,26 @@ fn main() -> Result<()> {
         .patient_class("I")
         .build()?;
 
-    println!("New visit segment: {}", new_zpv.to_segment().encode()?);
+    println!("New visit segment: {}", new_zpv.to_segment().encode(&Delimiters::default()));
 
     Ok(())
 }
 ```
 
+## Implementation notes (deviations from the proposal)
+
+The shipped `vyna-hl7-custom` crate follows this design with small
+signature evolutions:
+
+- `register` takes `&self` (interior mutability) and returns
+  `Result<&Self>` instead of `&mut self` returning nothing.
+- `get` returns `Option<FactoryInfo>` rather than
+  `Option<&dyn CustomSegmentFactory>`.
+- `registered_ids` returns `Vec<String>` rather than `Vec<&str>`.
+- `CustomSegment` gained a `type_name()` helper with a default impl.
+- `validate` returns the crate `Result<()>` alias.
+
 ## Approval
 
-This RFC requires approval from project maintainers before implementation begins.
-
-**Approved by**: _Pending_
-**Date**: _Pending_
+Implemented as specified above (see Implementation notes for minor
+deviations).
