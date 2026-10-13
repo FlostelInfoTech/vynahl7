@@ -79,11 +79,7 @@ impl<'a> TerserQuery<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn get_if(
-        &self,
-        path: &str,
-        condition: impl Fn(&Terser) -> bool,
-    ) -> Option<&str> {
+    pub fn get_if(&self, path: &str, condition: impl Fn(&Terser) -> bool) -> Option<&str> {
         if condition(&self.terser) {
             self.terser.get(path).ok().flatten()
         } else {
@@ -158,12 +154,7 @@ impl<'a> TerserQuery<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn filter_repeating(
-        &self,
-        segment_id: &str,
-        field: usize,
-        value: &str,
-    ) -> Vec<&Segment> {
+    pub fn filter_repeating(&self, segment_id: &str, field: usize, value: &str) -> Vec<&Segment> {
         self.message()
             .get_segments_by_id(segment_id)
             .iter()
@@ -202,12 +193,7 @@ impl<'a> TerserQuery<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn find_first(
-        &self,
-        segment_id: &str,
-        field: usize,
-        value: &str,
-    ) -> Option<&Segment> {
+    pub fn find_first(&self, segment_id: &str, field: usize, value: &str) -> Option<&Segment> {
         self.message()
             .get_segments_by_id(segment_id)
             .iter()
@@ -340,11 +326,7 @@ impl<'a> TerserQuery<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn count_where(
-        &self,
-        segment_id: &str,
-        predicate: impl Fn(&Segment) -> bool,
-    ) -> usize {
+    pub fn count_where(&self, segment_id: &str, predicate: impl Fn(&Segment) -> bool) -> usize {
         self.find_segments(segment_id, predicate).len()
     }
 
@@ -377,11 +359,7 @@ impl<'a> TerserQuery<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn any_match(
-        &self,
-        segment_id: &str,
-        predicate: impl Fn(&Segment) -> bool,
-    ) -> bool {
+    pub fn any_match(&self, segment_id: &str, predicate: impl Fn(&Segment) -> bool) -> bool {
         self.message()
             .get_segments_by_id(segment_id)
             .iter()
@@ -416,11 +394,7 @@ impl<'a> TerserQuery<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn all_match(
-        &self,
-        segment_id: &str,
-        predicate: impl Fn(&Segment) -> bool,
-    ) -> bool {
+    pub fn all_match(&self, segment_id: &str, predicate: impl Fn(&Segment) -> bool) -> bool {
         let segments = self.message().get_segments_by_id(segment_id);
         !segments.is_empty() && segments.iter().all(|seg| predicate(seg))
     }

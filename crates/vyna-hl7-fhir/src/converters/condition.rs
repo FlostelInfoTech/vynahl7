@@ -1,10 +1,10 @@
 //! Condition converter - PRB/DG1 segments to FHIR Condition resource
 
+use crate::error::{ConversionError, ConversionResult};
+use crate::resources::common::*;
+use crate::resources::condition::*;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
-use crate::error::{ConversionError, ConversionResult};
-use crate::resources::condition::*;
-use crate::resources::common::*;
 
 pub struct ConditionConverter;
 
@@ -21,12 +21,21 @@ impl ConditionConverter {
             return Err(ConversionError::MissingSegment("PRB or DG1".to_string()));
         }
 
+        // Each segment type has its own Terser index space, so the
+        // combined PRB|DG1 position must not be reused as the
+        // type-specific index in mixed messages.
         let mut conditions = Vec::new();
-        for (count, (_, seg)) in prb_segments.iter().enumerate() {
+        let mut prb_index = 0;
+        let mut dg1_index = 0;
+        for (_, seg) in prb_segments.iter() {
             let condition = if seg.id == "PRB" {
-                Self::convert_prb(message, count)?
+                let condition = Self::convert_prb(message, prb_index)?;
+                prb_index += 1;
+                condition
             } else {
-                Self::convert_dg1(message, count)?
+                let condition = Self::convert_dg1(message, dg1_index)?;
+                dg1_index += 1;
+                condition
             };
             conditions.push(condition);
         }
@@ -68,7 +77,9 @@ impl ConditionConverter {
 
         condition.clinical_status = Some(CodeableConcept {
             coding: Some(vec![Coding {
-                system: Some("http://terminology.hl7.org/CodeSystem/condition-clinical".to_string()),
+                system: Some(
+                    "http://terminology.hl7.org/CodeSystem/condition-clinical".to_string(),
+                ),
                 version: None,
                 code: Some("active".to_string()),
                 display: None,
@@ -137,6 +148,30 @@ mod tests {
 
         assert_eq!(conditions.len(), 1);
         assert_eq!(conditions[0].resource_type, "Condition");
+    }
+
+    #[test]
+    fn test_mixed_prb_dg1_message_uses_type_specific_indexes() {
+        let hl7 = "MSH|^~\\&|System|Hospital|EMR|Hospital|20240315||PPR^PC1|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   PRB|AD|20240315|AAA^A^SCT|P1\r\
+                   DG1|1||BBB^B^ICD10\r\
+                   PRB|AD|20240315|CCC^C^SCT|P2\r\
+                   DG1|2||DDD^D^ICD10";
+
+        let message = parse_message(hl7).unwrap();
+        let conditions = ConditionConverter::convert_all(&message).unwrap();
+
+        assert_eq!(conditions.len(), 4);
+        let code = |c: &Condition| {
+            c.code.as_ref().unwrap().coding.as_ref().unwrap()[0]
+                .code
+                .clone()
+        };
+        assert_eq!(code(&conditions[0]).as_deref(), Some("AAA"));
+        assert_eq!(code(&conditions[1]).as_deref(), Some("BBB"));
+        assert_eq!(code(&conditions[2]).as_deref(), Some("CCC"));
+        assert_eq!(code(&conditions[3]).as_deref(), Some("DDD"));
     }
 
     #[test]

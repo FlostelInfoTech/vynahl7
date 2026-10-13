@@ -1,10 +1,20 @@
 //! Template engine for creating messages from templates.
 
 use crate::{Error, MessageTemplate, Result};
+use std::collections::HashMap;
+use std::sync::OnceLock;
 use vyna_hl7_core::{
     Component, Delimiters, Encoding, Field, Message, Repetition, Segment, SubComponent,
 };
-use std::collections::HashMap;
+
+/// Matches `{{variable}}` placeholders; compiled once and shared by all
+/// substitutions instead of rebuilt on every call.
+static PLACEHOLDER_RE: OnceLock<regex::Regex> = OnceLock::new();
+
+fn placeholder_regex() -> &'static regex::Regex {
+    PLACEHOLDER_RE
+        .get_or_init(|| regex::Regex::new(r"\{\{([^}]+)\}\}").expect("static regex is valid"))
+}
 
 /// Template engine for creating messages from templates
 pub struct TemplateEngine {
@@ -119,9 +129,18 @@ impl TemplateEngine {
     ) -> Result<Field> {
         // Handle component templates if present
         if let Some(components) = &field_template.components {
-            let mut comp_vec = Vec::new();
+            // Positions are 1-based: honor them (including gaps) rather
+            // than pushing templates in vector order. A repeated position
+            // is overwritten by the later template.
+            let max_pos = components.iter().map(|c| c.position).max().unwrap_or(0);
+            let mut comp_vec = vec![Component::new(); max_pos];
 
             for comp_template in components {
+                if comp_template.position == 0 {
+                    return Err(Error::substitution(
+                        "Component position must be 1-based (got 0)",
+                    ));
+                }
                 let comp_value = if let Some(placeholder) = &comp_template.placeholder {
                     self.substitute_variables(placeholder, variables)?
                 } else if let Some(default) = &comp_template.default {
@@ -134,12 +153,14 @@ impl TemplateEngine {
                     String::new()
                 };
 
-                comp_vec.push(Component::from_value(comp_value));
+                comp_vec[comp_template.position - 1] = Component::from_value(comp_value);
             }
 
             // Create a field with one repetition containing the components
             let mut field = Field::new();
-            field.add_repetition(Repetition { components: comp_vec });
+            field.add_repetition(Repetition {
+                components: comp_vec,
+            });
             Ok(field)
         } else {
             // Simple field with single value
@@ -187,7 +208,7 @@ impl TemplateEngine {
     }
 
     /// Substitute variables in a placeholder string
-    /// Supports {{variable_name}} syntax
+    /// Supports {{variable_name}} syntax (inner whitespace allowed)
     fn substitute_variables(
         &self,
         placeholder: &str,
@@ -196,16 +217,15 @@ impl TemplateEngine {
         let mut result = placeholder.to_string();
 
         // Find all {{variable}} patterns
-        let re = regex::Regex::new(r"\{\{([^}]+)\}\}")
-            .map_err(|e| Error::substitution(format!("Regex error: {}", e)))?;
-
-        for cap in re.captures_iter(placeholder) {
-            let var_name = &cap[1].trim();
+        for cap in placeholder_regex().captures_iter(placeholder) {
+            let var_name = cap[1].trim();
             let var_value = variables
-                .get(*var_name)
+                .get(var_name)
                 .ok_or_else(|| Error::substitution(format!("Variable '{}' not found", var_name)))?;
 
-            result = result.replace(&format!("{{{{{}}}}}", var_name), var_value);
+            // Replace the exact matched text: rebuilding the pattern from
+            // the trimmed name would leave "{{ name }}" spellings behind.
+            result = result.replace(&cap[0], var_value);
         }
 
         Ok(result)
@@ -236,13 +256,67 @@ mod tests {
     }
 
     #[test]
+    fn test_variable_substitution_with_surrounding_spaces() {
+        let engine = TemplateEngine::new();
+        let mut vars = HashMap::new();
+        vars.insert("facility".to_string(), "General".to_string());
+
+        let result = engine.substitute_variables("Site: {{ facility }}!", &vars);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Site: General!");
+    }
+
+    #[test]
+    fn test_create_field_honors_component_positions() {
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut pid_segment = SegmentTemplate::new("PID");
+        // Out of order with a gap: position 2 is intentionally absent.
+        let name_field = FieldTemplate::new().with_components(vec![
+            ComponentTemplate::new(3).with_placeholder("{{third}}"),
+            ComponentTemplate::new(1).with_placeholder("{{first}}"),
+        ]);
+        pid_segment.add_field(5, name_field);
+        template.add_segment(pid_segment);
+
+        let mut engine = TemplateEngine::new();
+        engine.set_variable("first", "Doe");
+        engine.set_variable("third", "Jr");
+
+        let message = engine.create_message(&template).unwrap();
+        let components = &message.segments[0].fields[4].repetitions[0].components;
+        assert_eq!(components.len(), 3);
+        assert_eq!(components[0].value(), Some("Doe"));
+        assert_eq!(components[1].value(), None);
+        assert_eq!(components[2].value(), Some("Jr"));
+    }
+
+    #[test]
+    fn test_create_field_rejects_component_position_zero() {
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut pid_segment = SegmentTemplate::new("PID");
+        pid_segment.add_field(
+            5,
+            FieldTemplate::new().with_components(vec![ComponentTemplate::new(0).with_default("x")]),
+        );
+        template.add_segment(pid_segment);
+
+        let engine = TemplateEngine::new();
+        assert!(engine.create_message(&template).is_err());
+    }
+
+    #[test]
     fn test_missing_variable() {
         let engine = TemplateEngine::new();
         let vars = HashMap::new();
 
         let result = engine.substitute_variables("Patient {{name}}", &vars);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Variable 'name' not found"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Variable 'name' not found")
+        );
     }
 
     #[test]
@@ -299,16 +373,14 @@ mod tests {
         // Add PID segment with patient name components
         let mut pid_segment = SegmentTemplate::new("PID");
 
-        let name_field = FieldTemplate::new()
-            .required()
-            .with_components(vec![
-                ComponentTemplate::new(1)
-                    .required()
-                    .with_placeholder("{{last_name}}"),
-                ComponentTemplate::new(2)
-                    .required()
-                    .with_placeholder("{{first_name}}"),
-            ]);
+        let name_field = FieldTemplate::new().required().with_components(vec![
+            ComponentTemplate::new(1)
+                .required()
+                .with_placeholder("{{last_name}}"),
+            ComponentTemplate::new(2)
+                .required()
+                .with_placeholder("{{first_name}}"),
+        ]);
 
         pid_segment.add_field(5, name_field);
         template.add_segment(pid_segment);
@@ -357,10 +429,7 @@ mod tests {
         template.add_variable("facility", "DefaultHospital");
 
         let mut msh_segment = SegmentTemplate::new("MSH");
-        msh_segment.add_field(
-            4,
-            FieldTemplate::new().with_placeholder("{{facility}}"),
-        );
+        msh_segment.add_field(4, FieldTemplate::new().with_placeholder("{{facility}}"));
         template.add_segment(msh_segment);
 
         // Create engine without setting facility variable
@@ -378,10 +447,7 @@ mod tests {
         template.add_variable("facility", "DefaultHospital");
 
         let mut msh_segment = SegmentTemplate::new("MSH");
-        msh_segment.add_field(
-            4,
-            FieldTemplate::new().with_placeholder("{{facility}}"),
-        );
+        msh_segment.add_field(4, FieldTemplate::new().with_placeholder("{{facility}}"));
         template.add_segment(msh_segment);
 
         // Engine variable should override template default
@@ -460,10 +526,7 @@ mod tests {
     fn test_substituted_values_parse_as_er7_fragments() {
         let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
         let mut pid = SegmentTemplate::new("PID");
-        pid.add_field(
-            5,
-            FieldTemplate::new().with_placeholder("{{patient_name}}"),
-        );
+        pid.add_field(5, FieldTemplate::new().with_placeholder("{{patient_name}}"));
         template.add_segment(pid);
 
         let mut engine = TemplateEngine::new();

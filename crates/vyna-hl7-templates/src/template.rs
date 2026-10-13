@@ -167,7 +167,8 @@ pub struct FieldTemplate {
     #[serde(default)]
     pub required: bool,
 
-    /// Field data type (optional)
+    /// Field data type (optional, informational only: the validator
+    /// does not enforce it)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub datatype: Option<String>,
 
@@ -328,7 +329,10 @@ mod tests {
         assert_eq!(template.version, "2.5");
         assert_eq!(template.message_type, "ADT");
         assert_eq!(template.trigger_event, "A01");
-        assert_eq!(template.description, Some("Basic admission message".to_string()));
+        assert_eq!(
+            template.description,
+            Some("Basic admission message".to_string())
+        );
     }
 
     #[test]
@@ -340,7 +344,10 @@ mod tests {
         assert_eq!(segment.id, "PID");
         assert!(segment.required);
         assert!(!segment.repeating);
-        assert_eq!(segment.description, Some("Patient identification".to_string()));
+        assert_eq!(
+            segment.description,
+            Some("Patient identification".to_string())
+        );
     }
 
     #[test]
@@ -379,7 +386,7 @@ mod tests {
             5,
             FieldTemplate::new()
                 .required()
-                .with_placeholder("{{patient_name}}")
+                .with_placeholder("{{patient_name}}"),
         );
 
         template.add_segment(pid_segment);

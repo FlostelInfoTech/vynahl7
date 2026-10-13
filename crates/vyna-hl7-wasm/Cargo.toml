@@ -2,6 +2,7 @@
 name = "vyna-hl7-wasm"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -29,16 +30,8 @@ serde_json.workspace = true
 # Date/Time
 chrono.workspace = true
 
-# Error handling
-thiserror.workspace = true
-
 # Optional: Better panic messages in wasm
 console_error_panic_hook = { version = "0.1", optional = true }
-
-# Console logging for wasm
-[dependencies.web-sys]
-version = "0.3"
-features = ["console"]
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

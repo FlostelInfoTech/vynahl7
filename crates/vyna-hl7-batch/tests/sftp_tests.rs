@@ -353,7 +353,7 @@ struct TestServer {
 /// Start the test SSH server; returns its address and host key line for pinning.
 async fn start_server(suffix: &str, authorized: Vec<russh::keys::PublicKey>) -> TestServer {
     let dir = std::env::temp_dir().join(format!("vyna-sftp-test-{}-{suffix}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
+    tokio::fs::create_dir_all(&dir).await.unwrap();
     let host_key =
         russh::keys::PrivateKey::random(&mut rand::rng(), russh::keys::Algorithm::Ed25519).unwrap();
     let host_key_line = host_key.public_key().to_openssh().unwrap();
@@ -431,7 +431,7 @@ async fn sftp_round_trip_with_pinned_host_key() {
     assert!(sftp.list("inbox").await.unwrap().is_empty());
 
     sftp.close().await.unwrap();
-    std::fs::remove_dir_all(&server._dir).unwrap();
+    tokio::fs::remove_dir_all(&server._dir).await.unwrap();
 }
 
 #[tokio::test]
@@ -457,7 +457,7 @@ async fn sftp_key_auth() {
     sftp.put("k.hl7", MSH.as_bytes()).await.unwrap();
     assert_eq!(sftp.get("k.hl7").await.unwrap(), MSH.as_bytes());
     sftp.close().await.unwrap();
-    std::fs::remove_dir_all(&server._dir).unwrap();
+    tokio::fs::remove_dir_all(&server._dir).await.unwrap();
 }
 
 #[tokio::test]
@@ -475,7 +475,7 @@ async fn sftp_wrong_host_key_is_rejected() {
     ]));
     // Key exchange fails: the client rejects the host key.
     assert!(SftpTransport::connect(config).await.is_err());
-    std::fs::remove_dir_all(&server._dir).unwrap();
+    tokio::fs::remove_dir_all(&server._dir).await.unwrap();
 }
 
 #[tokio::test]
@@ -491,7 +491,7 @@ async fn sftp_wrong_password_is_rejected() {
         SftpTransport::connect(config).await,
         Err(BatchError::Auth { .. })
     ));
-    std::fs::remove_dir_all(&server._dir).unwrap();
+    tokio::fs::remove_dir_all(&server._dir).await.unwrap();
 }
 
 #[tokio::test]
@@ -513,7 +513,27 @@ async fn sftp_missing_paths_behave_like_filesystem() {
     ));
 
     sftp.close().await.unwrap();
-    std::fs::remove_dir_all(&server._dir).unwrap();
+    tokio::fs::remove_dir_all(&server._dir).await.unwrap();
+}
+
+#[tokio::test]
+async fn sftp_get_refuses_oversize_files() {
+    let server = start_server("toolarge", vec![]).await;
+    let mut sftp = SftpTransport::connect(password_config(&server))
+        .await
+        .unwrap();
+    sftp.put("inbox/big.hl7", MSH.as_bytes()).await.unwrap();
+    sftp.close().await.unwrap();
+
+    let capped_config = password_config(&server).with_max_file_bytes(4);
+    let mut capped = SftpTransport::connect(capped_config).await.unwrap();
+    let result = capped.get("inbox/big.hl7").await;
+    assert!(
+        matches!(result, Err(BatchError::TooLarge { limit: 4, .. })),
+        "unexpected: {result:?}"
+    );
+    capped.close().await.unwrap();
+    tokio::fs::remove_dir_all(&server._dir).await.unwrap();
 }
 
 #[tokio::test]
@@ -535,5 +555,5 @@ async fn sftp_poller_consumes_and_archives() {
     let sftp = poller.transport_mut();
     assert_eq!(sftp.get("archive/drop.hl7").await.unwrap(), MSH.as_bytes());
     sftp.close().await.unwrap();
-    std::fs::remove_dir_all(&server._dir).unwrap();
+    tokio::fs::remove_dir_all(&server._dir).await.unwrap();
 }

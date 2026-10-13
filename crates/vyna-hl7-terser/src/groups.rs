@@ -173,7 +173,9 @@ impl GroupConfig {
     /// Get the PATIENT group configuration
     pub fn patient() -> Self {
         Self::new("PID")
-            .with_children(&["PD1", "PV1", "PV2", "NK1", "AL1", "DB1", "DRG", "GT1", "IN1", "IN2"])
+            .with_children(&[
+                "PD1", "PV1", "PV2", "NK1", "AL1", "DB1", "DRG", "GT1", "IN1", "IN2",
+            ])
             .with_terminators(&["PID", "OBR", "ORC", "MSH"])
     }
 
@@ -194,7 +196,9 @@ impl GroupConfig {
     /// Get the ORDER group configuration
     pub fn order() -> Self {
         Self::new("ORC")
-            .with_children(&["OBR", "RXO", "RXE", "RXD", "RXG", "RXA", "TQ1", "TQ2", "OBX", "NTE"])
+            .with_children(&[
+                "OBR", "RXO", "RXE", "RXD", "RXG", "RXA", "TQ1", "TQ2", "OBX", "NTE",
+            ])
             .with_terminators(&["ORC", "PID", "MSH"])
     }
 
@@ -334,6 +338,9 @@ impl<'a> GroupNavigator<'a> {
 }
 
 /// Iterator over segment groups
+///
+/// Group membership is resolved once at construction; the iterator yields
+/// the groups found in the message at that point.
 pub struct GroupIterator<'a> {
     current_index: usize,
     groups: Vec<SegmentGroup<'a>>,
@@ -343,6 +350,9 @@ pub struct GroupIterator<'a> {
 
 impl<'a> GroupIterator<'a> {
     /// Create a new group iterator
+    ///
+    /// Extracts the groups matching `config` from `message` immediately;
+    /// iteration then walks that snapshot in message order.
     pub fn new(message: &'a Message, config: GroupConfig) -> Self {
         let navigator = GroupNavigator::new(message);
         let groups = navigator.extract_groups(&config);
@@ -532,7 +542,8 @@ IN3|1|Authorization";
         assert_eq!(count, 2);
 
         // Using iterator
-        let iter_count: usize = GroupIterator::new(&message, GroupConfig::order_observation()).count();
+        let iter_count: usize =
+            GroupIterator::new(&message, GroupConfig::order_observation()).count();
         assert_eq!(iter_count, 2);
     }
 

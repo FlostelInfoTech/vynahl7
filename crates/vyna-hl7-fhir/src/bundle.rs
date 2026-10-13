@@ -61,9 +61,12 @@ impl BundleBuilder {
     }
 
     /// Append a typed resource (any serializable FHIR struct).
-    pub fn add_resource<T: Serialize>(mut self, resource: &T) -> Self {
-        self.bundle.add_resource(resource);
-        self
+    ///
+    /// A serialization failure is returned to the caller; nothing is
+    /// appended.
+    pub fn add_resource<T: Serialize>(mut self, resource: &T) -> ConversionResult<Self> {
+        self.bundle.add_resource(resource)?;
+        Ok(self)
     }
 
     /// Append an already-serialized resource (e.g. mapping-engine output).
@@ -91,35 +94,35 @@ pub fn convert_message_to_bundle(message: &Message) -> ConversionResult<Bundle> 
     let mut builder = BundleBuilder::new("collection").timestamp_now();
     match msg_type.as_str() {
         "ADT" => {
-            builder = builder.add_resource(&PatientConverter::convert(message)?);
+            builder = builder.add_resource(&PatientConverter::convert(message)?)?;
             if message.get_segment_by_id("PV1").is_some() {
-                builder = builder.add_resource(&EncounterConverter::convert(message)?);
+                builder = builder.add_resource(&EncounterConverter::convert(message)?)?;
             }
         }
         "ORU" => {
             for observation in ObservationConverter::convert_all(message)? {
-                builder = builder.add_resource(&observation);
+                builder = builder.add_resource(&observation)?;
             }
             if message.get_segment_by_id("OBR").is_some() {
                 for report in DiagnosticReportConverter::convert_all(message)? {
-                    builder = builder.add_resource(&report);
+                    builder = builder.add_resource(&report)?;
                 }
             }
         }
         "VXU" => {
             for immunization in ImmunizationConverter::convert_all(message)? {
-                builder = builder.add_resource(&immunization);
+                builder = builder.add_resource(&immunization)?;
             }
         }
         "PPR" => {
             for condition in ConditionConverter::convert_all(message)? {
-                builder = builder.add_resource(&condition);
+                builder = builder.add_resource(&condition)?;
             }
         }
         "OMP" => {
-            builder = builder.add_resource(&PatientConverter::convert(message)?);
+            builder = builder.add_resource(&PatientConverter::convert(message)?)?;
             for request in ServiceRequestConverter::convert_all(message)? {
-                builder = builder.add_resource(&request);
+                builder = builder.add_resource(&request)?;
             }
         }
         _ => {
@@ -210,6 +213,22 @@ mod tests {
             result,
             Err(ConversionError::UnsupportedMessageType(_, _))
         ));
+    }
+
+    #[test]
+    fn builder_propagates_resource_serialization_failure() {
+        use serde::ser::{Error as SerError, Serializer};
+
+        struct Failing;
+
+        impl Serialize for Failing {
+            fn serialize<S: Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+                Err(S::Error::custom("boom"))
+            }
+        }
+
+        let result = BundleBuilder::new("collection").add_resource(&Failing);
+        assert!(result.is_err());
     }
 
     #[test]

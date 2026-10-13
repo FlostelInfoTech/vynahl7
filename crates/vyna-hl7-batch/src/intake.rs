@@ -260,7 +260,20 @@ fn push_chunk(out: &mut Vec<IntakeMessage>, index: &mut usize, chunk: &mut Vec<&
         return;
     }
     let control_id = msh_control_id(chunk[0]);
-    let result = vyna_hl7_parser::parse_message(&chunk.join("\r")).map_err(|e| e.to_string());
+    // Lenient intake never lets one hostile message kill the file, even if
+    // the strict parser itself panics on the input.
+    let text = chunk.join("\r");
+    let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        vyna_hl7_parser::parse_message(&text)
+    }));
+    let result = match parsed {
+        Ok(Ok(message)) => Ok(message),
+        Ok(Err(e)) => Err(e.to_string()),
+        Err(payload) => Err(format!(
+            "message parser failed on this input: {}",
+            panic_msg(&payload)
+        )),
+    };
     out.push(IntakeMessage {
         index: *index,
         control_id,
@@ -270,16 +283,36 @@ fn push_chunk(out: &mut Vec<IntakeMessage>, index: &mut usize, chunk: &mut Vec<&
     chunk.clear();
 }
 
+/// Best-effort panic payload text for intake error slots.
+fn panic_msg(payload: &Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else if let Some(s) = payload.downcast_ref::<&str>() {
+        s.to_string()
+    } else {
+        "unknown parser failure".to_string()
+    }
+}
+
+/// Split a segment line into its field separator (the byte after the
+/// 3-letter tag) and the fields after it. Returns `None` for short lines,
+/// non-ASCII separators, and tags split mid-character, so callers never
+/// panic on hostile input.
+fn fields_after_tag(line: &str) -> Option<(char, &str)> {
+    let bytes = line.as_bytes();
+    let sep = *bytes.get(3)?;
+    if !sep.is_ascii() {
+        return None;
+    }
+    let rest = line.get(4..)?;
+    Some((sep as char, rest))
+}
+
 /// FHS-11 / BHS-11 from a header line. Field 1 is the separator itself, so
 /// field 11 is the 10th element after the segment id.
 fn header_control_id(line: &str) -> Option<String> {
-    let bytes = line.as_bytes();
-    if bytes.len() < 4 {
-        return None;
-    }
-    let sep = bytes[3] as char;
-    line[4..]
-        .split(sep)
+    let (sep, rest) = fields_after_tag(line)?;
+    rest.split(sep)
         .nth(9)
         .filter(|s| !s.is_empty())
         .map(str::to_string)
@@ -287,24 +320,15 @@ fn header_control_id(line: &str) -> Option<String> {
 
 /// BTS-1 / FTS-1 from a trailer line.
 fn trailer_count(line: &str) -> Option<usize> {
-    let bytes = line.as_bytes();
-    if bytes.len() < 4 {
-        return None;
-    }
-    let sep = bytes[3] as char;
-    line[4..].split(sep).next()?.parse().ok()
+    let (sep, rest) = fields_after_tag(line)?;
+    rest.split(sep).next()?.parse().ok()
 }
 
 /// MSH-10 from an MSH line. MSH-1 is the separator itself, so MSH-10 is the
 /// 9th element after the segment id.
 fn msh_control_id(line: &str) -> Option<String> {
-    let bytes = line.as_bytes();
-    if bytes.len() < 4 {
-        return None;
-    }
-    let sep = bytes[3] as char;
-    line[4..]
-        .split(sep)
+    let (sep, rest) = fields_after_tag(line)?;
+    rest.split(sep)
         .nth(8)
         .filter(|s| !s.is_empty())
         .map(str::to_string)
@@ -422,6 +446,24 @@ mod tests {
             Intake::parse_bytes(b"\xff\xfe invalid"),
             Err(BatchError::Invalid(_))
         ));
+    }
+
+    #[test]
+    fn non_ascii_lines_never_panic() {
+        // Byte index 4 lands mid-character in each of these; the old
+        // `line[4..]` slicing panicked here.
+        assert_eq!(msh_control_id("MSHé"), None);
+        assert_eq!(header_control_id("BHSé"), None);
+        assert_eq!(trailer_count("BTSé"), None);
+        // Non-ASCII separator byte is rejected instead of mis-split.
+        assert_eq!(msh_control_id("MSHé|x"), None);
+        assert_eq!(header_control_id("BHSé|x"), None);
+        // Short lines still return None.
+        assert_eq!(msh_control_id("MSH"), None);
+        assert_eq!(trailer_count("BTS"), None);
+        // Whole-input parse honors the never-fails contract on garbage.
+        let intake = Intake::parse("MSHé\rBHSé|x\rBTSé\r").unwrap();
+        assert!(intake.error_count() >= 1);
     }
 
     #[test]

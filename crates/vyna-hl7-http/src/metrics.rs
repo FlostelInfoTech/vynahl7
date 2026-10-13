@@ -7,13 +7,7 @@
 //! - Active connections
 
 #[cfg(feature = "metrics")]
-use axum::{
-    extract::Request,
-    middleware::Next,
-    response::Response,
-    routing::get,
-    Router,
-};
+use axum::{Router, extract::Request, middleware::Next, response::Response, routing::get};
 #[cfg(feature = "metrics")]
 use metrics::{counter, describe_counter, describe_gauge, describe_histogram, gauge, histogram};
 #[cfg(feature = "metrics")]
@@ -21,10 +15,18 @@ use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusHandle};
 #[cfg(feature = "metrics")]
 use std::time::Instant;
 
+/// Cached handle so repeat calls return the installed recorder instead
+/// of panicking (a global recorder can only be installed once).
+#[cfg(feature = "metrics")]
+static METRICS_HANDLE: std::sync::OnceLock<PrometheusHandle> = std::sync::OnceLock::new();
+
 /// Initialize Prometheus metrics registry
 ///
 /// Sets up all metrics with descriptions and returns a handle for
 /// exposing metrics via HTTP endpoint.
+///
+/// This function is idempotent: the first call installs the global
+/// recorder, and subsequent calls return a clone of the same handle.
 ///
 /// # Example
 ///
@@ -38,45 +40,50 @@ use std::time::Instant;
 /// ```
 #[cfg(feature = "metrics")]
 pub fn init_metrics() -> PrometheusHandle {
-    // Configure histogram buckets for response times
-    // Buckets: 1ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s
-    let builder = PrometheusBuilder::new()
-        .set_buckets_for_metric(
-            Matcher::Full("http_request_duration_seconds".to_string()),
-            &[
-                0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
-            ],
-        )
-        .unwrap();
+    METRICS_HANDLE
+        .get_or_init(|| {
+            // Configure histogram buckets for response times
+            // Buckets: 1ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms,
+            // 1s, 2.5s, 5s, 10s
+            let builder = PrometheusBuilder::new()
+                .set_buckets_for_metric(
+                    Matcher::Full("http_request_duration_seconds".to_string()),
+                    &[
+                        0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+                    ],
+                )
+                .unwrap();
 
-    let handle = builder.install_recorder().unwrap();
+            let handle = builder.install_recorder().unwrap();
 
-    // Describe all metrics
-    describe_counter!(
-        "http_requests_total",
-        "Total number of HTTP requests processed"
-    );
-    describe_histogram!(
-        "http_request_duration_seconds",
-        "HTTP request duration in seconds"
-    );
-    describe_counter!("http_request_errors_total", "Total number of HTTP errors");
-    describe_gauge!("http_active_connections", "Number of active HTTP connections");
+            // Describe all metrics
+            describe_counter!(
+                "http_requests_total",
+                "Total number of HTTP requests processed"
+            );
+            describe_histogram!(
+                "http_request_duration_seconds",
+                "HTTP request duration in seconds"
+            );
+            describe_counter!("http_request_errors_total", "Total number of HTTP errors");
+            describe_gauge!(
+                "http_active_connections",
+                "Number of active HTTP connections"
+            );
 
-    describe_counter!(
-        "hl7_messages_total",
-        "Total number of HL7 messages processed"
-    );
-    describe_counter!(
-        "hl7_message_errors_total",
-        "Total number of HL7 message processing errors"
-    );
-    describe_histogram!(
-        "hl7_message_size_bytes",
-        "Size of HL7 messages in bytes"
-    );
+            describe_counter!(
+                "hl7_messages_total",
+                "Total number of HL7 messages processed"
+            );
+            describe_counter!(
+                "hl7_message_errors_total",
+                "Total number of HL7 message processing errors"
+            );
+            describe_histogram!("hl7_message_size_bytes", "Size of HL7 messages in bytes");
 
-    handle
+            handle
+        })
+        .clone()
 }
 
 /// Metrics middleware for HTTP requests
@@ -162,22 +169,18 @@ pub async fn metrics_middleware(request: Request, next: Next) -> Response {
 /// # }
 /// ```
 #[cfg(feature = "metrics")]
-pub fn record_hl7_message_metrics(message: &vyna_hl7_core::Message, direction: &str, success: bool) {
+pub fn record_hl7_message_metrics(
+    message: &vyna_hl7_core::Message,
+    direction: &str,
+    success: bool,
+) {
     use vyna_hl7_terser::Terser;
 
     let terser = Terser::new(message);
 
-    let message_type = terser
-        .get("MSH-9-1")
-        .ok()
-        .flatten()
-        .unwrap_or("UNKNOWN");
+    let message_type = terser.get("MSH-9-1").ok().flatten().unwrap_or("UNKNOWN");
 
-    let trigger_event = terser
-        .get("MSH-9-2")
-        .ok()
-        .flatten()
-        .unwrap_or("UNKNOWN");
+    let trigger_event = terser.get("MSH-9-2").ok().flatten().unwrap_or("UNKNOWN");
 
     let status = if success { "success" } else { "error" };
 
@@ -241,10 +244,7 @@ pub fn record_hl7_message_metrics(message: &vyna_hl7_core::Message, direction: &
 /// ```
 #[cfg(feature = "metrics")]
 pub fn metrics_endpoint(handle: PrometheusHandle) -> Router {
-    Router::new().route(
-        "/metrics",
-        get(move || async move { handle.render() }),
-    )
+    Router::new().route("/metrics", get(move || async move { handle.render() }))
 }
 
 /// Increment the active connections gauge
@@ -272,5 +272,14 @@ mod tests {
     fn test_init_metrics() {
         let _handle = init_metrics();
         // Just verify it doesn't panic
+    }
+
+    #[test]
+    fn test_init_metrics_idempotent() {
+        // A second call must not panic (installing a second global
+        // recorder would) and must return the same recorder.
+        let first = init_metrics();
+        let second = init_metrics();
+        assert_eq!(first.render(), second.render());
     }
 }

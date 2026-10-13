@@ -2,6 +2,7 @@
 name = "vyna-hl7-cli"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -28,12 +29,10 @@ tokio.workspace = true
 clap = { version = "4.5", features = ["derive", "cargo"] }
 
 # Serialization
-serde.workspace = true
 serde_json.workspace = true
 
 # Error handling
 anyhow.workspace = true
-thiserror.workspace = true
 
 # Optional FHIR support
 vyna-hl7-fhir = { workspace = true, optional = true }

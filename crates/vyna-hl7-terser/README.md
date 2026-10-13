@@ -39,8 +39,8 @@ Terser paths follow HL7 v2 conventions with 1-based indexing:
 - `SEG-F` - Segment, field
 - `SEG-F-C` - Segment, field, component
 - `SEG-F-C-S` - Segment, field, component, subcomponent
-- `SEG(I)-F` - Specific segment instance (1-based)
-- `SEG-F(R)-C` - Field repetition (0-based)
+- `SEG(I)-F` - Specific segment instance, 1-based (`OBX(1)` is the first OBX)
+- `SEG-F(R)-C` - Field repetition, 1-based (`PID-5(1)` is the first repetition)
 
 ### Examples
 
@@ -192,7 +192,9 @@ let names: Vec<_> = terser.iter_component("OBX", 3, 2).collect();
 ### Repetition Iterator
 
 ```rust
-// Iterate over field repetitions (e.g., multiple phone numbers)
+// Iterate over field repetitions (e.g., multiple phone numbers).
+// The third argument is a 0-based segment position (0 = first PID),
+// unlike the 1-based indices in path notation.
 for phone in terser.iter_repetitions("PID", 13, 0) {
     println!("Phone: {}", phone);
 }
@@ -307,16 +309,20 @@ cargo run --example enhanced_terser
 
 ## Path Indexing Reference
 
-**HL7 Standard (1-based):**
+Every index in path notation is 1-based (HL7 standard):
+
 - Segments: `OBX(1)` = first OBX, `OBX(2)` = second OBX
+- Field repetitions: `PID-5(1)` = first repetition, `PID-5(2)` = second
 - Components: `PID-5-1` = first component, `PID-5-2` = second component
 - Subcomponents: `PID-5-1-1` = first subcomponent
 
-**Internal (0-based):**
-- Field repetitions: First repetition is index 0
-- Array access in Rust code uses 0-based indexing
+A 0 index in a path is invalid: `OBX(0)` and `PID-5(0)` are errors, and
+`PID-5-0` never matches. Internally the crate stores these as 0-based
+`Vec` positions and converts automatically.
 
-The Terser API handles the conversion automatically.
+One exception: `iter_repetitions(segment_id, field, segment_index)` takes
+a 0-based `segment_index` argument (a direct position, not path notation),
+so `iter_repetitions("PID", 11, 0)` reads the first PID segment.
 
 ## Error Handling
 

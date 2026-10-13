@@ -311,6 +311,98 @@ fn validate_falls_back_without_schema() {
     std::fs::remove_file(file).unwrap();
 }
 
+#[test]
+fn validate_invalid_exits_one_with_json_intact() {
+    // README contract: validation failure exits 1; the JSON report must
+    // still reach stdout for script consumers.
+    let file = write_temp(
+        "incomplete.hl7",
+        "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\rPID|1||7\r",
+    );
+    let output = vynahl7()
+        .args(["validate", file.to_str().unwrap(), "--format", "json"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["valid"], false);
+    std::fs::remove_file(file).unwrap();
+}
+
+#[test]
+fn validate_valid_exits_zero() {
+    let file = write_temp(
+        "good.hl7",
+        "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\rEVN||20240101\rPID|1||7||DOE^JOHN\rPV1||I\r",
+    );
+    let output = vynahl7()
+        .args(["validate", file.to_str().unwrap(), "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["valid"], true);
+    std::fs::remove_file(file).unwrap();
+}
+
+#[test]
+fn extract_invalid_path_fails_on_stderr() {
+    let file = write_temp("extract.hl7", ADT_A);
+    for format in ["text", "json"] {
+        let output = vynahl7()
+            .args([
+                "extract",
+                file.to_str().unwrap(),
+                "!!!bad-path",
+                "--format",
+                format,
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1), "format={format}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("invalid Terser path"),
+            "format={format} stderr={stderr}"
+        );
+    }
+    std::fs::remove_file(file).unwrap();
+}
+
+#[test]
+fn extract_absent_value_still_exits_zero() {
+    // A well-formed path with no value is N/A ("" in JSON), not an error.
+    let file = write_temp("extract.hl7", ADT_A);
+    let output = vynahl7()
+        .args(["extract", file.to_str().unwrap(), "PID-999"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("N/A"),
+        "stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let output = vynahl7()
+        .args([
+            "extract",
+            file.to_str().unwrap(),
+            "PID-999",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["PID-999"], "");
+    std::fs::remove_file(file).unwrap();
+}
+
 #[tokio::test]
 async fn send_rejects_bad_scheme_and_refused_ports() {
     let file = write_temp("send.hl7", ADT_A);

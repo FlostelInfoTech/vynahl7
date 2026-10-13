@@ -48,6 +48,12 @@ pub enum QueueError {
     /// Acknowledgement for an unknown or already-settled id.
     #[error("unknown message: {0}")]
     Unknown(String),
+    /// Enqueue refused: the queue holds `limit` live messages already.
+    #[error("queue full: at limit of {limit} live messages")]
+    Full {
+        /// Configured live-message limit.
+        limit: usize,
+    },
 }
 
 /// A leased delivery: [`MessageQueue::ack`] on success, [`MessageQueue::nack`]
@@ -249,6 +255,8 @@ pub struct MemoryQueue {
     policy: RetryPolicy,
     clock: Arc<dyn QueueClock>,
     id_counter: AtomicU64,
+    max_depth: Option<usize>,
+    live: usize,
 }
 
 impl MemoryQueue {
@@ -273,7 +281,21 @@ impl MemoryQueue {
             },
             clock,
             id_counter: AtomicU64::new(0),
+            max_depth: None,
+            live: 0,
         }
+    }
+
+    /// Cap live (pending + inflight) messages; further enqueues fail with
+    /// [`QueueError::Full`]. Dead-lettered messages never count against the
+    /// cap. `None` (the default) is unbounded.
+    pub fn set_max_depth(&mut self, limit: Option<usize>) {
+        self.max_depth = limit;
+    }
+
+    /// The live-message cap, if any.
+    pub fn max_depth(&self) -> Option<usize> {
+        self.max_depth
     }
 
     /// Expired leases return to pending, visible immediately.
@@ -301,6 +323,11 @@ impl MessageQueue for MemoryQueue {
         body: &[u8],
         headers: HashMap<String, String>,
     ) -> Result<String, QueueError> {
+        if let Some(limit) = self.max_depth
+            && self.live >= limit
+        {
+            return Err(QueueError::Full { limit });
+        }
         let id = next_id(&self.id_counter);
         let now = self.clock.now_ms();
         self.order.push_back(id.clone());
@@ -315,6 +342,7 @@ impl MessageQueue for MemoryQueue {
                 state: EntryState::Pending { visible_at_ms: now },
             },
         );
+        self.live += 1;
         Ok(id)
     }
 
@@ -349,6 +377,7 @@ impl MessageQueue for MemoryQueue {
             Some(EntryState::Inflight { .. }) => {
                 self.entries.remove(id);
                 self.order.retain(|queued| queued != id);
+                self.live = self.live.saturating_sub(1);
                 Ok(())
             }
             _ => Err(QueueError::Unknown(id.to_string())),
@@ -366,6 +395,7 @@ impl MessageQueue for MemoryQueue {
             entry.state = EntryState::Dead {
                 last_error: error.map(str::to_string),
             };
+            self.live = self.live.saturating_sub(1);
             Ok(NackOutcome::DeadLettered)
         } else {
             let delay = self.policy.backoff(entry.attempts);
@@ -455,6 +485,7 @@ pub struct FileQueue {
     policy: RetryPolicy,
     clock: Arc<dyn QueueClock>,
     id_counter: AtomicU64,
+    max_depth: Option<usize>,
 }
 
 impl FileQueue {
@@ -493,9 +524,27 @@ impl FileQueue {
             },
             clock,
             id_counter: AtomicU64::new(0),
+            max_depth: None,
         };
         let report = queue.recover()?;
         Ok((queue, report))
+    }
+
+    /// Cap live (pending + inflight) messages; further enqueues fail with
+    /// [`QueueError::Full`]. Dead-lettered messages never count against the
+    /// cap. `None` (the default) is unbounded.
+    pub fn set_max_depth(&mut self, limit: Option<usize>) {
+        self.max_depth = limit;
+    }
+
+    /// The live-message cap, if any.
+    pub fn max_depth(&self) -> Option<usize> {
+        self.max_depth
+    }
+
+    /// Live (pending + inflight) message count.
+    fn live_count(&self) -> Result<usize, QueueError> {
+        Ok(list_ids(&self.pending)?.len() + list_ids(&self.inflight)?.len())
     }
 
     /// Crash recovery: stale leases return to pending, corrupt entries are
@@ -536,29 +585,29 @@ impl FileQueue {
         Ok(report)
     }
 
-    /// Oldest visible pending entry, if any.
+    /// Oldest visible pending entry, if any. Metas are scanned first and
+    /// only the winner's body is read, so a dequeue costs one body read
+    /// instead of one per pending message.
     fn next_visible(&self) -> Result<Option<(FileMeta, Vec<u8>)>, QueueError> {
         let now = self.clock.now_ms();
-        let mut best: Option<(FileMeta, Vec<u8>)> = None;
+        let mut visible: Vec<FileMeta> = Vec::new();
         for id in list_ids(&self.pending)? {
-            let (Some(meta), body) = (
-                read_meta(&self.pending, &id)?,
-                read_body(&self.pending, &id)?,
-            ) else {
+            let Some(meta) = read_meta(&self.pending, &id)? else {
                 continue;
             };
-            let (Some(body), true) = (body, meta.visible_at_ms <= now) else {
-                continue;
-            };
-            let older = best.as_ref().is_none_or(|(current, _)| {
-                (meta.enqueued_at_ms, meta.id.clone())
-                    < (current.enqueued_at_ms, current.id.clone())
-            });
-            if older {
-                best = Some((meta, body));
+            if meta.visible_at_ms <= now {
+                visible.push(meta);
             }
         }
-        Ok(best)
+        visible.sort_by(|a, b| (a.enqueued_at_ms, &a.id).cmp(&(b.enqueued_at_ms, &b.id)));
+        // Entries whose body went missing (crash leftovers) are skipped,
+        // preserving the old single-pass semantics.
+        for meta in visible {
+            if let Some(body) = read_body(&self.pending, &meta.id)? {
+                return Ok(Some((meta, body)));
+            }
+        }
+        Ok(None)
     }
 }
 
@@ -568,6 +617,11 @@ impl MessageQueue for FileQueue {
         body: &[u8],
         headers: HashMap<String, String>,
     ) -> Result<String, QueueError> {
+        if let Some(limit) = self.max_depth
+            && self.live_count()? >= limit
+        {
+            return Err(QueueError::Full { limit });
+        }
         let id = next_id(&self.id_counter);
         let now = self.clock.now_ms();
         let meta = FileMeta {
@@ -885,6 +939,45 @@ mod tests {
     }
 
     #[test]
+    fn memory_max_depth_rejects_overfill() {
+        let mut queue = MemoryQueue::new();
+        assert_eq!(queue.max_depth(), None);
+        queue.set_max_depth(Some(1));
+
+        let id = queue.enqueue(b"MSH", HashMap::new()).unwrap();
+        assert!(matches!(
+            queue.enqueue(b"MSH", HashMap::new()),
+            Err(QueueError::Full { limit: 1 })
+        ));
+
+        // Settling frees a slot.
+        queue.dequeue().unwrap().unwrap();
+        queue.ack(&id).unwrap();
+        queue.enqueue(b"MSH", HashMap::new()).unwrap();
+    }
+
+    #[test]
+    fn memory_dead_letters_do_not_count_against_cap() {
+        let clock = Arc::new(ManualClock::new(0));
+        let policy = RetryPolicy {
+            max_attempts: 1,
+            ..test_policy()
+        };
+        let mut queue = MemoryQueue::with_policy_and_clock(policy, clock);
+        queue.set_max_depth(Some(1));
+
+        let id = queue.enqueue(b"MSH", HashMap::new()).unwrap();
+        queue.dequeue().unwrap().unwrap();
+        assert_eq!(
+            queue.nack(&id, Some("e")).unwrap(),
+            NackOutcome::DeadLettered
+        );
+        // Dead-lettered: a new message fits despite the dead bin holding one.
+        queue.enqueue(b"MSH2", HashMap::new()).unwrap();
+        assert_eq!(queue.dead_letters().unwrap().len(), 1);
+    }
+
+    #[test]
     fn memory_expired_lease_redelivers() {
         let clock = Arc::new(ManualClock::new(0));
         let mut queue = MemoryQueue::with_policy_and_clock(test_policy(), clock.clone());
@@ -1008,6 +1101,43 @@ mod tests {
         let (queue, report) = FileQueue::open(&dir).unwrap();
         assert_eq!(report.dead, 1);
         assert_eq!(queue.dead_letters().unwrap().len(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn file_max_depth_rejects_overfill() {
+        let dir = scratch_dir();
+        let (mut queue, _) = FileQueue::open(&dir).unwrap();
+        queue.set_max_depth(Some(1));
+
+        let id = queue.enqueue(b"MSH", HashMap::new()).unwrap();
+        assert!(matches!(
+            queue.enqueue(b"MSH", HashMap::new()),
+            Err(QueueError::Full { limit: 1 })
+        ));
+
+        queue.dequeue().unwrap().unwrap();
+        queue.ack(&id).unwrap();
+        queue.enqueue(b"MSH", HashMap::new()).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn file_dequeue_skips_entries_with_missing_bodies() {
+        let dir = scratch_dir();
+        let (mut queue, _) = FileQueue::open(&dir).unwrap();
+        let first = queue.enqueue(b"first", HashMap::new()).unwrap();
+        let second = queue.enqueue(b"second", HashMap::new()).unwrap();
+
+        // Simulate a crash leftover: the oldest entry's body goes missing.
+        std::fs::remove_file(dir.join("pending").join(format!("{first}.body"))).unwrap();
+
+        // One entry lost its body; the survivor still dequeues.
+        let leased = queue.dequeue().unwrap().unwrap();
+        assert_eq!(leased.body, b"second");
+        assert_eq!(leased.id, second);
+        queue.ack(&second).unwrap();
+        assert!(queue.dequeue().unwrap().is_none());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

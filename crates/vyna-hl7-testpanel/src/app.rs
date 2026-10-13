@@ -1,13 +1,12 @@
 //! Main application state and UI rendering
 
-use eframe::egui::{self, Color32, RichText, Stroke};
-use vyna_hl7_core::CharacterSet;
 use crate::logo;
 use crate::tabs::{
-    BuilderTab, FhirTab, FtpTab, HttpTab, MllpTab, ParserTab, TerserTab, ValidatorTab,
-    XmlTab,
+    BuilderTab, FhirTab, FtpTab, HttpTab, MllpTab, ParserTab, TerserTab, ValidatorTab, XmlTab,
 };
+use eframe::egui::{self, Color32, RichText, Stroke};
 use std::path::PathBuf;
+use vyna_hl7_core::CharacterSet;
 
 /// The active tab in the application
 #[derive(Default, PartialEq, Clone, Copy)]
@@ -41,15 +40,15 @@ impl ActiveTab {
 
     fn icon(&self) -> &str {
         match self {
-            ActiveTab::Parser => "\u{1F50D}",      // Magnifying glass
-            ActiveTab::Builder => "\u{1F3D7}",     // Construction
-            ActiveTab::Terser => "\u{1F4CD}",      // Pin/locator
-            ActiveTab::Validator => "\u{2705}",    // Check mark
-            ActiveTab::Mllp => "\u{1F4E1}",        // Antenna/network
-            ActiveTab::Http => "\u{1F310}",        // Globe
-            ActiveTab::Ftp => "\u{1F4C1}",         // Folder
-            ActiveTab::Fhir => "\u{1F525}",        // Fire (FHIR)
-            ActiveTab::Xml => "\u{1F4C4}",         // Document
+            ActiveTab::Parser => "\u{1F50D}",   // Magnifying glass
+            ActiveTab::Builder => "\u{1F3D7}",  // Construction
+            ActiveTab::Terser => "\u{1F4CD}",   // Pin/locator
+            ActiveTab::Validator => "\u{2705}", // Check mark
+            ActiveTab::Mllp => "\u{1F4E1}",     // Antenna/network
+            ActiveTab::Http => "\u{1F310}",     // Globe
+            ActiveTab::Ftp => "\u{1F4C1}",      // Folder
+            ActiveTab::Fhir => "\u{1F525}",     // Fire (FHIR)
+            ActiveTab::Xml => "\u{1F4C4}",      // Document
         }
     }
 
@@ -101,6 +100,11 @@ pub struct VynaHL7TestPanel {
 }
 
 impl VynaHL7TestPanel {
+    /// Create the test panel with every tab in its default state.
+    ///
+    /// The creation context is currently unused (fonts and visuals are
+    /// configured by the caller); it is kept so future setup such as
+    /// persisted state has a place to live.
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         Self {
             active_tab: ActiveTab::Parser,
@@ -284,7 +288,12 @@ impl eframe::App for VynaHL7TestPanel {
             ui.horizontal(|ui| {
                 // Logo/branding
                 ui.add_space(4.0);
-                ui.label(RichText::new("VynaHL7").strong().size(16.0).color(Color32::from_rgb(59, 130, 246)));
+                ui.label(
+                    RichText::new("VynaHL7")
+                        .strong()
+                        .size(16.0)
+                        .color(Color32::from_rgb(59, 130, 246)),
+                );
                 ui.separator();
 
                 let mut open_clicked = false;
@@ -321,7 +330,10 @@ impl eframe::App for VynaHL7TestPanel {
 
                 ui.menu_button("View", |ui| {
                     for tab in ActiveTab::all() {
-                        if ui.button(format!("{} {}", tab.icon(), tab.label())).clicked() {
+                        if ui
+                            .button(format!("{} {}", tab.icon(), tab.label()))
+                            .clicked()
+                        {
                             self.active_tab = *tab;
                             ui.close();
                         }
@@ -356,7 +368,8 @@ impl eframe::App for VynaHL7TestPanel {
                 for tab in ActiveTab::all() {
                     let is_selected = self.active_tab == *tab;
                     let text = format!("{} {}", tab.icon(), tab.label());
-                    let response = ui.selectable_label(is_selected, RichText::new(&text).size(13.0));
+                    let response =
+                        ui.selectable_label(is_selected, RichText::new(&text).size(13.0));
                     if response.clicked() {
                         self.active_tab = *tab;
                     }
@@ -381,7 +394,14 @@ impl eframe::App for VynaHL7TestPanel {
                 logo::show_logo(ui, 14.0);
                 ui.label(RichText::new("VynaHL7").weak().small());
                 ui.separator();
-                ui.label(RichText::new(format!("{} {}", self.active_tab.icon(), self.active_tab.label())).weak());
+                ui.label(
+                    RichText::new(format!(
+                        "{} {}",
+                        self.active_tab.icon(),
+                        self.active_tab.label()
+                    ))
+                    .weak(),
+                );
                 ui.separator();
                 if let Some(ref msg) = self.status_message {
                     ui.label(RichText::new(msg).weak());
@@ -398,18 +418,16 @@ impl eframe::App for VynaHL7TestPanel {
         });
 
         // Main content area
-        egui::CentralPanel::default().show(ui, |ui| {
-            match self.active_tab {
-                ActiveTab::Parser => self.parser_tab.ui(ui),
-                ActiveTab::Builder => self.builder_tab.ui(ui),
-                ActiveTab::Terser => self.terser_tab.ui(ui),
-                ActiveTab::Validator => self.validator_tab.ui(ui),
-                ActiveTab::Mllp => self.mllp_tab.ui(ui, &ctx),
-                ActiveTab::Http => self.http_tab.ui(ui, &ctx),
-                ActiveTab::Ftp => self.ftp_tab.ui(ui, &ctx),
-                ActiveTab::Fhir => self.fhir_tab.ui(ui),
-                ActiveTab::Xml => self.xml_tab.ui(ui),
-            }
+        egui::CentralPanel::default().show(ui, |ui| match self.active_tab {
+            ActiveTab::Parser => self.parser_tab.ui(ui),
+            ActiveTab::Builder => self.builder_tab.ui(ui),
+            ActiveTab::Terser => self.terser_tab.ui(ui),
+            ActiveTab::Validator => self.validator_tab.ui(ui),
+            ActiveTab::Mllp => self.mllp_tab.ui(ui, &ctx),
+            ActiveTab::Http => self.http_tab.ui(ui, &ctx),
+            ActiveTab::Ftp => self.ftp_tab.ui(ui, &ctx),
+            ActiveTab::Fhir => self.fhir_tab.ui(ui),
+            ActiveTab::Xml => self.xml_tab.ui(ui),
         });
 
         // About dialog

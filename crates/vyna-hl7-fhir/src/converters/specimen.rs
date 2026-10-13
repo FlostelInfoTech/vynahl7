@@ -1,10 +1,10 @@
 //! Specimen converter - SPM segment to FHIR Specimen resource
 
+use crate::error::{ConversionError, ConversionResult};
+use crate::resources::common::*;
+use crate::resources::specimen::*;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
-use crate::error::{ConversionError, ConversionResult};
-use crate::resources::specimen::*;
-use crate::resources::common::*;
 
 pub struct SpecimenConverter;
 
@@ -86,9 +86,10 @@ impl SpecimenConverter {
 
         // SPM-18: Specimen Received Date/Time -> receivedTime
         if let Ok(Some(received_dt)) = terser.get(&spm_path("18"))
-            && let Ok(received_time) = Self::convert_datetime(received_dt) {
-                specimen.received_time = Some(received_time);
-            }
+            && let Ok(received_time) = Self::convert_datetime(received_dt)
+        {
+            specimen.received_time = Some(received_time);
+        }
 
         // Build collection information
         let mut collection = SpecimenCollection {
@@ -103,10 +104,11 @@ impl SpecimenConverter {
 
         // SPM-17: Specimen Collection Date/Time -> collection.collectedDateTime
         if let Ok(Some(collected_dt)) = terser.get(&spm_path("17"))
-            && let Ok(collected_time) = Self::convert_datetime(collected_dt) {
-                collection.collected_date_time = Some(collected_time);
-                has_collection = true;
-            }
+            && let Ok(collected_time) = Self::convert_datetime(collected_dt)
+        {
+            collection.collected_date_time = Some(collected_time);
+            has_collection = true;
+        }
 
         // SPM-7: Specimen Collection Method -> collection.method
         if let Ok(Some(method_code)) = terser.get(&spm_path("7")) {
@@ -152,23 +154,33 @@ impl SpecimenConverter {
 
         // SPM-12: Specimen Collection Amount -> collection.quantity
         if let Ok(Some(amount_str)) = terser.get(&spm_path("12"))
-            && let Ok(amount) = amount_str.parse::<f64>() {
-                let mut quantity = Quantity {
-                    value: Some(amount),
-                    unit: None,
-                    system: Some("http://unitsofmeasure.org".to_string()),
-                    code: None,
-                };
+            && !amount_str.is_empty()
+        {
+            // A present-but-unparseable amount is an error, not a
+            // silent omission of the quantity.
+            let amount = amount_str.parse::<f64>().map_err(|_| {
+                ConversionError::InvalidDataType(
+                    "SPM-12".to_string(),
+                    "numeric".to_string(),
+                    amount_str.to_string(),
+                )
+            })?;
+            let mut quantity = Quantity {
+                value: Some(amount),
+                unit: None,
+                system: Some("http://unitsofmeasure.org".to_string()),
+                code: None,
+            };
 
-                // Component 2: Units (SPM-12-2)
-                if let Ok(Some(units)) = terser.get(&format!("{}-2", spm_path("12"))) {
-                    quantity.unit = Some(units.to_string());
-                    quantity.code = Some(units.to_string());
-                }
-
-                collection.quantity = Some(quantity);
-                has_collection = true;
+            // Component 2: Units (SPM-12-2)
+            if let Ok(Some(units)) = terser.get(&format!("{}-2", spm_path("12"))) {
+                quantity.unit = Some(units.to_string());
+                quantity.code = Some(units.to_string());
             }
+
+            collection.quantity = Some(quantity);
+            has_collection = true;
+        }
 
         if has_collection {
             specimen.collection = Some(collection);
@@ -241,12 +253,16 @@ impl SpecimenConverter {
             "N" => "unavailable",
             "U" => "unsatisfactory",
             _ => "available", // Default
-        }.to_string()
+        }
+        .to_string()
     }
 
     /// Convert HL7 datetime (YYYYMMDDHHMMSS) to FHIR ISO 8601 format
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
-        if datetime.len() >= 14 {
+        // Byte-slice checks on `[u8]` never split a char boundary, and an
+        // all-ASCII-digit prefix makes the `&str` slices below safe.
+        let bytes = datetime.as_bytes();
+        if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
             Ok(format!(
                 "{}-{}-{}T{}:{}:{}",
                 &datetime[0..4],
@@ -256,7 +272,7 @@ impl SpecimenConverter {
                 &datetime[10..12],
                 &datetime[12..14]
             ))
-        } else if datetime.len() >= 8 {
+        } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
             // Date only
             Ok(format!(
                 "{}-{}-{}",
@@ -268,17 +284,19 @@ impl SpecimenConverter {
             Err(ConversionError::InvalidFormat(
                 "SPM-17/SPM-18".to_string(),
                 "SPM".to_string(),
-                format!("Invalid datetime format: {}", datetime)
+                format!("Invalid datetime format: {}", datetime),
             ))
         }
     }
 
     /// Extract specimen type from SPM-4 field
-    fn extract_specimen_type(terser: &Terser, base_path: &str) -> ConversionResult<CodeableConcept> {
-        let code = terser.get(base_path)
-            .ok()
-            .flatten()
-            .ok_or_else(|| ConversionError::MissingField(base_path.to_string(), "SPM".to_string()))?;
+    fn extract_specimen_type(
+        terser: &Terser,
+        base_path: &str,
+    ) -> ConversionResult<CodeableConcept> {
+        let code = terser.get(base_path).ok().flatten().ok_or_else(|| {
+            ConversionError::MissingField(base_path.to_string(), "SPM".to_string())
+        })?;
 
         let mut coding = Coding {
             system: Some("http://terminology.hl7.org/CodeSystem/v2-0487".to_string()),
@@ -300,7 +318,8 @@ impl SpecimenConverter {
 
     /// Extract patient reference from PID segment
     fn extract_patient_reference(terser: &Terser) -> ConversionResult<Reference> {
-        let patient_id = terser.get("PID-3")
+        let patient_id = terser
+            .get("PID-3")
             .ok()
             .flatten()
             .ok_or_else(|| ConversionError::MissingSegment("PID".to_string()))?;
@@ -347,7 +366,10 @@ mod tests {
         let spec = &specimens[0];
         assert!(spec.collection.is_some());
         let collection = spec.collection.as_ref().unwrap();
-        assert_eq!(collection.collected_date_time, Some("2024-03-15T10:00:00".to_string()));
+        assert_eq!(
+            collection.collected_date_time,
+            Some("2024-03-15T10:00:00".to_string())
+        );
         assert!(collection.method.is_some());
         assert!(collection.body_site.is_some());
         assert!(collection.quantity.is_some());
@@ -365,7 +387,10 @@ mod tests {
         assert_eq!(specimens.len(), 1);
         let spec = &specimens[0];
         assert_eq!(spec.status, Some("available".to_string()));
-        assert_eq!(spec.accession_identifier.as_ref().unwrap().value, Some("ACC123".to_string()));
+        assert_eq!(
+            spec.accession_identifier.as_ref().unwrap().value,
+            Some("ACC123".to_string())
+        );
     }
 
     #[test]
@@ -379,8 +404,14 @@ mod tests {
         let specimens = SpecimenConverter::convert_all(&message).unwrap();
 
         assert_eq!(specimens.len(), 2);
-        assert_eq!(specimens[0].identifier.as_ref().unwrap()[0].value, Some("SPEC001".to_string()));
-        assert_eq!(specimens[1].identifier.as_ref().unwrap()[0].value, Some("SPEC002".to_string()));
+        assert_eq!(
+            specimens[0].identifier.as_ref().unwrap()[0].value,
+            Some("SPEC001".to_string())
+        );
+        assert_eq!(
+            specimens[1].identifier.as_ref().unwrap()[0].value,
+            Some("SPEC002".to_string())
+        );
     }
 
     #[test]
@@ -395,6 +426,30 @@ mod tests {
         assert_eq!(specimens.len(), 1);
         let spec = &specimens[0];
         assert!(spec.condition.is_some());
+    }
+
+    #[test]
+    fn test_unparseable_amount_returns_error() {
+        let hl7 = "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||OML^O21|MSG123|P|2.5\r\
+                   PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+                   SPM|1|SPEC123||BLD^Blood^HL70487|||ANP^Venipuncture^HL70488\
+                   |LA^Left Arm^HL70163||||lots^mL|||||20240315100000";
+
+        let message = parse_message(hl7).unwrap();
+        let result = SpecimenConverter::convert_all(&message);
+        assert!(matches!(
+            result,
+            Err(ConversionError::InvalidDataType(_, _, _))
+        ));
+    }
+
+    #[test]
+    fn test_non_ascii_datetime_returns_error_without_panic() {
+        assert!(SpecimenConverter::convert_datetime("123\u{e9}56789012").is_err());
+        assert_eq!(
+            SpecimenConverter::convert_datetime("20240315100000").unwrap(),
+            "2024-03-15T10:00:00"
+        );
     }
 
     #[test]

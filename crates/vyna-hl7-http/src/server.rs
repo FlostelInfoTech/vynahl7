@@ -1,17 +1,17 @@
 //! HTTP server for receiving HL7 messages
 
-use crate::{decode_body, Error, Result, CONTENT_TYPE_HL7_ER7};
+use crate::{CONTENT_TYPE_HL7_ER7, Error, Result, decode_body};
 use axum::{
+    Router,
     body::Bytes,
     extract::State,
     http::{HeaderMap, StatusCode},
     routing::post,
-    Router,
 };
-use vyna_hl7_core::Message;
-use vyna_hl7_parser::parse_message;
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
+use vyna_hl7_core::Message;
+use vyna_hl7_parser::parse_message;
 
 #[cfg(feature = "compression")]
 use tower_http::compression::CompressionLayer;
@@ -258,8 +258,9 @@ impl HttpServer {
         mut shutdown: tokio::sync::oneshot::Receiver<()>,
     ) -> Result<()> {
         // Extract TLS config or return error
-        let tls_config = self.tls_config.clone()
-            .ok_or_else(|| Error::InvalidUrl("TLS not configured. Use with_tls() first.".to_string()))?;
+        let tls_config = self.tls_config.clone().ok_or_else(|| {
+            Error::InvalidUrl("TLS not configured. Use with_tls() first.".to_string())
+        })?;
 
         // Build router
         let app = Router::new()
@@ -348,7 +349,10 @@ pub(crate) async fn handle_message(
     if !content_type.contains("hl7") {
         return Err((
             StatusCode::BAD_REQUEST,
-            format!("Invalid content type: expected {}, got {}", CONTENT_TYPE_HL7_ER7, content_type),
+            format!(
+                "Invalid content type: expected {}, got {}",
+                CONTENT_TYPE_HL7_ER7, content_type
+            ),
         ));
     }
 
@@ -359,7 +363,10 @@ pub(crate) async fn handle_message(
             {
                 use crate::auth::verify_basic_auth;
                 if !verify_basic_auth(_auth_header, _username, _password) {
-                    return Err((StatusCode::UNAUTHORIZED, "Authentication failed".to_string()));
+                    return Err((
+                        StatusCode::UNAUTHORIZED,
+                        "Authentication failed".to_string(),
+                    ));
                 }
             }
             #[cfg(not(feature = "auth"))]
@@ -427,13 +434,7 @@ pub(crate) async fn handle_message(
         .parse()
         .unwrap(),
     );
-    response_headers.insert(
-        "date",
-        chrono::Utc::now()
-            .to_rfc2822()
-            .parse()
-            .unwrap(),
-    );
+    response_headers.insert("date", chrono::Utc::now().to_rfc2822().parse().unwrap());
 
     // Return response
     Ok((StatusCode::OK, response_headers, response_body))
@@ -452,8 +453,7 @@ mod tests {
     #[test]
     #[cfg(feature = "auth")]
     fn test_with_auth() {
-        let server = HttpServer::new()
-            .with_auth("user".to_string(), "pass".to_string());
+        let server = HttpServer::new().with_auth("user".to_string(), "pass".to_string());
 
         assert!(server.auth.is_some());
         let (username, password) = server.auth.unwrap();
@@ -483,9 +483,7 @@ mod tests {
         let app = Router::new()
             .route("/", post(handle_message))
             .with_state(server);
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
@@ -503,5 +501,99 @@ mod tests {
         // The raw-text path detects MSH-18 the same way.
         let raw = client.send_message_raw(hl7).await.unwrap();
         assert!(raw.contains("Müller"));
+    }
+
+    const VALID_HL7: &str = "MSH|^~\\&|SND|FAC|RCV|RFAC|20240115120000||ADT^A01|1|P|2.5\r";
+
+    fn headers(content_type: Option<&str>, auth: Option<&str>) -> HeaderMap {
+        let mut map = HeaderMap::new();
+        if let Some(content_type) = content_type {
+            map.insert("content-type", content_type.parse().unwrap());
+        }
+        if let Some(auth) = auth {
+            map.insert("authorization", auth.parse().unwrap());
+        }
+        map
+    }
+
+    fn hl7_headers() -> HeaderMap {
+        headers(Some(CONTENT_TYPE_HL7_ER7), None)
+    }
+
+    #[tokio::test]
+    async fn test_handle_message_rejects_bad_content_type() {
+        let server = HttpServer::new();
+
+        // Missing content type.
+        let result =
+            handle_message(State(server.clone()), HeaderMap::new(), VALID_HL7.into()).await;
+        let (status, _) = result.unwrap_err();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        // Wrong content type.
+        let result = handle_message(
+            State(server),
+            headers(Some("application/json"), None),
+            VALID_HL7.into(),
+        )
+        .await;
+        let (status, _) = result.unwrap_err();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_handle_message_rejects_unparseable_body() {
+        let server = HttpServer::new();
+        let result = handle_message(State(server), hl7_headers(), "not hl7".into()).await;
+        let (status, _) = result.unwrap_err();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_handle_message_accepts_valid_message() {
+        let server = HttpServer::new();
+        let (status, headers, body) =
+            handle_message(State(server), hl7_headers(), VALID_HL7.into())
+                .await
+                .unwrap();
+        assert_eq!(status, StatusCode::OK);
+        assert!(headers["content-type"].to_str().unwrap().contains("hl7"));
+        let echoed = parse_message(&decode_body(&body, "").unwrap()).unwrap();
+        assert_eq!(echoed.get_control_id(), Some("1"));
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "auth")]
+    async fn test_handle_message_requires_auth() {
+        use crate::auth::encode_basic_auth;
+
+        let server = HttpServer::new().with_auth("user".to_string(), "pass".to_string());
+
+        // Missing Authorization header.
+        let result = handle_message(State(server.clone()), hl7_headers(), VALID_HL7.into()).await;
+        let (status, _) = result.unwrap_err();
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        // Wrong credentials.
+        let wrong = encode_basic_auth("user", "wrong");
+        let result = handle_message(
+            State(server.clone()),
+            headers(Some(CONTENT_TYPE_HL7_ER7), Some(&wrong)),
+            VALID_HL7.into(),
+        )
+        .await;
+        let (status, _) = result.unwrap_err();
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        // Correct credentials succeed.
+        let right = encode_basic_auth("user", "pass");
+        let (status, _, _) = handle_message(
+            State(server),
+            headers(Some(CONTENT_TYPE_HL7_ER7), Some(&right)),
+            VALID_HL7.into(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(status, StatusCode::OK);
     }
 }

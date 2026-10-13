@@ -18,10 +18,7 @@ pub enum Error {
 
     /// Invalid content type
     #[error("Invalid content type: expected {expected}, got {actual}")]
-    ContentType {
-        expected: String,
-        actual: String,
-    },
+    ContentType { expected: String, actual: String },
 
     /// HL7 parsing error
     #[error("HL7 parsing error: {0}")]
@@ -42,4 +39,8 @@ pub enum Error {
     /// Missing required header
     #[error("Missing required header: {0}")]
     MissingHeader(String),
+
+    /// Response body exceeded the client's maximum response size
+    #[error("Response body exceeds maximum size of {limit} bytes")]
+    ResponseTooLarge { limit: usize },
 }

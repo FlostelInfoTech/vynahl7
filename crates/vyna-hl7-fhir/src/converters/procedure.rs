@@ -1,10 +1,10 @@
 //! Procedure converter - PR1 segment to FHIR Procedure resource
 
+use crate::error::{ConversionError, ConversionResult};
+use crate::resources::common::*;
+use crate::resources::procedure::*;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
-use crate::error::{ConversionError, ConversionResult};
-use crate::resources::procedure::*;
-use crate::resources::common::*;
 
 pub struct ProcedureConverter;
 
@@ -70,7 +70,9 @@ impl ProcedureConverter {
         } else {
             format!("PR1({})-5", pr1_index + 1)
         };
-        if let Ok(Some(datetime)) = terser.get(&datetime_path) {
+        if let Ok(Some(datetime)) = terser.get(&datetime_path)
+            && !datetime.is_empty()
+        {
             procedure.performed_date_time = Some(Self::convert_datetime(datetime)?);
         }
 
@@ -97,7 +99,10 @@ impl ProcedureConverter {
     }
 
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
-        if datetime.len() >= 14 {
+        // Byte-slice checks on `[u8]` never split a char boundary, and an
+        // all-ASCII-digit prefix makes the `&str` slices below safe.
+        let bytes = datetime.as_bytes();
+        if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
             Ok(format!(
                 "{}-{}-{}T{}:{}:{}",
                 &datetime[0..4],
@@ -107,7 +112,7 @@ impl ProcedureConverter {
                 &datetime[10..12],
                 &datetime[12..14]
             ))
-        } else if datetime.len() >= 8 {
+        } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
             Ok(format!(
                 "{}-{}-{}",
                 &datetime[0..4],
@@ -115,7 +120,11 @@ impl ProcedureConverter {
                 &datetime[6..8]
             ))
         } else {
-            Ok(datetime.to_string())
+            Err(ConversionError::InvalidFormat(
+                "datetime".to_string(),
+                "PR1".to_string(),
+                format!("Invalid datetime format: {}", datetime),
+            ))
         }
     }
 }
@@ -137,6 +146,16 @@ mod tests {
         assert_eq!(procedures.len(), 1);
         assert_eq!(procedures[0].resource_type, "Procedure");
         assert_eq!(procedures[0].status, "completed");
+    }
+
+    #[test]
+    fn test_non_ascii_datetime_returns_error_without_panic() {
+        assert!(ProcedureConverter::convert_datetime("123\u{e9}56789012").is_err());
+        assert!(ProcedureConverter::convert_datetime("junk").is_err());
+        assert_eq!(
+            ProcedureConverter::convert_datetime("20240315").unwrap(),
+            "2024-03-15"
+        );
     }
 
     #[test]

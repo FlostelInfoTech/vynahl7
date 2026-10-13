@@ -1,8 +1,8 @@
 //! Core trait and types for custom Z-segments
 
 use crate::error::Result;
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use vyna_hl7_core::Segment;
-use chrono::{NaiveDateTime, NaiveDate, NaiveTime, DateTime, Utc};
 
 /// Trait for custom Z-segments
 ///
@@ -418,23 +418,13 @@ impl BuilderFieldType for Option<String> {
 // Implementations for f64
 impl ParseSegmentField for f64 {
     fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
-        segment
-            .get_field_value(field_num)
-            .and_then(|s| s.parse::<f64>().ok())
-            .ok_or_else(|| {
-                crate::error::CustomSegmentError::missing_field(
-                    format!("{}-{}", seg_id, field_num),
-                    seg_id,
-                )
-            })
+        parse_required_scalar(segment, field_num, seg_id, |s| s.parse::<f64>().ok())
     }
 }
 
 impl ParseSegmentField for Option<f64> {
-    fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
-        Ok(segment
-            .get_field_value(field_num)
-            .and_then(|s| s.parse::<f64>().ok()))
+    fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
+        parse_optional_scalar(segment, field_num, seg_id, |s| s.parse::<f64>().ok())
     }
 }
 
@@ -463,23 +453,13 @@ impl BuilderFieldType for Option<f64> {
 // Implementations for u32
 impl ParseSegmentField for u32 {
     fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
-        segment
-            .get_field_value(field_num)
-            .and_then(|s| s.parse::<u32>().ok())
-            .ok_or_else(|| {
-                crate::error::CustomSegmentError::missing_field(
-                    format!("{}-{}", seg_id, field_num),
-                    seg_id,
-                )
-            })
+        parse_required_scalar(segment, field_num, seg_id, |s| s.parse::<u32>().ok())
     }
 }
 
 impl ParseSegmentField for Option<u32> {
-    fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
-        Ok(segment
-            .get_field_value(field_num)
-            .and_then(|s| s.parse::<u32>().ok()))
+    fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
+        parse_optional_scalar(segment, field_num, seg_id, |s| s.parse::<u32>().ok())
     }
 }
 
@@ -539,23 +519,13 @@ impl BuildableField for Option<i32> {
 
 impl ParseSegmentField for i32 {
     fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
-        segment
-            .get_field_value(field_num)
-            .and_then(|s| s.parse::<i32>().ok())
-            .ok_or_else(|| {
-                crate::error::CustomSegmentError::missing_field(
-                    format!("{}-{}", seg_id, field_num),
-                    seg_id,
-                )
-            })
+        parse_required_scalar(segment, field_num, seg_id, |s| s.parse::<i32>().ok())
     }
 }
 
 impl ParseSegmentField for Option<i32> {
-    fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
-        Ok(segment
-            .get_field_value(field_num)
-            .and_then(|s| s.parse::<i32>().ok()))
+    fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
+        parse_optional_scalar(segment, field_num, seg_id, |s| s.parse::<i32>().ok())
     }
 }
 
@@ -615,23 +585,13 @@ impl BuildableField for Option<i64> {
 
 impl ParseSegmentField for i64 {
     fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
-        segment
-            .get_field_value(field_num)
-            .and_then(|s| s.parse::<i64>().ok())
-            .ok_or_else(|| {
-                crate::error::CustomSegmentError::missing_field(
-                    format!("{}-{}", seg_id, field_num),
-                    seg_id,
-                )
-            })
+        parse_required_scalar(segment, field_num, seg_id, |s| s.parse::<i64>().ok())
     }
 }
 
 impl ParseSegmentField for Option<i64> {
-    fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
-        Ok(segment
-            .get_field_value(field_num)
-            .and_then(|s| s.parse::<i64>().ok()))
+    fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
+        parse_optional_scalar(segment, field_num, seg_id, |s| s.parse::<i64>().ok())
     }
 }
 
@@ -691,34 +651,14 @@ impl BuildableField for Option<bool> {
 
 impl ParseSegmentField for bool {
     fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
-        segment
-            .get_field_value(field_num)
-            .and_then(|s| {
-                // HL7 typically uses Y/N or 1/0 for booleans
-                match s.to_uppercase().as_str() {
-                    "Y" | "YES" | "T" | "TRUE" | "1" => Some(true),
-                    "N" | "NO" | "F" | "FALSE" | "0" => Some(false),
-                    _ => None,
-                }
-            })
-            .ok_or_else(|| {
-                crate::error::CustomSegmentError::missing_field(
-                    format!("{}-{}", seg_id, field_num),
-                    seg_id,
-                )
-            })
+        // HL7 typically uses Y/N or 1/0 for booleans
+        parse_required_scalar(segment, field_num, seg_id, parse_hl7_bool)
     }
 }
 
 impl ParseSegmentField for Option<bool> {
-    fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
-        Ok(segment.get_field_value(field_num).and_then(|s| {
-            match s.to_uppercase().as_str() {
-                "Y" | "YES" | "T" | "TRUE" | "1" => Some(true),
-                "N" | "NO" | "F" | "FALSE" | "0" => Some(false),
-                _ => None,
-            }
-        }))
+    fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
+        parse_optional_scalar(segment, field_num, seg_id, parse_hl7_bool)
     }
 }
 
@@ -787,22 +727,14 @@ impl BuildableField for Option<NaiveDateTime> {
 // Supports HL7 datetime formats: YYYYMMDDHHMMSS[.SSSS]
 impl ParseSegmentField for NaiveDateTime {
     fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
-        segment
-            .get_field_value(field_num)
-            .and_then(parse_hl7_datetime)
-            .ok_or_else(|| {
-                crate::error::CustomSegmentError::missing_field(
-                    format!("{}-{}", seg_id, field_num),
-                    seg_id,
-                )
-            })
+        parse_required_scalar(segment, field_num, seg_id, parse_hl7_datetime)
     }
 }
 
 // ParseSegmentField for Option<NaiveDateTime>
 impl ParseSegmentField for Option<NaiveDateTime> {
-    fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
-        Ok(segment.get_field_value(field_num).and_then(parse_hl7_datetime))
+    fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
+        parse_optional_scalar(segment, field_num, seg_id, parse_hl7_datetime)
     }
 }
 
@@ -874,22 +806,14 @@ impl BuildableField for Option<NaiveDate> {
 // Supports HL7 date formats: YYYYMMDD, YYYYMM, YYYY
 impl ParseSegmentField for NaiveDate {
     fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
-        segment
-            .get_field_value(field_num)
-            .and_then(parse_hl7_date)
-            .ok_or_else(|| {
-                crate::error::CustomSegmentError::missing_field(
-                    format!("{}-{}", seg_id, field_num),
-                    seg_id,
-                )
-            })
+        parse_required_scalar(segment, field_num, seg_id, parse_hl7_date)
     }
 }
 
 // ParseSegmentField for Option<NaiveDate>
 impl ParseSegmentField for Option<NaiveDate> {
-    fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
-        Ok(segment.get_field_value(field_num).and_then(parse_hl7_date))
+    fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
+        parse_optional_scalar(segment, field_num, seg_id, parse_hl7_date)
     }
 }
 
@@ -961,22 +885,14 @@ impl BuildableField for Option<NaiveTime> {
 // Supports HL7 time formats: HHMMSS[.SSSS], HHMM
 impl ParseSegmentField for NaiveTime {
     fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
-        segment
-            .get_field_value(field_num)
-            .and_then(parse_hl7_time)
-            .ok_or_else(|| {
-                crate::error::CustomSegmentError::missing_field(
-                    format!("{}-{}", seg_id, field_num),
-                    seg_id,
-                )
-            })
+        parse_required_scalar(segment, field_num, seg_id, parse_hl7_time)
     }
 }
 
 // ParseSegmentField for Option<NaiveTime>
 impl ParseSegmentField for Option<NaiveTime> {
-    fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
-        Ok(segment.get_field_value(field_num).and_then(parse_hl7_time))
+    fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
+        parse_optional_scalar(segment, field_num, seg_id, parse_hl7_time)
     }
 }
 
@@ -1048,26 +964,20 @@ impl BuildableField for Option<DateTime<Utc>> {
 // Supports HL7 datetime formats with timezone: YYYYMMDDHHMMSS[.SSSS][+/-ZZZZ]
 impl ParseSegmentField for DateTime<Utc> {
     fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
-        segment
-            .get_field_value(field_num)
-            .and_then(parse_hl7_datetime_utc)
-            .ok_or_else(|| {
-                crate::error::CustomSegmentError::missing_field(
-                    format!("{}-{}", seg_id, field_num),
-                    seg_id,
-                )
-            })
+        parse_required_scalar(segment, field_num, seg_id, parse_hl7_datetime_utc)
     }
 }
 
 // ParseSegmentField for Option<DateTime<Utc>>
 impl ParseSegmentField for Option<DateTime<Utc>> {
-    fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
-        Ok(segment.get_field_value(field_num).and_then(parse_hl7_datetime_utc))
+    fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
+        parse_optional_scalar(segment, field_num, seg_id, parse_hl7_datetime_utc)
     }
 }
 
 // SerializeSegmentField for DateTime<Utc>
+// Writes the UTC wall time without an offset suffix; values without a
+// suffix parse back as UTC, so the round trip is stable.
 impl SerializeSegmentField for DateTime<Utc> {
     fn set_field(&self, segment: &mut Segment, field_num: usize) {
         let formatted = self.format("%Y%m%d%H%M%S").to_string();
@@ -1097,6 +1007,57 @@ impl BuilderFieldType for Option<DateTime<Utc>> {
 // ============================================================================
 // Helper functions for parsing HL7 date/time formats
 // ============================================================================
+
+/// Parse one scalar field value, telling "absent" from "invalid".
+///
+/// Returns `Ok(None)` when the field is absent or empty, `Ok(Some(v))`
+/// when it parses, and `InvalidFieldValue` when a non-empty value fails
+/// to parse — never `MissingField` for a value that is present.
+fn parse_optional_scalar<T, F>(
+    segment: &Segment,
+    field_num: usize,
+    seg_id: &str,
+    parse: F,
+) -> Result<Option<T>>
+where
+    F: FnOnce(&str) -> Option<T>,
+{
+    match segment.get_field_value(field_num) {
+        None | Some("") => Ok(None),
+        Some(s) => parse(s).map(Some).ok_or_else(|| {
+            crate::error::CustomSegmentError::invalid_field(
+                format!("{seg_id}-{field_num}"),
+                seg_id,
+                format!("cannot parse {s:?}"),
+            )
+        }),
+    }
+}
+
+/// Parse a required scalar field: absent/empty is `MissingField`,
+/// present-but-unparseable is `InvalidFieldValue`.
+fn parse_required_scalar<T, F>(
+    segment: &Segment,
+    field_num: usize,
+    seg_id: &str,
+    parse: F,
+) -> Result<T>
+where
+    F: FnOnce(&str) -> Option<T>,
+{
+    parse_optional_scalar(segment, field_num, seg_id, parse)?.ok_or_else(|| {
+        crate::error::CustomSegmentError::missing_field(format!("{seg_id}-{field_num}"), seg_id)
+    })
+}
+
+/// Parse HL7 boolean formats (Y/N, YES/NO, T/F, TRUE/FALSE, 1/0).
+fn parse_hl7_bool(s: &str) -> Option<bool> {
+    match s.to_uppercase().as_str() {
+        "Y" | "YES" | "T" | "TRUE" | "1" => Some(true),
+        "N" | "NO" | "F" | "FALSE" | "0" => Some(false),
+        _ => None,
+    }
+}
 
 /// Parse HL7 datetime format: YYYYMMDDHHMMSS[.SSSS]
 fn parse_hl7_datetime(s: &str) -> Option<NaiveDateTime> {
@@ -1162,13 +1123,47 @@ fn parse_hl7_time(s: &str) -> Option<NaiveTime> {
 }
 
 /// Parse HL7 datetime with timezone: YYYYMMDDHHMMSS[+/-ZZZZ]
+///
+/// A trailing `+/-ZZZZ` offset is applied and the result converted to
+/// UTC; values without an offset are interpreted as UTC.
 fn parse_hl7_datetime_utc(s: &str) -> Option<DateTime<Utc>> {
     use chrono::TimeZone;
 
-    // For simplicity, parse as naive datetime and convert to UTC
-    // Full timezone support would require parsing +/-ZZZZ offset
-    let naive_dt = parse_hl7_datetime(s)?;
-    Some(Utc.from_utc_datetime(&naive_dt))
+    let (head, offset_secs) = split_hl7_offset(s)?;
+    let naive_dt = parse_hl7_datetime(head)?;
+    if offset_secs == 0 {
+        return Some(Utc.from_utc_datetime(&naive_dt));
+    }
+    let offset = chrono::FixedOffset::east_opt(offset_secs)?;
+    offset
+        .from_local_datetime(&naive_dt)
+        .single()
+        .map(|dt| dt.to_utc())
+}
+
+/// Split a trailing `[+/-]ZZZZ` offset from an HL7 datetime.
+///
+/// Returns the head and the offset in seconds east of UTC, or `None`
+/// when the value ends with a malformed offset.
+fn split_hl7_offset(s: &str) -> Option<(&str, i32)> {
+    if s.len() < 5 {
+        return Some((s, 0));
+    }
+    let (head, tail) = s.split_at_checked(s.len() - 5)?;
+    // Only +/- lead bytes take the offset branch, so tail[1..] below
+    // always starts on a character boundary.
+    let sign = match tail.as_bytes()[0] {
+        b'+' => 1,
+        b'-' => -1,
+        _ => return Some((s, 0)),
+    };
+    let digits: i32 = tail[1..].parse().ok()?;
+    let hours = digits / 100;
+    let minutes = digits % 100;
+    if !(0..=23).contains(&hours) || !(0..=59).contains(&minutes) {
+        return None;
+    }
+    Some((head, sign * (hours * 3600 + minutes * 60)))
 }
 
 // ============================================================================
@@ -1421,12 +1416,10 @@ impl ParseSegmentField for Vec<bool> {
                 .repetitions
                 .iter()
                 .filter_map(|rep| {
-                    rep.value().and_then(|s| {
-                        match s.to_uppercase().as_str() {
-                            "Y" | "YES" | "T" | "TRUE" | "1" => Some(true),
-                            "N" | "NO" | "F" | "FALSE" | "0" => Some(false),
-                            _ => None,
-                        }
+                    rep.value().and_then(|s| match s.to_uppercase().as_str() {
+                        "Y" | "YES" | "T" | "TRUE" | "1" => Some(true),
+                        "N" | "NO" | "F" | "FALSE" | "0" => Some(false),
+                        _ => None,
                     })
                 })
                 .collect();
@@ -1486,22 +1479,23 @@ impl BuildableField for (String, String) {
 impl ParseSegmentField for (String, String) {
     fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
         if let Some(field) = segment.get_field(field_num)
-            && let Some(rep) = field.get_repetition(0) {
-                let c0 = rep
-                    .get_component(0)
-                    .and_then(|c| c.value())
-                    .unwrap_or("")
-                    .to_string();
-                let c1 = rep
-                    .get_component(1)
-                    .and_then(|c| c.value())
-                    .unwrap_or("")
-                    .to_string();
+            && let Some(rep) = field.get_repetition(0)
+        {
+            let c0 = rep
+                .get_component(0)
+                .and_then(|c| c.value())
+                .unwrap_or("")
+                .to_string();
+            let c1 = rep
+                .get_component(1)
+                .and_then(|c| c.value())
+                .unwrap_or("")
+                .to_string();
 
-                if !c0.is_empty() && !c1.is_empty() {
-                    return Ok((c0, c1));
-                }
+            if !c0.is_empty() && !c1.is_empty() {
+                return Ok((c0, c1));
             }
+        }
         Err(crate::error::CustomSegmentError::missing_field(
             format!("{}-{}", seg_id, field_num),
             seg_id,
@@ -1550,27 +1544,28 @@ impl BuildableField for (String, String, String) {
 impl ParseSegmentField for (String, String, String) {
     fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
         if let Some(field) = segment.get_field(field_num)
-            && let Some(rep) = field.get_repetition(0) {
-                let c0 = rep
-                    .get_component(0)
-                    .and_then(|c| c.value())
-                    .unwrap_or("")
-                    .to_string();
-                let c1 = rep
-                    .get_component(1)
-                    .and_then(|c| c.value())
-                    .unwrap_or("")
-                    .to_string();
-                let c2 = rep
-                    .get_component(2)
-                    .and_then(|c| c.value())
-                    .unwrap_or("")
-                    .to_string();
+            && let Some(rep) = field.get_repetition(0)
+        {
+            let c0 = rep
+                .get_component(0)
+                .and_then(|c| c.value())
+                .unwrap_or("")
+                .to_string();
+            let c1 = rep
+                .get_component(1)
+                .and_then(|c| c.value())
+                .unwrap_or("")
+                .to_string();
+            let c2 = rep
+                .get_component(2)
+                .and_then(|c| c.value())
+                .unwrap_or("")
+                .to_string();
 
-                if !c0.is_empty() && !c1.is_empty() && !c2.is_empty() {
-                    return Ok((c0, c1, c2));
-                }
+            if !c0.is_empty() && !c1.is_empty() && !c2.is_empty() {
+                return Ok((c0, c1, c2));
             }
+        }
         Err(crate::error::CustomSegmentError::missing_field(
             format!("{}-{}", seg_id, field_num),
             seg_id,
@@ -1599,7 +1594,12 @@ impl BuilderFieldType for (String, String, String) {
 
 // Tuple of 4 components: (String, String, String, String)
 impl BuildableField for (String, String, String, String) {
-    type Storage = (Option<String>, Option<String>, Option<String>, Option<String>);
+    type Storage = (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    );
     type Inner = (String, String, String, String);
 
     fn set_value(storage: &mut Self::Storage, value: Self::Inner) {
@@ -1620,32 +1620,33 @@ impl BuildableField for (String, String, String, String) {
 impl ParseSegmentField for (String, String, String, String) {
     fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
         if let Some(field) = segment.get_field(field_num)
-            && let Some(rep) = field.get_repetition(0) {
-                let c0 = rep
-                    .get_component(0)
-                    .and_then(|c| c.value())
-                    .unwrap_or("")
-                    .to_string();
-                let c1 = rep
-                    .get_component(1)
-                    .and_then(|c| c.value())
-                    .unwrap_or("")
-                    .to_string();
-                let c2 = rep
-                    .get_component(2)
-                    .and_then(|c| c.value())
-                    .unwrap_or("")
-                    .to_string();
-                let c3 = rep
-                    .get_component(3)
-                    .and_then(|c| c.value())
-                    .unwrap_or("")
-                    .to_string();
+            && let Some(rep) = field.get_repetition(0)
+        {
+            let c0 = rep
+                .get_component(0)
+                .and_then(|c| c.value())
+                .unwrap_or("")
+                .to_string();
+            let c1 = rep
+                .get_component(1)
+                .and_then(|c| c.value())
+                .unwrap_or("")
+                .to_string();
+            let c2 = rep
+                .get_component(2)
+                .and_then(|c| c.value())
+                .unwrap_or("")
+                .to_string();
+            let c3 = rep
+                .get_component(3)
+                .and_then(|c| c.value())
+                .unwrap_or("")
+                .to_string();
 
-                if !c0.is_empty() && !c1.is_empty() && !c2.is_empty() && !c3.is_empty() {
-                    return Ok((c0, c1, c2, c3));
-                }
+            if !c0.is_empty() && !c1.is_empty() && !c2.is_empty() && !c3.is_empty() {
+                return Ok((c0, c1, c2, c3));
             }
+        }
         Err(crate::error::CustomSegmentError::missing_field(
             format!("{}-{}", seg_id, field_num),
             seg_id,
@@ -1675,11 +1676,23 @@ impl BuilderFieldType for (String, String, String, String) {
 
 // Tuple of 5 components: (String, String, String, String, String)
 impl BuildableField for (String, String, String, String, String) {
-    type Storage = (Option<String>, Option<String>, Option<String>, Option<String>, Option<String>);
+    type Storage = (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    );
     type Inner = (String, String, String, String, String);
 
     fn set_value(storage: &mut Self::Storage, value: Self::Inner) {
-        *storage = (Some(value.0), Some(value.1), Some(value.2), Some(value.3), Some(value.4));
+        *storage = (
+            Some(value.0),
+            Some(value.1),
+            Some(value.2),
+            Some(value.3),
+            Some(value.4),
+        );
     }
 
     fn build_value(storage: Self::Storage, field_name: &str, seg_id: &str) -> Result<Self> {
@@ -1696,37 +1709,43 @@ impl BuildableField for (String, String, String, String, String) {
 impl ParseSegmentField for (String, String, String, String, String) {
     fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
         if let Some(field) = segment.get_field(field_num)
-            && let Some(rep) = field.get_repetition(0) {
-                let c0 = rep
-                    .get_component(0)
-                    .and_then(|c| c.value())
-                    .unwrap_or("")
-                    .to_string();
-                let c1 = rep
-                    .get_component(1)
-                    .and_then(|c| c.value())
-                    .unwrap_or("")
-                    .to_string();
-                let c2 = rep
-                    .get_component(2)
-                    .and_then(|c| c.value())
-                    .unwrap_or("")
-                    .to_string();
-                let c3 = rep
-                    .get_component(3)
-                    .and_then(|c| c.value())
-                    .unwrap_or("")
-                    .to_string();
-                let c4 = rep
-                    .get_component(4)
-                    .and_then(|c| c.value())
-                    .unwrap_or("")
-                    .to_string();
+            && let Some(rep) = field.get_repetition(0)
+        {
+            let c0 = rep
+                .get_component(0)
+                .and_then(|c| c.value())
+                .unwrap_or("")
+                .to_string();
+            let c1 = rep
+                .get_component(1)
+                .and_then(|c| c.value())
+                .unwrap_or("")
+                .to_string();
+            let c2 = rep
+                .get_component(2)
+                .and_then(|c| c.value())
+                .unwrap_or("")
+                .to_string();
+            let c3 = rep
+                .get_component(3)
+                .and_then(|c| c.value())
+                .unwrap_or("")
+                .to_string();
+            let c4 = rep
+                .get_component(4)
+                .and_then(|c| c.value())
+                .unwrap_or("")
+                .to_string();
 
-                if !c0.is_empty() && !c1.is_empty() && !c2.is_empty() && !c3.is_empty() && !c4.is_empty() {
-                    return Ok((c0, c1, c2, c3, c4));
-                }
+            if !c0.is_empty()
+                && !c1.is_empty()
+                && !c2.is_empty()
+                && !c3.is_empty()
+                && !c4.is_empty()
+            {
+                return Ok((c0, c1, c2, c3, c4));
             }
+        }
         Err(crate::error::CustomSegmentError::missing_field(
             format!("{}-{}", seg_id, field_num),
             seg_id,
@@ -1783,15 +1802,18 @@ impl BuildableField for Option<(String, String)> {
 impl ParseSegmentField for Option<(String, String)> {
     fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
         if let Some(field) = segment.get_field(field_num)
-            && let Some(rep) = field.get_repetition(0) {
-                let c0 = rep.get_component(0).and_then(|c| c.value());
-                let c1 = rep.get_component(1).and_then(|c| c.value());
+            && let Some(rep) = field.get_repetition(0)
+        {
+            let c0 = rep.get_component(0).and_then(|c| c.value());
+            let c1 = rep.get_component(1).and_then(|c| c.value());
 
-                if let (Some(v0), Some(v1)) = (c0, c1)
-                    && !v0.is_empty() && !v1.is_empty() {
-                        return Ok(Some((v0.to_string(), v1.to_string())));
-                    }
+            if let (Some(v0), Some(v1)) = (c0, c1)
+                && !v0.is_empty()
+                && !v1.is_empty()
+            {
+                return Ok(Some((v0.to_string(), v1.to_string())));
             }
+        }
         Ok(None)
     }
 }
@@ -1840,16 +1862,20 @@ impl BuildableField for Option<(String, String, String)> {
 impl ParseSegmentField for Option<(String, String, String)> {
     fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
         if let Some(field) = segment.get_field(field_num)
-            && let Some(rep) = field.get_repetition(0) {
-                let c0 = rep.get_component(0).and_then(|c| c.value());
-                let c1 = rep.get_component(1).and_then(|c| c.value());
-                let c2 = rep.get_component(2).and_then(|c| c.value());
+            && let Some(rep) = field.get_repetition(0)
+        {
+            let c0 = rep.get_component(0).and_then(|c| c.value());
+            let c1 = rep.get_component(1).and_then(|c| c.value());
+            let c2 = rep.get_component(2).and_then(|c| c.value());
 
-                if let (Some(v0), Some(v1), Some(v2)) = (c0, c1, c2)
-                    && !v0.is_empty() && !v1.is_empty() && !v2.is_empty() {
-                        return Ok(Some((v0.to_string(), v1.to_string(), v2.to_string())));
-                    }
+            if let (Some(v0), Some(v1), Some(v2)) = (c0, c1, c2)
+                && !v0.is_empty()
+                && !v1.is_empty()
+                && !v2.is_empty()
+            {
+                return Ok(Some((v0.to_string(), v1.to_string(), v2.to_string())));
             }
+        }
         Ok(None)
     }
 }
@@ -1877,7 +1903,12 @@ impl BuilderFieldType for Option<(String, String, String)> {
 
 // Option<(String, String, String, String)> - Optional 4-component field
 impl BuildableField for Option<(String, String, String, String)> {
-    type Storage = (Option<String>, Option<String>, Option<String>, Option<String>);
+    type Storage = (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    );
     type Inner = Option<(String, String, String, String)>;
 
     fn set_value(storage: &mut Self::Storage, value: Self::Inner) {
@@ -1899,17 +1930,27 @@ impl BuildableField for Option<(String, String, String, String)> {
 impl ParseSegmentField for Option<(String, String, String, String)> {
     fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
         if let Some(field) = segment.get_field(field_num)
-            && let Some(rep) = field.get_repetition(0) {
-                let c0 = rep.get_component(0).and_then(|c| c.value());
-                let c1 = rep.get_component(1).and_then(|c| c.value());
-                let c2 = rep.get_component(2).and_then(|c| c.value());
-                let c3 = rep.get_component(3).and_then(|c| c.value());
+            && let Some(rep) = field.get_repetition(0)
+        {
+            let c0 = rep.get_component(0).and_then(|c| c.value());
+            let c1 = rep.get_component(1).and_then(|c| c.value());
+            let c2 = rep.get_component(2).and_then(|c| c.value());
+            let c3 = rep.get_component(3).and_then(|c| c.value());
 
-                if let (Some(v0), Some(v1), Some(v2), Some(v3)) = (c0, c1, c2, c3)
-                    && !v0.is_empty() && !v1.is_empty() && !v2.is_empty() && !v3.is_empty() {
-                        return Ok(Some((v0.to_string(), v1.to_string(), v2.to_string(), v3.to_string())));
-                    }
+            if let (Some(v0), Some(v1), Some(v2), Some(v3)) = (c0, c1, c2, c3)
+                && !v0.is_empty()
+                && !v1.is_empty()
+                && !v2.is_empty()
+                && !v3.is_empty()
+            {
+                return Ok(Some((
+                    v0.to_string(),
+                    v1.to_string(),
+                    v2.to_string(),
+                    v3.to_string(),
+                )));
             }
+        }
         Ok(None)
     }
 }
@@ -1938,7 +1979,13 @@ impl BuilderFieldType for Option<(String, String, String, String)> {
 
 // Option<(String, String, String, String, String)> - Optional 5-component field
 impl BuildableField for Option<(String, String, String, String, String)> {
-    type Storage = (Option<String>, Option<String>, Option<String>, Option<String>, Option<String>);
+    type Storage = (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    );
     type Inner = Option<(String, String, String, String, String)>;
 
     fn set_value(storage: &mut Self::Storage, value: Self::Inner) {
@@ -1960,18 +2007,30 @@ impl BuildableField for Option<(String, String, String, String, String)> {
 impl ParseSegmentField for Option<(String, String, String, String, String)> {
     fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
         if let Some(field) = segment.get_field(field_num)
-            && let Some(rep) = field.get_repetition(0) {
-                let c0 = rep.get_component(0).and_then(|c| c.value());
-                let c1 = rep.get_component(1).and_then(|c| c.value());
-                let c2 = rep.get_component(2).and_then(|c| c.value());
-                let c3 = rep.get_component(3).and_then(|c| c.value());
-                let c4 = rep.get_component(4).and_then(|c| c.value());
+            && let Some(rep) = field.get_repetition(0)
+        {
+            let c0 = rep.get_component(0).and_then(|c| c.value());
+            let c1 = rep.get_component(1).and_then(|c| c.value());
+            let c2 = rep.get_component(2).and_then(|c| c.value());
+            let c3 = rep.get_component(3).and_then(|c| c.value());
+            let c4 = rep.get_component(4).and_then(|c| c.value());
 
-                if let (Some(v0), Some(v1), Some(v2), Some(v3), Some(v4)) = (c0, c1, c2, c3, c4)
-                    && !v0.is_empty() && !v1.is_empty() && !v2.is_empty() && !v3.is_empty() && !v4.is_empty() {
-                        return Ok(Some((v0.to_string(), v1.to_string(), v2.to_string(), v3.to_string(), v4.to_string())));
-                    }
+            if let (Some(v0), Some(v1), Some(v2), Some(v3), Some(v4)) = (c0, c1, c2, c3, c4)
+                && !v0.is_empty()
+                && !v1.is_empty()
+                && !v2.is_empty()
+                && !v3.is_empty()
+                && !v4.is_empty()
+            {
+                return Ok(Some((
+                    v0.to_string(),
+                    v1.to_string(),
+                    v2.to_string(),
+                    v3.to_string(),
+                    v4.to_string(),
+                )));
             }
+        }
         Ok(None)
     }
 }
@@ -2137,7 +2196,12 @@ impl ParseSegmentField for Vec<(String, String, String, String)> {
 
                 // Only include complete tuples (all components present)
                 if !c0.is_empty() && !c1.is_empty() && !c2.is_empty() && !c3.is_empty() {
-                    results.push((c0.to_string(), c1.to_string(), c2.to_string(), c3.to_string()));
+                    results.push((
+                        c0.to_string(),
+                        c1.to_string(),
+                        c2.to_string(),
+                        c3.to_string(),
+                    ));
                 }
             }
             Ok(results)
@@ -2194,8 +2258,19 @@ impl ParseSegmentField for Vec<(String, String, String, String, String)> {
                 let c4 = rep.get_component(4).and_then(|c| c.value()).unwrap_or("");
 
                 // Only include complete tuples (all components present)
-                if !c0.is_empty() && !c1.is_empty() && !c2.is_empty() && !c3.is_empty() && !c4.is_empty() {
-                    results.push((c0.to_string(), c1.to_string(), c2.to_string(), c3.to_string(), c4.to_string()));
+                if !c0.is_empty()
+                    && !c1.is_empty()
+                    && !c2.is_empty()
+                    && !c3.is_empty()
+                    && !c4.is_empty()
+                {
+                    results.push((
+                        c0.to_string(),
+                        c1.to_string(),
+                        c2.to_string(),
+                        c3.to_string(),
+                        c4.to_string(),
+                    ));
                 }
             }
             Ok(results)
@@ -2565,6 +2640,74 @@ mod tests {
 
         let result = bool::parse_field(&segment, 1, "TEST");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_values_report_invalid_not_missing() {
+        use crate::error::CustomSegmentError;
+
+        let mut segment = Segment::new("TEST");
+        segment.set_field_value(1, "ABC").unwrap();
+
+        // Required scalars: present-but-unparseable is InvalidFieldValue.
+        let err = f64::parse_field(&segment, 1, "TEST").unwrap_err();
+        assert!(matches!(err, CustomSegmentError::InvalidFieldValue { .. }));
+        let err = i32::parse_field(&segment, 1, "TEST").unwrap_err();
+        assert!(matches!(err, CustomSegmentError::InvalidFieldValue { .. }));
+
+        // Optional scalars: invalid is an error, not a silent None.
+        let err = Option::<f64>::parse_field(&segment, 1, "TEST").unwrap_err();
+        assert!(matches!(err, CustomSegmentError::InvalidFieldValue { .. }));
+
+        // Absent fields are still MissingField (required) / None (optional).
+        let empty = Segment::new("TEST");
+        let err = f64::parse_field(&empty, 1, "TEST").unwrap_err();
+        assert!(matches!(err, CustomSegmentError::MissingField { .. }));
+        assert_eq!(Option::<f64>::parse_field(&empty, 1, "TEST").unwrap(), None);
+    }
+
+    #[test]
+    fn test_bool_invalid_reports_invalid_not_missing() {
+        use crate::error::CustomSegmentError;
+
+        let mut segment = Segment::new("TEST");
+        segment.set_field_value(1, "MAYBE").unwrap();
+
+        let err = bool::parse_field(&segment, 1, "TEST").unwrap_err();
+        assert!(matches!(err, CustomSegmentError::InvalidFieldValue { .. }));
+        let err = Option::<bool>::parse_field(&segment, 1, "TEST").unwrap_err();
+        assert!(matches!(err, CustomSegmentError::InvalidFieldValue { .. }));
+    }
+
+    #[test]
+    fn test_datetime_invalid_reports_invalid_not_missing() {
+        use crate::error::CustomSegmentError;
+
+        let mut segment = Segment::new("TEST");
+        segment.set_field_value(1, "not-a-date").unwrap();
+
+        let err = NaiveDateTime::parse_field(&segment, 1, "TEST").unwrap_err();
+        assert!(matches!(err, CustomSegmentError::InvalidFieldValue { .. }));
+        let err = Option::<NaiveDate>::parse_field(&segment, 1, "TEST").unwrap_err();
+        assert!(matches!(err, CustomSegmentError::InvalidFieldValue { .. }));
+    }
+
+    #[test]
+    fn test_datetime_utc_applies_offset() {
+        use chrono::TimeZone;
+
+        // 12:00 at +0200 is 10:00 UTC.
+        let dt = parse_hl7_datetime_utc("20240101120000+0200").unwrap();
+        assert_eq!(dt, Utc.with_ymd_and_hms(2024, 1, 1, 10, 0, 0).unwrap());
+        // 12:00 at -0500 is 17:00 UTC.
+        let dt = parse_hl7_datetime_utc("20240101120000-0500").unwrap();
+        assert_eq!(dt, Utc.with_ymd_and_hms(2024, 1, 1, 17, 0, 0).unwrap());
+        // No offset: interpreted as UTC (unchanged behavior).
+        let dt = parse_hl7_datetime_utc("20240101120000").unwrap();
+        assert_eq!(dt, Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap());
+        // Malformed offsets are rejected, not silently ignored.
+        assert!(parse_hl7_datetime_utc("20240101120000+9999").is_none());
+        assert!(parse_hl7_datetime_utc("20240101120000+02AB").is_none());
     }
 
     // Tests for NaiveDateTime type
@@ -3127,7 +3270,11 @@ mod tests {
         let mut segment = Segment::new("ZRP");
 
         // Add multiple string values
-        let phones = vec!["555-1234".to_string(), "555-5678".to_string(), "555-9999".to_string()];
+        let phones = vec![
+            "555-1234".to_string(),
+            "555-5678".to_string(),
+            "555-9999".to_string(),
+        ];
         phones.set_field(&mut segment, 1);
 
         let delimiters = Delimiters::default();
@@ -3313,7 +3460,8 @@ mod tests {
         field.add_repetition(rep);
         segment.set_field(1, field).unwrap();
 
-        let result = <(String, String, String, String, String)>::parse_field(&segment, 1, "TEST").unwrap();
+        let result =
+            <(String, String, String, String, String)>::parse_field(&segment, 1, "TEST").unwrap();
         assert_eq!(result.0, "Smith");
         assert_eq!(result.1, "John");
         assert_eq!(result.2, "A");
@@ -3355,7 +3503,8 @@ mod tests {
         );
 
         original.set_field(&mut segment, 1);
-        let parsed = <(String, String, String, String, String)>::parse_field(&segment, 1, "ZPN").unwrap();
+        let parsed =
+            <(String, String, String, String, String)>::parse_field(&segment, 1, "ZPN").unwrap();
 
         assert_eq!(original, parsed);
     }
@@ -3500,7 +3649,8 @@ mod tests {
         field.add_repetition(rep);
         segment.set_field(1, field).unwrap();
 
-        let result = Option::<(String, String, String, String)>::parse_field(&segment, 1, "TEST").unwrap();
+        let result =
+            Option::<(String, String, String, String)>::parse_field(&segment, 1, "TEST").unwrap();
         assert!(result.is_some());
     }
 
@@ -3515,7 +3665,8 @@ mod tests {
         ));
 
         original.set_field(&mut segment, 1);
-        let parsed = Option::<(String, String, String, String)>::parse_field(&segment, 1, "ZOP").unwrap();
+        let parsed =
+            Option::<(String, String, String, String)>::parse_field(&segment, 1, "ZOP").unwrap();
 
         assert_eq!(original, parsed);
     }
@@ -3535,7 +3686,9 @@ mod tests {
         field.add_repetition(rep);
         segment.set_field(1, field).unwrap();
 
-        let result = Option::<(String, String, String, String, String)>::parse_field(&segment, 1, "TEST").unwrap();
+        let result =
+            Option::<(String, String, String, String, String)>::parse_field(&segment, 1, "TEST")
+                .unwrap();
         assert!(result.is_some());
     }
 
@@ -3551,7 +3704,9 @@ mod tests {
         ));
 
         original.set_field(&mut segment, 1);
-        let parsed = Option::<(String, String, String, String, String)>::parse_field(&segment, 1, "ZOP").unwrap();
+        let parsed =
+            Option::<(String, String, String, String, String)>::parse_field(&segment, 1, "ZOP")
+                .unwrap();
 
         assert_eq!(original, parsed);
     }
@@ -3646,8 +3801,6 @@ mod tests {
 
     #[test]
     fn test_vec_tuple2_roundtrip() {
-        
-
         let mut segment = Segment::new("ZVT");
         let original = vec![
             ("AAA".to_string(), "BBB".to_string()),
@@ -3686,14 +3839,26 @@ mod tests {
         let result = Vec::<(String, String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
 
         assert_eq!(result.len(), 2);
-        assert_eq!(result[0], ("123 Main".to_string(), "Springfield".to_string(), "IL".to_string()));
-        assert_eq!(result[1], ("456 Oak".to_string(), "Chicago".to_string(), "IL".to_string()));
+        assert_eq!(
+            result[0],
+            (
+                "123 Main".to_string(),
+                "Springfield".to_string(),
+                "IL".to_string()
+            )
+        );
+        assert_eq!(
+            result[1],
+            (
+                "456 Oak".to_string(),
+                "Chicago".to_string(),
+                "IL".to_string()
+            )
+        );
     }
 
     #[test]
     fn test_vec_tuple3_roundtrip() {
-        
-
         let mut segment = Segment::new("ZVT");
         let original = vec![
             ("Smith".to_string(), "John".to_string(), "MD".to_string()),
@@ -3730,25 +3895,51 @@ mod tests {
 
         segment.set_field(1, field).unwrap();
 
-        let result = Vec::<(String, String, String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
+        let result =
+            Vec::<(String, String, String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
 
         assert_eq!(result.len(), 2);
-        assert_eq!(result[0], ("MRN123".to_string(), "MRN".to_string(), "Hospital".to_string(), "Main".to_string()));
-        assert_eq!(result[1], ("ACC456".to_string(), "Account".to_string(), "Billing".to_string(), "West".to_string()));
+        assert_eq!(
+            result[0],
+            (
+                "MRN123".to_string(),
+                "MRN".to_string(),
+                "Hospital".to_string(),
+                "Main".to_string()
+            )
+        );
+        assert_eq!(
+            result[1],
+            (
+                "ACC456".to_string(),
+                "Account".to_string(),
+                "Billing".to_string(),
+                "West".to_string()
+            )
+        );
     }
 
     #[test]
     fn test_vec_tuple4_roundtrip() {
-        
-
         let mut segment = Segment::new("ZVT");
         let original = vec![
-            ("A".to_string(), "B".to_string(), "C".to_string(), "D".to_string()),
-            ("E".to_string(), "F".to_string(), "G".to_string(), "H".to_string()),
+            (
+                "A".to_string(),
+                "B".to_string(),
+                "C".to_string(),
+                "D".to_string(),
+            ),
+            (
+                "E".to_string(),
+                "F".to_string(),
+                "G".to_string(),
+                "H".to_string(),
+            ),
         ];
 
         original.set_field(&mut segment, 1);
-        let parsed = Vec::<(String, String, String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
+        let parsed =
+            Vec::<(String, String, String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
 
         assert_eq!(parsed, original);
     }
@@ -3779,25 +3970,57 @@ mod tests {
 
         segment.set_field(1, field).unwrap();
 
-        let result = Vec::<(String, String, String, String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
+        let result =
+            Vec::<(String, String, String, String, String)>::parse_field(&segment, 1, "ZVT")
+                .unwrap();
 
         assert_eq!(result.len(), 2);
-        assert_eq!(result[0], ("123 Main".to_string(), "Springfield".to_string(), "IL".to_string(), "62701".to_string(), "USA".to_string()));
-        assert_eq!(result[1], ("456 Oak".to_string(), "Chicago".to_string(), "IL".to_string(), "60601".to_string(), "USA".to_string()));
+        assert_eq!(
+            result[0],
+            (
+                "123 Main".to_string(),
+                "Springfield".to_string(),
+                "IL".to_string(),
+                "62701".to_string(),
+                "USA".to_string()
+            )
+        );
+        assert_eq!(
+            result[1],
+            (
+                "456 Oak".to_string(),
+                "Chicago".to_string(),
+                "IL".to_string(),
+                "60601".to_string(),
+                "USA".to_string()
+            )
+        );
     }
 
     #[test]
     fn test_vec_tuple5_roundtrip() {
-        
-
         let mut segment = Segment::new("ZVT");
         let original = vec![
-            ("Williams".to_string(), "Sarah".to_string(), "Jane".to_string(), "MD".to_string(), "Dr".to_string()),
-            ("Brown".to_string(), "Robert".to_string(), "Lee".to_string(), "PhD".to_string(), "Prof".to_string()),
+            (
+                "Williams".to_string(),
+                "Sarah".to_string(),
+                "Jane".to_string(),
+                "MD".to_string(),
+                "Dr".to_string(),
+            ),
+            (
+                "Brown".to_string(),
+                "Robert".to_string(),
+                "Lee".to_string(),
+                "PhD".to_string(),
+                "Prof".to_string(),
+            ),
         ];
 
         original.set_field(&mut segment, 1);
-        let parsed = Vec::<(String, String, String, String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
+        let parsed =
+            Vec::<(String, String, String, String, String)>::parse_field(&segment, 1, "ZVT")
+                .unwrap();
 
         assert_eq!(parsed, original);
     }
@@ -3875,8 +4098,6 @@ mod tests {
 
     #[test]
     fn test_vec_tuple_builder() {
-        
-
         let mut segment = Segment::new("ZVT");
         let phones = vec![
             ("555-0001".to_string(), "Primary".to_string()),

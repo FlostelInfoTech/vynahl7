@@ -37,8 +37,8 @@
 //! ```
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, Semaphore};
 
@@ -471,9 +471,7 @@ impl MllpPool {
         let mut stats = self.stats.lock().await;
 
         let initial_count = connections.len();
-        connections.retain(|conn| {
-            !(conn.is_expired(&self.config) || conn.is_idle(&self.config))
-        });
+        connections.retain(|conn| !(conn.is_expired(&self.config) || conn.is_idle(&self.config)));
 
         let removed = initial_count - connections.len();
         stats.connections_closed += removed;
@@ -509,33 +507,6 @@ impl MllpPool {
         }
 
         Ok(())
-    }
-}
-
-/// A guard that automatically returns the connection to the pool when dropped
-pub struct PooledConnectionGuard<'a> {
-    #[allow(dead_code)]
-    pool: &'a MllpPool,
-    conn: Option<PooledConnection>,
-}
-
-impl<'a> PooledConnectionGuard<'a> {
-    /// Get mutable access to the underlying client
-    pub fn client(&mut self) -> &mut MllpClient {
-        &mut self.conn.as_mut().unwrap().client
-    }
-}
-
-impl<'a> Drop for PooledConnectionGuard<'a> {
-    fn drop(&mut self) {
-        if let Some(_conn) = self.conn.take() {
-            // Note: In a full implementation, we'd use channels or other async-safe mechanisms
-            // to return the connection to the pool. Since drop can't be async, we'd need
-            // to use something like:
-            // - A channel to send the connection back
-            // - Arc<Mutex> for the pool reference
-            // For now, the connection is simply dropped/closed when the guard is dropped.
-        }
     }
 }
 

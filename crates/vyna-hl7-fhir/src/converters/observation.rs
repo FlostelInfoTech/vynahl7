@@ -2,11 +2,11 @@
 //!
 //! Based on HL7 v2-to-FHIR mapping: <https://build.fhir.org/ig/HL7/v2-to-fhir/ConceptMap-segment-obx-to-observation.html>
 
+use crate::error::{ConversionError, ConversionResult};
+use crate::resources::common::*;
+use crate::resources::observation::*;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
-use crate::error::{ConversionError, ConversionResult};
-use crate::resources::observation::*;
-use crate::resources::common::*;
 
 /// Converter for transforming OBX segments to FHIR Observation resources
 pub struct ObservationConverter;
@@ -77,15 +77,17 @@ impl ObservationConverter {
 
             // OBX-3-2: Text (second component, 1-based indexing)
             if let Ok(Some(text)) = terser.get(&format!("{}-2", code_path))
-                && !text.is_empty() {
-                    coding.display = Some(text.to_string());
-                }
+                && !text.is_empty()
+            {
+                coding.display = Some(text.to_string());
+            }
 
             // OBX-3-3: Name of Coding System (third component, 1-based indexing)
             if let Ok(Some(system)) = terser.get(&format!("{}-3", code_path))
-                && !system.is_empty() {
-                    coding.system = Some(Self::convert_coding_system(system));
-                }
+                && !system.is_empty()
+            {
+                coding.system = Some(Self::convert_coding_system(system));
+            }
 
             CodeableConcept {
                 coding: Some(vec![coding]),
@@ -119,9 +121,10 @@ impl ObservationConverter {
             format!("OBX({})-1", obx_index + 1)
         };
         if let Ok(Some(set_id)) = terser.get(&set_id_path)
-            && !set_id.is_empty() {
-                observation.id = Some(format!("obs-{}", set_id));
-            }
+            && !set_id.is_empty()
+        {
+            observation.id = Some(format!("obs-{}", set_id));
+        }
 
         // OBX-2: Value Type -> determines which value[x] field to populate
         let value_type_path = if obx_index == 0 {
@@ -138,9 +141,10 @@ impl ObservationConverter {
             format!("OBX({})-5", obx_index + 1)
         };
         if let Ok(Some(value)) = terser.get(&value_path)
-            && !value.is_empty() {
-                Self::set_observation_value(&mut observation, value_type, value, &terser, &value_path)?;
-            }
+            && !value.is_empty()
+        {
+            Self::set_observation_value(&mut observation, value_type, value, &terser, &value_path)?;
+        }
 
         // OBX-6: Units -> Observation.valueQuantity.unit (if applicable)
         let units_path = if obx_index == 0 {
@@ -150,9 +154,10 @@ impl ObservationConverter {
         };
         if let Ok(Some(units)) = terser.get(&units_path)
             && !units.is_empty()
-                && let Some(ref mut quantity) = observation.value_quantity {
-                    quantity.unit = Some(units.to_string());
-                }
+            && let Some(ref mut quantity) = observation.value_quantity
+        {
+            quantity.unit = Some(units.to_string());
+        }
 
         // OBX-7: Reference Range -> Observation.referenceRange
         let ref_range_path = if obx_index == 0 {
@@ -161,14 +166,15 @@ impl ObservationConverter {
             format!("OBX({})-7", obx_index + 1)
         };
         if let Ok(Some(ref_range)) = terser.get(&ref_range_path)
-            && !ref_range.is_empty() {
-                observation.reference_range = Some(vec![ObservationReferenceRange {
-                    low: None,
-                    high: None,
-                    type_: None,
-                    text: Some(ref_range.to_string()),
-                }]);
-            }
+            && !ref_range.is_empty()
+        {
+            observation.reference_range = Some(vec![ObservationReferenceRange {
+                low: None,
+                high: None,
+                type_: None,
+                text: Some(ref_range.to_string()),
+            }]);
+        }
 
         // OBX-8: Interpretation Codes -> Observation.interpretation
         let interp_path = if obx_index == 0 {
@@ -177,17 +183,21 @@ impl ObservationConverter {
             format!("OBX({})-8", obx_index + 1)
         };
         if let Ok(Some(interp)) = terser.get(&interp_path)
-            && !interp.is_empty() {
-                observation.interpretation = Some(vec![CodeableConcept {
-                    coding: Some(vec![Coding {
-                        system: Some("http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation".to_string()),
-                        version: None,
-                        code: Some(interp.to_string()),
-                        display: None,
-                    }]),
-                    text: Some(interp.to_string()),
-                }]);
-            }
+            && !interp.is_empty()
+        {
+            observation.interpretation = Some(vec![CodeableConcept {
+                coding: Some(vec![Coding {
+                    system: Some(
+                        "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation"
+                            .to_string(),
+                    ),
+                    version: None,
+                    code: Some(interp.to_string()),
+                    display: None,
+                }]),
+                text: Some(interp.to_string()),
+            }]);
+        }
 
         // OBX-14: Date/Time of Observation -> Observation.effectiveDateTime
         let datetime_path = if obx_index == 0 {
@@ -196,9 +206,10 @@ impl ObservationConverter {
             format!("OBX({})-14", obx_index + 1)
         };
         if let Ok(Some(datetime)) = terser.get(&datetime_path)
-            && !datetime.is_empty() {
-                observation.effective_date_time = Some(Self::convert_datetime(datetime)?);
-            }
+            && !datetime.is_empty()
+        {
+            observation.effective_date_time = Some(Self::convert_datetime(datetime)?);
+        }
 
         // OBX-16: Responsible Observer -> Observation.performer
         let observer_path = if obx_index == 0 {
@@ -207,22 +218,24 @@ impl ObservationConverter {
             format!("OBX({})-16", obx_index + 1)
         };
         if let Ok(Some(observer_id)) = terser.get(&observer_path)
-            && !observer_id.is_empty() {
-                let mut reference = Reference {
-                    reference: Some(format!("Practitioner/{}", observer_id)),
-                    type_: Some("Practitioner".to_string()),
-                    identifier: None,
-                    display: None,
-                };
+            && !observer_id.is_empty()
+        {
+            let mut reference = Reference {
+                reference: Some(format!("Practitioner/{}", observer_id)),
+                type_: Some("Practitioner".to_string()),
+                identifier: None,
+                display: None,
+            };
 
-                // Get observer name if available (component 2 = Family Name, 1-based indexing)
-                if let Ok(Some(observer_name)) = terser.get(&format!("{}-2", observer_path))
-                    && !observer_name.is_empty() {
-                        reference.display = Some(observer_name.to_string());
-                    }
-
-                observation.performer = Some(vec![reference]);
+            // Get observer name if available (component 2 = Family Name, 1-based indexing)
+            if let Ok(Some(observer_name)) = terser.get(&format!("{}-2", observer_path))
+                && !observer_name.is_empty()
+            {
+                reference.display = Some(observer_name.to_string());
             }
+
+            observation.performer = Some(vec![reference]);
+        }
 
         Ok(observation)
     }
@@ -237,15 +250,21 @@ impl ObservationConverter {
     ) -> ConversionResult<()> {
         match value_type {
             "NM" => {
-                // Numeric
-                if let Ok(numeric_value) = value.parse::<f64>() {
-                    observation.value_quantity = Some(Quantity {
-                        value: Some(numeric_value),
-                        unit: None,
-                        system: None,
-                        code: None,
-                    });
-                }
+                // Numeric: a present-but-unparseable value is an error,
+                // not a silent omission of value[x].
+                let numeric_value = value.parse::<f64>().map_err(|_| {
+                    ConversionError::InvalidDataType(
+                        "OBX-5".to_string(),
+                        "NM numeric".to_string(),
+                        value.to_string(),
+                    )
+                })?;
+                observation.value_quantity = Some(Quantity {
+                    value: Some(numeric_value),
+                    unit: None,
+                    system: None,
+                    code: None,
+                });
             }
             "ST" | "TX" | "FT" => {
                 // String, Text, Formatted Text
@@ -262,15 +281,17 @@ impl ObservationConverter {
 
                 // Component 2: Text (1-based indexing)
                 if let Ok(Some(text)) = terser.get(&format!("{}-2", value_path))
-                    && !text.is_empty() {
-                        coding.display = Some(text.to_string());
-                    }
+                    && !text.is_empty()
+                {
+                    coding.display = Some(text.to_string());
+                }
 
                 // Component 3: Coding System (1-based indexing)
                 if let Ok(Some(system)) = terser.get(&format!("{}-3", value_path))
-                    && !system.is_empty() {
-                        coding.system = Some(Self::convert_coding_system(system));
-                    }
+                    && !system.is_empty()
+                {
+                    coding.system = Some(Self::convert_coding_system(system));
+                }
 
                 observation.value_codeable_concept = Some(CodeableConcept {
                     coding: Some(vec![coding]),
@@ -310,7 +331,8 @@ impl ObservationConverter {
             "I" => "preliminary",
             "S" => "preliminary",
             _ => "final",
-        }.to_string()
+        }
+        .to_string()
     }
 
     /// Convert HL7 v2 coding system to FHIR system URI
@@ -327,9 +349,12 @@ impl ObservationConverter {
 
     /// Convert HL7 v2 date format (YYYYMMDD) to FHIR date format (YYYY-MM-DD)
     fn convert_date(date: &str) -> ConversionResult<String> {
-        if date.len() >= 8 {
+        // Byte-slice checks on `[u8]` never split a char boundary, and an
+        // all-ASCII-digit prefix makes the `&str` slices below safe.
+        let bytes = date.as_bytes();
+        if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
             Ok(format!("{}-{}-{}", &date[0..4], &date[4..6], &date[6..8]))
-        } else if date.len() >= 4 {
+        } else if bytes.len() >= 4 && bytes[..4].iter().all(|b| b.is_ascii_digit()) {
             Ok(date[0..4].to_string())
         } else {
             Err(ConversionError::InvalidFormat(
@@ -342,7 +367,8 @@ impl ObservationConverter {
 
     /// Convert HL7 v2 datetime format to FHIR datetime format
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
-        if datetime.len() >= 14 {
+        let bytes = datetime.as_bytes();
+        if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
             Ok(format!(
                 "{}-{}-{}T{}:{}:{}",
                 &datetime[0..4],
@@ -352,7 +378,7 @@ impl ObservationConverter {
                 &datetime[10..12],
                 &datetime[12..14]
             ))
-        } else if datetime.len() >= 8 {
+        } else if bytes.len() >= 8 {
             Self::convert_date(datetime)
         } else {
             Err(ConversionError::InvalidFormat(
@@ -397,7 +423,10 @@ mod tests {
 
         // Check interpretation
         let interp = obs.interpretation.as_ref().unwrap();
-        assert_eq!(interp[0].coding.as_ref().unwrap()[0].code, Some("N".to_string()));
+        assert_eq!(
+            interp[0].coding.as_ref().unwrap()[0].code,
+            Some("N".to_string())
+        );
 
         // Check reference range
         let ref_range = obs.reference_range.as_ref().unwrap();
@@ -416,6 +445,29 @@ mod tests {
         let obs = &observations[0];
 
         assert_eq!(obs.value_string, Some("Patient is stable".to_string()));
+    }
+
+    #[test]
+    fn test_unparseable_nm_value_returns_error() {
+        let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ORU^R01|12345|P|2.5\r\
+                   OBX|1|NM|WBC^White Blood Count^LN||not-a-number||||||F";
+
+        let message = parse_message(hl7).unwrap();
+        let result = ObservationConverter::convert_all(&message);
+        assert!(matches!(
+            result,
+            Err(ConversionError::InvalidDataType(_, _, _))
+        ));
+    }
+
+    #[test]
+    fn test_non_ascii_datetime_returns_error_without_panic() {
+        assert!(ObservationConverter::convert_datetime("123\u{e9}56789012").is_err());
+        assert!(ObservationConverter::convert_date("12\u{e9}\u{e9}5678").is_err());
+        assert_eq!(
+            ObservationConverter::convert_datetime("20240315100000").unwrap(),
+            "2024-03-15T10:00:00"
+        );
     }
 
     #[test]

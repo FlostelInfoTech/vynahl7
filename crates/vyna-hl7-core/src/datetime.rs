@@ -274,7 +274,10 @@ impl Hl7DateTime {
                 (date.and_hms_opt(0, 0, 0), TsPrecision::Day)
             }
             10 | 12 | 14 => {
-                let date = parse_full_date(&digits[0..8], "TS")?;
+                let date_prefix = digits.get(0..8).ok_or_else(|| {
+                    Error::parse(format!("TS date part is not 8 digits: '{digits}'"))
+                })?;
+                let date = parse_full_date(date_prefix, "TS")?;
                 let hour = parse_two(digits, 8, "TS hour")?;
                 let minute = if digits.len() >= 12 {
                     parse_two(digits, 10, "TS minute")?
@@ -618,5 +621,18 @@ mod tests {
         assert_ne!(year, day);
         let same: Hl7DateTime = "2024".parse().unwrap();
         assert_eq!(year, same);
+    }
+
+    #[test]
+    fn non_ascii_values_return_errors_without_panicking() {
+        // Byte length matches a valid precision but a char boundary does not.
+        assert!("1234567é1".parse::<Hl7DateTime>().is_err());
+        assert!("1234567é123".parse::<Hl7DateTime>().is_err());
+        assert!("1234567é12345".parse::<Hl7DateTime>().is_err());
+        assert!("2024é115120000".parse::<Hl7DateTime>().is_err());
+        assert!("2024é1".parse::<Hl7Date>().is_err());
+        assert!("20é40315".parse::<Hl7Date>().is_err());
+        assert!("1é3000".parse::<Hl7Time>().is_err());
+        assert!("é".parse::<Hl7DateTime>().is_err());
     }
 }

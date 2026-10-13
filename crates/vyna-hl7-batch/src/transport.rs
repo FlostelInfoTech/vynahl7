@@ -82,9 +82,21 @@ pub(crate) fn clean_relative_parts(path: &str) -> Result<Vec<String>, BatchError
 ///
 /// Uploads are atomic (temp file + rename + directory fsync), so pollers never
 /// see half-written files produced through this transport.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FilesystemTransport {
     root: PathBuf,
+}
+
+/// Run blocking filesystem I/O on the blocking pool so async executors are
+/// never stalled by disk waits.
+async fn block_on<F, T>(op: F) -> Result<T, BatchError>
+where
+    F: FnOnce() -> Result<T, BatchError> + Send + 'static,
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(op)
+        .await
+        .map_err(|e| BatchError::Io(std::io::Error::other(e.to_string())))?
 }
 
 impl FilesystemTransport {
@@ -108,10 +120,8 @@ impl FilesystemTransport {
         }
         Ok(resolved)
     }
-}
 
-impl FileTransport for FilesystemTransport {
-    async fn list(&mut self, dir: &str) -> Result<Vec<FileEntry>, BatchError> {
+    fn list_sync(&self, dir: &str) -> Result<Vec<FileEntry>, BatchError> {
         let resolved = self.resolve(dir)?;
         let read_dir = match std::fs::read_dir(&resolved) {
             Ok(rd) => rd,
@@ -147,11 +157,11 @@ impl FileTransport for FilesystemTransport {
         Ok(entries)
     }
 
-    async fn get(&mut self, path: &str) -> Result<Vec<u8>, BatchError> {
+    fn get_sync(&self, path: &str) -> Result<Vec<u8>, BatchError> {
         Ok(std::fs::read(self.resolve(path)?)?)
     }
 
-    async fn put(&mut self, path: &str, data: &[u8]) -> Result<(), BatchError> {
+    fn put_sync(&self, path: &str, data: &[u8]) -> Result<(), BatchError> {
         let dest = self.resolve(path)?;
         if dest.components().count() == 0 {
             return Err(BatchError::Invalid("empty path".to_string()));
@@ -178,7 +188,7 @@ impl FileTransport for FilesystemTransport {
         Ok(())
     }
 
-    async fn delete(&mut self, path: &str) -> Result<(), BatchError> {
+    fn delete_sync(&self, path: &str) -> Result<(), BatchError> {
         match std::fs::remove_file(self.resolve(path)?) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -186,7 +196,7 @@ impl FileTransport for FilesystemTransport {
         }
     }
 
-    async fn rename(&mut self, from: &str, to: &str) -> Result<(), BatchError> {
+    fn rename_sync(&self, from: &str, to: &str) -> Result<(), BatchError> {
         let from = self.resolve(from)?;
         let to = self.resolve(to)?;
         if let Some(parent) = to.parent() {
@@ -199,6 +209,40 @@ impl FileTransport for FilesystemTransport {
             )),
             Err(e) => Err(BatchError::Io(e)),
         }
+    }
+}
+
+impl FileTransport for FilesystemTransport {
+    async fn list(&mut self, dir: &str) -> Result<Vec<FileEntry>, BatchError> {
+        let this = self.clone();
+        let dir = dir.to_string();
+        block_on(move || this.list_sync(&dir)).await
+    }
+
+    async fn get(&mut self, path: &str) -> Result<Vec<u8>, BatchError> {
+        let this = self.clone();
+        let path = path.to_string();
+        block_on(move || this.get_sync(&path)).await
+    }
+
+    async fn put(&mut self, path: &str, data: &[u8]) -> Result<(), BatchError> {
+        let this = self.clone();
+        let path = path.to_string();
+        let data = data.to_vec();
+        block_on(move || this.put_sync(&path, &data)).await
+    }
+
+    async fn delete(&mut self, path: &str) -> Result<(), BatchError> {
+        let this = self.clone();
+        let path = path.to_string();
+        block_on(move || this.delete_sync(&path)).await
+    }
+
+    async fn rename(&mut self, from: &str, to: &str) -> Result<(), BatchError> {
+        let this = self.clone();
+        let from = from.to_string();
+        let to = to.to_string();
+        block_on(move || this.rename_sync(&from, &to)).await
     }
 }
 
@@ -248,7 +292,7 @@ mod tests {
                 .all(|e| !e.path.contains(".tmp-"))
         );
 
-        std::fs::remove_dir_all(&dir).unwrap();
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
     }
 
     #[tokio::test]
@@ -266,6 +310,6 @@ mod tests {
         ));
         assert!(t.list("missing").await.unwrap().is_empty());
 
-        std::fs::remove_dir_all(&dir).unwrap();
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
     }
 }

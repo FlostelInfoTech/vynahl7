@@ -9,6 +9,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::error::ConversionResult;
+
 /// FHIR Bundle resource - a container for a collection of resources
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -64,9 +66,13 @@ impl Bundle {
 
     /// Append a resource, deriving `fullUrl` from its `resourceType`/`id`
     /// when an id is present.
-    pub fn add_resource<T: Serialize>(&mut self, resource: &T) {
-        let value = serde_json::to_value(resource).unwrap_or(Value::Null);
+    ///
+    /// A serialization failure is returned to the caller; nothing is
+    /// appended and `total` is left unchanged.
+    pub fn add_resource<T: Serialize>(&mut self, resource: &T) -> ConversionResult<()> {
+        let value = serde_json::to_value(resource)?;
         self.add_json(value);
+        Ok(())
     }
 
     /// Append an already-serialized resource value.
@@ -107,7 +113,7 @@ mod tests {
         let mut bundle = Bundle::new("collection");
         let mut patient = Patient::new();
         patient.id = Some("12345".to_string());
-        bundle.add_resource(&patient);
+        bundle.add_resource(&patient).unwrap();
 
         assert_eq!(bundle.len(), 1);
         assert_eq!(bundle.total, Some(1));
@@ -119,10 +125,29 @@ mod tests {
     #[test]
     fn bundle_entry_without_id_has_no_full_url() {
         let mut bundle = Bundle::new("searchset");
-        bundle.add_resource(&Patient::new());
+        bundle.add_resource(&Patient::new()).unwrap();
 
         let entry = &bundle.entry.as_ref().unwrap()[0];
         assert!(entry.full_url.is_none());
+    }
+
+    #[test]
+    fn add_resource_propagates_serialization_failure() {
+        use serde::ser::{Error as SerError, Serializer};
+
+        struct Failing;
+
+        impl Serialize for Failing {
+            fn serialize<S: Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+                Err(S::Error::custom("boom"))
+            }
+        }
+
+        let mut bundle = Bundle::new("collection");
+        let result = bundle.add_resource(&Failing);
+        assert!(result.is_err());
+        assert!(bundle.is_empty());
+        assert_eq!(bundle.total, None);
     }
 
     #[test]

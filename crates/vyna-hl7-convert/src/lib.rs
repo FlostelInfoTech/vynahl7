@@ -37,14 +37,18 @@ use vyna_hl7_core::{Message, Segment, Version};
 use vyna_hl7_validator::{MessageSchema, SegmentDefinition, load_schema};
 
 /// Conversion failure.
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Error)]
 pub enum ConvertError {
     /// MSH-9 is missing, so the message type is unknown.
     #[error("cannot convert a message without MSH-9")]
     MissingMessageType,
-    /// No schemas cover this message or version pair.
+    /// The version pair is refused (e.g. a legacy fallback schema would
+    /// be stamped with the wrong version).
     #[error("unsupported conversion: {0}")]
     Unsupported(String),
+    /// A version schema could not be loaded; the source chain is kept.
+    #[error("{0}")]
+    Schema(#[from] vyna_hl7_core::Error),
 }
 
 /// What happened during a conversion, for audit and follow-up.
@@ -74,6 +78,11 @@ impl ConversionReport {
 ///
 /// The message type and trigger event come from MSH-9; both versions need
 /// validator schemas for that message.
+///
+/// Length limits (`max_length`) from either schema are not enforced:
+/// over-long values pass through verbatim instead of being truncated
+/// or dropped. Validate the result with `vyna_hl7_validator` to check
+/// lengths.
 pub fn convert(
     message: &Message,
     from: Version,
@@ -94,12 +103,7 @@ fn version_schema(
     trigger: &str,
     role: &str,
 ) -> Result<MessageSchema, ConvertError> {
-    let schema = load_schema(version, msg_type, trigger).map_err(|_| {
-        ConvertError::Unsupported(format!(
-            "{msg_type}^{trigger} has no {} {role} schema",
-            version.as_str()
-        ))
-    })?;
+    let schema = load_schema(version, msg_type, trigger)?;
     if schema.version != schema_version(version) {
         return Err(ConvertError::Unsupported(format!(
             "{msg_type}^{trigger} has no {} {role} schema",
@@ -126,7 +130,9 @@ fn schema_version(version: Version) -> &'static str {
 /// Convert using explicit schemas (the engine behind [`convert`]).
 ///
 /// Exposed so callers can convert with custom or patched schemas; the
-/// report and MSH-12 stamp behave exactly as in [`convert`].
+/// report and MSH-12 stamp behave exactly as in [`convert`]. Like
+/// [`convert`], this does not enforce `max_length` limits: over-long
+/// values pass through verbatim.
 pub fn convert_with_schemas(
     message: &Message,
     from_schema: &MessageSchema,
@@ -417,10 +423,11 @@ mod tests {
     fn unknown_message_or_version_is_an_error() {
         let message =
             parse_message("MSH|^~\\&|A|B|C|D|20240101||ZZZ^Z99|1|P|2.5\rPID|1||7\r").unwrap();
-        assert!(matches!(
-            convert(&message, Version::V2_5, Version::V2_3),
-            Err(ConvertError::Unsupported(_))
-        ));
+        // Unknown messages fail in the schema loader, keeping the cause.
+        let err = convert(&message, Version::V2_5, Version::V2_3).unwrap_err();
+        assert!(matches!(err, ConvertError::Schema(_)));
+        let source: &dyn std::error::Error = &err;
+        assert!(source.source().is_some());
 
         // v2.1 has real schemas for covered messages: ADT converts.
         let adt = parse_message("MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1||7\r").unwrap();
@@ -439,6 +446,25 @@ mod tests {
             convert(&vxu, Version::V2_5, Version::V2_1),
             Err(ConvertError::Unsupported(_))
         ));
+    }
+
+    #[test]
+    fn target_length_limits_are_not_enforced() {
+        // PID-3 allows 250 chars in the v2.3 schema; a longer value must
+        // still pass through verbatim instead of being truncated or
+        // dropped. Length checks belong to the validator.
+        let long = "X".repeat(300);
+        let er7 = format!("MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1||{long}\r");
+        let message = parse_message(&er7).unwrap();
+        let (converted, report) = convert(&message, Version::V2_5, Version::V2_3).unwrap();
+        assert!(report.dropped_fields.is_empty());
+        assert_eq!(
+            converted
+                .get_segment_by_id("PID")
+                .unwrap()
+                .get_field_value(3),
+            Some(long.as_str())
+        );
     }
 
     #[test]

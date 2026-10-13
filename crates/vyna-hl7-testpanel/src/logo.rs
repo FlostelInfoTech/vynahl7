@@ -12,9 +12,16 @@ static LOGO_TEXTURE_LIGHT: OnceCell<Arc<LogoData>> = OnceCell::new();
 static LOGO_TEXTURE_DARK: OnceCell<Arc<LogoData>> = OnceCell::new();
 
 /// Logo data including the rendered image
+///
+/// Holds one theme-resolved render of the embedded SVG icon as raw
+/// RGBA bytes, ready to upload as an egui texture. A 1x1 transparent
+/// image marks the render-failed fallback (see [`get_logo_texture`]).
 pub struct LogoData {
+    /// Rendered image width in pixels.
     pub width: u32,
+    /// Rendered image height in pixels.
     pub height: u32,
+    /// Row-major RGBA bytes (`width * height * 4` entries).
     pub pixels: Vec<u8>,
 }
 
@@ -130,9 +137,19 @@ pub fn show_logo(ui: &mut egui::Ui, size: f32) -> bool {
 /// Display a text-based logo (fallback when SVG loading fails)
 pub fn show_text_logo(ui: &mut egui::Ui, size: f32) {
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("V").size(size).strong().color(Color32::from_rgb(0, 128, 128)));
+        ui.label(
+            egui::RichText::new("V")
+                .size(size)
+                .strong()
+                .color(Color32::from_rgb(0, 128, 128)),
+        );
         ui.add_space(-size * 0.25);
-        ui.label(egui::RichText::new("7").size(size * 0.875).strong().color(Color32::from_rgb(255, 107, 0)));
+        ui.label(
+            egui::RichText::new("7")
+                .size(size * 0.875)
+                .strong()
+                .color(Color32::from_rgb(255, 107, 0)),
+        );
     });
 }
 
@@ -165,8 +182,7 @@ mod tests {
     #[test]
     fn favicon_renders_with_opaque_tile() {
         const FAVICON_SVG: &str = include_str!("../assets/favicon.svg");
-        let data =
-            render_svg_to_pixels(FAVICON_SVG, 64, 64).expect("favicon must render");
+        let data = render_svg_to_pixels(FAVICON_SVG, 64, 64).expect("favicon must render");
         assert_eq!((data.width, data.height), (64, 64));
         // Navy rounded-square tile: center pixel fully opaque.
         let center = (32 * 64 + 32) * 4;

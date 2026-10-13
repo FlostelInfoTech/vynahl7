@@ -94,6 +94,15 @@ enum ParserState {
     Done,
 }
 
+/// Floor a byte index down to a char boundary so slicing never panics.
+fn floor_char_boundary(s: &str, mut end: usize) -> usize {
+    end = end.min(s.len());
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    end
+}
+
 /// Streaming parser for HL7 messages
 ///
 /// Parses HL7 messages incrementally, emitting events for each segment and field.
@@ -105,7 +114,9 @@ pub struct StreamingParser<'a> {
     delimiters: Option<Delimiters>,
     lines: Vec<&'a str>,
     line_index: usize,
-    field_position: usize, // Position within current line (after segment ID)
+    field_position: usize,    // Position within current line (after segment ID)
+    msh_sep: Option<&'a str>, // MSH-1 value slice (byte-accurate for MSH-2 offsets)
+    msh_enc: Option<&'a str>, // MSH-2 value slice
 }
 
 impl<'a> StreamingParser<'a> {
@@ -123,6 +134,8 @@ impl<'a> StreamingParser<'a> {
             lines,
             line_index: 0,
             field_position: 0,
+            msh_sep: None,
+            msh_enc: None,
         }
     }
 
@@ -173,8 +186,37 @@ impl<'a> StreamingParser<'a> {
             )));
         }
 
-        let field_sep = line.chars().nth(3).unwrap();
-        let encoding_chars = &line[4..8];
+        let after_msh = match line.get(3..) {
+            Some(s) => s,
+            None => {
+                return Some(Err(Error::parse_at(
+                    "MSH segment too short for delimiters",
+                    ErrorLocation::new().line(self.current_line),
+                )));
+            }
+        };
+        let field_sep = match after_msh.chars().next() {
+            Some(c) => c,
+            None => {
+                return Some(Err(Error::parse_at(
+                    "MSH segment too short for delimiters",
+                    ErrorLocation::new().line(self.current_line),
+                )));
+            }
+        };
+        let sep_len = field_sep.len_utf8();
+        let enc_start = 3 + sep_len;
+        let after_sep = after_msh.strip_prefix(field_sep).unwrap_or("");
+        let encoding_chars = match after_sep.get(..4) {
+            Some(s) => s,
+            None => {
+                return Some(Err(Error::parse_at(
+                    "MSH segment has invalid encoding characters",
+                    ErrorLocation::new().line(self.current_line),
+                )));
+            }
+        };
+        let msh_sep = after_msh.get(..sep_len).unwrap_or("");
 
         let delimiters = Delimiters {
             field_separator: field_sep,
@@ -187,7 +229,9 @@ impl<'a> StreamingParser<'a> {
         self.delimiters = Some(delimiters);
         self.current_segment_id = Some("MSH");
         self.current_field_index = 0;
-        self.field_position = 8; // After MSH + field sep + encoding chars
+        self.field_position = enc_start + 4; // After MSH + field sep + encoding chars
+        self.msh_sep = Some(msh_sep);
+        self.msh_enc = Some(encoding_chars);
         self.state = ParserState::InMsh;
 
         // First emit the delimiters event
@@ -198,6 +242,12 @@ impl<'a> StreamingParser<'a> {
     fn parse_msh_field(&mut self) -> Option<Result<SegmentEvent<'a>>> {
         let line = self.lines[self.line_index];
         let delims = self.delimiters.as_ref().unwrap();
+        let (Some(msh_sep), Some(msh_enc)) = (self.msh_sep, self.msh_enc) else {
+            return Some(Err(Error::parse_at(
+                "Streaming parser in invalid state",
+                ErrorLocation::new().line(self.current_line),
+            )));
+        };
 
         // First call after delimiters: emit Start event
         if self.current_field_index == 0 {
@@ -213,7 +263,7 @@ impl<'a> StreamingParser<'a> {
             self.current_field_index = 2;
             return Some(Ok(SegmentEvent::Field {
                 index: 1,
-                value: &line[3..4], // The field separator character
+                value: msh_sep, // The field separator character
             }));
         }
 
@@ -222,7 +272,7 @@ impl<'a> StreamingParser<'a> {
             self.current_field_index = 3;
             return Some(Ok(SegmentEvent::Field {
                 index: 2,
-                value: &line[4..8], // The encoding characters
+                value: msh_enc, // The encoding characters
             }));
         }
 
@@ -235,12 +285,21 @@ impl<'a> StreamingParser<'a> {
             return Some(Ok(SegmentEvent::End { id: "MSH" }));
         }
 
-        let remaining = &line[self.field_position..];
+        let remaining = match line.get(self.field_position..) {
+            Some(remaining) => remaining,
+            None => {
+                return Some(Err(Error::parse_at(
+                    "Invalid field position in MSH segment",
+                    ErrorLocation::new().line(self.current_line),
+                )));
+            }
+        };
 
         // Skip leading field separator
-        let remaining = if remaining.starts_with(delims.field_separator) {
-            self.field_position += 1;
-            &remaining[1..]
+        let sep_len = delims.field_separator.len_utf8();
+        let remaining = if let Some(rest) = remaining.strip_prefix(delims.field_separator) {
+            self.field_position += sep_len;
+            rest
         } else {
             remaining
         };
@@ -257,7 +316,7 @@ impl<'a> StreamingParser<'a> {
             let field_value = &remaining[..sep_pos];
             let field_index = self.current_field_index;
             self.current_field_index += 1;
-            self.field_position += sep_pos + 1;
+            self.field_position += sep_pos + sep_len;
 
             Some(Ok(SegmentEvent::Field {
                 index: field_index,
@@ -309,10 +368,11 @@ impl<'a> StreamingParser<'a> {
             return self.parse_next_segment();
         }
 
-        // Extract segment ID (first 3 characters typically)
+        // Extract segment ID (first 3 bytes typically, floored to a char boundary)
         let delims = self.delimiters.as_ref()?;
         let seg_end = line.find(delims.field_separator).unwrap_or(line.len());
-        let segment_id = &line[..seg_end.min(3)];
+        let id_end = floor_char_boundary(line, seg_end.min(3));
+        let segment_id = &line[..id_end];
 
         // Validate segment ID (should be 3 uppercase letters typically)
         if segment_id.len() < 2 {
@@ -324,7 +384,7 @@ impl<'a> StreamingParser<'a> {
 
         self.current_segment_id = Some(segment_id);
         self.current_field_index = 0;
-        self.field_position = seg_end.min(3);
+        self.field_position = id_end;
         self.state = ParserState::InSegment;
 
         Some(Ok(SegmentEvent::Start {
@@ -347,13 +407,21 @@ impl<'a> StreamingParser<'a> {
             return Some(Ok(SegmentEvent::End { id: segment_id }));
         }
 
-        let remaining = &line[self.field_position..];
+        let remaining = match line.get(self.field_position..) {
+            Some(remaining) => remaining,
+            None => {
+                return Some(Err(Error::parse_at(
+                    "Invalid field position in segment",
+                    ErrorLocation::new().line(self.current_line),
+                )));
+            }
+        };
 
         // Skip leading field separator
-        let remaining = if remaining.starts_with(delims.field_separator) {
-            self.field_position += 1;
+        let remaining = if let Some(rest) = remaining.strip_prefix(delims.field_separator) {
+            self.field_position += delims.field_separator.len_utf8();
             self.current_field_index += 1;
-            &remaining[1..]
+            rest
         } else {
             remaining
         };
@@ -369,7 +437,7 @@ impl<'a> StreamingParser<'a> {
         if let Some(sep_pos) = remaining.find(delims.field_separator) {
             let field_value = &remaining[..sep_pos];
             let field_index = self.current_field_index;
-            self.field_position += sep_pos + 1;
+            self.field_position += sep_pos + delims.field_separator.len_utf8();
 
             Some(Ok(SegmentEvent::Field {
                 index: field_index,
@@ -476,7 +544,8 @@ impl StreamingMessageBuilder {
                 let mut component = Component::new();
 
                 // Split by subcomponent separator
-                let subcomponents: Vec<&str> = comp_value.split(delims.subcomponent_separator).collect();
+                let subcomponents: Vec<&str> =
+                    comp_value.split(delims.subcomponent_separator).collect();
 
                 for sub_value in subcomponents {
                     component.add_subcomponent(SubComponent::new(sub_value));
@@ -586,7 +655,8 @@ fn parse_field_with_delimiters(value: &str, delims: &Delimiters) -> Field {
 
         for comp_value in components {
             let mut component = Component::new();
-            let subcomponents: Vec<&str> = comp_value.split(delims.subcomponent_separator).collect();
+            let subcomponents: Vec<&str> =
+                comp_value.split(delims.subcomponent_separator).collect();
 
             for sub_value in subcomponents {
                 component.add_subcomponent(SubComponent::new(sub_value));
@@ -733,6 +803,106 @@ mod tests {
                 .unwrap_or(false)
         });
 
-        assert!(has_components, "Message should have a field with 3+ components");
+        assert!(
+            has_components,
+            "Message should have a field with 3+ components"
+        );
+    }
+
+    /// Drive the parser to completion, returning the first error if any.
+    fn drain_to_end(parser: &mut StreamingParser<'_>) -> Result<()> {
+        while let Some(event) = parser.next_event() {
+            event?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_streaming_short_msh_returns_error() {
+        for input in ["M", "MS", "MSH", "MSH|", "MSH|^~\\"] {
+            let mut parser = StreamingParser::new(input);
+            let mut saw_error = false;
+            while let Some(event) = parser.next_event() {
+                if event.is_err() {
+                    saw_error = true;
+                    break;
+                }
+            }
+            assert!(saw_error, "input {input:?} should error, not panic");
+        }
+    }
+
+    #[test]
+    fn test_streaming_non_msh_start_returns_error() {
+        let mut parser = StreamingParser::new("PID|1||PAT001");
+        let event = parser.next_event().unwrap();
+        assert!(event.is_err());
+    }
+
+    #[test]
+    fn test_streaming_empty_input_ends_cleanly() {
+        let mut parser = StreamingParser::new("");
+        let event = parser.next_event().unwrap().unwrap();
+        assert!(matches!(event, SegmentEvent::EndOfMessage));
+        assert!(parser.next_event().is_none());
+    }
+
+    #[test]
+    fn test_streaming_non_ascii_header_returns_error_without_panic() {
+        // Each input must produce an error (or clean end), never a panic.
+        for input in [
+            "MSHé^~\\&|APP\r",
+            "MSH|é~\\&|APP\r",
+            "MSH|^é\\&|APP\r",
+            "MSH|^~é&|APP\r",
+            "MSHéééééééééé\r",
+            "MSH|^~\\&|APP\rPéD|1|2\r",
+            "MSH|^~\\&|APP\ra€|1|2\r",
+            "MSH|^~\\&|APP\r€€€|1\r",
+        ] {
+            let mut parser = StreamingParser::new(input);
+            let _ = drain_to_end(&mut parser);
+        }
+    }
+
+    #[test]
+    fn test_streaming_malformed_segments_do_not_panic() {
+        for input in [
+            "MSH|^~\\&|APP\r|\r",
+            "MSH|^~\\&|APP\rAB\r",
+            "MSH|^~\\&|APP\rA\r",
+            "MSH|^~\\&|APP\r\r\rPID|1\r",
+            "MSH|^~\\&\r",
+            "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5",
+        ] {
+            let mut parser = StreamingParser::new(input);
+            let _ = drain_to_end(&mut parser);
+        }
+    }
+
+    #[test]
+    fn test_streaming_non_ascii_field_values_still_parse() {
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\r\
+                   PID|1|PAT001|Müller^Jürg\r";
+        let message = parse_streaming(hl7).unwrap();
+        assert_eq!(message.segments.len(), 2);
+        let pid = &message.segments[1];
+        assert_eq!(pid.id, "PID");
+        assert_eq!(pid.get_field_value(1), Some("1"));
+        assert_eq!(pid.get_field_value(2), Some("PAT001"));
+        assert_eq!(pid.get_field_value(3), Some("Müller"));
+    }
+
+    #[test]
+    fn test_streaming_invalid_segment_id_returns_error() {
+        let mut parser = StreamingParser::new("MSH|^~\\&|APP\rA\r");
+        let mut saw_error = false;
+        while let Some(event) = parser.next_event() {
+            if event.is_err() {
+                saw_error = true;
+                break;
+            }
+        }
+        assert!(saw_error);
     }
 }

@@ -136,6 +136,9 @@ MSH-10: MSG123
 - `PID-5-2` = Given name (second component)
 - `PID-5-3` = Middle name (third component)
 
+A malformed path is reported on stderr and exits 1. A well-formed path
+with no value prints `N/A` (empty string with `--format json`) and exits 0.
+
 ### Convert - Convert messages to different formats
 
 Convert HL7 messages to JSON or FHIR:

@@ -1,6 +1,6 @@
 //! Template validation for messages.
 
-use crate::{MessageTemplate};
+use crate::MessageTemplate;
 use vyna_hl7_core::Message;
 
 /// Validation result for a message against a template
@@ -106,6 +106,11 @@ pub struct TemplateValidator;
 impl TemplateValidator {
     /// Validate a message against a template
     ///
+    /// Checks the message type/trigger event, required segments, required
+    /// fields, required components (1-based positions), and field length
+    /// limits. The `datatype` tag on [`crate::FieldTemplate`] is
+    /// informational only and is not enforced.
+    ///
     /// # Example
     ///
     /// ```
@@ -124,26 +129,26 @@ impl TemplateValidator {
         if let Some(msh) = message.segments.iter().find(|s| s.id == "MSH") {
             // MSH-9 contains message type and trigger event
             if let Some(msg_type_field) = msh.get_field_value(9) {
-                    let parts: Vec<&str> = msg_type_field.split('^').collect();
-                    if !parts.is_empty() && parts[0] != template.message_type {
-                        result.add_error(
-                            ValidationError::new(format!(
-                                "Message type mismatch: expected {}, got {}",
-                                template.message_type, parts[0]
-                            ))
-                            .with_location("MSH-9.1"),
-                        );
-                    }
-                    if parts.len() > 1 && parts[1] != template.trigger_event {
-                        result.add_error(
-                            ValidationError::new(format!(
-                                "Trigger event mismatch: expected {}, got {}",
-                                template.trigger_event, parts[1]
-                            ))
-                            .with_location("MSH-9.2"),
-                        );
-                    }
+                let parts: Vec<&str> = msg_type_field.split('^').collect();
+                if !parts.is_empty() && parts[0] != template.message_type {
+                    result.add_error(
+                        ValidationError::new(format!(
+                            "Message type mismatch: expected {}, got {}",
+                            template.message_type, parts[0]
+                        ))
+                        .with_location("MSH-9.1"),
+                    );
                 }
+                if parts.len() > 1 && parts[1] != template.trigger_event {
+                    result.add_error(
+                        ValidationError::new(format!(
+                            "Trigger event mismatch: expected {}, got {}",
+                            template.trigger_event, parts[1]
+                        ))
+                        .with_location("MSH-9.2"),
+                    );
+                }
+            }
         } else {
             result.add_error(ValidationError::new("MSH segment is required"));
         }
@@ -209,16 +214,56 @@ impl TemplateValidator {
             // Check field length if specified
             if let Some(max_length) = field_template.length
                 && let Some(value) = field.value()
-                    && value.len() > max_length {
-                        result.add_warning(
-                            ValidationWarning::new(format!(
-                                "Field length {} exceeds maximum {}",
-                                value.len(),
-                                max_length
-                            ))
+                && value.len() > max_length
+            {
+                result.add_warning(
+                    ValidationWarning::new(format!(
+                        "Field length {} exceeds maximum {}",
+                        value.len(),
+                        max_length
+                    ))
+                    .with_location(&location),
+                );
+            }
+
+            // Check required components against component templates.
+            // (The `datatype` tag is informational only and not enforced.)
+            if let Some(components) = &field_template.components {
+                Self::validate_field_components(&segment.id, *pos, field, components, result);
+            }
+        }
+    }
+
+    /// Validate a field's first repetition against component templates
+    fn validate_field_components(
+        segment_id: &str,
+        field_pos: usize,
+        field: &vyna_hl7_core::Field,
+        components: &[crate::ComponentTemplate],
+        result: &mut ValidationResult,
+    ) {
+        let repetition = field.get_repetition(0);
+        for comp_template in components {
+            let location = format!("{}-{}-{}", segment_id, field_pos, comp_template.position);
+            if comp_template.position == 0 {
+                result.add_error(
+                    ValidationError::new("Component position must be 1-based (got 0)")
+                        .with_location(&location),
+                );
+                continue;
+            }
+            if comp_template.required {
+                let empty = repetition
+                    .and_then(|rep| rep.get_component(comp_template.position - 1))
+                    .map(|c| c.is_empty())
+                    .unwrap_or(true);
+                if empty {
+                    result.add_error(
+                        ValidationError::new("Required component is empty")
                             .with_location(&location),
-                        );
-                    }
+                    );
+                }
+            }
         }
     }
 }
@@ -249,11 +294,7 @@ mod tests {
                 },
                 Segment {
                     id: "PID".to_string(),
-                    fields: vec![
-                        Field::new(),
-                        Field::new(),
-                        Field::from_value("12345"),
-                    ],
+                    fields: vec![Field::new(), Field::new(), Field::from_value("12345")],
                 },
             ],
         }
@@ -282,7 +323,12 @@ mod tests {
 
         let result = TemplateValidator::validate(&message, &template);
         assert!(!result.valid);
-        assert!(result.errors.iter().any(|e| e.message.contains("Required segment 'PID'")));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.message.contains("Required segment 'PID'"))
+        );
     }
 
     #[test]
@@ -295,7 +341,12 @@ mod tests {
 
         let result = TemplateValidator::validate(&message, &template);
         assert!(!result.valid);
-        assert!(result.errors.iter().any(|e| e.message.contains("Message type mismatch")));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.message.contains("Message type mismatch"))
+        );
     }
 
     #[test]
@@ -308,7 +359,12 @@ mod tests {
 
         let result = TemplateValidator::validate(&message, &template);
         assert!(!result.valid);
-        assert!(result.errors.iter().any(|e| e.message.contains("Trigger event mismatch")));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.message.contains("Trigger event mismatch"))
+        );
     }
 
     #[test]
@@ -335,7 +391,12 @@ mod tests {
 
         let result = TemplateValidator::validate(&message, &template);
         assert!(!result.valid);
-        assert!(result.errors.iter().any(|e| e.location == Some("PID-5".to_string())));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.location == Some("PID-5".to_string()))
+        );
     }
 
     #[test]
@@ -352,7 +413,94 @@ mod tests {
         let result = TemplateValidator::validate(&message, &template);
         assert!(result.valid); // Still valid, but has warning
         assert!(result.has_warnings());
-        assert!(result.warnings.iter().any(|w| w.message.contains("exceeds maximum")));
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.message.contains("exceeds maximum"))
+        );
+    }
+
+    #[test]
+    fn test_validate_required_components() {
+        let mut message = create_test_message();
+        message.segments[1].fields.push(Field::new()); // PID-4
+        message.segments[1]
+            .fields
+            .push(Field::from_delimited("DOE^JOHN")); // PID-5
+
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut pid_segment = SegmentTemplate::new("PID");
+        pid_segment.add_field(
+            5,
+            FieldTemplate::new().with_components(vec![crate::ComponentTemplate::new(2).required()]),
+        );
+        template.add_segment(pid_segment);
+
+        let result = TemplateValidator::validate(&message, &template);
+        assert!(result.valid);
+    }
+
+    #[test]
+    fn test_validate_missing_required_component() {
+        let mut message = create_test_message();
+        message.segments[1].fields.push(Field::new()); // PID-4
+        message.segments[1]
+            .fields
+            .push(Field::from_delimited("DOE^JOHN")); // PID-5
+
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut pid_segment = SegmentTemplate::new("PID");
+        pid_segment.add_field(
+            5,
+            FieldTemplate::new().with_components(vec![crate::ComponentTemplate::new(3).required()]),
+        );
+        template.add_segment(pid_segment);
+
+        let result = TemplateValidator::validate(&message, &template);
+        assert!(!result.valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.location == Some("PID-5-3".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_validate_component_gap_positions() {
+        let mut message = create_test_message();
+        message.segments[1].fields.push(Field::new()); // PID-4
+        message.segments[1]
+            .fields
+            .push(Field::from_delimited("DOE^^JR")); // PID-5
+
+        // Required component 3 is filled despite the gap at 2: valid.
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut pid_segment = SegmentTemplate::new("PID");
+        pid_segment.add_field(
+            5,
+            FieldTemplate::new().with_components(vec![crate::ComponentTemplate::new(3).required()]),
+        );
+        template.add_segment(pid_segment);
+        assert!(TemplateValidator::validate(&message, &template).valid);
+
+        // Required component 2 is empty: invalid.
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut pid_segment = SegmentTemplate::new("PID");
+        pid_segment.add_field(
+            5,
+            FieldTemplate::new().with_components(vec![crate::ComponentTemplate::new(2).required()]),
+        );
+        template.add_segment(pid_segment);
+        let result = TemplateValidator::validate(&message, &template);
+        assert!(!result.valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.location == Some("PID-5-2".to_string()))
+        );
     }
 
     #[test]

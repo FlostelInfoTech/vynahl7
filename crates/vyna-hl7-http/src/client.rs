@@ -1,16 +1,26 @@
 //! HTTP client for sending HL7 messages
 
-use crate::{decode_body, Error, Result, CONTENT_TYPE_HL7_ER7};
+use crate::{CONTENT_TYPE_HL7_ER7, Error, Result, decode_body};
 use reqwest::{Client, ClientBuilder};
+use std::time::Duration;
 use vyna_hl7_core::{CharacterSet, Message};
 use vyna_hl7_parser::parse_message;
-use std::time::Duration;
 
 #[cfg(feature = "tls")]
 use crate::tls::TlsClientConfig;
 
+/// Default maximum HTTP response body size (10 MB).
+///
+/// Bounds how much the client buffers in `post_bytes` (via `send_message`
+/// and `send_message_raw`). Override per client with
+/// [`HttpClient::with_max_response_size`].
+pub const DEFAULT_MAX_RESPONSE_SIZE: usize = 10 * 1024 * 1024;
+
 /// Authentication configuration for the HTTP client
-#[derive(Clone, Debug)]
+///
+/// The `Debug` implementation redacts secrets (passwords, API keys,
+/// bearer credentials) so they never leak into logs via debug formatting.
+#[derive(Clone)]
 pub enum AuthConfig {
     /// HTTP Basic Authentication (username, password)
     Basic(String, String),
@@ -18,6 +28,24 @@ pub enum AuthConfig {
     ApiKey(String, String),
     /// Bearer token sent in the Authorization header
     Bearer(String),
+}
+
+impl std::fmt::Debug for AuthConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Basic(username, _) => f
+                .debug_tuple("Basic")
+                .field(username)
+                .field(&"<redacted>")
+                .finish(),
+            Self::ApiKey(header_name, _) => f
+                .debug_tuple("ApiKey")
+                .field(header_name)
+                .field(&"<redacted>")
+                .finish(),
+            Self::Bearer(_) => f.debug_tuple("Bearer").field(&"<redacted>").finish(),
+        }
+    }
 }
 
 /// HTTP client for sending HL7 v2.x messages
@@ -50,6 +78,7 @@ pub struct HttpClient {
     #[cfg(feature = "tls")]
     tls_config: Option<TlsClientConfig>,
     http2_only: bool,
+    max_response_size: usize,
 }
 
 impl HttpClient {
@@ -81,6 +110,7 @@ impl HttpClient {
             #[cfg(feature = "tls")]
             tls_config: None,
             http2_only: false,
+            max_response_size: DEFAULT_MAX_RESPONSE_SIZE,
         })
     }
 
@@ -245,6 +275,23 @@ impl HttpClient {
         Ok(self)
     }
 
+    /// Set the maximum response body size in bytes
+    ///
+    /// Responses larger than this are rejected with
+    /// [`Error::ResponseTooLarge`] before buffering completes, so a
+    /// malicious or malfunctioning server cannot exhaust client memory.
+    /// The declared `Content-Length` is checked first, then the body is
+    /// streamed with the same cap in case the header lies or is absent.
+    ///
+    /// Defaults to [`DEFAULT_MAX_RESPONSE_SIZE`] (10 MB).
+    ///
+    /// # Arguments
+    /// * `size` - Maximum response body size in bytes
+    pub fn with_max_response_size(mut self, size: usize) -> Self {
+        self.max_response_size = size;
+        self
+    }
+
     /// Send an HL7 message and receive the response
     ///
     /// # Arguments
@@ -262,11 +309,7 @@ impl HttpClient {
     pub async fn send_message(&self, message: &Message) -> Result<Message> {
         let charset = message.get_character_set()?;
         let body = charset.encode(&message.encode())?;
-        let content_type = format!(
-            "{}; charset={}",
-            CONTENT_TYPE_HL7_ER7,
-            charset.iana_name()
-        );
+        let content_type = format!("{}; charset={}", CONTENT_TYPE_HL7_ER7, charset.iana_name());
         let ack_text = self.post_bytes(&body, &content_type).await?;
         Ok(parse_message(&ack_text)?)
     }
@@ -288,11 +331,7 @@ impl HttpClient {
     pub async fn send_message_raw(&self, hl7_text: &str) -> Result<String> {
         let charset = CharacterSet::detect(hl7_text.as_bytes())?;
         let body = charset.encode(hl7_text)?;
-        let content_type = format!(
-            "{}; charset={}",
-            CONTENT_TYPE_HL7_ER7,
-            charset.iana_name()
-        );
+        let content_type = format!("{}; charset={}", CONTENT_TYPE_HL7_ER7, charset.iana_name());
         self.post_bytes(&body, &content_type).await
     }
 
@@ -324,7 +363,7 @@ impl HttpClient {
         }
 
         // Send request
-        let response = request.send().await?;
+        let mut response = request.send().await?;
 
         // Check status code
         let status = response.status();
@@ -351,8 +390,26 @@ impl HttpClient {
             });
         }
 
-        // Read and decode the response body
-        let body = response.bytes().await?;
+        // Reject over-cap responses up front when they declare it.
+        if let Some(declared) = response.content_length()
+            && declared > self.max_response_size as u64
+        {
+            return Err(Error::ResponseTooLarge {
+                limit: self.max_response_size,
+            });
+        }
+
+        // Stream the body so a missing or lying Content-Length cannot
+        // exhaust memory via a single unbounded read.
+        let mut body = Vec::new();
+        while let Some(chunk) = response.chunk().await? {
+            body.extend_from_slice(&chunk);
+            if body.len() > self.max_response_size {
+                return Err(Error::ResponseTooLarge {
+                    limit: self.max_response_size,
+                });
+            }
+        }
         Ok(decode_body(&body, &content_type)?)
     }
 }
@@ -381,7 +438,9 @@ mod tests {
             .unwrap()
             .with_auth("user".to_string(), "pass".to_string());
 
-        assert!(matches!(client.auth, Some(AuthConfig::Basic(ref u, ref p)) if u == "user" && p == "pass"));
+        assert!(
+            matches!(client.auth, Some(AuthConfig::Basic(ref u, ref p)) if u == "user" && p == "pass")
+        );
     }
 
     #[test]
@@ -417,5 +476,69 @@ mod tests {
             .with_api_key("X-API-Key", "key-456");
 
         assert!(matches!(client.auth, Some(AuthConfig::ApiKey(_, _))));
+    }
+
+    #[test]
+    fn test_auth_config_debug_redacts_secrets() {
+        let basic = format!("{:?}", AuthConfig::Basic("user".into(), "s3cr3t".into()));
+        assert!(basic.contains("user"));
+        assert!(!basic.contains("s3cr3t"));
+
+        let api_key = format!(
+            "{:?}",
+            AuthConfig::ApiKey("X-API-Key".into(), "key-456".into())
+        );
+        assert!(api_key.contains("X-API-Key"));
+        assert!(!api_key.contains("key-456"));
+
+        let bearer = format!("{:?}", AuthConfig::Bearer("jwt-value".into()));
+        assert!(!bearer.contains("jwt-value"));
+
+        for rendered in [&basic, &api_key, &bearer] {
+            assert!(rendered.contains("<redacted>"), "{rendered}");
+        }
+    }
+
+    #[test]
+    fn test_max_response_size_default_and_override() {
+        let client = HttpClient::new("http://example.com").unwrap();
+        assert_eq!(client.max_response_size, DEFAULT_MAX_RESPONSE_SIZE);
+
+        let client = client.with_max_response_size(1024);
+        assert_eq!(client.max_response_size, 1024);
+    }
+
+    #[tokio::test]
+    async fn test_response_size_limit_enforced() {
+        use axum::{Router, routing::post};
+
+        let big_body = "X".repeat(2048);
+        let app = Router::new().route(
+            "/",
+            post(move || {
+                let big_body = big_body.clone();
+                async move { ([("content-type", crate::CONTENT_TYPE_HL7_ER7)], big_body) }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        // A 2 KiB body exceeds a 1 KiB cap.
+        let capped = HttpClient::new(format!("http://{addr}"))
+            .unwrap()
+            .with_max_response_size(1024);
+        let err = capped.send_message_raw("MSH|^~\\&|A\r").await.unwrap_err();
+        assert!(
+            matches!(err, Error::ResponseTooLarge { limit: 1024 }),
+            "unexpected error: {err:?}"
+        );
+
+        // The same body passes under the default cap.
+        let default = HttpClient::new(format!("http://{addr}")).unwrap();
+        let body = default.send_message_raw("MSH|^~\\&|A\r").await.unwrap();
+        assert_eq!(body.len(), 2048);
     }
 }

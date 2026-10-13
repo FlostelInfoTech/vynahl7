@@ -1,7 +1,7 @@
 //! HTTP authentication utilities
 
 #[cfg(feature = "oauth")]
-use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 #[cfg(feature = "oauth")]
 use serde::{Deserialize, Serialize};
 
@@ -52,15 +52,19 @@ pub fn verify_basic_auth(header: &str, username: &str, password: &str) -> bool {
 
     if let Some(encoded) = header.strip_prefix("Basic ")
         && let Ok(decoded) = BASE64_STANDARD.decode(encoded)
-            && let Ok(credentials) = String::from_utf8(decoded) {
-                let expected = format!("{}:{}", username, password);
-                // Use constant-time comparison to prevent timing attacks
-                return constant_time_compare(&credentials, &expected);
-            }
+        && let Ok(credentials) = String::from_utf8(decoded)
+    {
+        let expected = format!("{}:{}", username, password);
+        // Use constant-time comparison to prevent timing attacks
+        return constant_time_compare(&credentials, &expected);
+    }
     false
 }
 
 /// Verify API Key from request headers
+///
+/// Uses constant-time comparison to prevent timing attacks (same as
+/// [`verify_api_key_secure`]).
 ///
 /// # Arguments
 /// * `header_value` - The API key value from the header (e.g., X-API-Key header)
@@ -78,7 +82,7 @@ pub fn verify_basic_auth(header: &str, username: &str, password: &str) -> bool {
 /// ```
 #[cfg(feature = "auth")]
 pub fn verify_api_key(header_value: &str, valid_api_keys: &[String]) -> bool {
-    valid_api_keys.iter().any(|key| key == header_value)
+    verify_api_key_secure(header_value, valid_api_keys)
 }
 
 /// Extract API key from Authorization header (Bearer token format)
@@ -335,11 +339,9 @@ pub fn verify_jwt_from_header(
     header: &str,
     config: &JwtConfig,
 ) -> Result<JwtClaims, Box<dyn std::error::Error + Send + Sync>> {
-    let token = extract_bearer_token(header)
-        .ok_or("Invalid Authorization header format")?;
+    let token = extract_bearer_token(header).ok_or("Invalid Authorization header format")?;
 
-    verify_jwt(token, config)
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+    verify_jwt(token, config).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
 }
 
 #[cfg(test)]
@@ -391,7 +393,10 @@ mod tests {
 
     #[test]
     fn test_extract_bearer_token() {
-        assert_eq!(extract_bearer_token("Bearer my-api-key"), Some("my-api-key"));
+        assert_eq!(
+            extract_bearer_token("Bearer my-api-key"),
+            Some("my-api-key")
+        );
         assert_eq!(extract_bearer_token("Bearer key-123"), Some("key-123"));
         assert_eq!(extract_bearer_token("Basic xyz"), None);
         assert_eq!(extract_bearer_token("Bearer "), Some(""));

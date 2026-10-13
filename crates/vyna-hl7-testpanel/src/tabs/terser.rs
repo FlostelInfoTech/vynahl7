@@ -1,12 +1,12 @@
 //! Terser Tab - Field access using path notation
 
-use egui::{self, RichText, Color32};
-use egui_extras::{StripBuilder, Size};
-use vyna_hl7_parser::parse_message;
-use vyna_hl7_core::Message;
-use vyna_hl7_terser::{Terser, TerserMut};
 use crate::samples;
-use crate::utils::{format_message_tree, TreeNode};
+use crate::utils::{TreeNode, format_message_tree};
+use egui::{self, Color32, RichText};
+use egui_extras::{Size, StripBuilder};
+use vyna_hl7_core::Message;
+use vyna_hl7_parser::parse_message;
+use vyna_hl7_terser::{Terser, TerserMut};
 
 pub struct TerserTab {
     input_message: String,
@@ -56,7 +56,9 @@ impl TerserTab {
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         ui.heading("Terser - Field Access");
-        ui.label("Access and modify HL7 message fields using path notation (similar to HAPI Terser).");
+        ui.label(
+            "Access and modify HL7 message fields using path notation (similar to HAPI Terser).",
+        );
         ui.add_space(10.0);
 
         // Top toolbar
@@ -68,7 +70,10 @@ impl TerserTab {
             ui.separator();
 
             ui.label("Path:");
-            ui.add_sized([150.0, 20.0], egui::TextEdit::singleline(&mut self.terser_path));
+            ui.add_sized(
+                [150.0, 20.0],
+                egui::TextEdit::singleline(&mut self.terser_path),
+            );
 
             if ui.button("Get Value").clicked() {
                 self.get_value();
@@ -77,7 +82,10 @@ impl TerserTab {
             ui.separator();
 
             ui.label("New Value:");
-            ui.add_sized([150.0, 20.0], egui::TextEdit::singleline(&mut self.new_value));
+            ui.add_sized(
+                [150.0, 20.0],
+                egui::TextEdit::singleline(&mut self.new_value),
+            );
 
             if ui.button("Set Value").clicked() {
                 self.set_value();
@@ -126,158 +134,169 @@ impl TerserTab {
                 // Left: Message input
                 strip.cell(|ui| {
                     let panel_height = available_height - 10.0;
-                    egui::Frame::group(ui.style())
-                        .show(ui, |ui| {
-                            ui.set_height(panel_height);
-                            ui.set_width(ui.available_width());
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.set_height(panel_height);
+                        ui.set_width(ui.available_width());
 
-                            ui.horizontal(|ui| {
-                                ui.heading("Message");
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.horizontal(|ui| {
+                            ui.heading("Message");
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
                                     ui.checkbox(&mut self.show_tree_view, "Tree View");
-                                });
-                            });
-
-                            if let Some(ref error) = self.parse_error {
-                                ui.colored_label(Color32::RED, error);
-                            } else if self.parsed_message.is_some() {
-                                ui.colored_label(Color32::GREEN, "Message parsed successfully");
-                            }
-
-                            if self.show_tree_view && !self.tree_nodes.is_empty() {
-                                // Show tree view with clickable paths
-                                ui.label(egui::RichText::new("Click any field to query its value").small().italics());
-                                ui.add_space(4.0);
-
-                                let mut clicked_path: Option<String> = None;
-                                egui::ScrollArea::vertical()
-                                    .id_salt("terser_tree")
-                                    .auto_shrink([false, false])
-                                    .show(ui, |ui| {
-                                        for node in &mut self.tree_nodes {
-                                            if let Some(path) = node.ui_interactive(ui) {
-                                                clicked_path = Some(path);
-                                            }
-                                        }
-                                    });
-
-                                // Handle clicked path - set it and query
-                                if let Some(path) = clicked_path {
-                                    self.terser_path = path;
-                                    self.get_value();
-                                }
-                            } else {
-                                // Show raw input
-                                egui::ScrollArea::vertical()
-                                    .id_salt("terser_input")
-                                    .auto_shrink([false, false])
-                                    .show(ui, |ui| {
-                                        ui.add(
-                                            egui::TextEdit::multiline(&mut self.input_message)
-                                                .font(egui::TextStyle::Monospace)
-                                                .desired_width(f32::INFINITY)
-                                                .desired_rows(25)
-                                                .code_editor()
-                                        );
-                                    });
-                            }
+                                },
+                            );
                         });
+
+                        if let Some(ref error) = self.parse_error {
+                            ui.colored_label(Color32::RED, error);
+                        } else if self.parsed_message.is_some() {
+                            ui.colored_label(Color32::GREEN, "Message parsed successfully");
+                        }
+
+                        if self.show_tree_view && !self.tree_nodes.is_empty() {
+                            // Show tree view with clickable paths
+                            ui.label(
+                                egui::RichText::new("Click any field to query its value")
+                                    .small()
+                                    .italics(),
+                            );
+                            ui.add_space(4.0);
+
+                            let mut clicked_path: Option<String> = None;
+                            egui::ScrollArea::vertical()
+                                .id_salt("terser_tree")
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    for node in &mut self.tree_nodes {
+                                        if let Some(path) = node.ui_interactive(ui) {
+                                            clicked_path = Some(path);
+                                        }
+                                    }
+                                });
+
+                            // Handle clicked path - set it and query
+                            if let Some(path) = clicked_path {
+                                self.terser_path = path;
+                                self.get_value();
+                            }
+                        } else {
+                            // Show raw input
+                            egui::ScrollArea::vertical()
+                                .id_salt("terser_input")
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    ui.add(
+                                        egui::TextEdit::multiline(&mut self.input_message)
+                                            .font(egui::TextStyle::Monospace)
+                                            .desired_width(f32::INFINITY)
+                                            .desired_rows(25)
+                                            .code_editor(),
+                                    );
+                                });
+                        }
+                    });
                 });
 
                 // Right: Results and help
                 strip.cell(|ui| {
                     let panel_height = available_height - 10.0;
-                    egui::Frame::group(ui.style())
-                        .show(ui, |ui| {
-                            ui.set_height(panel_height);
-                            ui.set_width(ui.available_width());
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.set_height(panel_height);
+                        ui.set_width(ui.available_width());
 
-                            // Result display
-                            ui.heading("Result");
+                        // Result display
+                        ui.heading("Result");
 
-                            if let Some(ref error) = self.terser_error {
-                                ui.colored_label(Color32::RED, format!("Error: {}", error));
-                            } else if let Some(ref result) = self.terser_result {
-                                ui.horizontal(|ui| {
-                                    ui.label(RichText::new("Path:").strong());
-                                    ui.label(&self.terser_path);
-                                });
-                                ui.horizontal(|ui| {
-                                    ui.label(RichText::new("Value:").strong());
-                                    if result.is_empty() {
-                                        ui.colored_label(Color32::GRAY, "(empty)");
-                                    } else {
-                                        ui.code(result);
-                                    }
-                                });
-                            }
+                        if let Some(ref error) = self.terser_error {
+                            ui.colored_label(Color32::RED, format!("Error: {}", error));
+                        } else if let Some(ref result) = self.terser_result {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("Path:").strong());
+                                ui.label(&self.terser_path);
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("Value:").strong());
+                                if result.is_empty() {
+                                    ui.colored_label(Color32::GRAY, "(empty)");
+                                } else {
+                                    ui.code(result);
+                                }
+                            });
+                        }
 
+                        ui.add_space(10.0);
+                        ui.separator();
+
+                        // History
+                        ui.heading("Query History");
+                        let mut history_clicked_path: Option<String> = None;
+                        egui::ScrollArea::vertical()
+                            .id_salt("terser_history")
+                            .auto_shrink([false, false])
+                            .max_height(150.0)
+                            .show(ui, |ui| {
+                                for (path, value) in self.path_history.iter().rev().take(10) {
+                                    ui.horizontal(|ui| {
+                                        if ui
+                                            .small_button("🔄")
+                                            .on_hover_text("Re-query this path")
+                                            .clicked()
+                                        {
+                                            history_clicked_path = Some(path.clone());
+                                        }
+                                        ui.label(format!(
+                                            "{} = {}",
+                                            path,
+                                            if value.is_empty() { "(empty)" } else { value }
+                                        ));
+                                    });
+                                }
+                            });
+
+                        // Handle history click - set path and query
+                        if let Some(path) = history_clicked_path {
+                            self.terser_path = path;
+                            self.get_value();
+                        }
+
+                        if self.show_help {
                             ui.add_space(10.0);
                             ui.separator();
 
-                            // History
-                            ui.heading("Query History");
-                            let mut history_clicked_path: Option<String> = None;
+                            // Help section
+                            ui.heading("Path Notation Help");
                             egui::ScrollArea::vertical()
-                                .id_salt("terser_history")
+                                .id_salt("terser_help")
                                 .auto_shrink([false, false])
-                                .max_height(150.0)
                                 .show(ui, |ui| {
-                                    for (path, value) in self.path_history.iter().rev().take(10) {
-                                        ui.horizontal(|ui| {
-                                            if ui.small_button("🔄").on_hover_text("Re-query this path").clicked() {
-                                                history_clicked_path = Some(path.clone());
-                                            }
-                                            ui.label(format!("{} = {}", path, if value.is_empty() { "(empty)" } else { value }));
-                                        });
-                                    }
+                                    ui.label(RichText::new("Basic Syntax:").strong());
+                                    ui.label("SEGMENT-FIELD[-COMPONENT[-SUBCOMPONENT]]");
+                                    ui.add_space(5.0);
+
+                                    ui.label(RichText::new("Examples:").strong());
+                                    ui.code("PID-5       # Field 5 of PID");
+                                    ui.code("PID-5-1     # Component 1 of field 5");
+                                    ui.code("PID-5-1-2   # Subcomponent 2");
+                                    ui.code("OBX(1)-5    # Field 5 of first OBX");
+                                    ui.code("OBX(2)-5    # Field 5 of second OBX");
+                                    ui.code("PID-11(1)-1 # First repetition, component 1");
+                                    ui.add_space(5.0);
+
+                                    ui.label(RichText::new("Notes:").strong());
+                                    ui.label("- Segment indexing is 1-based: OBX(1), OBX(2)");
+                                    ui.label("- Field indexing follows HL7 spec");
+                                    ui.label("- MSH-1 is the field separator");
+                                    ui.label("- Repetitions are 1-based (PID-11(1) = first)");
                                 });
-
-                            // Handle history click - set path and query
-                            if let Some(path) = history_clicked_path {
-                                self.terser_path = path;
-                                self.get_value();
-                            }
-
-                            if self.show_help {
-                                ui.add_space(10.0);
-                                ui.separator();
-
-                                // Help section
-                                ui.heading("Path Notation Help");
-                                egui::ScrollArea::vertical()
-                                    .id_salt("terser_help")
-                                    .auto_shrink([false, false])
-                                    .show(ui, |ui| {
-                                        ui.label(RichText::new("Basic Syntax:").strong());
-                                        ui.label("SEGMENT-FIELD[-COMPONENT[-SUBCOMPONENT]]");
-                                        ui.add_space(5.0);
-
-                                        ui.label(RichText::new("Examples:").strong());
-                                        ui.code("PID-5       # Field 5 of PID");
-                                        ui.code("PID-5-1     # Component 1 of field 5");
-                                        ui.code("PID-5-1-2   # Subcomponent 2");
-                                        ui.code("OBX(1)-5    # Field 5 of first OBX");
-                                        ui.code("OBX(2)-5    # Field 5 of second OBX");
-                                        ui.code("PID-11(1)-1 # First repetition, component 1");
-                                        ui.add_space(5.0);
-
-                                        ui.label(RichText::new("Notes:").strong());
-                                        ui.label("- Segment indexing is 1-based: OBX(1), OBX(2)");
-                                        ui.label("- Field indexing follows HL7 spec");
-                                        ui.label("- MSH-1 is the field separator");
-                                        ui.label("- Repetition indexing is 0-based");
-                                    });
-                            }
-                        });
+                        }
+                    });
                 });
             });
     }
 
     fn parse_message(&mut self) {
-        let normalized = self.input_message
-            .replace("\r\n", "\r")
-            .replace("\n", "\r");
+        let normalized = self.input_message.replace("\r\n", "\r").replace("\n", "\r");
 
         match parse_message(&normalized) {
             Ok(message) => {
@@ -304,12 +323,14 @@ impl TerserTab {
                 Ok(Some(value)) => {
                     self.terser_result = Some(value.to_string());
                     self.terser_error = None;
-                    self.path_history.push((self.terser_path.clone(), value.to_string()));
+                    self.path_history
+                        .push((self.terser_path.clone(), value.to_string()));
                 }
                 Ok(None) => {
                     self.terser_result = Some(String::new());
                     self.terser_error = None;
-                    self.path_history.push((self.terser_path.clone(), String::new()));
+                    self.path_history
+                        .push((self.terser_path.clone(), String::new()));
                 }
                 Err(e) => {
                     self.terser_error = Some(format!("{}", e));
@@ -332,7 +353,8 @@ impl TerserTab {
                 Ok(_) => {
                     // Update the input with the modified message
                     self.input_message = message.encode_with_separator("\n");
-                    self.terser_result = Some(format!("Set {} = {}", self.terser_path, self.new_value));
+                    self.terser_result =
+                        Some(format!("Set {} = {}", self.terser_path, self.new_value));
                     self.terser_error = None;
                     // Re-parse to update internal state
                     self.parse_message();

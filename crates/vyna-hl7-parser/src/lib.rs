@@ -15,9 +15,13 @@ mod config;
 mod optimized;
 pub mod streaming;
 
-pub use config::{ParserConfig, ParseResult, ParseWarning, WarningCode};
-pub use streaming::{StreamingParser, StreamingMessageBuilder, SegmentEvent, SegmentHandler, parse_streaming, process_with_handler};
+pub use config::{ParseResult, ParseWarning, ParserConfig, WarningCode};
+pub use streaming::{
+    SegmentEvent, SegmentHandler, StreamingMessageBuilder, StreamingParser, parse_streaming,
+    process_with_handler,
+};
 
+use chrono::NaiveDateTime;
 use vyna_hl7_core::{
     batch::{Batch, BatchHeader, BatchTrailer, File, FileHeader, FileTrailer},
     charset::CharacterSet,
@@ -28,7 +32,6 @@ use vyna_hl7_core::{
     message::Message,
     segment::Segment,
 };
-use chrono::NaiveDateTime;
 
 /// Parse a complete HL7 message with default strict configuration
 pub fn parse_message(input: &str) -> Result<Message> {
@@ -77,7 +80,10 @@ pub fn parse_message_bytes_with_config(
 ///     println!("Parsed message with {} warnings", parsed.warning_count());
 /// }
 /// ```
-pub fn parse_message_with_config(input: &str, config: &ParserConfig) -> Result<ParseResult<Message>> {
+pub fn parse_message_with_config(
+    input: &str,
+    config: &ParserConfig,
+) -> Result<ParseResult<Message>> {
     // Note: ParseWarning and WarningCode are available in config module for future warning support
 
     let mut warnings = Vec::new();
@@ -101,15 +107,11 @@ pub fn parse_message_with_config(input: &str, config: &ParserConfig) -> Result<P
     let delimiters = extract_delimiters_with_config(input, config)?;
 
     // Split message into segments (by \r or \n)
-    let mut segment_strings: Vec<&str> = input
-        .split('\r')
-        .flat_map(|s| s.split('\n'))
-        .collect();
+    let mut segment_strings: Vec<&str> = input.split('\r').flat_map(|s| s.split('\n')).collect();
 
     // Apply config-based filtering
     segment_strings = segment_strings
         .into_iter()
-        
         .filter_map(|s| {
             let s = if config.strip_trailing_whitespace {
                 s.trim_end()
@@ -201,11 +203,18 @@ fn extract_delimiters_with_config(input: &str, config: &ParserConfig) -> Result<
         }
     }
 
-    let field_sep = input.as_bytes()[3] as char;
+    let field_sep = match input.as_bytes().get(3) {
+        Some(&b) => b as char,
+        None => return Err(Error::parse("MSH segment too short")),
+    };
     let encoding_chars = if input.len() >= 8 {
-        &input[4..8]
+        input.get(4..8)
     } else {
-        &input[4..]
+        input.get(4..)
+    };
+    let encoding_chars = match encoding_chars {
+        Some(s) => s,
+        None => return Err(Error::parse("MSH segment has invalid encoding characters")),
     };
 
     // In lenient mode, allow non-standard encoding characters
@@ -245,7 +254,10 @@ fn parse_msh_segment_with_config(
         return Ok((segment, warnings));
     }
 
-    let rest = &input[field_start..];
+    let rest = match input.get(field_start..) {
+        Some(rest) => rest,
+        None => return Err(Error::parse("MSH segment has invalid encoding characters")),
+    };
     let field_strings: Vec<&str> = rest.split(delimiters.field_separator).collect();
 
     for field_str in field_strings {
@@ -264,8 +276,13 @@ fn parse_segment_with_config(
 ) -> Result<(Segment, Vec<ParseWarning>)> {
     let mut warnings = Vec::new();
 
-    // Handle segment ID length
-    let id_len = input.chars().take_while(|c| c.is_ascii_alphanumeric()).count();
+    // Handle segment ID length (byte end, safe for non-ASCII input)
+    let mut id_len = 0usize;
+    let mut id_end = 0usize;
+    for c in input.chars().take_while(|c| c.is_ascii_alphanumeric()) {
+        id_len += 1;
+        id_end += c.len_utf8();
+    }
 
     if id_len == 0 {
         if config.allow_empty_segment_id {
@@ -281,11 +298,15 @@ fn parse_segment_with_config(
         }
     }
 
+    let segment_id = match input.get(..id_end) {
+        Some(id) => id,
+        None => return Err(Error::parse("Invalid segment ID")),
+    };
+
     if id_len != 3 && !config.allow_non_standard_segment_ids {
         return Err(Error::parse(format!(
             "Segment ID must be 3 characters, got {} ('{}')",
-            id_len,
-            &input[..id_len]
+            id_len, segment_id
         )));
     }
 
@@ -297,26 +318,27 @@ fn parse_segment_with_config(
         });
     }
 
-    let segment_id = &input[0..id_len];
     let mut segment = Segment::new(segment_id);
 
     // Check for field separator
-    if input.len() <= id_len {
+    let after_id = input.get(id_end..).unwrap_or("");
+    if after_id.is_empty() {
         return Ok((segment, warnings));
     }
 
-    let next_char = input.chars().nth(id_len);
-    if next_char != Some(delimiters.field_separator) {
-        if config.continue_on_error {
-            return Ok((segment, warnings));
+    let next_char = after_id.chars().next();
+    let rest = match after_id.strip_prefix(delimiters.field_separator) {
+        Some(rest) => rest,
+        None => {
+            if config.continue_on_error {
+                return Ok((segment, warnings));
+            }
+            return Err(Error::parse(format!(
+                "Expected field separator after segment ID, got '{}'",
+                next_char.unwrap_or(' ')
+            )));
         }
-        return Err(Error::parse(format!(
-            "Expected field separator after segment ID, got '{}'",
-            next_char.unwrap_or(' ')
-        )));
-    }
-
-    let rest = &input[id_len + 1..];
+    };
     let field_strings: Vec<&str> = rest.split(delimiters.field_separator).collect();
 
     for field_str in field_strings {
@@ -328,7 +350,11 @@ fn parse_segment_with_config(
 }
 
 /// Parse a field with configuration
-fn parse_field_with_config(input: &str, delimiters: &Delimiters, config: &ParserConfig) -> Result<Field> {
+fn parse_field_with_config(
+    input: &str,
+    delimiters: &Delimiters,
+    config: &ParserConfig,
+) -> Result<Field> {
     let mut field = Field::new();
 
     let repetition_strings: Vec<&str> = if input.is_empty() {
@@ -338,19 +364,20 @@ fn parse_field_with_config(input: &str, delimiters: &Delimiters, config: &Parser
     };
 
     // Apply max repetitions limit
-    let repetition_strings = if config.max_repetitions > 0 && repetition_strings.len() > config.max_repetitions {
-        &repetition_strings[..config.max_repetitions]
-    } else {
-        &repetition_strings[..]
-    };
+    let repetition_strings =
+        if config.max_repetitions > 0 && repetition_strings.len() > config.max_repetitions {
+            &repetition_strings[..config.max_repetitions]
+        } else {
+            &repetition_strings[..]
+        };
 
     // Pre-allocate repetitions vector
     let mut repetitions = Vec::with_capacity(repetition_strings.len());
 
     for rep_str in repetition_strings {
-        // Apply max field length
+        // Apply max field length (floored to a char boundary)
         let rep_str = if config.max_field_length > 0 && rep_str.len() > config.max_field_length {
-            &rep_str[..config.max_field_length]
+            truncate_at_char_boundary(rep_str, config.max_field_length)
         } else {
             rep_str
         };
@@ -362,28 +389,42 @@ fn parse_field_with_config(input: &str, delimiters: &Delimiters, config: &Parser
     Ok(field)
 }
 
+/// Truncate a string to at most `max_bytes` bytes without splitting a character.
+fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> &str {
+    let mut end = max_bytes.min(s.len());
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 /// Parse a regular segment
 fn parse_segment(input: &str, delimiters: &Delimiters) -> Result<Segment> {
     if input.len() < 3 {
         return Err(Error::parse("Segment too short"));
     }
 
-    let segment_id = &input[0..3];
+    let segment_id = match input.get(0..3) {
+        Some(id) => id,
+        None => return Err(Error::parse("Invalid segment ID")),
+    };
     let mut segment = Segment::new(segment_id);
 
-    if input.len() <= 3 {
+    let after_id = input.get(3..).unwrap_or("");
+    if after_id.is_empty() {
         return Ok(segment);
     }
 
     // Check for field separator after segment ID
-    if input.chars().nth(3) != Some(delimiters.field_separator) {
-        return Err(Error::parse(format!(
-            "Expected field separator after segment ID, got '{}'",
-            input.chars().nth(3).unwrap_or(' ')
-        )));
-    }
-
-    let rest = &input[4..];
+    let rest = match after_id.strip_prefix(delimiters.field_separator) {
+        Some(rest) => rest,
+        None => {
+            return Err(Error::parse(format!(
+                "Expected field separator after segment ID, got '{}'",
+                after_id.chars().next().unwrap_or(' ')
+            )));
+        }
+    };
     let field_strings: Vec<&str> = rest.split(delimiters.field_separator).collect();
 
     for field_str in field_strings {
@@ -485,7 +526,9 @@ pub fn parse_batch(input: &str) -> Result<Batch> {
         .collect();
 
     if segment_strings.len() < 2 {
-        return Err(Error::parse("Batch must have at least BHS and BTS segments"));
+        return Err(Error::parse(
+            "Batch must have at least BHS and BTS segments",
+        ));
     }
 
     // Extract delimiters from BHS segment (same format as MSH)
@@ -612,15 +655,29 @@ pub fn parse_file(input: &str) -> Result<File> {
 /// positions 4-7 are encoding characters (e.g., `^~\&`).
 fn extract_delimiters_from_header(expected_prefix: &str, input: &str) -> Result<Delimiters> {
     if !input.starts_with(expected_prefix) {
-        return Err(Error::parse(format!("Expected {} segment", expected_prefix)));
+        return Err(Error::parse(format!(
+            "Expected {} segment",
+            expected_prefix
+        )));
     }
 
     if input.len() < 8 {
-        return Err(Error::parse(format!("{} segment too short", expected_prefix)));
+        return Err(Error::parse(format!(
+            "{} segment too short",
+            expected_prefix
+        )));
     }
 
     let field_sep = input.as_bytes()[3] as char;
-    let encoding_chars = &input[4..8];
+    let encoding_chars = match input.get(4..8) {
+        Some(chars) => chars,
+        None => {
+            return Err(Error::parse(format!(
+                "{} segment has invalid encoding characters",
+                expected_prefix
+            )));
+        }
+    };
 
     Delimiters::from_encoding_characters(field_sep, encoding_chars)
 }
@@ -687,7 +744,8 @@ fn parse_fts_segment(input: &str, delimiters: &Delimiters) -> Result<FileTrailer
         return Err(Error::parse("Expected FTS segment"));
     }
 
-    let batch_count = segment.get_field_value(1)
+    let batch_count = segment
+        .get_field_value(1)
         .and_then(|s| s.parse::<usize>().ok());
 
     let comment = segment.get_field_value(2).map(String::from);
@@ -706,7 +764,8 @@ fn parse_bts_segment(input: &str, delimiters: &Delimiters) -> Result<BatchTraile
         return Err(Error::parse("Expected BTS segment"));
     }
 
-    let message_count = segment.get_field_value(1)
+    let message_count = segment
+        .get_field_value(1)
         .and_then(|s| s.parse::<usize>().ok());
 
     let comment = segment.get_field_value(2).map(String::from);
@@ -731,9 +790,16 @@ fn parse_bts_segment(input: &str, delimiters: &Delimiters) -> Result<BatchTraile
 ///
 /// These segments have the same special structure as MSH where field 1 is the field separator
 /// and field 2 is the encoding characters
-fn parse_segment_like_msh(segment_type: &str, input: &str, delimiters: &Delimiters) -> Result<Segment> {
+fn parse_segment_like_msh(
+    segment_type: &str,
+    input: &str,
+    delimiters: &Delimiters,
+) -> Result<Segment> {
     if !input.starts_with(segment_type) {
-        return Err(Error::parse(format!("{} segment must start with '{}'", segment_type, segment_type)));
+        return Err(Error::parse(format!(
+            "{} segment must start with '{}'",
+            segment_type, segment_type
+        )));
     }
 
     let mut segment = Segment::new(segment_type);
@@ -750,7 +816,15 @@ fn parse_segment_like_msh(segment_type: &str, input: &str, delimiters: &Delimite
         return Ok(segment);
     }
 
-    let rest = &input[field_start..];
+    let rest = match input.get(field_start..) {
+        Some(rest) => rest,
+        None => {
+            return Err(Error::parse(format!(
+                "{} segment has invalid encoding characters",
+                segment_type
+            )));
+        }
+    };
     let field_strings: Vec<&str> = rest.split(delimiters.field_separator).collect();
 
     // Add remaining fields
@@ -774,22 +848,28 @@ fn parse_datetime_field(value: Option<&str>) -> Option<NaiveDateTime> {
         }
 
         // Remove timezone offset if present (we use NaiveDateTime)
-        let datetime_str = s.split('+').next()
+        let datetime_str = s
+            .split('+')
+            .next()
             .and_then(|s| s.split('-').next())
             .unwrap_or(s);
 
         // Try various datetime formats
         // Full: YYYYMMDDHHMMSS
         if datetime_str.len() >= 14
-            && let Ok(dt) = NaiveDateTime::parse_from_str(&datetime_str[..14], "%Y%m%d%H%M%S") {
-                return Some(dt);
-            }
+            && let Some(prefix) = datetime_str.get(..14)
+            && let Ok(dt) = NaiveDateTime::parse_from_str(prefix, "%Y%m%d%H%M%S")
+        {
+            return Some(dt);
+        }
 
         // Date only: YYYYMMDD
         if datetime_str.len() >= 8
-            && let Ok(date) = chrono::NaiveDate::parse_from_str(&datetime_str[..8], "%Y%m%d") {
-                return date.and_hms_opt(0, 0, 0);
-            }
+            && let Some(prefix) = datetime_str.get(..8)
+            && let Ok(date) = chrono::NaiveDate::parse_from_str(prefix, "%Y%m%d")
+        {
+            return date.and_hms_opt(0, 0, 0);
+        }
 
         None
     })
@@ -968,7 +1048,10 @@ BTS|2";
 
         let batch = parse_batch(batch_text).unwrap();
 
-        assert_eq!(batch.header.sending_application, Some("SendApp".to_string()));
+        assert_eq!(
+            batch.header.sending_application,
+            Some("SendApp".to_string())
+        );
         assert_eq!(batch.header.control_id, Some("B12345".to_string()));
         assert_eq!(batch.messages.len(), 2);
         assert_eq!(batch.trailer.message_count, Some(2));
@@ -994,7 +1077,12 @@ BTS|5";
 
         let result = parse_batch(batch_text);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("message count mismatch"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("message count mismatch")
+        );
     }
 
     #[test]
@@ -1019,11 +1107,17 @@ FTS|2";
         assert_eq!(file.trailer.batch_count, Some(2));
 
         // Check first batch
-        assert_eq!(file.batches[0].header.control_id, Some("B12345".to_string()));
+        assert_eq!(
+            file.batches[0].header.control_id,
+            Some("B12345".to_string())
+        );
         assert_eq!(file.batches[0].messages.len(), 1);
 
         // Check second batch
-        assert_eq!(file.batches[1].header.control_id, Some("B12346".to_string()));
+        assert_eq!(
+            file.batches[1].header.control_id,
+            Some("B12346".to_string())
+        );
         assert_eq!(file.batches[1].messages.len(), 1);
     }
 
@@ -1044,7 +1138,12 @@ FTS|5";
 
         let result = parse_file(file_text);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("batch count mismatch"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("batch count mismatch")
+        );
     }
 
     #[test]
@@ -1120,11 +1219,7 @@ BTS|1";
         let message = parse_message_bytes(wire).unwrap();
 
         let pid = message.get_segment_by_id("PID").unwrap();
-        let name = pid
-            .get_field(5)
-            .unwrap()
-            .get_repetition(0)
-            .unwrap();
+        let name = pid.get_field(5).unwrap().get_repetition(0).unwrap();
         assert_eq!(name.get_component(0).unwrap().value(), Some("Müller"));
         assert_eq!(name.get_component(1).unwrap().value(), Some("Jürg"));
         assert_eq!(
@@ -1139,11 +1234,7 @@ BTS|1";
         let message = parse_message_bytes(text.as_bytes()).unwrap();
 
         let pid = message.get_segment_by_id("PID").unwrap();
-        let name = pid
-            .get_field(5)
-            .unwrap()
-            .get_repetition(0)
-            .unwrap();
+        let name = pid.get_field(5).unwrap().get_repetition(0).unwrap();
         assert_eq!(name.get_component(0).unwrap().value(), Some("Müller"));
         assert_eq!(name.get_component(1).unwrap().value(), Some("Jörg"));
     }
@@ -1194,10 +1285,7 @@ BTS|1";
             let message = parse_message_bytes(&wire).unwrap();
             assert_eq!(message.get_version().unwrap().as_str(), version);
             assert_eq!(
-                message
-                    .get_segment_by_id("PID")
-                    .unwrap()
-                    .get_field_value(5),
+                message.get_segment_by_id("PID").unwrap().get_field_value(5),
                 Some("Müller")
             );
         }
@@ -1210,5 +1298,106 @@ BTS|1";
 
         let error = message.encode_bytes().unwrap_err();
         assert!(error.to_string().contains('ü'));
+    }
+
+    #[test]
+    fn test_lenient_short_input_returns_error_without_panic() {
+        let lenient = ParserConfig::lenient();
+        for input in ["", "M", "MS", "MSH", "MSH|", "MSH|^~"] {
+            let result = parse_message_with_config(input, &lenient);
+            assert!(result.is_err(), "input {input:?} should fail, not panic");
+        }
+    }
+
+    #[test]
+    fn test_strict_short_input_returns_error_without_panic() {
+        let strict = ParserConfig::strict();
+        for input in ["", "M", "MS", "MSH", "MSH|", "MSH|^~"] {
+            let result = parse_message_with_config(input, &strict);
+            assert!(result.is_err(), "input {input:?} should fail, not panic");
+        }
+    }
+
+    #[test]
+    fn test_non_ascii_delimiter_area_returns_error_without_panic() {
+        let strict = ParserConfig::strict();
+        let lenient = ParserConfig::lenient();
+        for input in [
+            "MSHé^~\\&|APP",
+            "MSH|é~\\&|APP",
+            "MSH|^é\\&|APP",
+            "MSH|^~é&|APP",
+            "MSH|^~\\é|APP",
+        ] {
+            assert!(
+                parse_message_with_config(input, &strict).is_err(),
+                "strict {input:?} should fail, not panic"
+            );
+            // Lenient mode must also never panic; result may vary.
+            let _ = parse_message_with_config(input, &lenient);
+        }
+    }
+
+    #[test]
+    fn test_non_ascii_segment_id_returns_error_without_panic() {
+        let delims = Delimiters::default();
+        for segment in ["éXX|1|2", "PéD|1|2", "ab€|1|2"] {
+            let result = parse_segment(segment, &delims);
+            assert!(result.is_err(), "segment {segment:?} should fail");
+        }
+        // Boundary-valid but non-ASCII IDs must at least not panic.
+        let _ = parse_segment("€|1", &delims);
+        // Multibyte field separator must not panic the configured path.
+        let multi = Delimiters {
+            field_separator: 'é',
+            ..Delimiters::default()
+        };
+        let (segment, _) =
+            parse_segment_with_config("PIDé12é34", &multi, &ParserConfig::strict()).unwrap();
+        assert_eq!(segment.get_field_value(1), Some("12"));
+        assert_eq!(segment.get_field_value(2), Some("34"));
+        // Non-ASCII via the configured path must not panic either.
+        let strict = ParserConfig::strict();
+        let lenient = ParserConfig::lenient();
+        let msg = "MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPéD|1|2";
+        assert!(parse_message_with_config(msg, &strict).is_err());
+        let _ = parse_message_with_config(msg, &lenient);
+    }
+
+    #[test]
+    fn test_max_field_length_with_multibyte_value_does_not_panic() {
+        let config = ParserConfig::strict().max_field_length(5);
+        let delims = Delimiters::default();
+        // Byte 5 lands inside a multibyte character.
+        let field = parse_field_with_config("abcdéfgh", &delims, &config).unwrap();
+        assert_eq!(field.value(), Some("abcd"));
+    }
+
+    #[test]
+    fn test_non_ascii_header_delimiters_return_error_without_panic() {
+        assert!(extract_delimiters_from_bhs("BHSé^~\\&|A").is_err());
+        assert!(extract_delimiters_from_bhs("BHS|^é\\&|A").is_err());
+        assert!(extract_delimiters_from_fhs("FHSé^~\\&|A").is_err());
+        assert!(extract_delimiters_from_fhs("FHS|^é\\&|A").is_err());
+        assert!(extract_delimiters_from_bhs("BHS").is_err());
+        assert!(extract_delimiters_from_fhs("FHS").is_err());
+    }
+
+    #[test]
+    fn test_non_ascii_datetime_field_returns_none_without_panic() {
+        assert_eq!(parse_datetime_field(Some("2024010é123456")), None);
+        assert_eq!(parse_datetime_field(Some("20240é15")), None);
+        assert_eq!(parse_datetime_field(Some("éééééééééééééééé")), None);
+    }
+
+    #[test]
+    fn test_non_ascii_msh_body_does_not_panic() {
+        let strict = ParserConfig::strict();
+        let lenient = ParserConfig::lenient();
+        // Multibyte content where MSH field parsing slices the header.
+        for msg in ["MSH|^~\\é|A|B", "MSH|^~\\&ééééé", "MSH|^~\\&|é"] {
+            let _ = parse_message_with_config(msg, &strict);
+            let _ = parse_message_with_config(msg, &lenient);
+        }
     }
 }

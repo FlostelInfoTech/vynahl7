@@ -39,10 +39,10 @@
 //! ```
 
 use crate::error::{OrchestrationError, Result};
-use vyna_hl7_core::Message;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use vyna_hl7_core::Message;
 
 /// Type alias for orchestration step functions
 pub type StepHandler =
@@ -88,11 +88,7 @@ impl OrchestrationStep {
     }
 
     /// Execute with retry logic
-    async fn execute_with_retry(
-        &self,
-        message: Message,
-        config: &RetryConfig,
-    ) -> Result<Message> {
+    async fn execute_with_retry(&self, message: Message, config: &RetryConfig) -> Result<Message> {
         let mut attempts = 0;
         let mut last_error = None;
         // The field is public, so clamp here too: a step always runs once.
@@ -115,13 +111,9 @@ impl OrchestrationStep {
             }
         }
 
-        Err(OrchestrationError::step_failed(
-            &self.name,
-            format!(
-                "Failed after {} attempts: {}",
-                attempts,
-                last_error.unwrap()
-            ),
+        Err(OrchestrationError::retry_limit_exceeded(
+            attempts,
+            last_error.expect("a clamped retry loop always attempts once"),
         ))
     }
 }
@@ -232,7 +224,9 @@ impl MessageOrchestrator {
         H: Fn(String, OrchestrationError, Message) -> F + Send + Sync + 'static,
         F: Future<Output = ()> + Send + 'static,
     {
-        self.error_handler = Some(Arc::new(move |name, err, msg| Box::pin(handler(name, err, msg))));
+        self.error_handler = Some(Arc::new(move |name, err, msg| {
+            Box::pin(handler(name, err, msg))
+        }));
     }
 
     /// Get the number of steps
@@ -253,7 +247,7 @@ impl MessageOrchestrator {
                         handler(step.name.clone(), e.clone(), message.clone()).await;
                     }
 
-                    return Err(OrchestrationError::step_failed(&step.name, e.to_string()));
+                    return Err(OrchestrationError::step_failed(&step.name, e));
                 }
             }
         }
@@ -262,7 +256,10 @@ impl MessageOrchestrator {
     }
 
     /// Execute the workflow and continue on errors
-    pub async fn execute_continue_on_error(&self, mut message: Message) -> (Message, Vec<OrchestrationError>) {
+    pub async fn execute_continue_on_error(
+        &self,
+        mut message: Message,
+    ) -> (Message, Vec<OrchestrationError>) {
         let mut errors = Vec::new();
 
         for step in &self.steps {
@@ -276,7 +273,7 @@ impl MessageOrchestrator {
                         handler(step.name.clone(), e.clone(), message.clone()).await;
                     }
 
-                    errors.push(OrchestrationError::step_failed(&step.name, e.to_string()));
+                    errors.push(OrchestrationError::step_failed(&step.name, e));
                     // Continue with next step even though this one failed
                 }
             }
@@ -300,8 +297,8 @@ impl Default for MessageOrchestrator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vyna_hl7_core::{Field, Segment};
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use vyna_hl7_core::{Field, Segment};
 
     fn create_test_message() -> Message {
         let mut msg = Message::default();
@@ -439,6 +436,33 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(counter.load(Ordering::SeqCst), 3); // Should have tried 3 times
+    }
+
+    #[tokio::test]
+    async fn test_retry_exhaustion_keeps_cause_chain() {
+        use std::error::Error as _;
+
+        let mut orchestrator = MessageOrchestrator::new();
+        orchestrator.add_step_with_retry(
+            "always_fails",
+            |_msg| async move { Err(OrchestrationError::custom("root cause")) },
+            RetryConfig::new(2, 1),
+        );
+
+        let err = orchestrator
+            .execute(create_test_message())
+            .await
+            .unwrap_err();
+        // Step -> retry-limit -> root cause, all preserved.
+        let display = err.to_string();
+        assert!(display.contains("always_fails"), "{display}");
+        assert!(display.contains("2 attempts"), "{display}");
+        assert!(display.contains("root cause"), "{display}");
+        let retry = err.source().expect("step keeps retry error");
+        assert!(retry.to_string().contains("2 attempts"), "{retry}");
+        let cause = retry.source().expect("retry keeps cause");
+        assert_eq!(cause.to_string(), "root cause");
+        assert!(cause.source().is_none());
     }
 
     #[tokio::test]

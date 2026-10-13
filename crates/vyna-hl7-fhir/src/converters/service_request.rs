@@ -1,10 +1,10 @@
 //! ServiceRequest converter - ORC/OBR segments to FHIR ServiceRequest resource
 
+use crate::error::{ConversionError, ConversionResult};
+use crate::resources::common::*;
+use crate::resources::service_request::*;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
-use crate::error::{ConversionError, ConversionResult};
-use crate::resources::service_request::*;
-use crate::resources::common::*;
 
 pub struct ServiceRequestConverter;
 
@@ -50,7 +50,8 @@ impl ServiceRequestConverter {
         };
 
         // ORC-5: Order Status -> status
-        let status = terser.get(&orc_path("5"))
+        let status = terser
+            .get(&orc_path("5"))
             .ok()
             .flatten()
             .map(Self::convert_status)
@@ -217,17 +218,18 @@ impl ServiceRequestConverter {
     /// Convert HL7 v2 ORC-5 order status to FHIR ServiceRequest status
     fn convert_status(code: &str) -> String {
         match code {
-            "A" => "active",       // Some, but not all, of the services have been performed
-            "CA" => "revoked",     // Canceled
-            "CM" => "completed",   // Completed
-            "DC" => "revoked",     // Discontinued
+            "A" => "active",     // Some, but not all, of the services have been performed
+            "CA" => "revoked",   // Canceled
+            "CM" => "completed", // Completed
+            "DC" => "revoked",   // Discontinued
             "ER" => "entered-in-error",
-            "HD" => "on-hold",     // On hold
-            "IP" => "active",      // In process, unspecified
-            "RP" => "active",      // Order has been replaced
-            "SC" => "active",      // In process, scheduled
-            _ => "active",         // Default to active
-        }.to_string()
+            "HD" => "on-hold", // On hold
+            "IP" => "active",  // In process, unspecified
+            "RP" => "active",  // Order has been replaced
+            "SC" => "active",  // In process, scheduled
+            _ => "active",     // Default to active
+        }
+        .to_string()
     }
 
     /// Convert HL7 v2 priority codes to FHIR ServiceRequest priority
@@ -236,15 +238,19 @@ impl ServiceRequestConverter {
             "S" => "stat",
             "A" => "asap",
             "R" => "routine",
-            "P" => "routine",  // Preoperative (treat as routine)
-            "T" => "routine",  // Timing critical (treat as routine)
+            "P" => "routine", // Preoperative (treat as routine)
+            "T" => "routine", // Timing critical (treat as routine)
             _ => "routine",
-        }.to_string()
+        }
+        .to_string()
     }
 
     /// Convert HL7 datetime (YYYYMMDDHHMMSS) to FHIR ISO 8601 format
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
-        if datetime.len() >= 14 {
+        // Byte-slice checks on `[u8]` never split a char boundary, and an
+        // all-ASCII-digit prefix makes the `&str` slices below safe.
+        let bytes = datetime.as_bytes();
+        if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
             Ok(format!(
                 "{}-{}-{}T{}:{}:{}",
                 &datetime[0..4],
@@ -254,7 +260,7 @@ impl ServiceRequestConverter {
                 &datetime[10..12],
                 &datetime[12..14]
             ))
-        } else if datetime.len() >= 8 {
+        } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
             // Date only
             Ok(format!(
                 "{}-{}-{}",
@@ -266,14 +272,15 @@ impl ServiceRequestConverter {
             Err(ConversionError::InvalidFormat(
                 "ORC-15/ORC-9".to_string(),
                 "ORC".to_string(),
-                format!("Invalid datetime format: {}", datetime)
+                format!("Invalid datetime format: {}", datetime),
             ))
         }
     }
 
     /// Extract patient reference from PID segment
     fn extract_patient_reference(terser: &Terser) -> ConversionResult<Reference> {
-        let patient_id = terser.get("PID-3")
+        let patient_id = terser
+            .get("PID-3")
             .ok()
             .flatten()
             .ok_or_else(|| ConversionError::MissingSegment("PID".to_string()))?;
@@ -358,8 +365,14 @@ mod tests {
         let service_requests = ServiceRequestConverter::convert_all(&message).unwrap();
 
         assert_eq!(service_requests.len(), 2);
-        assert_eq!(service_requests[0].identifier.as_ref().unwrap()[0].value, Some("ORD001".to_string()));
-        assert_eq!(service_requests[1].identifier.as_ref().unwrap()[0].value, Some("ORD002".to_string()));
+        assert_eq!(
+            service_requests[0].identifier.as_ref().unwrap()[0].value,
+            Some("ORD001".to_string())
+        );
+        assert_eq!(
+            service_requests[1].identifier.as_ref().unwrap()[0].value,
+            Some("ORD002".to_string())
+        );
     }
 
     #[test]
@@ -373,6 +386,15 @@ mod tests {
 
         assert_eq!(service_requests.len(), 1);
         assert_eq!(service_requests[0].status, "completed");
+    }
+
+    #[test]
+    fn test_non_ascii_datetime_returns_error_without_panic() {
+        assert!(ServiceRequestConverter::convert_datetime("123\u{e9}56789012").is_err());
+        assert_eq!(
+            ServiceRequestConverter::convert_datetime("20240315100000").unwrap(),
+            "2024-03-15T10:00:00"
+        );
     }
 
     #[test]

@@ -1,5 +1,3 @@
-
-
 //! Bulk field extraction for efficient access to multiple fields at once.
 //!
 //! This module provides the `BulkTerser` which allows extracting multiple
@@ -74,7 +72,10 @@ impl<'a> BulkTerser<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn get_multiple(&self, paths: &[&str]) -> vyna_hl7_core::Result<HashMap<String, Option<&str>>> {
+    pub fn get_multiple(
+        &self,
+        paths: &[&str],
+    ) -> vyna_hl7_core::Result<HashMap<String, Option<&str>>> {
         let mut result = HashMap::with_capacity(paths.len());
 
         for path in paths {
@@ -129,7 +130,11 @@ impl<'a> BulkTerser<'a> {
 
             // Check if this is a segment wildcard (e.g., "OBX(*)-5" or "NK1(*)-2")
             // Segment wildcard: no hyphens before the wildcard, only segment ID
-            if !before_wildcard.contains('-') && before_wildcard.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()) {
+            if !before_wildcard.contains('-')
+                && before_wildcard
+                    .chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+            {
                 self.expand_segment_wildcard(pattern, before_wildcard)
             } else {
                 // Field repetition wildcard (e.g., "PID-11(*)-1")
@@ -168,7 +173,10 @@ impl<'a> BulkTerser<'a> {
     }
 
     /// Expand field repetition wildcard pattern (e.g., "PID-11(*)-1")
-    fn expand_field_repetition_wildcard(&self, pattern: &str) -> vyna_hl7_core::Result<Vec<(String, &str)>> {
+    fn expand_field_repetition_wildcard(
+        &self,
+        pattern: &str,
+    ) -> vyna_hl7_core::Result<Vec<(String, &str)>> {
         // Parse the pattern to extract segment, field, and component parts
         // Pattern format: "SEGMENT-FIELD(*)-COMPONENT"
         let parts: Vec<&str> = pattern.split('-').collect();
@@ -184,21 +192,33 @@ impl<'a> BulkTerser<'a> {
         let field_part = parts[1].strip_suffix("(*)").unwrap_or(parts[1]);
         let after_wildcard = &parts[2..].join("-"); // e.g., "1" or "1-2"
 
-        // Extract segment ID and optional index
+        // Extract segment ID and optional index (1-based in patterns).
         let (segment_id, segment_idx) = if let Some(paren_pos) = segment_part.find('(') {
             let id = &segment_part[..paren_pos];
-            let idx_str = &segment_part[paren_pos + 1..segment_part.len() - 1];
+            let idx_str = segment_part
+                .get(paren_pos + 1..)
+                .and_then(|s| s.strip_suffix(')'));
+            let idx_str = idx_str.ok_or_else(|| {
+                vyna_hl7_core::Error::terser_path(
+                    "Invalid segment index: missing closing parenthesis".to_string(),
+                )
+            })?;
             let idx: usize = idx_str.parse().map_err(|_| {
                 vyna_hl7_core::Error::terser_path("Invalid segment index".to_string())
             })?;
+            if idx == 0 {
+                return Err(vyna_hl7_core::Error::terser_path(
+                    "Invalid segment index 0: patterns use 1-based indexing".to_string(),
+                ));
+            }
             (id, idx - 1) // Convert to 0-based
         } else {
             (segment_part, 0)
         };
 
-        let field_idx: usize = field_part.parse().map_err(|_| {
-            vyna_hl7_core::Error::terser_path("Invalid field index".to_string())
-        })?;
+        let field_idx: usize = field_part
+            .parse()
+            .map_err(|_| vyna_hl7_core::Error::terser_path("Invalid field index".to_string()))?;
 
         let mut results = Vec::new();
 
@@ -269,7 +289,11 @@ impl<'a> BulkTerser<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn get_all_from_segments(&self, segment_id: &str, field: usize) -> vyna_hl7_core::Result<Vec<&str>> {
+    pub fn get_all_from_segments(
+        &self,
+        segment_id: &str,
+        field: usize,
+    ) -> vyna_hl7_core::Result<Vec<&str>> {
         let pattern = format!("{}(*)-{}", segment_id, field);
         let results = self.get_pattern(&pattern)?;
         Ok(results.into_iter().map(|(_, value)| value).collect())
@@ -383,6 +407,57 @@ OBX|3|CE|K||4.2^mmol/L";
     }
 
     #[test]
+    fn test_get_pattern_field_wildcard_zero_segment_index_errors() {
+        let hl7 = r"MSH|^~\&|APP|FAC|||20250115||ADT^A01|123|P|2.5
+PID|1||PAT001||DOE^JOHN~SMITH^JANE";
+
+        let message = parse_message(hl7).unwrap();
+        let bulk = BulkTerser::new(&message);
+
+        // Segment indices are 1-based; (0) must be an error, not a panic.
+        assert!(bulk.get_pattern("PID(0)-5(*)-1").is_err());
+    }
+
+    #[test]
+    fn test_get_pattern_field_wildcard_malformed_segment_errors() {
+        let hl7 = r"MSH|^~\&|APP|FAC|||20250115||ADT^A01|123|P|2.5
+PID|1||PAT001||DOE^JOHN~SMITH^JANE";
+
+        let message = parse_message(hl7).unwrap();
+        let bulk = BulkTerser::new(&message);
+
+        // Malformed segment parts must be errors, not slice panics.
+        for pattern in [
+            "PID(-5(*)-1",
+            "PID(2-5(*)-1",
+            "PID()-5(*)-1",
+            "PID(x)-5(*)-1",
+            "PID(1-5(*)-1",
+            "(-5(*)-1",
+        ] {
+            assert!(bulk.get_pattern(pattern).is_err(), "{pattern}");
+        }
+    }
+
+    #[test]
+    fn test_get_pattern_field_wildcard_indexed_segment() {
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\r\
+                   PID|1||PAT001||DOE^JOHN~SMITH^JANE\r\
+                   PID|2||PAT002||WAYNE^BRUCE~KENT^CLARK\r";
+
+        let message = parse_message(hl7).unwrap();
+        let bulk = BulkTerser::new(&message);
+
+        // Indexed segment part selects the second PID (1-based).
+        let values = bulk.get_pattern("PID(2)-5(*)-1").unwrap();
+        assert_eq!(values.len(), 2);
+        assert_eq!(values[0].0, "PID(2)-5(1)-1");
+        assert_eq!(values[0].1, "WAYNE");
+        assert_eq!(values[1].0, "PID(2)-5(2)-1");
+        assert_eq!(values[1].1, "KENT");
+    }
+
+    #[test]
     fn test_get_pattern_no_wildcard_error() {
         let hl7 = r"MSH|^~\&|APP|FAC|||20250115||ADT^A01|123|P|2.5
 PID|1||PAT001||DOE^JOHN";
@@ -462,14 +537,7 @@ OBX|5|NM|CO2||24";
 
         // Extract many fields at once
         let paths = vec![
-            "PID-5-1",
-            "PID-5-2",
-            "PID-7",
-            "PID-8",
-            "PID-11-1",
-            "PID-11-3",
-            "PID-11-4",
-            "PID-11-5",
+            "PID-5-1", "PID-5-2", "PID-7", "PID-8", "PID-11-1", "PID-11-3", "PID-11-4", "PID-11-5",
             "PID-13",
         ];
 

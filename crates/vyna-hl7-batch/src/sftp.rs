@@ -16,7 +16,7 @@ use tokio::io::AsyncWriteExt;
 use crate::{BatchError, FileEntry, FileTransport};
 
 /// Client authentication for [`SftpTransport`].
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum SftpAuth {
     /// Password authentication.
     Password(String),
@@ -36,6 +36,26 @@ pub enum SftpAuth {
     },
 }
 
+// Secrets must never leak into logs via `{:?}`. Passphrase presence
+// (Some vs None) is shown; values are not.
+impl std::fmt::Debug for SftpAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SftpAuth::Password(_) => write!(f, "Password(<redacted>)"),
+            SftpAuth::KeyFile { path, passphrase } => f
+                .debug_struct("KeyFile")
+                .field("path", path)
+                .field("passphrase", &passphrase.as_ref().map(|_| "<redacted>"))
+                .finish(),
+            SftpAuth::KeyText { passphrase, .. } => f
+                .debug_struct("KeyText")
+                .field("pem", &"<redacted>")
+                .field("passphrase", &passphrase.as_ref().map(|_| "<redacted>"))
+                .finish(),
+        }
+    }
+}
+
 /// How the server's host key is trusted.
 #[derive(Debug, Clone)]
 pub enum HostKeyPolicy {
@@ -47,7 +67,7 @@ pub enum HostKeyPolicy {
 }
 
 /// Connection parameters for [`SftpTransport`].
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SftpConfig {
     /// Server address as `host:port`.
     pub addr: String,
@@ -61,6 +81,29 @@ pub struct SftpConfig {
     pub root: String,
     /// TCP connect timeout.
     pub connect_timeout: Duration,
+    /// Per-operation timeout for protocol commands and transfers
+    /// (`None` waits forever). Defaults to
+    /// [`DEFAULT_COMMAND_TIMEOUT`](crate::DEFAULT_COMMAND_TIMEOUT).
+    pub command_timeout: Option<Duration>,
+    /// Refuse downloads larger than this. Defaults to
+    /// [`DEFAULT_MAX_FILE_BYTES`](crate::DEFAULT_MAX_FILE_BYTES).
+    pub max_file_bytes: u64,
+}
+
+// Authentication secrets stay redacted via `SftpAuth`'s `Debug` impl.
+impl std::fmt::Debug for SftpConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SftpConfig")
+            .field("addr", &self.addr)
+            .field("username", &self.username)
+            .field("auth", &self.auth)
+            .field("host_keys", &self.host_keys)
+            .field("root", &self.root)
+            .field("connect_timeout", &self.connect_timeout)
+            .field("command_timeout", &self.command_timeout)
+            .field("max_file_bytes", &self.max_file_bytes)
+            .finish()
+    }
 }
 
 impl SftpConfig {
@@ -74,6 +117,8 @@ impl SftpConfig {
             host_keys: HostKeyPolicy::Pinned(Vec::new()),
             root: String::new(),
             connect_timeout: Duration::from_secs(10),
+            command_timeout: Some(crate::DEFAULT_COMMAND_TIMEOUT),
+            max_file_bytes: crate::DEFAULT_MAX_FILE_BYTES,
         }
     }
 
@@ -92,6 +137,18 @@ impl SftpConfig {
     /// Override the TCP connect timeout.
     pub fn with_connect_timeout(mut self, timeout: Duration) -> Self {
         self.connect_timeout = timeout;
+        self
+    }
+
+    /// Override the per-operation timeout (`None` waits forever).
+    pub fn with_command_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.command_timeout = timeout;
+        self
+    }
+
+    /// Refuse downloads larger than `limit` bytes.
+    pub fn with_max_file_bytes(mut self, limit: u64) -> Self {
+        self.max_file_bytes = limit;
         self
     }
 }
@@ -159,19 +216,28 @@ impl SftpTransport {
         .await
         .map_err(|_| BatchError::Timeout(timeout))??;
 
+        let timeout = config.command_timeout;
         let authenticated = match &config.auth {
-            SftpAuth::Password(password) => ssh
-                .authenticate_password(config.username.as_str(), password.as_str())
-                .await?
-                .success(),
+            SftpAuth::Password(password) => crate::timed(
+                timeout,
+                ssh.authenticate_password(config.username.as_str(), password.as_str()),
+            )
+            .await?
+            .success(),
             SftpAuth::KeyFile { path, passphrase } => {
-                let pem = std::fs::read_to_string(path)?;
-                Self::authenticate_key(&mut ssh, &config.username, &pem, passphrase.as_deref())
-                    .await?
+                let pem = tokio::fs::read_to_string(path).await?;
+                crate::timed(
+                    timeout,
+                    Self::authenticate_key(&mut ssh, &config.username, &pem, passphrase.as_deref()),
+                )
+                .await?
             }
             SftpAuth::KeyText { pem, passphrase } => {
-                Self::authenticate_key(&mut ssh, &config.username, pem, passphrase.as_deref())
-                    .await?
+                crate::timed(
+                    timeout,
+                    Self::authenticate_key(&mut ssh, &config.username, pem, passphrase.as_deref()),
+                )
+                .await?
             }
         };
         if !authenticated {
@@ -180,9 +246,9 @@ impl SftpTransport {
             });
         }
 
-        let channel = ssh.channel_open_session().await?;
-        channel.request_subsystem(true, "sftp").await?;
-        let sftp = SftpSession::new(channel.into_stream()).await?;
+        let channel = crate::timed(timeout, ssh.channel_open_session()).await?;
+        crate::timed(timeout, channel.request_subsystem(true, "sftp")).await?;
+        let sftp = crate::timed(timeout, SftpSession::new(channel.into_stream())).await?;
 
         Ok(Self {
             config,
@@ -228,9 +294,10 @@ impl SftpTransport {
                 prefix.push('/');
             }
             prefix.push_str(part);
-            let exists = self.sftp()?.try_exists(&prefix).await?;
+            let timeout = self.config.command_timeout;
+            let exists = crate::timed(timeout, self.sftp()?.try_exists(&prefix)).await?;
             if !exists {
-                self.sftp()?.create_dir(&prefix).await?;
+                crate::timed(timeout, self.sftp()?.create_dir(&prefix)).await?;
             }
         }
         Ok(())
@@ -248,10 +315,11 @@ fn is_no_such_file(e: &russh_sftp::client::error::Error) -> bool {
 impl FileTransport for SftpTransport {
     async fn list(&mut self, dir: &str) -> Result<Vec<FileEntry>, BatchError> {
         let remote = self.remote(dir)?;
-        let read_dir = match self.sftp()?.read_dir(&remote).await {
+        let timeout = self.config.command_timeout;
+        let read_dir = match crate::timed(timeout, self.sftp()?.read_dir(&remote)).await {
             Ok(rd) => rd,
-            Err(e) if is_no_such_file(&e) => return Ok(Vec::new()),
-            Err(e) => return Err(BatchError::from(e)),
+            Err(BatchError::Sftp(e)) if is_no_such_file(&e) => return Ok(Vec::new()),
+            Err(e) => return Err(e),
         };
         let mut entries = Vec::new();
         for entry in read_dir {
@@ -281,14 +349,42 @@ impl FileTransport for SftpTransport {
     }
 
     async fn get(&mut self, path: &str) -> Result<Vec<u8>, BatchError> {
+        use tokio::io::AsyncReadExt;
+
         let remote = self.remote(path)?;
-        match self.sftp()?.read(&remote).await {
-            Ok(bytes) => Ok(bytes),
-            Err(e) if is_no_such_file(&e) => {
-                Err(BatchError::Invalid(format!("no such file: '{path}'")))
+        let timeout = self.config.command_timeout;
+        let limit = self.config.max_file_bytes;
+        let file = match crate::timed(timeout, self.sftp()?.open(&remote)).await {
+            Ok(file) => file,
+            Err(BatchError::Sftp(e)) if is_no_such_file(&e) => {
+                return Err(BatchError::Invalid(format!("no such file: '{path}'")));
             }
-            Err(e) => Err(BatchError::from(e)),
+            Err(e) => return Err(e),
+        };
+        let mut capped = file.take(limit.saturating_add(1));
+        let mut buf = Vec::new();
+        crate::timed(timeout, async {
+            capped
+                .read_to_end(&mut buf)
+                .await
+                .map_err(russh_sftp::client::error::Error::from)
+        })
+        .await?;
+        let file = capped.into_inner();
+        if buf.len() as u64 > limit {
+            let _ = file.close().await;
+            return Err(BatchError::TooLarge {
+                path: path.to_string(),
+                limit,
+            });
         }
+        crate::timed(timeout, async {
+            file.close()
+                .await
+                .map_err(russh_sftp::client::error::Error::from)
+        })
+        .await?;
+        Ok(buf)
     }
 
     async fn put(&mut self, path: &str, data: &[u8]) -> Result<(), BatchError> {
@@ -302,6 +398,7 @@ impl FileTransport for SftpTransport {
         self.temp_counter += 1;
         let temp = format!("{remote}.tmp-{}-{}", std::process::id(), self.temp_counter);
         // `create` (not `write`) so the temp file is created and truncated.
+        let timeout = self.config.command_timeout;
         let upload = async {
             let sftp = self.sftp()?;
             let mut file = sftp.create(&temp).await?;
@@ -313,20 +410,21 @@ impl FileTransport for SftpTransport {
                 .map_err(russh_sftp::client::error::Error::from)?;
             Ok::<(), BatchError>(())
         };
-        if let Err(e) = upload.await {
+        if let Err(e) = crate::timed(timeout, upload).await {
             let _ = self.sftp()?.remove_file(&temp).await;
             return Err(e);
         }
-        self.sftp()?.rename(&temp, &remote).await?;
+        crate::timed(timeout, self.sftp()?.rename(&temp, &remote)).await?;
         Ok(())
     }
 
     async fn delete(&mut self, path: &str) -> Result<(), BatchError> {
         let remote = self.remote(path)?;
-        match self.sftp()?.remove_file(&remote).await {
+        let timeout = self.config.command_timeout;
+        match crate::timed(timeout, self.sftp()?.remove_file(&remote)).await {
             Ok(()) => Ok(()),
-            Err(e) if is_no_such_file(&e) => Ok(()),
-            Err(e) => Err(BatchError::from(e)),
+            Err(BatchError::Sftp(e)) if is_no_such_file(&e) => Ok(()),
+            Err(e) => Err(e),
         }
     }
 
@@ -336,22 +434,70 @@ impl FileTransport for SftpTransport {
         if let Some((parent, _)) = to_remote.rsplit_once('/') {
             self.mkdir_p(parent).await?;
         }
-        match self.sftp()?.rename(&from_remote, &to_remote).await {
+        let timeout = self.config.command_timeout;
+        match crate::timed(timeout, self.sftp()?.rename(&from_remote, &to_remote)).await {
             Ok(()) => Ok(()),
-            Err(e) if is_no_such_file(&e) => {
+            Err(BatchError::Sftp(e)) if is_no_such_file(&e) => {
                 Err(BatchError::Invalid(format!("no such file: '{from}'")))
             }
-            Err(e) => Err(BatchError::from(e)),
+            Err(e) => Err(e),
         }
     }
 
     async fn close(&mut self) -> Result<(), BatchError> {
+        let timeout = self.config.command_timeout;
         if let Some(sftp) = self.sftp.take() {
-            sftp.close().await?;
+            crate::timed(timeout, sftp.close()).await?;
         }
         if let Some(ssh) = self.ssh.take() {
-            ssh.disconnect(Disconnect::ByApplication, "", "").await?;
+            crate::timed(timeout, ssh.disconnect(Disconnect::ByApplication, "", "")).await?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_redacts_all_secret_shapes() {
+        let password = format!("{:?}", SftpAuth::Password("hunter2".to_string()));
+        assert!(!password.contains("hunter2"), "leaked: {password}");
+
+        let key_file = format!(
+            "{:?}",
+            SftpAuth::KeyFile {
+                path: PathBuf::from("/keys/id"),
+                passphrase: Some("file-phrase".to_string()),
+            }
+        );
+        assert!(!key_file.contains("file-phrase"), "leaked: {key_file}");
+        assert!(key_file.contains("/keys/id"));
+
+        let key_text = format!(
+            "{:?}",
+            SftpAuth::KeyText {
+                pem: "PEM-BYTES".to_string(),
+                passphrase: Some("text-phrase".to_string()),
+            }
+        );
+        assert!(!key_text.contains("PEM-BYTES"), "leaked: {key_text}");
+        assert!(!key_text.contains("text-phrase"), "leaked: {key_text}");
+
+        let config = SftpConfig::new("host:22", "user", SftpAuth::Password("hunter2".into()));
+        let debug = format!("{config:?}");
+        assert!(!debug.contains("hunter2"), "leaked: {debug}");
+        assert!(debug.contains("host:22"));
+    }
+
+    #[test]
+    fn defaults_carry_size_cap_and_command_timeout() {
+        let config = SftpConfig::new("host:22", "u", SftpAuth::Password("p".into()));
+        assert_eq!(config.max_file_bytes, crate::DEFAULT_MAX_FILE_BYTES);
+        assert_eq!(config.command_timeout, Some(crate::DEFAULT_COMMAND_TIMEOUT));
+        let config = config.with_max_file_bytes(512).with_command_timeout(None);
+        assert_eq!(config.max_file_bytes, 512);
+        assert_eq!(config.command_timeout, None);
     }
 }

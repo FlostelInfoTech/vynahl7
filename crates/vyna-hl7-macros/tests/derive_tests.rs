@@ -3,7 +3,7 @@
 use vyna_hl7_core::field::{Field, Repetition};
 use vyna_hl7_core::message::Message;
 use vyna_hl7_core::segment::Segment;
-use vyna_hl7_macros::{Message, Segment as DeriveSegment};
+use vyna_hl7_macros::{Message, Segment as DeriveSegment, hl7_type};
 
 /// Test segment with simple fields
 #[derive(DeriveSegment, Default, Debug, PartialEq)]
@@ -443,6 +443,61 @@ fn test_repeating_field_to_segment() {
     assert_eq!(field.repetitions.len(), 2);
     assert_eq!(field.get_repetition(0).unwrap().value(), Some("ID-A"));
     assert_eq!(field.get_repetition(1).unwrap().value(), Some("ID-B"));
+}
+
+#[test]
+fn test_message_from_message_ignores_segment_order() {
+    // Segments match by ID, not position: OBX first still binds correctly.
+    let mut message = Message::new();
+    message.add_segment(sample_obx_segment("1", "100"));
+    message.add_segment(sample_pid_segment());
+
+    let adt = AdtA01::from_message(&message).unwrap();
+    assert_eq!(adt.pid.patient_id, "12345");
+    assert_eq!(adt.obx.unwrap().observation_value, Some("100".to_string()));
+}
+
+/// Composite data type via the hl7_type attribute macro
+#[hl7_type(data_type = "XPN")]
+struct ExtendedPersonName {
+    #[hl7(component = 1)]
+    family_name: String,
+
+    #[hl7(component = 2)]
+    given_name: String,
+
+    #[hl7(component = 3)]
+    second_name: Option<String>,
+}
+
+#[test]
+fn test_hl7_type_round_trip() {
+    assert_eq!(ExtendedPersonName::DATA_TYPE, "XPN");
+
+    let name = ExtendedPersonName {
+        family_name: "Smith".to_string(),
+        given_name: "John".to_string(),
+        second_name: None,
+    };
+    assert_eq!(name.data_type(), "XPN");
+
+    let rep = name.to_repetition();
+    assert_eq!(rep.get_component(0).and_then(|c| c.value()), Some("Smith"));
+    assert_eq!(rep.get_component(1).and_then(|c| c.value()), Some("John"));
+
+    let back = ExtendedPersonName::from_repetition(&rep);
+    assert_eq!(back.family_name, "Smith");
+    assert_eq!(back.given_name, "John");
+    assert_eq!(back.second_name, None);
+
+    let via_from = ExtendedPersonName::from(&rep);
+    assert_eq!(via_from.family_name, "Smith");
+
+    let rep_back: Repetition = name.into();
+    assert_eq!(
+        rep_back.get_component(0).and_then(|c| c.value()),
+        Some("Smith")
+    );
 }
 
 #[test]

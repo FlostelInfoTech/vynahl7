@@ -2,11 +2,11 @@
 //!
 //! Based on HL7 v2-to-FHIR mapping: <https://build.fhir.org/ig/HL7/v2-to-fhir/ConceptMap-segment-pid-to-patient.html>
 
+use crate::error::{ConversionError, ConversionResult};
+use crate::resources::common::*;
+use crate::resources::patient::Patient;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
-use crate::error::{ConversionError, ConversionResult};
-use crate::resources::patient::Patient;
-use crate::resources::common::*;
 
 /// Converter for transforming PID segments to FHIR Patient resources
 pub struct PatientConverter;
@@ -43,15 +43,17 @@ impl PatientConverter {
 
         // PID-7: Date of Birth -> Patient.birthDate
         if let Ok(Some(dob)) = terser.get("PID-7")
-            && !dob.is_empty() {
-                patient.birth_date = Some(Self::convert_date(dob)?);
-            }
+            && !dob.is_empty()
+        {
+            patient.birth_date = Some(Self::convert_date(dob)?);
+        }
 
         // PID-8: Administrative Sex -> Patient.gender
         if let Ok(Some(sex)) = terser.get("PID-8")
-            && !sex.is_empty() {
-                patient.gender = Some(Self::convert_gender(sex)?);
-            }
+            && !sex.is_empty()
+        {
+            patient.gender = Some(Self::convert_gender(sex)?);
+        }
 
         // PID-11: Patient Address -> Patient.address
         patient.address = Self::convert_addresses(&terser)?;
@@ -62,9 +64,10 @@ impl PatientConverter {
 
         // PID-16: Marital Status -> Patient.maritalStatus
         if let Ok(Some(marital)) = terser.get("PID-16")
-            && !marital.is_empty() {
-                patient.marital_status = Some(Self::convert_marital_status(marital));
-            }
+            && !marital.is_empty()
+        {
+            patient.marital_status = Some(Self::convert_marital_status(marital));
+        }
 
         // PID-24: Multiple Birth Indicator -> Patient.multipleBirth
         if let Ok(Some(multiple_birth)) = terser.get("PID-24") {
@@ -77,15 +80,17 @@ impl PatientConverter {
 
         // PID-29: Patient Death Date and Time -> Patient.deceased
         if let Ok(Some(death_date)) = terser.get("PID-29")
-            && !death_date.is_empty() {
-                patient.deceased_date_time = Some(Self::convert_datetime(death_date)?);
-            }
+            && !death_date.is_empty()
+        {
+            patient.deceased_date_time = Some(Self::convert_datetime(death_date)?);
+        }
 
         // PID-30: Patient Death Indicator -> Patient.deceased
         if let Ok(Some(death_ind)) = terser.get("PID-30")
-            && death_ind == "Y" {
-                patient.deceased_boolean = Some(true);
-            }
+            && death_ind == "Y"
+        {
+            patient.deceased_boolean = Some(true);
+        }
 
         patient.active = Some(true);
 
@@ -125,9 +130,10 @@ impl PatientConverter {
                     format!("PID-3({})-4", rep + 1)
                 };
                 if let Ok(Some(authority)) = terser.get(&authority_path)
-                    && !authority.is_empty() {
-                        identifier.system = Some(format!("urn:oid:{}", authority));
-                    }
+                    && !authority.is_empty()
+                {
+                    identifier.system = Some(format!("urn:oid:{}", authority));
+                }
 
                 // PID-3-5: Identifier Type Code (component 5, 1-based indexing)
                 let type_path = if rep == 0 {
@@ -136,17 +142,20 @@ impl PatientConverter {
                     format!("PID-3({})-5", rep + 1)
                 };
                 if let Ok(Some(id_type)) = terser.get(&type_path)
-                    && !id_type.is_empty() {
-                        identifier.type_ = Some(CodeableConcept {
-                            coding: Some(vec![Coding {
-                                system: Some("http://terminology.hl7.org/CodeSystem/v2-0203".to_string()),
-                                version: None,
-                                code: Some(id_type.to_string()),
-                                display: None,
-                            }]),
-                            text: Some(id_type.to_string()),
-                        });
-                    }
+                    && !id_type.is_empty()
+                {
+                    identifier.type_ = Some(CodeableConcept {
+                        coding: Some(vec![Coding {
+                            system: Some(
+                                "http://terminology.hl7.org/CodeSystem/v2-0203".to_string(),
+                            ),
+                            version: None,
+                            code: Some(id_type.to_string()),
+                            display: None,
+                        }]),
+                        text: Some(id_type.to_string()),
+                    });
+                }
 
                 identifiers.push(identifier);
             } else {
@@ -154,7 +163,11 @@ impl PatientConverter {
             }
         }
 
-        Ok(if identifiers.is_empty() { None } else { Some(identifiers) })
+        Ok(if identifiers.is_empty() {
+            None
+        } else {
+            Some(identifiers)
+        })
     }
 
     /// Convert PID-5 (Patient Name) to FHIR HumanName
@@ -166,9 +179,9 @@ impl PatientConverter {
         // XPN structure: 1=Family, 2=Given, 3=Middle, 4=Suffix, 5=Prefix, 7=Type
         for rep in 0..5 {
             let family_path = if rep == 0 {
-                "PID-5-1".to_string()  // Component 1 (family name) - 1-based indexing
+                "PID-5-1".to_string() // Component 1 (family name) - 1-based indexing
             } else {
-                format!("PID-5({})-1", rep + 1)  // Repetitions also 1-based
+                format!("PID-5({})-1", rep + 1) // Repetitions also 1-based
             };
 
             if let Ok(Some(family)) = terser.get(&family_path) {
@@ -192,22 +205,24 @@ impl PatientConverter {
                     format!("PID-5({})-2", rep + 1)
                 };
                 if let Ok(Some(given)) = terser.get(&given_path)
-                    && !given.is_empty() {
-                        let mut given_names = vec![given.to_string()];
+                    && !given.is_empty()
+                {
+                    let mut given_names = vec![given.to_string()];
 
-                        // PID-5-3: Middle Name (component 3, 1-based indexing)
-                        let middle_path = if rep == 0 {
-                            "PID-5-3".to_string()
-                        } else {
-                            format!("PID-5({})-3", rep + 1)
-                        };
-                        if let Ok(Some(middle)) = terser.get(&middle_path)
-                            && !middle.is_empty() {
-                                given_names.push(middle.to_string());
-                            }
-
-                        name.given = Some(given_names);
+                    // PID-5-3: Middle Name (component 3, 1-based indexing)
+                    let middle_path = if rep == 0 {
+                        "PID-5-3".to_string()
+                    } else {
+                        format!("PID-5({})-3", rep + 1)
+                    };
+                    if let Ok(Some(middle)) = terser.get(&middle_path)
+                        && !middle.is_empty()
+                    {
+                        given_names.push(middle.to_string());
                     }
+
+                    name.given = Some(given_names);
+                }
 
                 // PID-5-4: Suffix (component 4, 1-based indexing)
                 let suffix_path = if rep == 0 {
@@ -216,9 +231,10 @@ impl PatientConverter {
                     format!("PID-5({})-4", rep + 1)
                 };
                 if let Ok(Some(suffix)) = terser.get(&suffix_path)
-                    && !suffix.is_empty() {
-                        name.suffix = Some(vec![suffix.to_string()]);
-                    }
+                    && !suffix.is_empty()
+                {
+                    name.suffix = Some(vec![suffix.to_string()]);
+                }
 
                 // PID-5-5: Prefix (component 5, 1-based indexing)
                 let prefix_path = if rep == 0 {
@@ -227,9 +243,10 @@ impl PatientConverter {
                     format!("PID-5({})-5", rep + 1)
                 };
                 if let Ok(Some(prefix)) = terser.get(&prefix_path)
-                    && !prefix.is_empty() {
-                        name.prefix = Some(vec![prefix.to_string()]);
-                    }
+                    && !prefix.is_empty()
+                {
+                    name.prefix = Some(vec![prefix.to_string()]);
+                }
 
                 // PID-5-7: Name Type Code (component 7, 1-based indexing)
                 let type_path = if rep == 0 {
@@ -264,7 +281,7 @@ impl PatientConverter {
         // Note: Terser uses 1-based component indexing
         for rep in 0..5 {
             let street_path = if rep == 0 {
-                "PID-11-1".to_string()  // PID-11-1 (Street, component 1)
+                "PID-11-1".to_string() // PID-11-1 (Street, component 1)
             } else {
                 format!("PID-11({})-1", rep + 1)
             };
@@ -293,9 +310,10 @@ impl PatientConverter {
                 };
                 if let Ok(Some(other)) = terser.get(&other_path)
                     && !other.is_empty()
-                        && let Some(ref mut lines) = address.line {
-                            lines.push(other.to_string());
-                        }
+                    && let Some(ref mut lines) = address.line
+                {
+                    lines.push(other.to_string());
+                }
 
                 // PID-11-3: City (component 3, 1-based indexing)
                 let city_path = if rep == 0 {
@@ -304,9 +322,10 @@ impl PatientConverter {
                     format!("PID-11({})-3", rep + 1)
                 };
                 if let Ok(Some(city)) = terser.get(&city_path)
-                    && !city.is_empty() {
-                        address.city = Some(city.to_string());
-                    }
+                    && !city.is_empty()
+                {
+                    address.city = Some(city.to_string());
+                }
 
                 // PID-11-4: State (component 4, 1-based indexing)
                 let state_path = if rep == 0 {
@@ -315,9 +334,10 @@ impl PatientConverter {
                     format!("PID-11({})-4", rep + 1)
                 };
                 if let Ok(Some(state)) = terser.get(&state_path)
-                    && !state.is_empty() {
-                        address.state = Some(state.to_string());
-                    }
+                    && !state.is_empty()
+                {
+                    address.state = Some(state.to_string());
+                }
 
                 // PID-11-5: Postal Code (component 5, 1-based indexing)
                 let zip_path = if rep == 0 {
@@ -326,9 +346,10 @@ impl PatientConverter {
                     format!("PID-11({})-5", rep + 1)
                 };
                 if let Ok(Some(zip)) = terser.get(&zip_path)
-                    && !zip.is_empty() {
-                        address.postal_code = Some(zip.to_string());
-                    }
+                    && !zip.is_empty()
+                {
+                    address.postal_code = Some(zip.to_string());
+                }
 
                 // PID-11-6: Country (component 6, 1-based indexing)
                 let country_path = if rep == 0 {
@@ -337,9 +358,10 @@ impl PatientConverter {
                     format!("PID-11({})-6", rep + 1)
                 };
                 if let Ok(Some(country)) = terser.get(&country_path)
-                    && !country.is_empty() {
-                        address.country = Some(country.to_string());
-                    }
+                    && !country.is_empty()
+                {
+                    address.country = Some(country.to_string());
+                }
 
                 // PID-11-7: Address Type (component 7, 1-based indexing)
                 let type_path = if rep == 0 {
@@ -362,7 +384,11 @@ impl PatientConverter {
             }
         }
 
-        Ok(if addresses.is_empty() { None } else { Some(addresses) })
+        Ok(if addresses.is_empty() {
+            None
+        } else {
+            Some(addresses)
+        })
     }
 
     /// Convert PID-13 and PID-14 (Phone Numbers) to FHIR ContactPoint
@@ -371,25 +397,31 @@ impl PatientConverter {
 
         // PID-13: Home Phone
         if let Ok(Some(home_phone)) = terser.get("PID-13")
-            && !home_phone.is_empty() {
-                telecoms.push(ContactPoint {
-                    system: Some("phone".to_string()),
-                    value: Some(home_phone.to_string()),
-                    use_: Some("home".to_string()),
-                });
-            }
+            && !home_phone.is_empty()
+        {
+            telecoms.push(ContactPoint {
+                system: Some("phone".to_string()),
+                value: Some(home_phone.to_string()),
+                use_: Some("home".to_string()),
+            });
+        }
 
         // PID-14: Business Phone
         if let Ok(Some(work_phone)) = terser.get("PID-14")
-            && !work_phone.is_empty() {
-                telecoms.push(ContactPoint {
-                    system: Some("phone".to_string()),
-                    value: Some(work_phone.to_string()),
-                    use_: Some("work".to_string()),
-                });
-            }
+            && !work_phone.is_empty()
+        {
+            telecoms.push(ContactPoint {
+                system: Some("phone".to_string()),
+                value: Some(work_phone.to_string()),
+                use_: Some("work".to_string()),
+            });
+        }
 
-        Ok(if telecoms.is_empty() { None } else { Some(telecoms) })
+        Ok(if telecoms.is_empty() {
+            None
+        } else {
+            Some(telecoms)
+        })
     }
 
     /// Convert HL7 v2 gender code to FHIR gender code
@@ -400,7 +432,8 @@ impl PatientConverter {
             "O" => "other",
             "U" | "A" => "unknown",
             _ => "unknown",
-        }.to_string())
+        }
+        .to_string())
     }
 
     /// Convert HL7 v2 marital status to FHIR CodeableConcept
@@ -418,9 +451,12 @@ impl PatientConverter {
 
     /// Convert HL7 v2 date format (YYYYMMDD) to FHIR date format (YYYY-MM-DD)
     fn convert_date(date: &str) -> ConversionResult<String> {
-        if date.len() >= 8 {
+        // Byte-slice checks on `[u8]` never split a char boundary, and an
+        // all-ASCII-digit prefix makes the `&str` slices below safe.
+        let bytes = date.as_bytes();
+        if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
             Ok(format!("{}-{}-{}", &date[0..4], &date[4..6], &date[6..8]))
-        } else if date.len() >= 4 {
+        } else if bytes.len() >= 4 && bytes[..4].iter().all(|b| b.is_ascii_digit()) {
             Ok(date[0..4].to_string())
         } else {
             Err(ConversionError::InvalidFormat(
@@ -433,7 +469,8 @@ impl PatientConverter {
 
     /// Convert HL7 v2 datetime format to FHIR datetime format
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
-        if datetime.len() >= 14 {
+        let bytes = datetime.as_bytes();
+        if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
             Ok(format!(
                 "{}-{}-{}T{}:{}:{}",
                 &datetime[0..4],
@@ -443,7 +480,7 @@ impl PatientConverter {
                 &datetime[10..12],
                 &datetime[12..14]
             ))
-        } else if datetime.len() >= 8 {
+        } else if bytes.len() >= 8 {
             Self::convert_date(datetime)
         } else {
             Err(ConversionError::InvalidFormat(
@@ -474,7 +511,10 @@ mod tests {
 
         let names = patient.name.as_ref().unwrap();
         assert_eq!(names[0].family, Some("DOE".to_string()));
-        assert_eq!(names[0].given, Some(vec!["JOHN".to_string(), "A".to_string()]));
+        assert_eq!(
+            names[0].given,
+            Some(vec!["JOHN".to_string(), "A".to_string()])
+        );
     }
 
     #[test]
@@ -524,6 +564,35 @@ mod tests {
                 .code
                 .clone()
         }
+    }
+
+    #[test]
+    fn test_non_ascii_dob_returns_error_without_panic() {
+        // Misaligned multi-byte chars used to panic on byte slicing.
+        let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                   PID|1||67890^^^MRN||DOE^JOHN^A||123\u{e9}5678|M";
+
+        let message = parse_message(hl7).unwrap();
+        let result = PatientConverter::convert(&message);
+        assert!(matches!(
+            result,
+            Err(ConversionError::InvalidFormat(_, _, _))
+        ));
+    }
+
+    #[test]
+    fn test_non_digit_dob_returns_error() {
+        assert!(PatientConverter::convert_date("abcdefgh").is_err());
+        assert!(PatientConverter::convert_date("1980abcd").is_ok());
+        assert_eq!(
+            PatientConverter::convert_date("19800101").unwrap(),
+            "1980-01-01"
+        );
+        assert!(PatientConverter::convert_datetime("not-a-datetime").is_err());
+        assert_eq!(
+            PatientConverter::convert_datetime("20240315100000").unwrap(),
+            "2024-03-15T10:00:00"
+        );
     }
 
     #[test]

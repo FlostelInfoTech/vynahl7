@@ -2,9 +2,9 @@
 name = "vyna-hl7"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-publish = false
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
@@ -84,7 +84,8 @@ resolver = "2"
 [workspace.package]
 version = "0.8.0"
 edition = "2024"
-authors = ["Alex SHAO Fan <alex.shaofan@flostel.com>"]
+rust-version = "1.91"
+authors = ["Alex SHAO Fan"]
 license = "MIT"
 repository = "https://github.com/FlostelInfoTech/vynahl7"
 homepage = "https://github.com/FlostelInfoTech/vynahl7"

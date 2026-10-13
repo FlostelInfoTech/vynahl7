@@ -625,6 +625,11 @@ fn validate_command(
         }
     }
 
+    // Validation failure must fail the command so scripts and CI can rely
+    // on the exit code (README: exit 1 on validation failure).
+    if !result.is_valid() {
+        std::process::exit(1);
+    }
     Ok(())
 }
 
@@ -642,14 +647,22 @@ fn extract_command(
         "json" => {
             let mut results = serde_json::Map::new();
             for path in paths {
-                let value = terser.get(path).ok().flatten().unwrap_or("").to_string();
+                // A malformed path is a usage error (stderr, nonzero
+                // exit); a well-formed path with no value yields "".
+                let value = match terser.get(path) {
+                    Ok(value) => value.unwrap_or(""),
+                    Err(e) => bail!("invalid Terser path '{path}': {e}"),
+                };
                 results.insert(path.clone(), json!(value));
             }
             println!("{}", serde_json::to_string_pretty(&results)?);
         }
         _ => {
             for path in paths {
-                let value = terser.get(path).ok().flatten().unwrap_or("");
+                let value = match terser.get(path) {
+                    Ok(value) => value.unwrap_or(""),
+                    Err(e) => bail!("invalid Terser path '{path}': {e}"),
+                };
                 if value.is_empty() {
                     println!("{}: {}", path.cyan(), "N/A".bright_black());
                 } else {

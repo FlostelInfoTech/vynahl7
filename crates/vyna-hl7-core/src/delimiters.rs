@@ -55,14 +55,13 @@ impl Delimiters {
     ///
     /// The field separator is always from MSH-1 (typically |)
     pub fn from_encoding_characters(field_sep: char, encoding_chars: &str) -> Result<Self> {
-        if encoding_chars.len() != 4 {
+        let chars: Vec<char> = encoding_chars.chars().collect();
+        if chars.len() != 4 {
             return Err(Error::InvalidDelimiters(format!(
                 "Encoding characters must be exactly 4 characters, got {}",
-                encoding_chars.len()
+                chars.len()
             )));
         }
-
-        let chars: Vec<char> = encoding_chars.chars().collect();
 
         // Validate that all delimiters are unique
         let delims = Self {
@@ -90,11 +89,13 @@ impl Delimiters {
 
     /// Validate that all delimiters are unique
     pub fn validate(&self) -> Result<()> {
-        let chars = [self.field_separator,
+        let chars = [
+            self.field_separator,
             self.component_separator,
             self.repetition_separator,
             self.escape_character,
-            self.subcomponent_separator];
+            self.subcomponent_separator,
+        ];
 
         for (i, &c1) in chars.iter().enumerate() {
             for (j, &c2) in chars.iter().enumerate() {
@@ -183,5 +184,26 @@ mod tests {
         assert!(delims.is_escape('\\'));
         assert!(!delims.is_escape('|'));
         assert!(!delims.is_escape('A'));
+    }
+
+    #[test]
+    fn test_multibyte_encoding_characters_return_error_without_panic() {
+        // 4 bytes but only 3 chars: byte-length check alone would pass,
+        // then indexing chars[3] would panic.
+        assert!(Delimiters::from_encoding_characters('|', "é~\\").is_err());
+        assert!(Delimiters::from_encoding_characters('|', "^é\\").is_err());
+        // Fewer than 4 chars in more than 4 bytes.
+        assert!(Delimiters::from_encoding_characters('|', "éé").is_err());
+        // More than 4 chars.
+        assert!(Delimiters::from_encoding_characters('|', "^~\\&&").is_err());
+    }
+
+    #[test]
+    fn test_four_multibyte_chars_are_accepted_when_unique() {
+        let delims = Delimiters::from_encoding_characters('|', "éüäö").unwrap();
+        assert_eq!(delims.component_separator, 'é');
+        assert_eq!(delims.repetition_separator, 'ü');
+        assert_eq!(delims.escape_character, 'ä');
+        assert_eq!(delims.subcomponent_separator, 'ö');
     }
 }

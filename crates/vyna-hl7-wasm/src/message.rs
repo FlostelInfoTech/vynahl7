@@ -1,9 +1,9 @@
 //! WebAssembly message wrapper
 
-use wasm_bindgen::prelude::*;
+use serde::Serialize;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::TerserMut;
-use serde::Serialize;
+use wasm_bindgen::prelude::*;
 
 /// WebAssembly-friendly wrapper for HL7 Message
 #[wasm_bindgen]
@@ -42,7 +42,9 @@ impl WasmMessage {
     #[wasm_bindgen(js_name = messageType)]
     pub fn message_type(&self) -> Option<String> {
         // get_message_type returns Option<(String, String)> - combine them
-        self.inner.get_message_type().map(|(msg, event)| format!("{}^{}", msg, event))
+        self.inner
+            .get_message_type()
+            .map(|(msg, event)| format!("{}^{}", msg, event))
     }
 
     /// Get the sending application
@@ -60,7 +62,9 @@ impl WasmMessage {
     /// Get the receiving application
     #[wasm_bindgen(js_name = receivingApplication)]
     pub fn receiving_application(&self) -> Option<String> {
-        self.inner.get_receiving_application().map(|s| s.to_string())
+        self.inner
+            .get_receiving_application()
+            .map(|s| s.to_string())
     }
 
     /// Get the receiving facility
@@ -125,17 +129,46 @@ impl WasmMessage {
             sending_application: self.sending_application(),
             sending_facility: self.sending_facility(),
             control_id: self.control_id(),
-            segments: self.inner.segments.iter().map(|seg| {
-                JsonSegment {
+            segments: self
+                .inner
+                .segments
+                .iter()
+                .map(|seg| JsonSegment {
                     id: seg.id.clone(),
-                    fields: seg.fields.iter()
+                    fields: seg
+                        .fields
+                        .iter()
                         .map(|f| f.encode(&self.inner.delimiters))
                         .collect(),
-                }
-            }).collect(),
+                })
+                .collect(),
         };
 
-        serde_wasm_bindgen::to_value(&json_msg)
-            .map_err(|e| JsValue::from_str(&e.to_string()))
+        serde_wasm_bindgen::to_value(&json_msg).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::parse_message as parse_wasm;
+
+    const ADT: &str = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+         PID|1||MRN123||DOE^JOHN||19800101|M";
+
+    #[test]
+    fn set_value_rejects_malformed_path() {
+        // Error path stays in pure Rust (Result<(), String>), so it is
+        // testable on native targets where JsValue cannot be built.
+        let mut msg = parse_wasm(ADT).unwrap();
+        let err = msg.set_value("!!!bad-path", "x").unwrap_err();
+        assert!(!err.is_empty(), "error must say what failed");
+    }
+
+    #[test]
+    fn set_value_round_trip() {
+        let mut msg = parse_wasm(ADT).unwrap();
+        msg.set_value("PID-5-1", "SMITH").unwrap();
+        let terser = vyna_hl7_terser::Terser::new(msg.inner());
+        assert_eq!(terser.get("PID-5-1").unwrap(), Some("SMITH"));
     }
 }

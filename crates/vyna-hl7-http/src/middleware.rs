@@ -12,11 +12,24 @@ use axum::{
 };
 
 /// HTTP Basic Authentication middleware state
+///
+/// The `Debug` implementation redacts the password so credentials never
+/// leak into logs via debug formatting.
 #[cfg(feature = "auth")]
 #[derive(Clone)]
 pub struct BasicAuthState {
     pub username: String,
     pub password: String,
+}
+
+#[cfg(feature = "auth")]
+impl std::fmt::Debug for BasicAuthState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BasicAuthState")
+            .field("username", &self.username)
+            .field("password", &"<redacted>")
+            .finish()
+    }
 }
 
 #[cfg(feature = "auth")]
@@ -86,20 +99,33 @@ pub async fn basic_auth_middleware(
                 (StatusCode::UNAUTHORIZED, "Invalid credentials").into_response()
             }
         }
-        None => (
-            StatusCode::UNAUTHORIZED,
-            "Missing Authorization header",
-        )
-            .into_response(),
+        None => (StatusCode::UNAUTHORIZED, "Missing Authorization header").into_response(),
     }
 }
 
 /// API Key authentication middleware state
+///
+/// The `Debug` implementation redacts the key values (reporting only how
+/// many are configured) so secrets never leak into logs via debug
+/// formatting.
 #[cfg(feature = "auth")]
 #[derive(Clone)]
 pub struct ApiKeyAuthState {
     pub valid_keys: Vec<String>,
     pub header_name: String,
+}
+
+#[cfg(feature = "auth")]
+impl std::fmt::Debug for ApiKeyAuthState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ApiKeyAuthState")
+            .field(
+                "valid_keys",
+                &format!("<{} redacted>", self.valid_keys.len()),
+            )
+            .field("header_name", &self.header_name)
+            .finish()
+    }
 }
 
 #[cfg(feature = "auth")]
@@ -230,11 +256,7 @@ pub async fn bearer_token_middleware(
             }
             (StatusCode::UNAUTHORIZED, "Invalid token").into_response()
         }
-        None => (
-            StatusCode::UNAUTHORIZED,
-            "Missing Authorization header",
-        )
-            .into_response(),
+        None => (StatusCode::UNAUTHORIZED, "Missing Authorization header").into_response(),
     }
 }
 
@@ -318,11 +340,7 @@ pub async fn jwt_middleware(
                 Err(_) => (StatusCode::UNAUTHORIZED, "Invalid JWT token").into_response(),
             }
         }
-        None => (
-            StatusCode::UNAUTHORIZED,
-            "Missing Authorization header",
-        )
-            .into_response(),
+        None => (StatusCode::UNAUTHORIZED, "Missing Authorization header").into_response(),
     }
 }
 
@@ -340,9 +358,27 @@ mod tests {
 
     #[test]
     fn test_api_key_auth_state() {
-        let auth = ApiKeyAuthState::new(vec!["key1".into()])
-            .with_header_name("X-Custom-Key");
+        let auth = ApiKeyAuthState::new(vec!["key1".into()]).with_header_name("X-Custom-Key");
         assert_eq!(auth.valid_keys.len(), 1);
         assert_eq!(auth.header_name, "X-Custom-Key");
+    }
+
+    #[test]
+    fn test_basic_auth_state_debug_redacts_password() {
+        let auth = BasicAuthState::new("admin", "s3cr3t");
+        let rendered = format!("{auth:?}");
+        assert!(rendered.contains("admin"));
+        assert!(!rendered.contains("s3cr3t"));
+        assert!(rendered.contains("<redacted>"));
+    }
+
+    #[test]
+    fn test_api_key_auth_state_debug_redacts_keys() {
+        let auth = ApiKeyAuthState::new(vec!["key-1".into(), "key-2".into()]);
+        let rendered = format!("{auth:?}");
+        assert!(!rendered.contains("key-1"));
+        assert!(!rendered.contains("key-2"));
+        assert!(rendered.contains("X-API-Key"));
+        assert!(rendered.contains("<2 redacted>"));
     }
 }

@@ -2,6 +2,7 @@
 name = "vyna-hl7-macros"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -20,4 +21,4 @@ quote.workspace = true
 syn.workspace = true
 
 [dev-dependencies]
-vyna-hl7-core = { path = "../vyna-hl7-core" }
+vyna-hl7-core.workspace = true

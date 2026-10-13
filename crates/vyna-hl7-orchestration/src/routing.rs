@@ -43,10 +43,10 @@
 //! ```
 
 use crate::error::{OrchestrationError, Result};
-use vyna_hl7_core::Message;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use vyna_hl7_core::Message;
 
 /// Type alias for route condition functions
 pub type RouteCondition = Arc<dyn Fn(&Message) -> bool + Send + Sync>;
@@ -115,7 +115,8 @@ impl ContentRouter {
         H: Fn(Message) -> F + Send + Sync + 'static,
         F: Future<Output = Result<Message>> + Send + 'static,
     {
-        self.routes.push(ContentRoute::new(name, condition, handler));
+        self.routes
+            .push(ContentRoute::new(name, condition, handler));
     }
 
     /// Set a default handler for messages that don't match any route
@@ -137,9 +138,10 @@ impl ContentRouter {
         // Find the first matching route
         for route in &self.routes {
             if route.matches(&message) {
-                return route.execute(message).await.map_err(|e| {
-                    OrchestrationError::route_failed(&route.name, e.to_string())
-                });
+                return route
+                    .execute(message)
+                    .await
+                    .map_err(|e| OrchestrationError::route_failed(&route.name, e));
             }
         }
 
@@ -158,18 +160,20 @@ impl ContentRouter {
 
         for route in &self.routes {
             if route.matches(&message) {
-                let result = route.execute(message.clone()).await.map_err(|e| {
-                    OrchestrationError::route_failed(&route.name, e.to_string())
-                });
+                let result = route
+                    .execute(message.clone())
+                    .await
+                    .map_err(|e| OrchestrationError::route_failed(&route.name, e));
                 results.push(result);
             }
         }
 
         // If no routes matched and there's a default handler, use it
         if results.is_empty()
-            && let Some(handler) = &self.default_handler {
-                results.push(handler(message).await);
-            }
+            && let Some(handler) = &self.default_handler
+        {
+            results.push(handler(message).await);
+        }
 
         results
     }
@@ -260,9 +264,7 @@ mod tests {
     async fn test_content_router_default_handler() {
         let mut router = ContentRouter::new();
 
-        router.set_default_handler(|msg| async move {
-            Ok(msg)
-        });
+        router.set_default_handler(|msg| async move { Ok(msg) });
 
         let adt_msg = create_adt_message();
         let result = router.route(adt_msg).await;

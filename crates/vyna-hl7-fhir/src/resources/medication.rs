@@ -1,7 +1,7 @@
 //! FHIR Medication and MedicationAdministration resources
 
-use serde::{Deserialize, Serialize};
 use super::common::*;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,6 +52,24 @@ pub struct MedicationAdministrationDosage {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dose: Option<Quantity>,
+}
+
+impl Medication {
+    pub fn new() -> Self {
+        Self {
+            resource_type: "Medication".to_string(),
+            id: None,
+            code: None,
+            status: Some("active".to_string()),
+            form: None,
+        }
+    }
+}
+
+impl Default for Medication {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MedicationAdministration {

@@ -16,9 +16,21 @@ pub enum XmlError {
     #[error("HL7 parsing error: {0}")]
     ParseError(String),
 
+    /// Error parsing HL7 content, preserving the underlying cause
+    #[error("HL7 parsing error: {0}")]
+    Parse(#[from] vyna_hl7_core::Error),
+
     /// Error encoding to XML
     #[error("XML encoding error: {0}")]
     EncodingError(String),
+
+    /// Encoded output was not valid UTF-8
+    #[error("XML UTF-8 error: {0}")]
+    Utf8(#[from] std::string::FromUtf8Error),
+
+    /// Error resolving an XML entity reference
+    #[error("XML entity error: {0}")]
+    Unescape(#[from] quick_xml::escape::EscapeError),
 
     /// Invalid XML structure for HL7
     #[error("Invalid HL7 XML structure: {0}")]

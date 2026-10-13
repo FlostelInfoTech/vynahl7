@@ -4,8 +4,11 @@
 //! It handles QAK (Query Acknowledgment) parsing and provides convenient access to query
 //! response metadata.
 
-use vyna_hl7_core::{error::{Error, Result}, message::Message};
 use crate::Terser;
+use vyna_hl7_core::{
+    error::{Error, Result},
+    message::Message,
+};
 
 /// Query response status codes from HL7 Table 0208
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,7 +70,10 @@ impl QueryResponseStatus {
 
     /// Check if the status indicates success (OK or NF)
     pub fn is_success(&self) -> bool {
-        matches!(self, QueryResponseStatus::Ok | QueryResponseStatus::NoDataFound)
+        matches!(
+            self,
+            QueryResponseStatus::Ok | QueryResponseStatus::NoDataFound
+        )
     }
 
     /// Check if the status indicates an error
@@ -141,29 +147,35 @@ impl<'a> QueryResultParser<'a> {
         }
 
         // QAK-1: Query Tag
-        let query_tag = self.terser.get("QAK-1")?
+        let query_tag = self
+            .terser
+            .get("QAK-1")?
             .ok_or_else(|| Error::MissingRequiredField("QAK-1".to_string()))?
             .to_string();
 
         // QAK-2: Query Response Status
-        let status_code = self.terser.get("QAK-2")?
-            .unwrap_or("OK");
+        let status_code = self.terser.get("QAK-2")?.unwrap_or("OK");
         let status = QueryResponseStatus::from_str(status_code);
 
         // QAK-3: Message Query Name
-        let query_name = self.terser.get("QAK-3")?
-            .map(|s| s.to_string());
+        let query_name = self.terser.get("QAK-3")?.map(|s| s.to_string());
 
         // QAK-4: Hit Count Total
-        let hit_count_total = self.terser.get("QAK-4")?
+        let hit_count_total = self
+            .terser
+            .get("QAK-4")?
             .and_then(|s| s.parse::<u32>().ok());
 
         // QAK-5: This Payload
-        let this_payload = self.terser.get("QAK-5")?
+        let this_payload = self
+            .terser
+            .get("QAK-5")?
             .and_then(|s| s.parse::<u32>().ok());
 
         // QAK-6: Hits Remaining
-        let hits_remaining = self.terser.get("QAK-6")?
+        let hits_remaining = self
+            .terser
+            .get("QAK-6")?
             .and_then(|s| s.parse::<u32>().ok());
 
         Ok(QueryAcknowledgment {
@@ -180,13 +192,15 @@ impl<'a> QueryResultParser<'a> {
     ///
     /// Returns AA (Application Accept), AE (Application Error), or AR (Application Reject)
     pub fn get_acknowledgment_code(&self) -> Result<&str> {
-        self.terser.get("MSA-1")?
+        self.terser
+            .get("MSA-1")?
             .ok_or_else(|| Error::MissingRequiredField("MSA-1".to_string()))
     }
 
     /// Get the message control ID being responded to (MSA-2)
     pub fn get_message_control_id(&self) -> Result<&str> {
-        self.terser.get("MSA-2")?
+        self.terser
+            .get("MSA-2")?
             .ok_or_else(|| Error::MissingRequiredField("MSA-2".to_string()))
     }
 
@@ -196,9 +210,7 @@ impl<'a> QueryResultParser<'a> {
     /// PID (patient demographics), ORC (order), RXA (administration), OBX (observation)
     pub fn get_data_segments(&self) -> Vec<&vyna_hl7_core::segment::Segment> {
         // Find the index of QPD segment
-        let qpd_index = self.message.segments
-            .iter()
-            .position(|s| s.id == "QPD");
+        let qpd_index = self.message.segments.iter().position(|s| s.id == "QPD");
 
         if let Some(idx) = qpd_index {
             // Return all segments after QPD
@@ -208,9 +220,7 @@ impl<'a> QueryResultParser<'a> {
                 .collect()
         } else {
             // If no QPD, return segments after QAK
-            let qak_index = self.message.segments
-                .iter()
-                .position(|s| s.id == "QAK");
+            let qak_index = self.message.segments.iter().position(|s| s.id == "QAK");
 
             if let Some(idx) = qak_index {
                 self.message.segments[idx + 1..]
@@ -239,11 +249,13 @@ impl<'a> QueryResultParser<'a> {
     ///
     /// Returns true if MSA-1 is "AA" and QAK-2 is "OK" or "NF"
     pub fn is_successful(&self) -> bool {
-        let msa_ok = self.get_acknowledgment_code()
+        let msa_ok = self
+            .get_acknowledgment_code()
             .map(|code| code == "AA")
             .unwrap_or(false);
 
-        let qak_ok = self.parse_acknowledgment()
+        let qak_ok = self
+            .parse_acknowledgment()
             .map(|ack| ack.status.is_success())
             .unwrap_or(false);
 
@@ -268,11 +280,26 @@ mod tests {
     #[test]
     fn test_query_response_status_parsing() {
         assert_eq!(QueryResponseStatus::from_str("OK"), QueryResponseStatus::Ok);
-        assert_eq!(QueryResponseStatus::from_str("NF"), QueryResponseStatus::NoDataFound);
-        assert_eq!(QueryResponseStatus::from_str("AE"), QueryResponseStatus::ApplicationError);
-        assert_eq!(QueryResponseStatus::from_str("AR"), QueryResponseStatus::ApplicationReject);
-        assert_eq!(QueryResponseStatus::from_str("TM"), QueryResponseStatus::TooMuchData);
-        assert_eq!(QueryResponseStatus::from_str("PD"), QueryResponseStatus::ProtectedData);
+        assert_eq!(
+            QueryResponseStatus::from_str("NF"),
+            QueryResponseStatus::NoDataFound
+        );
+        assert_eq!(
+            QueryResponseStatus::from_str("AE"),
+            QueryResponseStatus::ApplicationError
+        );
+        assert_eq!(
+            QueryResponseStatus::from_str("AR"),
+            QueryResponseStatus::ApplicationReject
+        );
+        assert_eq!(
+            QueryResponseStatus::from_str("TM"),
+            QueryResponseStatus::TooMuchData
+        );
+        assert_eq!(
+            QueryResponseStatus::from_str("PD"),
+            QueryResponseStatus::ProtectedData
+        );
 
         assert!(QueryResponseStatus::Ok.is_success());
         assert!(QueryResponseStatus::NoDataFound.is_success());

@@ -58,32 +58,78 @@ use quote::quote;
 use syn::{Attribute, Data, DeriveInput, Expr, Fields, Lit, Meta, Type, parse_macro_input};
 
 /// Parsed field attributes for HL7 fields
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct FieldAttr {
     field_num: Option<usize>,
     component: Option<usize>,
-    #[allow(dead_code)]
     subcomponent: Option<usize>,
-    #[allow(dead_code)]
     repetition: Option<usize>,
     optional: bool,
 }
 
 /// Parsed segment attributes
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct SegmentAttr {
     id: Option<String>,
 }
 
 /// Parsed message attributes
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct MessageAttr {
     message_type: Option<String>,
     trigger_event: Option<String>,
 }
 
+/// Parsed `#[hl7(...)]` markers on a Message derive field
+#[derive(Debug, Default)]
+struct MessageFieldAttr {
+    segment: bool,
+    optional: bool,
+    repeating: bool,
+}
+
+/// Parse a `key = N` value where `N` is a 1-based HL7 position.
+///
+/// Mistyped values and `0` are errors: silently defaulting them would
+/// generate code that reads or writes the wrong location (or panic on
+/// the `N - 1` conversion to a 0-based index).
+fn parse_position_value(input: syn::parse::ParseStream<'_>, key: &str) -> syn::Result<usize> {
+    let _: syn::Token![=] = input.parse()?;
+    let lit: Lit = input.parse()?;
+    let Lit::Int(lit_int) = lit else {
+        return Err(syn::Error::new_spanned(
+            &lit,
+            format!("expected integer literal for `{key}`"),
+        ));
+    };
+    let value: usize = lit_int.base10_parse()?;
+    if value == 0 {
+        return Err(syn::Error::new_spanned(
+            &lit_int,
+            format!("hl7 {key} numbers are 1-based; `{key} = 0` addresses nothing"),
+        ));
+    }
+    Ok(value)
+}
+
+/// Reject `flag = value`: bare flags take no value.
+///
+/// Note: `meta.input` still holds the separator remainder (`,` or end)
+/// after a bare path, so emptiness is not the test; a following `=`
+/// proves a value was given.
+fn require_bare_flag(input: syn::parse::ParseStream<'_>, flag: &str) -> syn::Result<()> {
+    if input.peek(syn::Token![=]) {
+        Err(input.error(format!("`{flag}` takes no value")))
+    } else {
+        Ok(())
+    }
+}
+
 /// Parse HL7 attributes from a field (syn 2.x API)
-fn parse_field_attrs(attrs: &[Attribute]) -> FieldAttr {
+///
+/// Unknown keys and malformed values are errors rather than silent
+/// no-ops, so typos fail the build instead of generating wrong code.
+fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttr> {
     let mut result = FieldAttr::default();
 
     for attr in attrs {
@@ -92,43 +138,34 @@ fn parse_field_attrs(attrs: &[Attribute]) -> FieldAttr {
         }
 
         // Parse the nested meta using syn 2.x API
-        let _ = attr.parse_nested_meta(|meta| {
+        attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("field") {
-                let _: syn::Token![=] = meta.input.parse()?;
-                let lit: Lit = meta.input.parse()?;
-                if let Lit::Int(lit_int) = lit {
-                    result.field_num = lit_int.base10_parse().ok();
-                }
+                result.field_num = Some(parse_position_value(meta.input, "field")?);
             } else if meta.path.is_ident("component") {
-                let _: syn::Token![=] = meta.input.parse()?;
-                let lit: Lit = meta.input.parse()?;
-                if let Lit::Int(lit_int) = lit {
-                    result.component = lit_int.base10_parse().ok();
-                }
+                result.component = Some(parse_position_value(meta.input, "component")?);
             } else if meta.path.is_ident("subcomponent") {
-                let _: syn::Token![=] = meta.input.parse()?;
-                let lit: Lit = meta.input.parse()?;
-                if let Lit::Int(lit_int) = lit {
-                    result.subcomponent = lit_int.base10_parse().ok();
-                }
+                result.subcomponent = Some(parse_position_value(meta.input, "subcomponent")?);
             } else if meta.path.is_ident("repetition") {
-                let _: syn::Token![=] = meta.input.parse()?;
-                let lit: Lit = meta.input.parse()?;
-                if let Lit::Int(lit_int) = lit {
-                    result.repetition = lit_int.base10_parse().ok();
-                }
+                result.repetition = Some(parse_position_value(meta.input, "repetition")?);
             } else if meta.path.is_ident("optional") {
+                require_bare_flag(meta.input, "optional")?;
                 result.optional = true;
+            } else {
+                return Err(syn::Error::new_spanned(
+                    &meta.path,
+                    "unknown hl7 field attribute; expected one of: field, \
+                     component, subcomponent, repetition, optional",
+                ));
             }
             Ok(())
-        });
+        })?;
     }
 
-    result
+    Ok(result)
 }
 
 /// Parse HL7 attributes from a segment struct (syn 2.x API)
-fn parse_segment_attrs(attrs: &[Attribute]) -> SegmentAttr {
+fn parse_segment_attrs(attrs: &[Attribute]) -> syn::Result<SegmentAttr> {
     let mut result = SegmentAttr::default();
 
     for attr in attrs {
@@ -136,23 +173,49 @@ fn parse_segment_attrs(attrs: &[Attribute]) -> SegmentAttr {
             continue;
         }
 
-        let _ = attr.parse_nested_meta(|meta| {
+        attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("id") {
                 let _: syn::Token![=] = meta.input.parse()?;
                 let lit: Lit = meta.input.parse()?;
-                if let Lit::Str(lit_str) = lit {
-                    result.id = Some(lit_str.value());
+                let Lit::Str(lit_str) = lit else {
+                    return Err(syn::Error::new_spanned(
+                        &lit,
+                        "expected string literal for `id`",
+                    ));
+                };
+                let id = lit_str.value();
+                if id.is_empty() {
+                    return Err(syn::Error::new_spanned(&lit_str, "`id` must not be empty"));
                 }
+                result.id = Some(id);
+            } else {
+                return Err(syn::Error::new_spanned(
+                    &meta.path,
+                    "unknown hl7 segment attribute; expected `id`",
+                ));
             }
             Ok(())
-        });
+        })?;
     }
 
-    result
+    Ok(result)
+}
+
+/// Parse a `key = "value"` string attribute.
+fn parse_string_value(input: syn::parse::ParseStream<'_>, key: &str) -> syn::Result<String> {
+    let _: syn::Token![=] = input.parse()?;
+    let lit: Lit = input.parse()?;
+    let Lit::Str(lit_str) = lit else {
+        return Err(syn::Error::new_spanned(
+            &lit,
+            format!("expected string literal for `{key}`"),
+        ));
+    };
+    Ok(lit_str.value())
 }
 
 /// Parse HL7 attributes from a message struct (syn 2.x API)
-fn parse_message_attrs(attrs: &[Attribute]) -> MessageAttr {
+fn parse_message_attrs(attrs: &[Attribute]) -> syn::Result<MessageAttr> {
     let mut result = MessageAttr::default();
 
     for attr in attrs {
@@ -160,25 +223,59 @@ fn parse_message_attrs(attrs: &[Attribute]) -> MessageAttr {
             continue;
         }
 
-        let _ = attr.parse_nested_meta(|meta| {
+        attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("message_type") {
-                let _: syn::Token![=] = meta.input.parse()?;
-                let lit: Lit = meta.input.parse()?;
-                if let Lit::Str(lit_str) = lit {
-                    result.message_type = Some(lit_str.value());
-                }
+                result.message_type = Some(parse_string_value(meta.input, "message_type")?);
             } else if meta.path.is_ident("trigger_event") {
-                let _: syn::Token![=] = meta.input.parse()?;
-                let lit: Lit = meta.input.parse()?;
-                if let Lit::Str(lit_str) = lit {
-                    result.trigger_event = Some(lit_str.value());
-                }
+                result.trigger_event = Some(parse_string_value(meta.input, "trigger_event")?);
+            } else {
+                return Err(syn::Error::new_spanned(
+                    &meta.path,
+                    "unknown hl7 message attribute; expected one of: \
+                     message_type, trigger_event",
+                ));
             }
             Ok(())
-        });
+        })?;
     }
 
-    result
+    Ok(result)
+}
+
+/// Parse HL7 markers from a Message derive field.
+///
+/// Every message field must carry `segment`, with `optional` or
+/// `repeating` matching its `Option<T>` / `Vec<T>` type.
+fn parse_message_field_attrs(attrs: &[Attribute]) -> syn::Result<MessageFieldAttr> {
+    let mut result = MessageFieldAttr::default();
+
+    for attr in attrs {
+        if !attr.path().is_ident("hl7") {
+            continue;
+        }
+
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("segment") {
+                require_bare_flag(meta.input, "segment")?;
+                result.segment = true;
+            } else if meta.path.is_ident("optional") {
+                require_bare_flag(meta.input, "optional")?;
+                result.optional = true;
+            } else if meta.path.is_ident("repeating") {
+                require_bare_flag(meta.input, "repeating")?;
+                result.repeating = true;
+            } else {
+                return Err(syn::Error::new_spanned(
+                    &meta.path,
+                    "unknown hl7 message-field marker; expected one of: \
+                     segment, optional, repeating",
+                ));
+            }
+            Ok(())
+        })?;
+    }
+
+    Ok(result)
 }
 
 /// Check if a type is Option<T>
@@ -241,9 +338,15 @@ fn inner_generic_type(ty: &Type) -> Option<&Type> {
 /// # Attributes
 ///
 /// - `#[hl7(id = "XXX")]` - Required. Specifies the 3-character segment ID.
-/// - `#[hl7(field = N)]` - Specifies which field number (1-based) this struct field maps to.
+/// - `#[hl7(field = N)]` - Required on every field. Specifies which field
+///   number (1-based) this struct field maps to.
 /// - `#[hl7(component = N)]` - Specifies which component within the field (1-based).
-/// - `#[hl7(optional)]` - Marks the field as optional (also inferred from `Option<T>`).
+/// - `#[hl7(optional)]` - Marks the field as optional; requires `Option<T>`
+///   (a bare `Option<T>` is optional without the marker).
+///
+/// `subcomponent =` and `repetition =` are not supported and are rejected:
+/// map the whole field or a single component instead. Unknown keys and
+/// non-positive positions are compile errors, reported at the attribute.
 ///
 /// # Field types
 ///
@@ -278,9 +381,20 @@ fn inner_generic_type(ty: &Type) -> Option<&Type> {
 #[proc_macro_derive(Segment, attributes(hl7))]
 pub fn derive_segment(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
+    match derive_segment_impl(input) {
+        Ok(tokens) => TokenStream::from(tokens),
+        Err(err) => TokenStream::from(err.to_compile_error()),
+    }
+}
+
+/// Segment derive implementation over `syn` types.
+///
+/// Invalid input is a spanned `syn::Error` (rendered as `compile_error!`
+/// by the entry point), never a panic.
+fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let name = &input.ident;
 
-    let segment_attrs = parse_segment_attrs(&input.attrs);
+    let segment_attrs = parse_segment_attrs(&input.attrs)?;
     let segment_id = segment_attrs.id.unwrap_or_else(|| {
         // Default to struct name's first 3 chars uppercase
         name.to_string()
@@ -293,9 +407,19 @@ pub fn derive_segment(input: TokenStream) -> TokenStream {
     let fields = match &input.data {
         Data::Struct(data) => match &data.fields {
             Fields::Named(fields) => &fields.named,
-            _ => panic!("Segment derive only supports named fields"),
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    &data.fields,
+                    "Segment derive only supports structs with named fields",
+                ));
+            }
         },
-        _ => panic!("Segment derive only supports structs"),
+        _ => {
+            return Err(syn::Error::new_spanned(
+                &input,
+                "Segment derive only supports structs",
+            ));
+        }
     };
 
     // Generate field extraction code for from_segment
@@ -303,120 +427,157 @@ pub fn derive_segment(input: TokenStream) -> TokenStream {
     let mut to_segment_fields = Vec::new();
 
     for field in fields {
-        let field_name = field.ident.as_ref().unwrap();
+        let field_name = field.ident.as_ref().ok_or_else(|| {
+            syn::Error::new_spanned(field, "Segment derive requires named fields")
+        })?;
         let field_type = &field.ty;
-        let attrs = parse_field_attrs(&field.attrs);
+        let attrs = parse_field_attrs(&field.attrs)?;
 
-        if let Some(field_num) = attrs.field_num {
-            let is_optional = is_option_type(field_type) || attrs.optional;
-            let is_repeating = is_vec_type(field_type);
+        let Some(field_num) = attrs.field_num else {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "field `{field_name}` needs `#[hl7(field = N)]` to map it \
+                     onto the segment",
+                ),
+            ));
+        };
 
-            if is_repeating
-                && (attrs.component.is_some()
-                    || attrs.subcomponent.is_some()
-                    || attrs.repetition.is_some())
-            {
-                panic!(
-                    "Vec<T> field `{}` supports whole-field repetitions only; \
-                     component=, subcomponent= and repetition= cannot be combined with Vec<T>",
-                    field_name
-                );
+        let is_optional = is_option_type(field_type) || attrs.optional;
+        let is_repeating = is_vec_type(field_type);
+
+        if attrs.optional && !is_option_type(field_type) {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "field `{field_name}` is marked `optional` but is not \
+                     Option<T>",
+                ),
+            ));
+        }
+
+        if is_repeating
+            && (attrs.component.is_some()
+                || attrs.subcomponent.is_some()
+                || attrs.repetition.is_some())
+        {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "Vec<T> field `{field_name}` supports whole-field \
+                     repetitions only; component=, subcomponent= and \
+                     repetition= cannot be combined with Vec<T>",
+                ),
+            ));
+        }
+
+        if attrs.subcomponent.is_some() || attrs.repetition.is_some() {
+            // Codegen below only addresses whole fields and single
+            // components; accepting these markers would silently read
+            // and write the wrong location.
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "field `{field_name}` uses subcomponent=/repetition=, \
+                     which Segment derive does not support; map the whole \
+                     field or a single component instead",
+                ),
+            ));
+        }
+
+        if is_repeating {
+            // Repeating field: one Vec element per repetition, each holding
+            // the full composite value (components joined by `^`).
+            from_segment_fields.push(quote! {
+                #field_name: segment.get_field(#field_num)
+                    .map(|f| f.repetitions.iter()
+                        .filter_map(|r| r.full_value())
+                        .collect::<Vec<String>>())
+                    .unwrap_or_default()
+            });
+
+            let append = append_reps_tokens(&quote! { __val });
+            to_segment_fields.push(quote! {
+                {
+                    let mut __field = vyna_hl7_core::field::Field::new();
+                    for __val in self.#field_name.iter() {
+                        #append
+                    }
+                    let _ = segment.set_field(#field_num, __field);
+                }
+            });
+            continue;
+        }
+
+        // Generate extraction code based on component
+        let extraction = if let Some(comp) = attrs.component {
+            // Extract specific component
+            quote! {
+                segment.get_field(#field_num)
+                    .and_then(|f| f.get_repetition(0))
+                    .and_then(|r| r.get_component(#comp - 1))
+                    .and_then(|c| c.value())
+                    .map(|s| s.to_string())
             }
-
-            if is_repeating {
-                // Repeating field: one Vec element per repetition, each holding
-                // the full composite value (components joined by `^`).
-                from_segment_fields.push(quote! {
-                    #field_name: segment.get_field(#field_num)
-                        .map(|f| f.repetitions.iter()
+        } else {
+            // Extract entire field value: every repetition with its full
+            // composite value, joined by the repetition separator.
+            quote! {
+                segment.get_field(#field_num)
+                    .and_then(|f| {
+                        let __parts: Vec<String> = f.repetitions.iter()
                             .filter_map(|r| r.full_value())
-                            .collect::<Vec<String>>())
-                        .unwrap_or_default()
-                });
-
-                let append = append_reps_tokens(&quote! { __val });
-                to_segment_fields.push(quote! {
-                    {
-                        let mut __field = vyna_hl7_core::field::Field::new();
-                        for __val in self.#field_name.iter() {
-                            #append
+                            .collect();
+                        if __parts.is_empty() {
+                            None
+                        } else {
+                            Some(__parts.join("~"))
                         }
-                        let _ = segment.set_field(#field_num, __field);
+                    })
+            }
+        };
+
+        if is_optional {
+            from_segment_fields.push(quote! {
+                #field_name: #extraction
+            });
+        } else {
+            from_segment_fields.push(quote! {
+                #field_name: #extraction.unwrap_or_default()
+            });
+        }
+
+        // Generate serialization code
+        if is_optional {
+            if let Some(comp) = attrs.component {
+                to_segment_fields.push(quote! {
+                    if let Some(ref val) = self.#field_name {
+                        let _ = segment.set_component(#field_num, 0, #comp - 1, val);
                     }
                 });
-                continue;
-            }
-
-            // Generate extraction code based on component
-            let extraction = if let Some(comp) = attrs.component {
-                // Extract specific component
-                quote! {
-                    segment.get_field(#field_num)
-                        .and_then(|f| f.get_repetition(0))
-                        .and_then(|r| r.get_component(#comp - 1))
-                        .and_then(|c| c.value())
-                        .map(|s| s.to_string())
-                }
             } else {
-                // Extract entire field value: every repetition with its full
-                // composite value, joined by the repetition separator.
-                quote! {
-                    segment.get_field(#field_num)
-                        .and_then(|f| {
-                            let __parts: Vec<String> = f.repetitions.iter()
-                                .filter_map(|r| r.full_value())
-                                .collect();
-                            if __parts.is_empty() {
-                                None
-                            } else {
-                                Some(__parts.join("~"))
-                            }
-                        })
-                }
-            };
-
-            if is_optional {
-                from_segment_fields.push(quote! {
-                    #field_name: #extraction
-                });
-            } else {
-                from_segment_fields.push(quote! {
-                    #field_name: #extraction.unwrap_or_default()
-                });
-            }
-
-            // Generate serialization code
-            if is_optional {
-                if let Some(comp) = attrs.component {
-                    to_segment_fields.push(quote! {
-                        if let Some(ref val) = self.#field_name {
-                            let _ = segment.set_component(#field_num, 0, #comp - 1, val);
-                        }
-                    });
-                } else {
-                    let append = append_reps_tokens(&quote! { val });
-                    to_segment_fields.push(quote! {
-                        if let Some(ref val) = self.#field_name {
-                            let mut __field = vyna_hl7_core::field::Field::new();
-                            #append
-                            let _ = segment.set_field(#field_num, __field);
-                        }
-                    });
-                }
-            } else if let Some(comp) = attrs.component {
+                let append = append_reps_tokens(&quote! { val });
                 to_segment_fields.push(quote! {
-                    let _ = segment.set_component(#field_num, 0, #comp - 1, &self.#field_name);
-                });
-            } else {
-                let append = append_reps_tokens(&quote! { &self.#field_name });
-                to_segment_fields.push(quote! {
-                    {
+                    if let Some(ref val) = self.#field_name {
                         let mut __field = vyna_hl7_core::field::Field::new();
                         #append
                         let _ = segment.set_field(#field_num, __field);
                     }
                 });
             }
+        } else if let Some(comp) = attrs.component {
+            to_segment_fields.push(quote! {
+                let _ = segment.set_component(#field_num, 0, #comp - 1, &self.#field_name);
+            });
+        } else {
+            let append = append_reps_tokens(&quote! { &self.#field_name });
+            to_segment_fields.push(quote! {
+                {
+                    let mut __field = vyna_hl7_core::field::Field::new();
+                    #append
+                    let _ = segment.set_field(#field_num, __field);
+                }
+            });
         }
     }
 
@@ -467,7 +628,7 @@ pub fn derive_segment(input: TokenStream) -> TokenStream {
         }
     };
 
-    TokenStream::from(expanded)
+    Ok(expanded)
 }
 
 /// Derive macro for HL7 messages
@@ -479,9 +640,15 @@ pub fn derive_segment(input: TokenStream) -> TokenStream {
 ///
 /// - `#[hl7(message_type = "XXX")]` - Specifies the message type (e.g., "ADT").
 /// - `#[hl7(trigger_event = "XXX")]` - Specifies the trigger event (e.g., "A01").
-/// - `#[hl7(segment)]` - Marks a field as a segment.
-/// - `#[hl7(segment, optional)]` - Marks a field as an optional segment.
-/// - `#[hl7(segment, repeating)]` - Marks a field as a repeating segment (`Vec<T>`).
+/// - `#[hl7(segment)]` - Required on every field. Marks a field as a segment.
+/// - `#[hl7(segment, optional)]` - Marks a field as an optional segment;
+///   requires `Option<T>`.
+/// - `#[hl7(segment, repeating)]` - Marks a field as a repeating segment;
+///   requires `Vec<T>`.
+///
+/// The markers must match the field type: an `Option<T>` field without
+/// `optional`, a `Vec<T>` field without `repeating`, or any field without
+/// `segment` is a compile error.
 ///
 /// # Segment matching
 ///
@@ -513,37 +680,119 @@ pub fn derive_segment(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Message, attributes(hl7))]
 pub fn derive_message(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
+    match derive_message_impl(input) {
+        Ok(tokens) => TokenStream::from(tokens),
+        Err(err) => TokenStream::from(err.to_compile_error()),
+    }
+}
+
+/// Message derive implementation over `syn` types.
+///
+/// Invalid input is a spanned `syn::Error` (rendered as `compile_error!`
+/// by the entry point), never a panic.
+fn derive_message_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let name = &input.ident;
 
-    let message_attrs = parse_message_attrs(&input.attrs);
+    let message_attrs = parse_message_attrs(&input.attrs)?;
     let message_type = message_attrs.message_type.unwrap_or_default();
     let trigger_event = message_attrs.trigger_event.unwrap_or_default();
 
     let fields = match &input.data {
         Data::Struct(data) => match &data.fields {
             Fields::Named(fields) => &fields.named,
-            _ => panic!("Message derive only supports named fields"),
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    &data.fields,
+                    "Message derive only supports structs with named fields",
+                ));
+            }
         },
-        _ => panic!("Message derive only supports structs"),
+        _ => {
+            return Err(syn::Error::new_spanned(
+                &input,
+                "Message derive only supports structs",
+            ));
+        }
     };
 
     let mut from_message_fields = Vec::new();
     let mut to_message_fields = Vec::new();
 
     for field in fields {
-        let field_name = field.ident.as_ref().unwrap();
+        let field_name = field.ident.as_ref().ok_or_else(|| {
+            syn::Error::new_spanned(field, "Message derive requires named fields")
+        })?;
         let field_type = &field.ty;
+        let markers = parse_message_field_attrs(&field.attrs)?;
+        if !markers.segment {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "message field `{field_name}` must be marked with \
+                     `#[hl7(segment)]` (`#[hl7(segment, optional)]` for \
+                     Option<T>, `#[hl7(segment, repeating)]` for Vec<T>)",
+                ),
+            ));
+        }
+        if markers.optional && markers.repeating {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "message field `{field_name}` cannot combine `optional` \
+                     and `repeating`",
+                ),
+            ));
+        }
         let is_optional = is_option_type(field_type);
         let is_vec = is_vec_type(field_type);
+        if markers.optional && !is_optional {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "message field `{field_name}` is marked `optional` but is \
+                     not Option<T>",
+                ),
+            ));
+        }
+        if markers.repeating && !is_vec {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "message field `{field_name}` is marked `repeating` but \
+                     is not Vec<T>",
+                ),
+            ));
+        }
+        if is_optional && !markers.optional {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "Option<T> message field `{field_name}` must be marked \
+                     `#[hl7(segment, optional)]`",
+                ),
+            ));
+        }
+        if is_vec && !markers.repeating {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "Vec<T> message field `{field_name}` must be marked \
+                     `#[hl7(segment, repeating)]`",
+                ),
+            ));
+        }
 
         if is_vec {
             // Repeating segment: every segment with the inner type's ID, in order.
-            let inner = inner_generic_type(field_type).unwrap_or_else(|| {
-                panic!(
-                    "Repeating segment field `{}` must declare an element type, e.g. Vec<Observation>",
-                    field_name
+            let inner = inner_generic_type(field_type).ok_or_else(|| {
+                syn::Error::new_spanned(
+                    field_type,
+                    format!(
+                        "Repeating segment field `{field_name}` must declare an \
+                         element type, e.g. Vec<Observation>",
+                    ),
                 )
-            });
+            })?;
             from_message_fields.push(quote! {
                 #field_name: message.get_segments_by_id(<#inner>::SEGMENT_ID)
                     .into_iter()
@@ -558,12 +807,15 @@ pub fn derive_message(input: TokenStream) -> TokenStream {
             });
         } else if is_optional {
             // Optional segment: first segment with the inner type's ID, if any.
-            let inner = inner_generic_type(field_type).unwrap_or_else(|| {
-                panic!(
-                    "Optional segment field `{}` must declare an inner type, e.g. Option<PatientVisit>",
-                    field_name
+            let inner = inner_generic_type(field_type).ok_or_else(|| {
+                syn::Error::new_spanned(
+                    field_type,
+                    format!(
+                        "Optional segment field `{field_name}` must declare an \
+                         inner type, e.g. Option<PatientVisit>",
+                    ),
                 )
-            });
+            })?;
             from_message_fields.push(quote! {
                 #field_name: message.get_segment_by_id(<#inner>::SEGMENT_ID)
                     .and_then(<#inner>::from_segment)
@@ -648,7 +900,7 @@ pub fn derive_message(input: TokenStream) -> TokenStream {
         }
     };
 
-    TokenStream::from(expanded)
+    Ok(expanded)
 }
 
 /// Attribute macro for defining HL7 data types
@@ -658,7 +910,11 @@ pub fn derive_message(input: TokenStream) -> TokenStream {
 ///
 /// # Attributes
 ///
-/// - `#[hl7_type(data_type = "XXX")]` - Specifies the HL7 data type code.
+/// - `#[hl7_type(data_type = "XXX")]` - Required. Specifies the HL7 data type code.
+///
+/// Every field needs `#[hl7(component = N)]` (1-based); `optional`
+/// requires `Option<T>`. `field =`, `subcomponent =`, and `repetition =`
+/// are meaningless here and are rejected, as are unknown keys.
 ///
 /// # Example
 ///
@@ -683,88 +939,157 @@ pub fn derive_message(input: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro_attribute]
 pub fn hl7_type(attr: TokenStream, item: TokenStream) -> TokenStream {
+    // Parse the data_type from attribute meta
+    let attr_meta: Meta = match syn::parse(attr) {
+        Ok(meta) => meta,
+        Err(err) => return TokenStream::from(err.to_compile_error()),
+    };
     let input = parse_macro_input!(item as DeriveInput);
+    match hl7_type_impl(attr_meta, input) {
+        Ok(tokens) => TokenStream::from(tokens),
+        Err(err) => TokenStream::from(err.to_compile_error()),
+    }
+}
+
+/// hl7_type implementation over `syn` types.
+///
+/// Invalid input is a spanned `syn::Error` (rendered as `compile_error!`
+/// by the entry point), never a panic.
+fn hl7_type_impl(attr_meta: Meta, input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let name = &input.ident;
 
-    // Parse the data_type from attribute meta
-    let attr_meta: Meta = syn::parse(attr).expect("Failed to parse attribute");
-    let data_type = match attr_meta {
+    let data_type = match &attr_meta {
         Meta::NameValue(nv) if nv.path.is_ident("data_type") => {
-            if let Expr::Lit(expr_lit) = &nv.value {
-                if let Lit::Str(lit_str) = &expr_lit.lit {
-                    lit_str.value()
-                } else {
-                    String::new()
+            if let Expr::Lit(expr_lit) = &nv.value
+                && let Lit::Str(lit_str) = &expr_lit.lit
+            {
+                let value = lit_str.value();
+                if value.is_empty() {
+                    return Err(syn::Error::new_spanned(
+                        lit_str,
+                        "`data_type` must not be empty",
+                    ));
                 }
+                value
             } else {
-                String::new()
+                return Err(syn::Error::new_spanned(
+                    &nv.value,
+                    "expected string literal for `data_type`",
+                ));
             }
         }
-        _ => String::new(),
+        _ => {
+            return Err(syn::Error::new_spanned(
+                &attr_meta,
+                "expected `#[hl7_type(data_type = \"XXX\")]`",
+            ));
+        }
     };
 
-    let fields = match &input.data {
+    let struct_fields = match &input.data {
         Data::Struct(data) => match &data.fields {
-            Fields::Named(fields) => &fields.named,
-            _ => panic!("hl7_type only supports named fields"),
+            Fields::Named(fields) => fields,
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    &data.fields,
+                    "hl7_type only supports structs with named fields",
+                ));
+            }
         },
-        _ => panic!("hl7_type only supports structs"),
+        _ => {
+            return Err(syn::Error::new_spanned(
+                &input,
+                "hl7_type only supports structs",
+            ));
+        }
     };
+    let fields = &struct_fields.named;
 
     let mut from_rep_fields = Vec::new();
     let mut to_rep_fields = Vec::new();
 
     for field in fields {
-        let field_name = field.ident.as_ref().unwrap();
+        let field_name = field
+            .ident
+            .as_ref()
+            .ok_or_else(|| syn::Error::new_spanned(field, "hl7_type requires named fields"))?;
         let field_type = &field.ty;
-        let attrs = parse_field_attrs(&field.attrs);
+        let attrs = parse_field_attrs(&field.attrs)?;
         let is_optional = is_option_type(field_type);
 
-        if let Some(comp) = attrs.component {
-            let comp_idx = comp - 1; // Convert to 0-based
+        if attrs.optional && !is_optional {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "field `{field_name}` is marked `optional` but is not \
+                     Option<T>",
+                ),
+            ));
+        }
+        if attrs.field_num.is_some() || attrs.subcomponent.is_some() || attrs.repetition.is_some() {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "hl7_type field `{field_name}` supports only \
+                     `component = N` (and `optional`)",
+                ),
+            ));
+        }
+        let Some(comp) = attrs.component else {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "hl7_type field `{field_name}` needs \
+                     `#[hl7(component = N)]`",
+                ),
+            ));
+        };
 
-            if is_optional {
-                from_rep_fields.push(quote! {
-                    #field_name: repetition.get_component(#comp_idx)
-                        .and_then(|c| c.value())
-                        .map(|s| s.to_string())
-                });
+        let comp_idx = comp - 1; // Convert to 0-based (comp >= 1 validated)
 
-                to_rep_fields.push(quote! {
-                    if let Some(ref val) = self.#field_name {
-                        while repetition.components.len() <= #comp_idx {
-                            repetition.add_component(vyna_hl7_core::field::Component::new());
-                        }
-                        repetition.components[#comp_idx] = vyna_hl7_core::field::Component::from_value(val);
-                    }
-                });
-            } else {
-                from_rep_fields.push(quote! {
-                    #field_name: repetition.get_component(#comp_idx)
-                        .and_then(|c| c.value())
-                        .map(|s| s.to_string())
-                        .unwrap_or_default()
-                });
+        if is_optional {
+            from_rep_fields.push(quote! {
+                #field_name: repetition.get_component(#comp_idx)
+                    .and_then(|c| c.value())
+                    .map(|s| s.to_string())
+            });
 
-                to_rep_fields.push(quote! {
+            to_rep_fields.push(quote! {
+                if let Some(ref val) = self.#field_name {
                     while repetition.components.len() <= #comp_idx {
                         repetition.add_component(vyna_hl7_core::field::Component::new());
                     }
-                    repetition.components[#comp_idx] = vyna_hl7_core::field::Component::from_value(&self.#field_name);
-                });
-            }
+                    repetition.components[#comp_idx] =
+                        vyna_hl7_core::field::Component::from_value(val);
+                }
+            });
+        } else {
+            from_rep_fields.push(quote! {
+                #field_name: repetition.get_component(#comp_idx)
+                    .and_then(|c| c.value())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default()
+            });
+
+            to_rep_fields.push(quote! {
+                while repetition.components.len() <= #comp_idx {
+                    repetition.add_component(vyna_hl7_core::field::Component::new());
+                }
+                repetition.components[#comp_idx] =
+                    vyna_hl7_core::field::Component::from_value(&self.#field_name);
+            });
         }
     }
 
-    // Get original struct definition parts
+    // Get original struct definition parts, dropping the consumed `hl7`
+    // field attributes: the emitted struct carries no derive that
+    // registers `hl7` as a helper attribute, so keeping them would fail
+    // with "cannot find attribute `hl7` in this scope".
     let vis = &input.vis;
-    let struct_fields = match &input.data {
-        Data::Struct(data) => match &data.fields {
-            Fields::Named(fields) => fields,
-            _ => panic!("hl7_type only supports named fields"),
-        },
-        _ => panic!("hl7_type only supports structs"),
-    };
+    let mut struct_fields = struct_fields.clone();
+    for field in struct_fields.named.iter_mut() {
+        field.attrs.retain(|attr| !attr.path().is_ident("hl7"));
+    }
 
     let expanded = quote! {
         #vis struct #name #struct_fields
@@ -806,5 +1131,283 @@ pub fn hl7_type(attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     };
 
-    TokenStream::from(expanded)
+    Ok(expanded)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_input(source: &str) -> DeriveInput {
+        syn::parse_str(source).expect("test input must parse")
+    }
+
+    fn field_attrs_of(source: &str) -> Vec<Attribute> {
+        let wrapped = format!("struct S {{ {source} }}");
+        let input: DeriveInput = syn::parse_str(&wrapped).expect("test field must parse");
+        match &input.data {
+            Data::Struct(data) => match &data.fields {
+                Fields::Named(fields) => fields.named.first().expect("one field").attrs.clone(),
+                _ => panic!("test field must be named"),
+            },
+            _ => panic!("test wrapper must be a struct"),
+        }
+    }
+
+    fn err_message(err: syn::Error) -> String {
+        err.to_string()
+    }
+
+    #[test]
+    fn field_attrs_accept_valid_positions() {
+        let attrs = field_attrs_of("#[hl7(field = 5, component = 2)] x: String");
+        let parsed = parse_field_attrs(&attrs).expect("valid attrs must parse");
+        assert_eq!(parsed.field_num, Some(5));
+        assert_eq!(parsed.component, Some(2));
+        assert!(!parsed.optional);
+    }
+
+    #[test]
+    fn field_attrs_accept_optional_flag() {
+        let attrs = field_attrs_of("#[hl7(field = 1, optional)] x: Option<String>");
+        let parsed = parse_field_attrs(&attrs).expect("valid attrs must parse");
+        assert_eq!(parsed.field_num, Some(1));
+        assert!(parsed.optional);
+    }
+
+    #[test]
+    fn field_attrs_reject_unknown_key() {
+        let attrs = field_attrs_of("#[hl7(field = 1, segment)] x: String");
+        let err = parse_field_attrs(&attrs).expect_err("unknown key must fail");
+        assert!(err_message(err).contains("unknown hl7 field attribute"));
+    }
+
+    #[test]
+    fn field_attrs_reject_zero_position() {
+        for key in ["field", "component", "subcomponent", "repetition"] {
+            let source = format!("#[hl7({key} = 0)] x: String");
+            let attrs = field_attrs_of(&source);
+            let err = parse_field_attrs(&attrs).expect_err("zero must fail");
+            assert!(
+                err_message(err).contains("1-based"),
+                "key={key}: {}",
+                err_message(parse_field_attrs(&attrs).unwrap_err())
+            );
+        }
+    }
+
+    #[test]
+    fn field_attrs_reject_mistyped_value() {
+        let attrs = field_attrs_of("#[hl7(field = \"x\")] x: String");
+        let err = parse_field_attrs(&attrs).expect_err("string must fail");
+        assert!(err_message(err).contains("expected integer literal"));
+    }
+
+    #[test]
+    fn field_attrs_reject_flag_with_value() {
+        let attrs = field_attrs_of("#[hl7(field = 1, optional = true)] x: String");
+        let err = parse_field_attrs(&attrs).expect_err("valued flag must fail");
+        assert!(err_message(err).contains("takes no value"));
+    }
+
+    #[test]
+    fn segment_attrs_reject_unknown_key_and_bad_id() {
+        let input = parse_input("#[hl7(id = \"PID\", bogus)] struct S;");
+        let err = parse_segment_attrs(&input.attrs).expect_err("unknown must fail");
+        assert!(err_message(err).contains("unknown hl7 segment attribute"));
+
+        let input = parse_input("#[hl7(id = 5)] struct S;");
+        let err = parse_segment_attrs(&input.attrs).expect_err("int id must fail");
+        assert!(err_message(err).contains("expected string literal"));
+
+        let input = parse_input("#[hl7(id = \"\")] struct S;");
+        let err = parse_segment_attrs(&input.attrs).expect_err("empty id must fail");
+        assert!(err_message(err).contains("must not be empty"));
+    }
+
+    #[test]
+    fn message_attrs_reject_unknown_key() {
+        let input = parse_input(
+            "#[hl7(message_type = \"ADT\", trigger_event = \"A01\", id = \"X\")] struct S;",
+        );
+        let err = parse_message_attrs(&input.attrs).expect_err("unknown must fail");
+        assert!(err_message(err).contains("unknown hl7 message attribute"));
+    }
+
+    #[test]
+    fn message_field_markers_parse() {
+        let attrs = field_attrs_of("#[hl7(segment, optional)] x: Option<S>");
+        let markers = parse_message_field_attrs(&attrs).expect("must parse");
+        assert!(markers.segment && markers.optional && !markers.repeating);
+
+        let attrs = field_attrs_of("#[hl7(segment, repeating)] x: Vec<S>");
+        let markers = parse_message_field_attrs(&attrs).expect("must parse");
+        assert!(markers.segment && !markers.optional && markers.repeating);
+    }
+
+    #[test]
+    fn message_field_markers_reject_field_keys() {
+        // Segment-style keys on a message field previously parsed as nothing.
+        let attrs = field_attrs_of("#[hl7(segment, field = 3)] x: S");
+        let err = parse_message_field_attrs(&attrs).expect_err("field key must fail");
+        assert!(err_message(err).contains("unknown hl7 message-field marker"));
+    }
+
+    #[test]
+    fn segment_impl_rejects_non_structs_and_tuple_structs() {
+        let err = derive_segment_impl(parse_input("enum E { A }")).unwrap_err();
+        assert!(err_message(err).contains("only supports structs"));
+
+        let err = derive_segment_impl(parse_input("struct S(String);")).unwrap_err();
+        assert!(err_message(err).contains("named fields"));
+    }
+
+    #[test]
+    fn segment_impl_requires_field_marker() {
+        let err = derive_segment_impl(parse_input("#[hl7(id = \"PID\")] struct S { x: String }"))
+            .unwrap_err();
+        assert!(err_message(err).contains("needs `#[hl7(field = N)]`"));
+    }
+
+    #[test]
+    fn segment_impl_rejects_unsupported_markers() {
+        let err = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { \
+                 #[hl7(field = 5, subcomponent = 2)] x: String }",
+        ))
+        .unwrap_err();
+        assert!(err_message(err).contains("does not support"));
+
+        let err = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { \
+                 #[hl7(field = 3, repetition = 2)] x: String }",
+        ))
+        .unwrap_err();
+        assert!(err_message(err).contains("does not support"));
+    }
+
+    #[test]
+    fn segment_impl_rejects_vec_with_component() {
+        let err = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { \
+                 #[hl7(field = 3, component = 1)] x: Vec<String> }",
+        ))
+        .unwrap_err();
+        assert!(err_message(err).contains("whole-field repetitions only"));
+    }
+
+    #[test]
+    fn segment_impl_rejects_optional_on_plain_type() {
+        let err = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { \
+                 #[hl7(field = 1, optional)] x: String }",
+        ))
+        .unwrap_err();
+        assert!(err_message(err).contains("not Option<T>"));
+    }
+
+    #[test]
+    fn segment_impl_accepts_valid_struct() {
+        let tokens = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { #[hl7(field = 3)] x: String }",
+        ))
+        .expect("valid struct must expand");
+        assert!(tokens.to_string().contains("PID"));
+    }
+
+    #[test]
+    fn message_impl_requires_segment_marker() {
+        let err = derive_message_impl(parse_input(
+            "#[hl7(message_type = \"ADT\", trigger_event = \"A01\")] \
+             struct M { pid: Pid }",
+        ))
+        .unwrap_err();
+        assert!(err_message(err).contains("must be marked"));
+    }
+
+    #[test]
+    fn message_impl_enforces_marker_type_match() {
+        // Option<T> without `optional`.
+        let err = derive_message_impl(parse_input(
+            "#[hl7(message_type = \"ADT\", trigger_event = \"A01\")] \
+             struct M { #[hl7(segment)] pid: Option<Pid> }",
+        ))
+        .unwrap_err();
+        assert!(err_message(err).contains("must be marked"));
+
+        // Vec<T> without `repeating`.
+        let err = derive_message_impl(parse_input(
+            "#[hl7(message_type = \"ADT\", trigger_event = \"A01\")] \
+             struct M { #[hl7(segment)] obx: Vec<Obx> }",
+        ))
+        .unwrap_err();
+        assert!(err_message(err).contains("must be marked"));
+
+        // `optional` on a required segment.
+        let err = derive_message_impl(parse_input(
+            "#[hl7(message_type = \"ADT\", trigger_event = \"A01\")] \
+             struct M { #[hl7(segment, optional)] pid: Pid }",
+        ))
+        .unwrap_err();
+        assert!(err_message(err).contains("not Option<T>"));
+
+        // `optional` + `repeating` together.
+        let err = derive_message_impl(parse_input(
+            "#[hl7(message_type = \"ADT\", trigger_event = \"A01\")] \
+             struct M { #[hl7(segment, optional, repeating)] obx: Vec<Obx> }",
+        ))
+        .unwrap_err();
+        assert!(err_message(err).contains("cannot combine"));
+    }
+
+    #[test]
+    fn message_impl_accepts_valid_struct() {
+        let tokens = derive_message_impl(parse_input(
+            "#[hl7(message_type = \"ADT\", trigger_event = \"A01\")] struct M { \
+             #[hl7(segment)] pid: Pid, \
+             #[hl7(segment, optional)] pv1: Option<Pv1>, \
+             #[hl7(segment, repeating)] obx: Vec<Obx> }",
+        ))
+        .expect("valid struct must expand");
+        assert!(tokens.to_string().contains("MESSAGE_TYPE"));
+    }
+
+    #[test]
+    fn hl7_type_impl_validates_attr_and_fields() {
+        let meta: Meta = syn::parse_str("data_type = \"XPN\"").unwrap();
+        let tokens = hl7_type_impl(
+            meta,
+            parse_input("struct N { #[hl7(component = 1)] x: String }"),
+        )
+        .expect("valid input must expand");
+        assert!(tokens.to_string().contains("DATA_TYPE"));
+
+        let meta: Meta = syn::parse_str("data_type = \"\"").unwrap();
+        let err = hl7_type_impl(
+            meta,
+            parse_input("struct N { #[hl7(component = 1)] x: String }"),
+        )
+        .unwrap_err();
+        assert!(err_message(err).contains("must not be empty"));
+
+        let meta: Meta = syn::parse_str("bogus = \"XPN\"").unwrap();
+        let err = hl7_type_impl(
+            meta,
+            parse_input("struct N { #[hl7(component = 1)] x: String }"),
+        )
+        .unwrap_err();
+        assert!(err_message(err).contains("expected `#[hl7_type"));
+
+        let meta: Meta = syn::parse_str("data_type = \"XPN\"").unwrap();
+        let err = hl7_type_impl(
+            meta,
+            parse_input("struct N { #[hl7(field = 1)] x: String }"),
+        )
+        .unwrap_err();
+        assert!(err_message(err).contains("supports only"));
+
+        let meta: Meta = syn::parse_str("data_type = \"XPN\"").unwrap();
+        let err = hl7_type_impl(meta, parse_input("struct N { x: String }")).unwrap_err();
+        assert!(err_message(err).contains("needs `#[hl7(component = N)]`"));
+    }
 }

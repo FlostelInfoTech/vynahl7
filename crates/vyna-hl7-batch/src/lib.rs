@@ -116,4 +116,43 @@ pub enum BatchError {
     /// Transport is not connected.
     #[error("transport is not connected")]
     NotConnected,
+    /// Download refused: the file exceeds the transport's size limit.
+    #[error("file '{path}' exceeds size limit of {limit} bytes")]
+    TooLarge {
+        /// Transport-relative path that was refused.
+        path: String,
+        /// Configured limit in bytes.
+        limit: u64,
+    },
+}
+
+/// Default cap (64 MiB) for a single downloaded file on the FTP and SFTP
+/// transports and for files consumed by [`Poller`].
+pub const DEFAULT_MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Default cap (100 files) on how many files one [`Poller::poll_once`] call
+/// consumes. Leftovers stay for the next poll, so this bounds work per poll
+/// without losing files.
+pub const DEFAULT_MAX_FILES_PER_POLL: usize = 100;
+
+/// Default per-operation timeout (60s) for FTP/SFTP protocol commands.
+pub const DEFAULT_COMMAND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Bound a protocol operation by an optional timeout. `None` waits forever
+/// (previous behavior); `Some(d)` fails with [`BatchError::Timeout`].
+#[cfg(any(feature = "ftp", feature = "sftp"))]
+pub(crate) async fn timed<T, E>(
+    timeout: Option<std::time::Duration>,
+    op: impl Future<Output = Result<T, E>>,
+) -> Result<T, BatchError>
+where
+    BatchError: From<E>,
+{
+    match timeout {
+        Some(d) => tokio::time::timeout(d, op)
+            .await
+            .map_err(|_| BatchError::Timeout(d))?
+            .map_err(BatchError::from),
+        None => op.await.map_err(BatchError::from),
+    }
 }

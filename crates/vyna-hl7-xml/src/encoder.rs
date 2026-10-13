@@ -2,14 +2,14 @@
 //!
 //! Encodes HL7 messages to XML format according to HL7 XML Encoding Rules.
 
-use crate::error::{XmlError, XmlResult};
+use crate::error::XmlResult;
 use crate::{HL7_V2_XML_NAMESPACE, XML_DECLARATION};
-use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::Writer;
+use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
+use std::io::Cursor;
 use vyna_hl7_core::field::{Component, Field, Repetition};
 use vyna_hl7_core::message::Message;
 use vyna_hl7_core::segment::Segment;
-use std::io::Cursor;
 
 /// Configuration for XML encoding
 #[derive(Debug, Clone)]
@@ -23,13 +23,20 @@ pub struct XmlEncoderConfig {
     /// Pretty print with indentation
     pub pretty_print: bool,
 
-    /// Indentation string (default: "  ")
+    /// Indentation unit for pretty printing (default: `"  "`).
+    ///
+    /// The first byte is the indent character and the string length is
+    /// the repeat count, so `"    "` indents four spaces per level and
+    /// `"\t"` indents one tab.
     pub indent: String,
 
     /// Include empty fields as empty elements
     pub include_empty_fields: bool,
 
-    /// Escape special characters in text content
+    /// Escape special characters (`<`, `>`, `&`, ...) in text content.
+    ///
+    /// When false, values are written verbatim and must already be
+    /// valid XML content.
     pub escape_text: bool,
 }
 
@@ -80,7 +87,8 @@ impl XmlEncoder {
         let mut buffer = Vec::new();
         {
             let mut writer = if self.config.pretty_print {
-                Writer::new_with_indent(Cursor::new(&mut buffer), b' ', 2)
+                let (indent_char, indent_size) = Self::indent_params(&self.config.indent);
+                Writer::new_with_indent(Cursor::new(&mut buffer), indent_char, indent_size)
             } else {
                 Writer::new(Cursor::new(&mut buffer))
             };
@@ -105,11 +113,25 @@ impl XmlEncoder {
         }
 
         // Append the XML body to result
-        result.push_str(
-            &String::from_utf8(buffer).map_err(|e| XmlError::EncodingError(e.to_string()))?,
-        );
+        result.push_str(&String::from_utf8(buffer)?);
 
         Ok(result)
+    }
+
+    /// Derive quick-xml's (indent character, repeat count) from the
+    /// configured indentation unit.
+    fn indent_params(indent: &str) -> (u8, usize) {
+        let char = indent.bytes().next().unwrap_or(b' ');
+        (char, indent.len().max(1))
+    }
+
+    /// Build a text event, escaping unless configured otherwise.
+    fn text_event<'a>(&self, value: &'a str) -> Event<'a> {
+        if self.config.escape_text {
+            Event::Text(BytesText::new(value))
+        } else {
+            Event::Text(BytesText::from_escaped(value))
+        }
     }
 
     /// Get the message type name for the root element
@@ -117,15 +139,16 @@ impl XmlEncoder {
         // Try to extract from MSH-9
         if let Some(msh) = message.segments.iter().find(|s| s.id == "MSH")
             && let Some(field9) = msh.get_field(9)
-                && let Some(value) = field9.value() {
-                    // Parse ADT^A01 format
-                    let parts: Vec<&str> = value.split('^').collect();
-                    if parts.len() >= 2 {
-                        return format!("{}_{}", parts[0], parts[1]);
-                    } else if !parts.is_empty() {
-                        return parts[0].to_string();
-                    }
-                }
+            && let Some(value) = field9.value()
+        {
+            // Parse ADT^A01 format
+            let parts: Vec<&str> = value.split('^').collect();
+            if parts.len() >= 2 {
+                return format!("{}_{}", parts[0], parts[1]);
+            } else if !parts.is_empty() {
+                return parts[0].to_string();
+            }
+        }
         "HL7Message".to_string()
     }
 
@@ -190,15 +213,18 @@ impl XmlEncoder {
         field_name: &str,
         repetition: &Repetition,
     ) -> XmlResult<()> {
-        // If single component with no subcomponents, write as simple text
-        if repetition.components.len() == 1 {
+        // A lone single-valued component is written as simple text; a
+        // lone component with subcomponents needs the wrapped form so
+        // the subcomponents survive the round-trip.
+        if repetition.components.len() == 1 && repetition.components[0].subcomponents.len() <= 1 {
             if let Some(value) = repetition.components[0].value()
-                && !value.is_empty() {
-                    writer.write_event(Event::Start(BytesStart::new(field_name)))?;
-                    writer.write_event(Event::Text(BytesText::new(value)))?;
-                    writer.write_event(Event::End(BytesEnd::new(field_name)))?;
-                }
-        } else if repetition.components.len() > 1 {
+                && !value.is_empty()
+            {
+                writer.write_event(Event::Start(BytesStart::new(field_name)))?;
+                writer.write_event(self.text_event(value))?;
+                writer.write_event(Event::End(BytesEnd::new(field_name)))?;
+            }
+        } else if !repetition.components.is_empty() {
             // Multiple components - wrap in field element with component children
             writer.write_event(Event::Start(BytesStart::new(field_name)))?;
 
@@ -231,11 +257,12 @@ impl XmlEncoder {
         if component.subcomponents.len() == 1 {
             // Simple component with value
             if let Some(value) = component.value()
-                && !value.is_empty() {
-                    writer.write_event(Event::Start(BytesStart::new(&comp_name)))?;
-                    writer.write_event(Event::Text(BytesText::new(value)))?;
-                    writer.write_event(Event::End(BytesEnd::new(&comp_name)))?;
-                }
+                && !value.is_empty()
+            {
+                writer.write_event(Event::Start(BytesStart::new(&comp_name)))?;
+                writer.write_event(self.text_event(value))?;
+                writer.write_event(Event::End(BytesEnd::new(&comp_name)))?;
+            }
         } else if component.subcomponents.len() > 1 {
             // Component with subcomponents
             writer.write_event(Event::Start(BytesStart::new(&comp_name)))?;
@@ -247,7 +274,7 @@ impl XmlEncoder {
 
                 let sub_name = format!("{}.{}", comp_name, sub_idx + 1);
                 writer.write_event(Event::Start(BytesStart::new(&sub_name)))?;
-                writer.write_event(Event::Text(BytesText::new(&subcomp.value)))?;
+                writer.write_event(self.text_event(&subcomp.value))?;
                 writer.write_event(Event::End(BytesEnd::new(&sub_name)))?;
             }
 
@@ -308,5 +335,73 @@ mod tests {
         assert!(xml.contains("<MSH>"));
         assert!(xml.contains("APP"));
         assert!(xml.contains("</MSH>"));
+    }
+
+    #[test]
+    fn test_indent_config_drives_pretty_printing() {
+        let mut message = Message::new();
+        let mut msh = Segment::new("MSH");
+        let _ = msh.set_field_value(3, "APP");
+        message.add_segment(msh);
+
+        // Default: two spaces per level.
+        let encoder = XmlEncoder::with_config(XmlEncoderConfig {
+            pretty_print: true,
+            ..Default::default()
+        });
+        let xml = encoder.encode(&message).unwrap();
+        assert!(xml.contains("\n  <MSH>"));
+
+        // Custom unit: four spaces per level.
+        let encoder = XmlEncoder::with_config(XmlEncoderConfig {
+            pretty_print: true,
+            indent: "    ".to_string(),
+            ..Default::default()
+        });
+        let xml = encoder.encode(&message).unwrap();
+        assert!(xml.contains("\n    <MSH>"));
+    }
+
+    #[test]
+    fn test_escape_text_config() {
+        let mut message = Message::new();
+        let mut pid = Segment::new("PID");
+        let _ = pid.set_field_value(5, "A<B&C");
+        message.add_segment(pid);
+
+        let encoder = XmlEncoder::new();
+        let xml = encoder.encode(&message).unwrap();
+        assert!(xml.contains("A&lt;B&amp;C"));
+
+        let encoder = XmlEncoder::with_config(XmlEncoderConfig {
+            escape_text: false,
+            ..Default::default()
+        });
+        let xml = encoder.encode(&message).unwrap();
+        assert!(xml.contains("A<B&C"));
+    }
+
+    #[test]
+    fn test_single_component_with_subcomponents() {
+        use vyna_hl7_core::field::SubComponent;
+
+        // A lone component carrying subcomponents must use the wrapped
+        // form (4-part names), not collapse to its first value.
+        let mut message = Message::new();
+        let mut pid = Segment::new("PID");
+        let mut field = Field::new();
+        let mut repetition = Repetition::new();
+        let mut component = Component::new();
+        component.add_subcomponent(SubComponent::new("Smith"));
+        component.add_subcomponent(SubComponent::new("Johnny"));
+        repetition.add_component(component);
+        field.add_repetition(repetition);
+        let _ = pid.set_field(5, field);
+        message.add_segment(pid);
+
+        let encoder = XmlEncoder::new();
+        let xml = encoder.encode(&message).unwrap();
+        assert!(xml.contains("<PID.5.1.1>Smith</PID.5.1.1>"));
+        assert!(xml.contains("<PID.5.1.2>Johnny</PID.5.1.2>"));
     }
 }

@@ -3,12 +3,12 @@
 //! This module provides a cache that stores parsed terser paths and field locations
 //! to avoid repeated path parsing and segment lookups.
 
+use crate::path::TerserPath;
 use std::collections::HashMap;
 use vyna_hl7_core::{
-    error::Result,
+    error::{Error, Result},
     message::Message,
 };
-use crate::path::TerserPath;
 
 /// A cache entry for a terser path lookup
 #[derive(Debug, Clone)]
@@ -47,10 +47,18 @@ impl<'a> CachedTerser<'a> {
     ///
     /// The first access to a path will parse and cache it. Subsequent accesses
     /// will use the cached parsed path, significantly improving performance.
+    ///
+    /// # Missing values vs errors
+    ///
+    /// Shares [`Terser::get`](crate::Terser::get)'s contract exactly:
+    /// returns `Ok(None)` when the segment id is absent from the message or
+    /// the addressed field, repetition, component, or subcomponent is
+    /// absent; returns `Err` when the path is malformed or the segment
+    /// index exceeds the number of occurrences of that segment id.
     pub fn get(&mut self, path: &str) -> Result<Option<&str>> {
         // Check if path is already cached
         let entry = if let Some(cached) = self.cache.get(path) {
-            cached.clone()  // Clone the cached entry
+            cached.clone() // Clone the cached entry
         } else {
             // Not in cache - parse and store
             let parsed_path = TerserPath::parse(path)?;
@@ -61,7 +69,9 @@ impl<'a> CachedTerser<'a> {
                 return Ok(None);
             }
 
-            let actual_index = self.message.segments
+            let actual_index = self
+                .message
+                .segments
                 .iter()
                 .enumerate()
                 .filter(|(_, s)| s.id == parsed_path.segment_id)
@@ -77,7 +87,12 @@ impl<'a> CachedTerser<'a> {
                 self.cache.insert(path.to_string(), entry.clone());
                 entry
             } else {
-                return Ok(None);
+                // Same contract as Terser::get: an out-of-range segment
+                // index is an error, not a missing value.
+                return Err(Error::terser_path(format!(
+                    "Segment index {} out of bounds for {}",
+                    parsed_path.segment_index, parsed_path.segment_id
+                )));
             }
         };
 
@@ -145,6 +160,10 @@ impl<'a> CachedTerser<'a> {
     }
 
     /// Pre-warm the cache with commonly accessed paths
+    ///
+    /// Returns an error if any path is malformed or addresses an
+    /// out-of-range segment index; paths addressing absent segments or
+    /// fields warm as `None` without error.
     pub fn warm_cache(&mut self, paths: &[&str]) -> Result<()> {
         for path in paths {
             let _ = self.get(path)?;
@@ -206,6 +225,32 @@ mod tests {
     }
 
     #[test]
+    fn test_out_of_range_segment_index_matches_terser() {
+        let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ORU^R01|12345|P|2.5\r\
+                   OBX|1|NM|GLU||98\r";
+
+        let message = parse_message(hl7).unwrap();
+        let terser = crate::Terser::new(&message);
+        let mut cached = CachedTerser::new(&message);
+
+        // Out-of-range segment index is an error in both implementations.
+        assert!(terser.get("OBX(5)-5").is_err());
+        assert!(cached.get("OBX(5)-5").is_err());
+
+        // Absent segment id is Ok(None) in both implementations.
+        assert_eq!(terser.get("ZZZ-1").unwrap(), None);
+        assert_eq!(cached.get("ZZZ-1").unwrap(), None);
+
+        // Absent field is Ok(None) in both implementations.
+        assert_eq!(terser.get("OBX-99").unwrap(), None);
+        assert_eq!(cached.get("OBX-99").unwrap(), None);
+
+        // Absent component is Ok(None) in both implementations.
+        assert_eq!(terser.get("OBX-5-9").unwrap(), None);
+        assert_eq!(cached.get("OBX-5-9").unwrap(), None);
+    }
+
+    #[test]
     fn test_warm_cache() {
         let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
                    PID|1||MRN123||DOE^JOHN||19800101|M";
@@ -214,7 +259,9 @@ mod tests {
         let mut terser = CachedTerser::new(&message);
 
         // Use 1-based indexing (HL7 standard)
-        terser.warm_cache(&["PID-5", "PID-5-1", "PID-5-2", "PID-7", "PID-8"]).unwrap();
+        terser
+            .warm_cache(&["PID-5", "PID-5-1", "PID-5-2", "PID-7", "PID-8"])
+            .unwrap();
         assert_eq!(terser.cache_size(), 5);
 
         // All subsequent accesses should be cached

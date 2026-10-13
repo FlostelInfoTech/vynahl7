@@ -60,12 +60,13 @@ impl<'a> Iterator for FieldIterator<'a> {
             self.current_segment += 1;
 
             if let Some(field) = segment.get_field(self.field_index)
-                && let Some(value) = field.value() {
-                    // Skip empty values
-                    if !value.is_empty() {
-                        return Some(value);
-                    }
+                && let Some(value) = field.value()
+            {
+                // Skip empty values
+                if !value.is_empty() {
+                    return Some(value);
                 }
+            }
         }
 
         None
@@ -133,17 +134,19 @@ impl<'a> Iterator for ComponentIterator<'a> {
             self.current_segment += 1;
 
             if let Some(field) = segment.get_field(self.field_index)
-                && let Some(repetition) = field.get_repetition(0) {
-                    // Component indices are 1-based in HL7, convert to 0-based
-                    if self.component_index > 0
-                        && let Some(component) = repetition.get_component(self.component_index - 1)
-                            && let Some(value) = component.value() {
-                                // Skip empty values
-                                if !value.is_empty() {
-                                    return Some(value);
-                                }
-                            }
+                && let Some(repetition) = field.get_repetition(0)
+            {
+                // Component indices are 1-based in HL7, convert to 0-based
+                if self.component_index > 0
+                    && let Some(component) = repetition.get_component(self.component_index - 1)
+                    && let Some(value) = component.value()
+                {
+                    // Skip empty values
+                    if !value.is_empty() {
+                        return Some(value);
+                    }
                 }
+            }
         }
 
         None
@@ -218,12 +221,13 @@ impl<'a> Iterator for RepetitionIterator<'a> {
                 self.current_repetition += 1;
 
                 if let Some(repetition) = field.get_repetition(rep_idx)
-                    && let Some(value) = repetition.value() {
-                        // Skip empty values
-                        if !value.is_empty() {
-                            return Some(value);
-                        }
+                    && let Some(value) = repetition.value()
+                {
+                    // Skip empty values
+                    if !value.is_empty() {
+                        return Some(value);
                     }
+                }
             }
         }
 
@@ -297,7 +301,11 @@ impl<'a> Terser<'a> {
 
     /// Create an iterator over repetitions of a field within a single segment
     ///
-    /// Segment index is 0-based (internal).
+    /// `segment_index` is a 0-based position into the segments with the
+    /// given id, so `0` selects the first one and an out-of-range position
+    /// yields no items. Note this differs from path notation, where every
+    /// index (`OBX(1)`, `PID-5(1)`, components, subcomponents) is 1-based:
+    /// this argument is a direct position, not a parsed path.
     ///
     /// # Examples
     ///
@@ -402,6 +410,28 @@ PID|1||PAT001||DOE^JOHN||19800101|M|||123 Main St~456 Oak Ave~789 Pine Rd";
         assert_eq!(addresses[0], "123 Main St");
         assert_eq!(addresses[1], "456 Oak Ave");
         assert_eq!(addresses[2], "789 Pine Rd");
+    }
+
+    #[test]
+    fn test_repetition_iterator_segment_index_is_zero_based() {
+        let hl7 = r"MSH|^~\&|APP|FAC|||20250115||ADT^A01|123|P|2.5
+PID|1||PAT001||DOE^JOHN||19800101|M|||111 First St~222 Second St
+PID|2||PAT002||SMITH^JANE||19900202|F|||333 Third Ave";
+
+        let message = parse_message(hl7).unwrap();
+        let terser = Terser::new(&message);
+
+        // segment_index 0 selects the first PID segment (0-based argument,
+        // unlike 1-based path notation).
+        let first: Vec<&str> = terser.iter_repetitions("PID", 11, 0).collect();
+        assert_eq!(first, vec!["111 First St", "222 Second St"]);
+
+        let second: Vec<&str> = terser.iter_repetitions("PID", 11, 1).collect();
+        assert_eq!(second, vec!["333 Third Ave"]);
+
+        // Out-of-range segment position yields no items.
+        let none: Vec<&str> = terser.iter_repetitions("PID", 11, 5).collect();
+        assert!(none.is_empty());
     }
 
     #[test]

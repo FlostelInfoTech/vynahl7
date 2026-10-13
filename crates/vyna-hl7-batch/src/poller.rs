@@ -68,6 +68,8 @@ pub struct Poller<T> {
     suffix_filter: Option<String>,
     require_stable: bool,
     verify_counts: bool,
+    max_files_per_poll: usize,
+    max_file_bytes: u64,
     seen_sizes: HashMap<String, u64>,
     settled: HashSet<String>,
 }
@@ -85,6 +87,8 @@ impl<T: FileTransport> Poller<T> {
             suffix_filter: None,
             require_stable: true,
             verify_counts: true,
+            max_files_per_poll: crate::DEFAULT_MAX_FILES_PER_POLL,
+            max_file_bytes: crate::DEFAULT_MAX_FILE_BYTES,
             seen_sizes: HashMap::new(),
             settled: HashSet::new(),
         }
@@ -137,6 +141,24 @@ impl<T: FileTransport> Poller<T> {
         self
     }
 
+    /// Consume at most this many files per [`Poller::poll_once`] call
+    /// (default [`DEFAULT_MAX_FILES_PER_POLL`](crate::DEFAULT_MAX_FILES_PER_POLL)).
+    /// Leftovers stay for the next poll, so this bounds memory and work
+    /// without losing files.
+    pub fn with_max_files_per_poll(mut self, max: usize) -> Self {
+        self.max_files_per_poll = max;
+        self
+    }
+
+    /// Refuse files larger than this (default
+    /// [`DEFAULT_MAX_FILE_BYTES`](crate::DEFAULT_MAX_FILE_BYTES)). Oversize
+    /// files are reported in [`PollReport::skipped`] and remembered for the
+    /// session so they are not downloaded again.
+    pub fn with_max_file_bytes(mut self, max: u64) -> Self {
+        self.max_file_bytes = max;
+        self
+    }
+
     /// Borrow the underlying transport (e.g. to [`FileTransport::close`]).
     pub fn transport_mut(&mut self) -> &mut T {
         &mut self.transport
@@ -152,12 +174,26 @@ impl<T: FileTransport> Poller<T> {
         let entries = self.transport.list(&self.inbox).await?;
 
         for entry in entries {
+            if report.files.len() >= self.max_files_per_poll {
+                break;
+            }
             if self.settled.contains(&entry.path) {
                 continue;
             }
             if let Some(suffix) = &self.suffix_filter
                 && !entry.path.ends_with(suffix)
             {
+                continue;
+            }
+            // Refuse huge files before downloading when the size is known.
+            if let Some(size) = entry.size
+                && size > self.max_file_bytes
+            {
+                self.settled.insert(entry.path.clone());
+                report.skipped.push(SkippedFile {
+                    path: entry.path.clone(),
+                    reason: format!("file size {size} exceeds limit of {}", self.max_file_bytes),
+                });
                 continue;
             }
             if self.require_stable
@@ -173,6 +209,19 @@ impl<T: FileTransport> Poller<T> {
             }
 
             let bytes = self.transport.get(&entry.path).await?;
+            // The transport may not report sizes; enforce the cap here too.
+            if bytes.len() as u64 > self.max_file_bytes {
+                self.settled.insert(entry.path.clone());
+                report.skipped.push(SkippedFile {
+                    path: entry.path.clone(),
+                    reason: format!(
+                        "file size {} exceeds limit of {}",
+                        bytes.len(),
+                        self.max_file_bytes
+                    ),
+                });
+                continue;
+            }
             let intake = match Intake::parse_bytes(&bytes) {
                 Ok(intake) => intake,
                 Err(e) => {
@@ -288,7 +337,7 @@ mod tests {
         let report = poller.poll_once().await.unwrap();
         assert!(report.files.is_empty());
 
-        std::fs::remove_dir_all(&dir).unwrap();
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
     }
 
     #[tokio::test]
@@ -313,7 +362,56 @@ mod tests {
         // Consumed without archive dir: deleted by default.
         assert!(t.list("inbox").await.unwrap().is_empty());
 
-        std::fs::remove_dir_all(&dir).unwrap();
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn max_files_per_poll_bounds_work_without_losing_files() {
+        let dir = scratch_dir();
+        let mut t = FilesystemTransport::open(&dir).unwrap();
+        t.put("inbox/a.hl7", MSH.as_bytes()).await.unwrap();
+        t.put("inbox/b.hl7", MSH.as_bytes()).await.unwrap();
+        t.put("inbox/c.hl7", MSH.as_bytes()).await.unwrap();
+
+        let mut poller = Poller::new(t)
+            .with_inbox("inbox")
+            .with_require_stable(false)
+            .with_max_files_per_poll(2);
+        let report = poller.poll_once().await.unwrap();
+        assert_eq!(report.files.len(), 2);
+        // The leftover is picked up on the next poll.
+        let report = poller.poll_once().await.unwrap();
+        assert_eq!(report.files.len(), 1);
+        let report = poller.poll_once().await.unwrap();
+        assert!(report.files.is_empty());
+
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn oversize_files_are_skipped_once_and_never_downloaded_again() {
+        let dir = scratch_dir();
+        let mut t = FilesystemTransport::open(&dir).unwrap();
+        t.put("inbox/small.hl7", MSH.as_bytes()).await.unwrap();
+        t.put("inbox/big.hl7", &[b'x'; 4096]).await.unwrap();
+
+        let mut poller = Poller::new(t)
+            .with_inbox("inbox")
+            .with_require_stable(false)
+            .with_max_file_bytes(1024);
+        let report = poller.poll_once().await.unwrap();
+        assert_eq!(report.files.len(), 1);
+        assert_eq!(report.files[0].name, "inbox/small.hl7");
+        assert_eq!(report.skipped.len(), 1);
+        assert_eq!(report.skipped[0].path, "inbox/big.hl7");
+        assert!(report.skipped[0].reason.contains("exceeds limit"));
+
+        // Settled: the oversize file is not re-downloaded or re-reported.
+        let report = poller.poll_once().await.unwrap();
+        assert!(report.files.is_empty());
+        assert!(report.skipped.is_empty());
+
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
     }
 
     #[test]

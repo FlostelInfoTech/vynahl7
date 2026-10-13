@@ -34,7 +34,9 @@
 //!   precision; values it cannot parse are removed rather than left in place.
 //! - Free-text segments (NTE, OBX-5) are deliberately **not** in the default
 //!   profile: blunt removal would destroy clinical notes, and real scrubbing
-//!   needs NLP. Add explicit rules if your policy requires it.
+//!   needs NLP. Site-defined Z-segments are likewise **not** covered —
+//!   their layout is site-specific, so the profile cannot know which
+//!   fields hold PHI. Add explicit rules if your policy requires it.
 
 use chrono::{Duration, NaiveDate};
 use hmac::{Hmac, KeyInit, Mac};
@@ -48,6 +50,9 @@ pub enum RedactError {
     /// A [`Strategy::Hash`] rule ran without an HMAC key configured.
     #[error("hash strategy requires an HMAC key")]
     MissingHmacKey,
+    /// A rule used field 0 or component 0 (numbering is 1-based).
+    #[error("invalid rule: {0}")]
+    InvalidRule(String),
 }
 
 /// How one value is redacted.
@@ -100,6 +105,10 @@ pub struct Rule {
 
 impl Rule {
     /// Whole-field rule.
+    ///
+    /// `segment` is matched exactly (case-sensitive); a typo or a
+    /// lowercase ID matches nothing. `field` is 1-based: 0 is rejected
+    /// by [`Redactor::redact`] with [`RedactError::InvalidRule`].
     pub fn field(segment: &str, field: usize, strategy: Strategy) -> Self {
         Self {
             segment: segment.to_string(),
@@ -110,6 +119,10 @@ impl Rule {
     }
 
     /// Component rule.
+    ///
+    /// `segment` is matched exactly (case-sensitive). `field` and
+    /// `component` are 1-based: 0 is rejected by [`Redactor::redact`]
+    /// with [`RedactError::InvalidRule`].
     pub fn component(segment: &str, field: usize, component: usize, strategy: Strategy) -> Self {
         Self {
             segment: segment.to_string(),
@@ -168,12 +181,27 @@ impl Redactor {
     }
 
     /// Append the Safe Harbor profile rules (see module docs).
+    ///
+    /// Free-text notes (NTE, OBX-5) and site-defined Z-segments are not
+    /// covered; add explicit [`Rule`]s when your policy requires them.
     pub fn with_safe_harbor_rules(mut self) -> Self {
         self.rules.extend(safe_harbor_rules());
         self
     }
 
     /// Redactor with the full Safe Harbor profile.
+    ///
+    /// Covers the common segments (see module docs). Free-text notes
+    /// (NTE, OBX-5) and site-defined Z-segments are intentionally left
+    /// untouched — add explicit [`Rule`]s for them when your policy
+    /// requires it:
+    ///
+    /// ```rust
+    /// use vyna_hl7_redact::{Redactor, Rule, Strategy};
+    ///
+    /// let _redactor = Redactor::safe_harbor(b"key", 30)
+    ///     .with_rule(Rule::field("NTE", 3, Strategy::Remove));
+    /// ```
     pub fn safe_harbor(hmac_key: &[u8], date_shift_days: i64) -> Self {
         Self::new()
             .with_hmac_key(hmac_key)
@@ -182,9 +210,29 @@ impl Redactor {
     }
 
     /// Redact `message` in place, returning what was changed.
+    ///
+    /// An empty report means no rule changed anything — either the
+    /// message held no matching values (normal) or a rule never matched
+    /// (e.g. a typo or lowercase segment ID, which matches nothing:
+    /// matching is exact and case-sensitive). Use
+    /// [`unmatched_rules`](Self::unmatched_rules) to tell the two apart.
     pub fn redact(&self, message: &mut Message) -> Result<Vec<Redaction>, RedactError> {
         if self.rules.iter().any(|r| r.strategy == Strategy::Hash) && self.hmac_key.is_none() {
             return Err(RedactError::MissingHmacKey);
+        }
+        for rule in &self.rules {
+            if rule.field == 0 {
+                return Err(RedactError::InvalidRule(format!(
+                    "field 0 in rule for segment '{}' (fields are 1-based)",
+                    rule.segment
+                )));
+            }
+            if rule.component == Some(0) {
+                return Err(RedactError::InvalidRule(format!(
+                    "component 0 in rule for segment '{}' (components are 1-based)",
+                    rule.segment
+                )));
+            }
         }
         let mut report = Vec::new();
         // Occurrence counter per segment ID for stable audit paths.
@@ -220,6 +268,29 @@ impl Redactor {
             }
         }
         Ok(report)
+    }
+
+    /// Rules whose segment selector matched no segment in `message`.
+    ///
+    /// Segment matching is exact and case-sensitive, so a typo or a
+    /// lowercase ID (e.g. `"pid"`) silently matches nothing and
+    /// [`redact`](Self::redact) returns an empty report. Call this after
+    /// a suspiciously empty report to tell "no PHI present" apart from
+    /// "rule never matched". `"*"` rules match any segment, so they are
+    /// only listed when the message has no segments at all. A rule is
+    /// *not* listed when its segment is present but the field is absent
+    /// — that is normal (rules only touch values that exist).
+    pub fn unmatched_rules(&self, message: &Message) -> Vec<Rule> {
+        self.rules
+            .iter()
+            .filter(|rule| {
+                !message
+                    .segments
+                    .iter()
+                    .any(|segment| rule.segment == "*" || rule.segment == segment.id)
+            })
+            .cloned()
+            .collect()
     }
 
     /// Rewrite each repetition's whole value; true when anything changed.
@@ -494,6 +565,64 @@ mod tests {
         assert_eq!(shift_date("20240101", -1).as_deref(), Some("20231231"));
         assert_eq!(shift_date("2024", 5), None); // too short
         assert_eq!(shift_date("not-a-date", 5), None);
+    }
+
+    #[test]
+    fn unmatched_rules_flags_typos_but_not_absent_fields() {
+        let message =
+            parse_message("MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1\r").unwrap();
+
+        // Lowercase segment ID: redact succeeds with an empty report.
+        let redactor = Redactor::new().with_rule(Rule::field("pid", 5, Strategy::Remove));
+        let mut message = message.clone();
+        assert!(redactor.redact(&mut message).unwrap().is_empty());
+        // ...but the rule is reported as never matched.
+        assert_eq!(redactor.unmatched_rules(&message).len(), 1);
+
+        // Correct segment, absent field: empty report is normal, and the
+        // rule is *not* flagged.
+        let redactor = Redactor::new().with_rule(Rule::field("PID", 5, Strategy::Remove));
+        assert!(redactor.redact(&mut message).unwrap().is_empty());
+        assert!(redactor.unmatched_rules(&message).is_empty());
+    }
+
+    #[test]
+    fn zero_field_or_component_is_rejected() {
+        let mut message =
+            parse_message("MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1\r").unwrap();
+        let err = Redactor::new()
+            .with_rule(Rule::field("PID", 0, Strategy::Remove))
+            .redact(&mut message)
+            .unwrap_err();
+        assert!(matches!(err, RedactError::InvalidRule(_)));
+
+        let err = Redactor::new()
+            .with_rule(Rule::component("PID", 5, 0, Strategy::Remove))
+            .redact(&mut message)
+            .unwrap_err();
+        assert!(matches!(err, RedactError::InvalidRule(_)));
+    }
+
+    #[test]
+    fn safe_harbor_leaves_free_text_and_z_segments_untouched() {
+        let mut message = parse_message(
+            "MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\r\
+             NTE|1||Patient called from 555-1234\r\
+             OBX|1|TX|NOTE^Note||Patient lives alone||||||F\r\
+             ZPV|1|SECRET",
+        )
+        .unwrap();
+        Redactor::safe_harbor(b"k", 7).redact(&mut message).unwrap();
+
+        // Documented gap: blunt removal would destroy clinical notes, and
+        // Z-segment layouts are site-specific. Add explicit rules when
+        // policy requires them.
+        let nte = message.get_segment_by_id("NTE").unwrap();
+        assert_eq!(nte.get_field_value(3), Some("Patient called from 555-1234"));
+        let obx = message.get_segment_by_id("OBX").unwrap();
+        assert_eq!(obx.get_field_value(5), Some("Patient lives alone"));
+        let zpv = message.get_segment_by_id("ZPV").unwrap();
+        assert_eq!(zpv.get_field_value(2), Some("SECRET"));
     }
 
     #[test]

@@ -8,21 +8,21 @@ use crate::{Error, Result};
 #[cfg(feature = "websocket")]
 use axum::{
     extract::{
-        ws::{Message as WsMessage, WebSocket, WebSocketUpgrade},
         State,
+        ws::{Message as WsMessage, WebSocket, WebSocketUpgrade},
     },
     response::Response,
 };
 #[cfg(feature = "websocket")]
 use futures_util::{sink::SinkExt, stream::StreamExt};
 #[cfg(feature = "websocket")]
-use vyna_hl7_core::{CharacterSet, Message};
-#[cfg(feature = "websocket")]
-use vyna_hl7_parser::parse_message;
-#[cfg(feature = "websocket")]
 use std::sync::Arc;
 #[cfg(feature = "websocket")]
 use tokio::sync::broadcast;
+#[cfg(feature = "websocket")]
+use vyna_hl7_core::{CharacterSet, Message};
+#[cfg(feature = "websocket")]
+use vyna_hl7_parser::parse_message;
 
 /// Message handler function type for WebSocket connections
 ///
@@ -137,13 +137,21 @@ async fn handle_websocket(socket: WebSocket, config: WebSocketConfig) {
                 // Check message size
                 if text_str.len() > config.max_message_size {
                     #[cfg(feature = "logging")]
-                    tracing::warn!("Message exceeds maximum size: {} > {}", text_str.len(), config.max_message_size);
+                    tracing::warn!(
+                        "Message exceeds maximum size: {} > {}",
+                        text_str.len(),
+                        config.max_message_size
+                    );
 
                     let _ = sender
-                        .send(WsMessage::Text(format!(
-                            "Error: Message too large ({} bytes, max {})",
-                            text_str.len(), config.max_message_size
-                        ).into()))
+                        .send(WsMessage::Text(
+                            format!(
+                                "Error: Message too large ({} bytes, max {})",
+                                text_str.len(),
+                                config.max_message_size
+                            )
+                            .into(),
+                        ))
                         .await;
                     continue;
                 }
@@ -164,7 +172,9 @@ async fn handle_websocket(socket: WebSocket, config: WebSocketConfig) {
                         match (config.handler)(hl7_msg) {
                             Ok(response) => {
                                 let response_text = response.encode();
-                                if let Err(_e) = sender.send(WsMessage::Text(response_text.into())).await {
+                                if let Err(_e) =
+                                    sender.send(WsMessage::Text(response_text.into())).await
+                                {
                                     #[cfg(feature = "logging")]
                                     tracing::error!("Failed to send response: {}", _e);
                                     break;
@@ -192,31 +202,68 @@ async fn handle_websocket(socket: WebSocket, config: WebSocketConfig) {
                 #[cfg(feature = "logging")]
                 tracing::debug!("Received binary message: {} bytes", data.len());
 
+                // Enforce the same size cap as text frames.
+                if data.len() > config.max_message_size {
+                    #[cfg(feature = "logging")]
+                    tracing::warn!(
+                        "Message exceeds maximum size: {} > {}",
+                        data.len(),
+                        config.max_message_size
+                    );
+
+                    let _ = sender
+                        .send(WsMessage::Text(
+                            format!(
+                                "Error: Message too large ({} bytes, max {})",
+                                data.len(),
+                                config.max_message_size
+                            )
+                            .into(),
+                        ))
+                        .await;
+                    continue;
+                }
+
                 // Decode binary using the MSH-18 declaration
-                match CharacterSet::decode_message(&data) {
-                    Ok(text) => {
-                        if let Ok(hl7_msg) = parse_message(&text) {
-                            match (config.handler)(hl7_msg) {
-                                Ok(response) => {
-                                    // Best effort: fall back to UTF-8 when the
-                                    // response cannot be encoded as declared.
-                                    let response_bytes = response.encode_bytes().unwrap_or_else(
-                                        |_| response.encode().into_bytes(),
-                                    );
-                                    let _ = sender
-                                        .send(WsMessage::Binary(response_bytes.into()))
-                                        .await;
-                                }
-                                Err(_e) => {
-                                    #[cfg(feature = "logging")]
-                                    tracing::error!("Handler error: {}", _e);
-                                }
-                            }
-                        }
+                let text = match CharacterSet::decode_message(&data) {
+                    Ok(text) => text,
+                    Err(e) => {
+                        #[cfg(feature = "logging")]
+                        tracing::warn!("Binary message is not valid UTF-8: {}", e);
+
+                        let error_msg = format!("Error decoding binary message: {}", e);
+                        let _ = sender.send(WsMessage::Text(error_msg.into())).await;
+                        continue;
+                    }
+                };
+
+                let hl7_msg = match parse_message(&text) {
+                    Ok(hl7_msg) => hl7_msg,
+                    Err(e) => {
+                        #[cfg(feature = "logging")]
+                        tracing::warn!("Failed to parse HL7 message: {}", e);
+
+                        let error_msg = format!("Error parsing HL7 message: {}", e);
+                        let _ = sender.send(WsMessage::Text(error_msg.into())).await;
+                        continue;
+                    }
+                };
+
+                match (config.handler)(hl7_msg) {
+                    Ok(response) => {
+                        // Best effort: fall back to UTF-8 when the
+                        // response cannot be encoded as declared.
+                        let response_bytes = response
+                            .encode_bytes()
+                            .unwrap_or_else(|_| response.encode().into_bytes());
+                        let _ = sender.send(WsMessage::Binary(response_bytes.into())).await;
                     }
                     Err(_e) => {
                         #[cfg(feature = "logging")]
-                        tracing::warn!("Binary message is not valid UTF-8: {}", _e);
+                        tracing::error!("Handler error: {}", _e);
+
+                        let error_msg = format!("Error processing message: {}", _e);
+                        let _ = sender.send(WsMessage::Text(error_msg.into())).await;
                     }
                 }
             }
@@ -493,5 +540,89 @@ mod tests {
     fn test_websocket_client_creation() {
         let client = WebSocketClient::new("ws://localhost:8080/ws");
         assert_eq!(client.url, "ws://localhost:8080/ws");
+    }
+
+    #[tokio::test]
+    async fn test_binary_frames_size_limit_and_error_frames() {
+        use axum::{Router, routing::get};
+        use tokio_tungstenite::{connect_async, tungstenite::Message as TMessage};
+
+        // Echo handler that rejects control id "FAIL".
+        let handler: WsMessageHandler = Arc::new(|msg: Message| {
+            if msg.get_control_id() == Some("FAIL") {
+                return Err(Error::Http("boom".to_string()));
+            }
+            Ok(msg)
+        });
+        let config = WebSocketConfig::new(handler).with_max_message_size(64);
+        let app = Router::new()
+            .route("/ws", get(websocket_handler))
+            .with_state(config);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let (mut ws, _) = connect_async(format!("ws://{addr}/ws")).await.unwrap();
+
+        // 1. Oversized binary frame -> "too large" text error.
+        ws.send(TMessage::Binary(vec![b'A'; 65].into()))
+            .await
+            .unwrap();
+        let reply = ws.next().await.unwrap().unwrap();
+        assert!(
+            matches!(&reply, TMessage::Text(t) if t.as_str().contains("too large")),
+            "unexpected reply: {reply:?}"
+        );
+
+        // 2. Undecodable bytes (UTF-16 BOM) -> decode error text.
+        ws.send(TMessage::Binary(vec![0xff, 0xfe, 0xfd].into()))
+            .await
+            .unwrap();
+        let reply = ws.next().await.unwrap().unwrap();
+        assert!(
+            matches!(&reply, TMessage::Text(t)
+                if t.as_str().contains("Error decoding")),
+            "unexpected reply: {reply:?}"
+        );
+
+        // 3. Valid UTF-8 but not HL7 -> parse error text.
+        ws.send(TMessage::Binary(b"NOT AN HL7 MESSAGE".to_vec().into()))
+            .await
+            .unwrap();
+        let reply = ws.next().await.unwrap().unwrap();
+        assert!(
+            matches!(&reply, TMessage::Text(t)
+                if t.as_str().contains("Error parsing")),
+            "unexpected reply: {reply:?}"
+        );
+
+        // 4. Handler failure -> processing error text.
+        let failing = b"MSH|^~\\&|S|A|R|F|20240101||ADT^A01|FAIL|P|2.5\r";
+        ws.send(TMessage::Binary(failing.to_vec().into()))
+            .await
+            .unwrap();
+        let reply = ws.next().await.unwrap().unwrap();
+        assert!(
+            matches!(&reply, TMessage::Text(t)
+                if t.as_str().contains("Error processing")),
+            "unexpected reply: {reply:?}"
+        );
+
+        // 5. Valid binary frame still echoes a binary response.
+        let valid = b"MSH|^~\\&|S|A|R|F|20240101||ADT^A01|OK1|P|2.5\r";
+        ws.send(TMessage::Binary(valid.to_vec().into()))
+            .await
+            .unwrap();
+        let reply = ws.next().await.unwrap().unwrap();
+        match &reply {
+            TMessage::Binary(bytes) => {
+                let text = std::str::from_utf8(bytes).unwrap();
+                let echoed = parse_message(text).unwrap();
+                assert_eq!(echoed.get_control_id(), Some("OK1"));
+            }
+            other => panic!("unexpected reply: {other:?}"),
+        }
     }
 }

@@ -30,8 +30,8 @@
     "health-information-exchange",
     "interoperability"
   ],
-  "author": "Alex Shao <alex.fanshao@gmail.com>",
-  "license": "UNLICENSED",
+  "author": "Alex SHAO Fan <alex.fanshao@gmail.com>",
+  "license": "MIT",
   "devDependencies": {
     "wasm-pack": "^0.12.0"
   }

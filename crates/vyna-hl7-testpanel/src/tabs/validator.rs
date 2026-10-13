@@ -1,12 +1,12 @@
 //! Validator Tab - Validate HL7 messages against schemas
 
-use egui::{self, RichText, Color32};
-use egui_extras::{StripBuilder, Size};
-use vyna_hl7_parser::parse_message;
-use vyna_hl7_core::{Message, Version};
-use vyna_hl7_validator::{ValidationContext, Validator};
 use crate::samples;
-use crate::utils::{format_message_tree, TreeNode};
+use crate::utils::{TreeNode, format_message_tree};
+use egui::{self, Color32, RichText};
+use egui_extras::{Size, StripBuilder};
+use vyna_hl7_core::{Message, Version};
+use vyna_hl7_parser::parse_message;
+use vyna_hl7_validator::{ValidationContext, Validator};
 
 pub struct ValidatorTab {
     input_message: String,
@@ -120,7 +120,11 @@ impl ValidatorTab {
             egui::ComboBox::from_id_salt("version_select")
                 .selected_text(self.selected_version.label())
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.selected_version, VersionOption::Auto, "Auto-detect");
+                    ui.selectable_value(
+                        &mut self.selected_version,
+                        VersionOption::Auto,
+                        "Auto-detect",
+                    );
                     ui.selectable_value(&mut self.selected_version, VersionOption::V23, "2.3");
                     ui.selectable_value(&mut self.selected_version, VersionOption::V231, "2.3.1");
                     ui.selectable_value(&mut self.selected_version, VersionOption::V24, "2.4");
@@ -159,125 +163,138 @@ impl ValidatorTab {
                 // Left: Message input
                 strip.cell(|ui| {
                     let panel_height = available_height - 10.0;
-                    egui::Frame::group(ui.style())
-                        .show(ui, |ui| {
-                            ui.set_height(panel_height);
-                            ui.set_width(ui.available_width());
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.set_height(panel_height);
+                        ui.set_width(ui.available_width());
 
-                            ui.horizontal(|ui| {
-                                ui.heading("Message Input");
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.horizontal(|ui| {
+                            ui.heading("Message Input");
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
                                     ui.checkbox(&mut self.show_tree_view, "Tree View");
-                                });
-                            });
-
-                            if let Some(ref error) = self.parse_error {
-                                ui.colored_label(Color32::RED, format!("Parse Error: {}", error));
-                            }
-
-                            if self.show_tree_view && !self.tree_nodes.is_empty() {
-                                // Show tree view
-                                egui::ScrollArea::vertical()
-                                    .id_salt("validator_tree")
-                                    .auto_shrink([false, false])
-                                    .show(ui, |ui| {
-                                        for node in &mut self.tree_nodes {
-                                            node.ui(ui);
-                                        }
-                                    });
-                            } else {
-                                // Show raw input
-                                egui::ScrollArea::vertical()
-                                    .id_salt("validator_input")
-                                    .auto_shrink([false, false])
-                                    .show(ui, |ui| {
-                                        ui.add(
-                                            egui::TextEdit::multiline(&mut self.input_message)
-                                                .font(egui::TextStyle::Monospace)
-                                                .desired_width(f32::INFINITY)
-                                                .desired_rows(30)
-                                                .code_editor()
-                                        );
-                                    });
-                            }
+                                },
+                            );
                         });
+
+                        if let Some(ref error) = self.parse_error {
+                            ui.colored_label(Color32::RED, format!("Parse Error: {}", error));
+                        }
+
+                        if self.show_tree_view && !self.tree_nodes.is_empty() {
+                            // Show tree view
+                            egui::ScrollArea::vertical()
+                                .id_salt("validator_tree")
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    for node in &mut self.tree_nodes {
+                                        node.ui(ui);
+                                    }
+                                });
+                        } else {
+                            // Show raw input
+                            egui::ScrollArea::vertical()
+                                .id_salt("validator_input")
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    ui.add(
+                                        egui::TextEdit::multiline(&mut self.input_message)
+                                            .font(egui::TextStyle::Monospace)
+                                            .desired_width(f32::INFINITY)
+                                            .desired_rows(30)
+                                            .code_editor(),
+                                    );
+                                });
+                        }
+                    });
                 });
 
                 // Right: Results
                 strip.cell(|ui| {
                     let panel_height = available_height - 10.0;
-                    egui::Frame::group(ui.style())
-                        .show(ui, |ui| {
-                            ui.set_height(panel_height);
-                            ui.set_width(ui.available_width());
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.set_height(panel_height);
+                        ui.set_width(ui.available_width());
 
-                            ui.heading("Validation Results");
-                            ui.label("Strict validation (HL7 specification compliance).");
+                        ui.heading("Validation Results");
+                        ui.label("Strict validation (HL7 specification compliance).");
 
-                            // Summary
-                            if let Some(is_valid) = self.is_valid {
-                                if is_valid {
-                                    ui.colored_label(Color32::GREEN, RichText::new("VALID").strong());
-                                } else {
-                                    ui.colored_label(Color32::RED, RichText::new("INVALID").strong());
-                                }
-
-                                let error_count = self.validation_results.iter()
-                                    .filter(|r| matches!(r.severity, Severity::Error))
-                                    .count();
-                                let warning_count = self.validation_results.iter()
-                                    .filter(|r| matches!(r.severity, Severity::Warning))
-                                    .count();
-                                let info_count = self.validation_results.iter()
-                                    .filter(|r| matches!(r.severity, Severity::Info))
-                                    .count();
-
-                                ui.horizontal(|ui| {
-                                    ui.colored_label(Color32::RED, format!("{} Errors", error_count));
-                                    ui.colored_label(Color32::YELLOW, format!("{} Warnings", warning_count));
-                                    ui.colored_label(Color32::LIGHT_BLUE, format!("{} Info", info_count));
-                                });
+                        // Summary
+                        if let Some(is_valid) = self.is_valid {
+                            if is_valid {
+                                ui.colored_label(Color32::GREEN, RichText::new("VALID").strong());
+                            } else {
+                                ui.colored_label(Color32::RED, RichText::new("INVALID").strong());
                             }
 
-                            ui.add_space(10.0);
-                            ui.separator();
+                            let error_count = self
+                                .validation_results
+                                .iter()
+                                .filter(|r| matches!(r.severity, Severity::Error))
+                                .count();
+                            let warning_count = self
+                                .validation_results
+                                .iter()
+                                .filter(|r| matches!(r.severity, Severity::Warning))
+                                .count();
+                            let info_count = self
+                                .validation_results
+                                .iter()
+                                .filter(|r| matches!(r.severity, Severity::Info))
+                                .count();
 
-                            // Results list
-                            egui::ScrollArea::vertical()
-                                .id_salt("validation_results")
-                                .auto_shrink([false, false])
-                                .show(ui, |ui| {
-                                    if self.validation_results.is_empty() && self.is_valid.is_none() {
-                                        ui.label("Click 'Validate' to check the message.");
-                                        ui.add_space(10.0);
-                                        ui.label("Validation checks:");
-                                        ui.label("- Message structure (required segments)");
-                                        ui.label("- Segment order");
-                                        ui.label("- Required fields");
-                                        ui.label("- Data type formats (dates, times, IDs)");
-                                        ui.label("- Field lengths");
-                                    } else if self.validation_results.is_empty() {
-                                        ui.colored_label(Color32::GREEN, "No issues found!");
-                                    } else {
-                                        for item in &self.validation_results {
-                                            ui.horizontal(|ui| {
-                                                let (icon, color) = match item.severity {
-                                                    Severity::Error => ("", Color32::RED),
-                                                    Severity::Warning => ("", Color32::YELLOW),
-                                                    Severity::Info => ("", Color32::LIGHT_BLUE),
-                                                };
+                            ui.horizontal(|ui| {
+                                ui.colored_label(Color32::RED, format!("{} Errors", error_count));
+                                ui.colored_label(
+                                    Color32::YELLOW,
+                                    format!("{} Warnings", warning_count),
+                                );
+                                ui.colored_label(
+                                    Color32::LIGHT_BLUE,
+                                    format!("{} Info", info_count),
+                                );
+                            });
+                        }
 
-                                                ui.colored_label(color, icon);
-                                                ui.vertical(|ui| {
-                                                    ui.label(RichText::new(&item.location).strong());
-                                                    ui.label(&item.message);
-                                                });
+                        ui.add_space(10.0);
+                        ui.separator();
+
+                        // Results list
+                        egui::ScrollArea::vertical()
+                            .id_salt("validation_results")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                if self.validation_results.is_empty() && self.is_valid.is_none() {
+                                    ui.label("Click 'Validate' to check the message.");
+                                    ui.add_space(10.0);
+                                    ui.label("Validation checks:");
+                                    ui.label("- Message structure (required segments)");
+                                    ui.label("- Segment order");
+                                    ui.label("- Required fields");
+                                    ui.label("- Data type formats (dates, times, IDs)");
+                                    ui.label("- Field lengths");
+                                } else if self.validation_results.is_empty() {
+                                    ui.colored_label(Color32::GREEN, "No issues found!");
+                                } else {
+                                    for item in &self.validation_results {
+                                        ui.horizontal(|ui| {
+                                            let (icon, color) = match item.severity {
+                                                Severity::Error => ("", Color32::RED),
+                                                Severity::Warning => ("", Color32::YELLOW),
+                                                Severity::Info => ("", Color32::LIGHT_BLUE),
+                                            };
+
+                                            ui.colored_label(color, icon);
+                                            ui.vertical(|ui| {
+                                                ui.label(RichText::new(&item.location).strong());
+                                                ui.label(&item.message);
                                             });
-                                            ui.add_space(5.0);
-                                        }
+                                        });
+                                        ui.add_space(5.0);
                                     }
-                                });
-                        });
+                                }
+                            });
+                    });
                 });
             });
     }
@@ -288,9 +305,7 @@ impl ValidatorTab {
         self.tree_nodes.clear();
 
         // Parse the message first
-        let normalized = self.input_message
-            .replace("\r\n", "\r")
-            .replace("\n", "\r");
+        let normalized = self.input_message.replace("\r\n", "\r").replace("\n", "\r");
 
         match parse_message(&normalized) {
             Ok(message) => {
@@ -299,10 +314,11 @@ impl ValidatorTab {
                 self.tree_nodes = format_message_tree(&message);
 
                 // Determine version
-                let version = self.selected_version.to_version()
+                let version = self
+                    .selected_version
+                    .to_version()
                     .or_else(|| message.get_version())
                     .unwrap_or(Version::V2_5_1);
-
 
                 // Basic structure validation
                 self.validate_basic_structure(&message);
@@ -313,7 +329,12 @@ impl ValidatorTab {
                         self.validation_results.push(ValidationItem {
                             severity: Severity::Info,
                             location: "MSH-9".to_string(),
-                            message: format!("Message type: {}^{}, Version: {}", msg_type, trigger, version.as_str()),
+                            message: format!(
+                                "Message type: {}^{}, Version: {}",
+                                msg_type,
+                                trigger,
+                                version.as_str()
+                            ),
                         });
                     }
 
@@ -346,30 +367,16 @@ impl ValidatorTab {
                         });
                     }
                     let validation_result = validator.validate(&message);
-
-                    if !validation_result.is_valid {
-                        for err in &validation_result.errors {
-                            self.validation_results.push(ValidationItem {
-                                severity: Severity::Error,
-                                location: "Schema".to_string(),
-                                message: format!("Validation error: {:?}", err),
-                            });
-                        }
-                    }
-
-                    for warning in &validation_result.warnings {
-                        self.validation_results.push(ValidationItem {
-                            severity: Severity::Warning,
-                            location: "Schema".to_string(),
-                            message: format!("Validation warning: {:?}", warning),
-                        });
-                    }
+                    self.push_validation_result(&validation_result);
 
                     if validation_result.is_valid {
                         self.validation_results.push(ValidationItem {
                             severity: Severity::Info,
                             location: "Schema".to_string(),
-                            message: format!("Schema validation passed for HL7 v{}", version.as_str()),
+                            message: format!(
+                                "Schema validation passed for HL7 v{}",
+                                version.as_str()
+                            ),
                         });
                     }
                 }
@@ -380,7 +387,9 @@ impl ValidatorTab {
                 }
 
                 // Check for any errors
-                let has_errors = self.validation_results.iter()
+                let has_errors = self
+                    .validation_results
+                    .iter()
                     .any(|r| matches!(r.severity, Severity::Error));
 
                 self.is_valid = Some(!has_errors);
@@ -394,6 +403,28 @@ impl ValidatorTab {
                 });
                 self.is_valid = Some(false);
             }
+        }
+    }
+
+    /// Copy validator findings into the results list, preserving each
+    /// finding's structured location and message.
+    fn push_validation_result(&mut self, result: &vyna_hl7_validator::ValidationResult) {
+        if !result.is_valid() {
+            for err in &result.errors {
+                self.validation_results.push(ValidationItem {
+                    severity: Severity::Error,
+                    location: err.location.clone(),
+                    message: err.message.clone(),
+                });
+            }
+        }
+
+        for warning in &result.warnings {
+            self.validation_results.push(ValidationItem {
+                severity: Severity::Warning,
+                location: warning.location.clone(),
+                message: warning.message.clone(),
+            });
         }
     }
 
@@ -444,16 +475,17 @@ impl ValidatorTab {
 
         // Check for PID in ADT messages
         if let Some((msg_type, _)) = message.get_message_type()
-            && msg_type == "ADT" {
-                let has_pid = message.segments.iter().any(|s| s.id == "PID");
-                if !has_pid {
-                    self.validation_results.push(ValidationItem {
-                        severity: Severity::Error,
-                        location: "PID".to_string(),
-                        message: "ADT messages require a PID segment".to_string(),
-                    });
-                }
+            && msg_type == "ADT"
+        {
+            let has_pid = message.segments.iter().any(|s| s.id == "PID");
+            if !has_pid {
+                self.validation_results.push(ValidationItem {
+                    severity: Severity::Error,
+                    location: "PID".to_string(),
+                    message: "ADT messages require a PID segment".to_string(),
+                });
             }
+        }
     }
 
     fn validate_data_types(&mut self, message: &Message) {
@@ -462,24 +494,27 @@ impl ValidatorTab {
             // Validate date/time fields
             if segment.id == "MSH"
                 && let Some(datetime) = segment.get_field_value(7)
-                    && !Self::is_valid_datetime(datetime) {
-                        self.validation_results.push(ValidationItem {
-                            severity: Severity::Warning,
-                            location: "MSH-7".to_string(),
-                            message: format!("Date/time format may be invalid: {}", datetime),
-                        });
-                    }
+                && !Self::is_valid_datetime(datetime)
+            {
+                self.validation_results.push(ValidationItem {
+                    severity: Severity::Warning,
+                    location: "MSH-7".to_string(),
+                    message: format!("Date/time format may be invalid: {}", datetime),
+                });
+            }
 
             if segment.id == "PID" {
                 // Validate birth date
                 if let Some(dob) = segment.get_field_value(7)
-                    && !dob.is_empty() && !Self::is_valid_date(dob) {
-                        self.validation_results.push(ValidationItem {
-                            severity: Severity::Warning,
-                            location: "PID-7".to_string(),
-                            message: format!("Birth date format may be invalid: {}", dob),
-                        });
-                    }
+                    && !dob.is_empty()
+                    && !Self::is_valid_date(dob)
+                {
+                    self.validation_results.push(ValidationItem {
+                        severity: Severity::Warning,
+                        location: "PID-7".to_string(),
+                        message: format!("Birth date format may be invalid: {}", dob),
+                    });
+                }
 
                 // Validate gender
                 if let Some(gender) = segment.get_field_value(8) {
@@ -488,7 +523,10 @@ impl ValidatorTab {
                         self.validation_results.push(ValidationItem {
                             severity: Severity::Warning,
                             location: "PID-8".to_string(),
-                            message: format!("Gender code '{}' is not standard (expected M/F/O/U)", gender),
+                            message: format!(
+                                "Gender code '{}' is not standard (expected M/F/O/U)",
+                                gender
+                            ),
                         });
                     }
                 }
@@ -502,7 +540,9 @@ impl ValidatorTab {
         if s.len() < 4 {
             return false;
         }
-        s.chars().take(14).all(|c| c.is_ascii_digit() || c == '.' || c == '+' || c == '-')
+        s.chars()
+            .take(14)
+            .all(|c| c.is_ascii_digit() || c == '.' || c == '+' || c == '-')
     }
 
     fn is_valid_date(s: &str) -> bool {
@@ -512,5 +552,67 @@ impl ValidatorTab {
             return false;
         }
         s.chars().take(8).all(|c| c.is_ascii_digit())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vyna_hl7_validator::{
+        ValidationError, ValidationErrorType, ValidationResult, ValidationWarning,
+    };
+
+    #[test]
+    fn findings_keep_structured_location_and_message() {
+        let mut tab = ValidatorTab::default();
+        tab.validation_results.clear();
+
+        let mut result = ValidationResult::new();
+        result.add_error(ValidationError::new(
+            "PID-5".to_string(),
+            "Required field 5 is missing or empty".to_string(),
+            ValidationErrorType::MissingRequiredField,
+        ));
+        result.add_warning(ValidationWarning::new(
+            "MSH-12".to_string(),
+            "Version drift: message says 2.3".to_string(),
+        ));
+
+        tab.push_validation_result(&result);
+
+        assert_eq!(tab.validation_results.len(), 2);
+        let error = &tab.validation_results[0];
+        assert!(matches!(error.severity, Severity::Error));
+        assert_eq!(error.location, "PID-5");
+        assert_eq!(error.message, "Required field 5 is missing or empty");
+        let warning = &tab.validation_results[1];
+        assert!(matches!(warning.severity, Severity::Warning));
+        assert_eq!(warning.location, "MSH-12");
+        assert_eq!(warning.message, "Version drift: message says 2.3");
+    }
+
+    #[test]
+    fn validate_reports_schema_locations() {
+        // Structurally incomplete ADT: the schema errors must surface
+        // with their real locations, not a blanket label.
+        let mut tab = ValidatorTab {
+            input_message: "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\rPID|1||7".to_string(),
+            ..ValidatorTab::default()
+        };
+        tab.validate();
+
+        assert_eq!(tab.is_valid, Some(false));
+        assert!(
+            tab.validation_results.iter().any(|r| {
+                matches!(r.severity, Severity::Error)
+                    && r.location == "PID[1]-5"
+                    && r.message.contains("Required field 5")
+            }),
+            "results: {:?}",
+            tab.validation_results
+                .iter()
+                .map(|r| (&r.location, &r.message))
+                .collect::<Vec<_>>()
+        );
     }
 }

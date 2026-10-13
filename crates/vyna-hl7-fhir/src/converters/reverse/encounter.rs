@@ -34,23 +34,27 @@ impl EncounterReverseConverter {
 
         // PV1-3: Assigned Patient Location
         if let Some(ref locations) = encounter.location
-            && let Some(first_loc) = locations.first() {
-                // location is a required Reference field (not Optional)
-                let location = &first_loc.location;
-                if let Some(ref display) = location.display {
-                    let _ = pv1.set_field_value(3, display);
-                } else if let Some(ref reference) = location.reference {
-                    let _ = pv1.set_field_value(3, reference);
-                }
+            && let Some(first_loc) = locations.first()
+        {
+            // location is a required Reference field (not Optional)
+            let location = &first_loc.location;
+            if let Some(ref display) = location.display {
+                let _ = pv1.set_field_value(3, display);
+            } else if let Some(ref reference) = location.reference {
+                let _ = pv1.set_field_value(3, reference);
             }
+        }
 
-        // PV1-4: Admission Type
-        if let Some(ref priority) = encounter.priority
-            && let Some(ref coding) = priority.coding
-                && let Some(first_coding) = coding.first()
-                    && let Some(ref code) = first_coding.code {
-                        let _ = pv1.set_field_value(4, code);
-                    }
+        // PV1-4: Admission Type (round-trips Encounter.type_, which
+        // the forward converter populates from PV1-4)
+        if let Some(ref types) = encounter.type_
+            && let Some(first_type) = types.first()
+            && let Some(ref coding) = first_type.coding
+            && let Some(first_coding) = coding.first()
+            && let Some(ref code) = first_coding.code
+        {
+            let _ = pv1.set_field_value(4, code);
+        }
 
         // PV1-7: Attending Doctor (from participant with type ATND)
         // PV1-8: Referring Doctor (from participant with type REF)
@@ -62,27 +66,28 @@ impl EncounterReverseConverter {
                         if let Some(ref coding) = type_.coding {
                             for code in coding {
                                 if let Some(ref code_val) = code.code
-                                    && let Some(ref individual) = participant.individual {
-                                        let doctor_ref = individual
-                                            .display
-                                            .as_ref()
-                                            .or(individual.reference.as_ref())
-                                            .cloned()
-                                            .unwrap_or_default();
+                                    && let Some(ref individual) = participant.individual
+                                {
+                                    let doctor_ref = individual
+                                        .display
+                                        .as_ref()
+                                        .or(individual.reference.as_ref())
+                                        .cloned()
+                                        .unwrap_or_default();
 
-                                        match code_val.as_str() {
-                                            "ATND" => {
-                                                let _ = pv1.set_field_value(7, &doctor_ref);
-                                            }
-                                            "REF" => {
-                                                let _ = pv1.set_field_value(8, &doctor_ref);
-                                            }
-                                            "CON" => {
-                                                let _ = pv1.set_field_value(9, &doctor_ref);
-                                            }
-                                            _ => {}
+                                    match code_val.as_str() {
+                                        "ATND" => {
+                                            let _ = pv1.set_field_value(7, &doctor_ref);
                                         }
+                                        "REF" => {
+                                            let _ = pv1.set_field_value(8, &doctor_ref);
+                                        }
+                                        "CON" => {
+                                            let _ = pv1.set_field_value(9, &doctor_ref);
+                                        }
+                                        _ => {}
                                     }
+                                }
                             }
                         }
                     }
@@ -90,39 +95,51 @@ impl EncounterReverseConverter {
             }
         }
 
-        // PV1-10: Hospital Service (from Encounter.type_)
-        if let Some(ref types) = encounter.type_
-            && let Some(first_type) = types.first()
-                && let Some(ref coding) = first_type.coding
-                    && let Some(first_coding) = coding.first()
-                        && let Some(ref code) = first_coding.code {
-                            let _ = pv1.set_field_value(10, code);
-                        }
+        // PV1-10: Hospital Service (round-trips
+        // Encounter.service_provider, which the forward converter
+        // populates from PV1-10 as `Organization/{service}` with the
+        // service code as display)
+        if let Some(ref provider) = encounter.service_provider {
+            let service = provider.display.as_deref().or_else(|| {
+                provider
+                    .reference
+                    .as_deref()
+                    .and_then(|r| r.strip_prefix("Organization/"))
+            });
+            if let Some(service) = service
+                && !service.is_empty()
+            {
+                let _ = pv1.set_field_value(10, service);
+            }
+        }
 
         // PV1-14: Admit Source
         if let Some(ref hospitalization) = encounter.hospitalization {
             if let Some(ref admit_source) = hospitalization.admit_source
                 && let Some(ref coding) = admit_source.coding
-                    && let Some(first_coding) = coding.first()
-                        && let Some(ref code) = first_coding.code {
-                            let _ = pv1.set_field_value(14, code);
-                        }
+                && let Some(first_coding) = coding.first()
+                && let Some(ref code) = first_coding.code
+            {
+                let _ = pv1.set_field_value(14, code);
+            }
 
             // PV1-36: Discharge Disposition
             if let Some(ref discharge_disposition) = hospitalization.discharge_disposition
                 && let Some(ref coding) = discharge_disposition.coding
-                    && let Some(first_coding) = coding.first()
-                        && let Some(ref code) = first_coding.code {
-                            let _ = pv1.set_field_value(36, code);
-                        }
+                && let Some(first_coding) = coding.first()
+                && let Some(ref code) = first_coding.code
+            {
+                let _ = pv1.set_field_value(36, code);
+            }
         }
 
         // PV1-19: Visit Number
         if let Some(ref identifiers) = encounter.identifier
             && let Some(first_id) = identifiers.first()
-                && let Some(ref value) = first_id.value {
-                    let _ = pv1.set_field_value(19, value);
-                }
+            && let Some(ref value) = first_id.value
+        {
+            let _ = pv1.set_field_value(19, value);
+        }
 
         // PV1-44: Admit Date/Time
         if let Some(ref period) = encounter.period {
@@ -145,13 +162,13 @@ impl EncounterReverseConverter {
     fn convert_class_to_hl7(class: &Coding) -> String {
         if let Some(ref code) = class.code {
             match code.as_str() {
-                "IMP" | "ACUTE" | "inpatient" => "I", // Inpatient
+                "IMP" | "ACUTE" | "inpatient" => "I",       // Inpatient
                 "AMB" | "ambulatory" | "outpatient" => "O", // Outpatient
-                "EMER" | "emergency" => "E",         // Emergency
-                "OBSENC" | "observation" => "B",     // Observation
-                "PRENC" | "preadmit" => "P",         // Preadmit
-                "SS" | "short-stay" => "R",          // Recurring patient
-                _ => "O",                            // Default to outpatient
+                "EMER" | "emergency" => "E",                // Emergency
+                "OBSENC" | "observation" => "B",            // Observation
+                "PRENC" | "preadmit" => "P",                // Preadmit
+                "SS" | "short-stay" => "R",                 // Recurring patient
+                _ => "O",                                   // Default to outpatient
             }
             .to_string()
         } else {
@@ -237,7 +254,10 @@ mod tests {
             code: Some("IMP".to_string()),
             display: None,
         };
-        assert_eq!(EncounterReverseConverter::convert_class_to_hl7(&coding), "I");
+        assert_eq!(
+            EncounterReverseConverter::convert_class_to_hl7(&coding),
+            "I"
+        );
 
         let coding2 = Coding {
             system: None,
@@ -260,6 +280,39 @@ mod tests {
             EncounterReverseConverter::convert_class_to_hl7(&coding3),
             "E"
         );
+    }
+
+    #[test]
+    fn test_admission_type_and_service_round_trip() {
+        use crate::converters::encounter::EncounterConverter;
+        use vyna_hl7_parser::parse_message;
+
+        let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                   PID|1||MRN123^^^MRN||DOE^JOHN||19800101|M\r\
+                   PV1|1|I|4N^401^01|EL||||||CARDIO";
+
+        let message = parse_message(hl7).unwrap();
+        let encounter = EncounterConverter::convert(&message).unwrap();
+        let pv1 = EncounterReverseConverter::convert(&encounter).unwrap();
+
+        // PV1-4 round-trips through Encounter.type_, PV1-10 through
+        // Encounter.service_provider.
+        assert_eq!(pv1.get_field_value(4), Some("EL"));
+        assert_eq!(pv1.get_field_value(10), Some("CARDIO"));
+    }
+
+    #[test]
+    fn test_service_provider_reference_without_display() {
+        let mut encounter = Encounter::new("finished".to_string());
+        encounter.service_provider = Some(Reference {
+            reference: Some("Organization/NEURO".to_string()),
+            type_: Some("Organization".to_string()),
+            identifier: None,
+            display: None,
+        });
+
+        let pv1 = EncounterReverseConverter::convert(&encounter).unwrap();
+        assert_eq!(pv1.get_field_value(10), Some("NEURO"));
     }
 
     #[test]

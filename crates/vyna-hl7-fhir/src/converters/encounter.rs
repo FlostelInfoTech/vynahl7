@@ -2,11 +2,11 @@
 //!
 //! Based on HL7 v2-to-FHIR mapping: <https://build.fhir.org/ig/HL7/v2-to-fhir/ConceptMap-segment-pv1-to-encounter.html>
 
+use crate::error::{ConversionError, ConversionResult};
+use crate::resources::common::*;
+use crate::resources::encounter::*;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
-use crate::error::{ConversionError, ConversionResult};
-use crate::resources::encounter::*;
-use crate::resources::common::*;
 
 /// Converter for transforming PV1 segments to FHIR Encounter resources
 pub struct EncounterConverter;
@@ -43,24 +43,25 @@ impl EncounterConverter {
 
         // PV1-19: Visit Number -> Encounter.identifier
         if let Ok(Some(visit_number)) = terser.get("PV1-19")
-            && !visit_number.is_empty() {
-                encounter.identifier = Some(vec![Identifier {
-                    use_: Some("official".to_string()),
-                    type_: Some(CodeableConcept {
-                        coding: Some(vec![Coding {
-                            system: Some("http://terminology.hl7.org/CodeSystem/v2-0203".to_string()),
-                            version: None,
-                            code: Some("VN".to_string()),
-                            display: Some("Visit Number".to_string()),
-                        }]),
-                        text: Some("Visit Number".to_string()),
-                    }),
-                    system: None,
-                    value: Some(visit_number.to_string()),
-                    assigner: None,
-                }]);
-                encounter.id = Some(visit_number.to_string());
-            }
+            && !visit_number.is_empty()
+        {
+            encounter.identifier = Some(vec![Identifier {
+                use_: Some("official".to_string()),
+                type_: Some(CodeableConcept {
+                    coding: Some(vec![Coding {
+                        system: Some("http://terminology.hl7.org/CodeSystem/v2-0203".to_string()),
+                        version: None,
+                        code: Some("VN".to_string()),
+                        display: Some("Visit Number".to_string()),
+                    }]),
+                    text: Some("Visit Number".to_string()),
+                }),
+                system: None,
+                value: Some(visit_number.to_string()),
+                assigner: None,
+            }]);
+            encounter.id = Some(visit_number.to_string());
+        }
 
         // PV1-2: Patient Class -> Encounter.class
         if !patient_class.is_empty() {
@@ -69,40 +70,43 @@ impl EncounterConverter {
 
         // PV1-4: Admission Type -> Encounter.type
         if let Ok(Some(admission_type)) = terser.get("PV1-4")
-            && !admission_type.is_empty() {
-                encounter.type_ = Some(vec![CodeableConcept {
-                    coding: Some(vec![Coding {
-                        system: Some("http://terminology.hl7.org/CodeSystem/v2-0007".to_string()),
-                        version: None,
-                        code: Some(admission_type.to_string()),
-                        display: None,
-                    }]),
-                    text: Some(admission_type.to_string()),
-                }]);
-            }
+            && !admission_type.is_empty()
+        {
+            encounter.type_ = Some(vec![CodeableConcept {
+                coding: Some(vec![Coding {
+                    system: Some("http://terminology.hl7.org/CodeSystem/v2-0007".to_string()),
+                    version: None,
+                    code: Some(admission_type.to_string()),
+                    display: None,
+                }]),
+                text: Some(admission_type.to_string()),
+            }]);
+        }
 
         // PV1-3: Assigned Patient Location -> Encounter.location
         if let Ok(Some(location)) = terser.get("PV1-3")
-            && !location.is_empty() {
-                let mut location_display = location.to_string();
+            && !location.is_empty()
+        {
+            let mut location_display = location.to_string();
 
-                // Try to get more detailed location info
-                if let Ok(Some(room)) = terser.get("PV1-3-1")
-                    && !room.is_empty() {
-                        location_display = room.to_string();
-                    }
-
-                encounter.location = Some(vec![EncounterLocation {
-                    location: Reference {
-                        reference: Some(format!("Location/{}", location)),
-                        type_: Some("Location".to_string()),
-                        identifier: None,
-                        display: Some(location_display),
-                    },
-                    status: Some("active".to_string()),
-                    period: None,
-                }]);
+            // Try to get more detailed location info
+            if let Ok(Some(room)) = terser.get("PV1-3-1")
+                && !room.is_empty()
+            {
+                location_display = room.to_string();
             }
+
+            encounter.location = Some(vec![EncounterLocation {
+                location: Reference {
+                    reference: Some(format!("Location/{}", location)),
+                    type_: Some("Location".to_string()),
+                    identifier: None,
+                    display: Some(location_display),
+                },
+                status: Some("active".to_string()),
+                period: None,
+            }]);
+        }
 
         // PV1-44: Admit Date/Time -> Encounter.period.start
         // PV1-45: Discharge Date/Time -> Encounter.period.end
@@ -112,10 +116,18 @@ impl EncounterConverter {
         if admit_dt.is_some() || discharge_dt.is_some() {
             encounter.period = Some(Period {
                 start: admit_dt.and_then(|dt| {
-                    if dt.is_empty() { None } else { Self::convert_datetime(dt).ok() }
+                    if dt.is_empty() {
+                        None
+                    } else {
+                        Self::convert_datetime(dt).ok()
+                    }
                 }),
                 end: discharge_dt.and_then(|dt| {
-                    if dt.is_empty() { None } else { Self::convert_datetime(dt).ok() }
+                    if dt.is_empty() {
+                        None
+                    } else {
+                        Self::convert_datetime(dt).ok()
+                    }
                 }),
             });
         }
@@ -127,21 +139,24 @@ impl EncounterConverter {
 
         if let Ok(Some(attending)) = terser.get("PV1-7")
             && !attending.is_empty()
-                && let Some(participant) = Self::create_participant(&terser, "PV1-7", "ATND") {
-                    participants.push(participant);
-                }
+            && let Some(participant) = Self::create_participant(&terser, "PV1-7", "ATND")
+        {
+            participants.push(participant);
+        }
 
         if let Ok(Some(referring)) = terser.get("PV1-8")
             && !referring.is_empty()
-                && let Some(participant) = Self::create_participant(&terser, "PV1-8", "REF") {
-                    participants.push(participant);
-                }
+            && let Some(participant) = Self::create_participant(&terser, "PV1-8", "REF")
+        {
+            participants.push(participant);
+        }
 
         if let Ok(Some(consulting)) = terser.get("PV1-9")
             && !consulting.is_empty()
-                && let Some(participant) = Self::create_participant(&terser, "PV1-9", "CON") {
-                    participants.push(participant);
-                }
+            && let Some(participant) = Self::create_participant(&terser, "PV1-9", "CON")
+        {
+            participants.push(participant);
+        }
 
         if !participants.is_empty() {
             encounter.participant = Some(participants);
@@ -149,14 +164,15 @@ impl EncounterConverter {
 
         // PV1-10: Hospital Service -> Encounter.serviceProvider
         if let Ok(Some(service)) = terser.get("PV1-10")
-            && !service.is_empty() {
-                encounter.service_provider = Some(Reference {
-                    reference: Some(format!("Organization/{}", service)),
-                    type_: Some("Organization".to_string()),
-                    identifier: None,
-                    display: Some(service.to_string()),
-                });
-            }
+            && !service.is_empty()
+        {
+            encounter.service_provider = Some(Reference {
+                reference: Some(format!("Organization/{}", service)),
+                type_: Some("Organization".to_string()),
+                identifier: None,
+                display: Some(service.to_string()),
+            });
+        }
 
         // PV1-14: Admit Source -> Encounter.hospitalization.admitSource
         // PV1-36: Discharge Disposition -> Encounter.hospitalization.dischargeDisposition
@@ -177,44 +193,47 @@ impl EncounterConverter {
             };
 
             if let Some(source) = admit_source
-                && !source.is_empty() {
-                    hospitalization.admit_source = Some(CodeableConcept {
-                        coding: Some(vec![Coding {
-                            system: Some("http://terminology.hl7.org/CodeSystem/v2-0023".to_string()),
-                            version: None,
-                            code: Some(source.to_string()),
-                            display: None,
-                        }]),
-                        text: Some(source.to_string()),
-                    });
-                }
+                && !source.is_empty()
+            {
+                hospitalization.admit_source = Some(CodeableConcept {
+                    coding: Some(vec![Coding {
+                        system: Some("http://terminology.hl7.org/CodeSystem/v2-0023".to_string()),
+                        version: None,
+                        code: Some(source.to_string()),
+                        display: None,
+                    }]),
+                    text: Some(source.to_string()),
+                });
+            }
 
             if let Some(disp) = discharge_disp
-                && !disp.is_empty() {
-                    hospitalization.discharge_disposition = Some(CodeableConcept {
-                        coding: Some(vec![Coding {
-                            system: Some("http://terminology.hl7.org/CodeSystem/v2-0112".to_string()),
-                            version: None,
-                            code: Some(disp.to_string()),
-                            display: None,
-                        }]),
-                        text: Some(disp.to_string()),
-                    });
-                }
+                && !disp.is_empty()
+            {
+                hospitalization.discharge_disposition = Some(CodeableConcept {
+                    coding: Some(vec![Coding {
+                        system: Some("http://terminology.hl7.org/CodeSystem/v2-0112".to_string()),
+                        version: None,
+                        code: Some(disp.to_string()),
+                        display: None,
+                    }]),
+                    text: Some(disp.to_string()),
+                });
+            }
 
             encounter.hospitalization = Some(hospitalization);
         }
 
         // Set patient reference if we have patient ID from PID segment
         if let Ok(Some(patient_id)) = terser.get("PID-3")
-            && !patient_id.is_empty() {
-                encounter.subject = Some(Reference {
-                    reference: Some(format!("Patient/{}", patient_id)),
-                    type_: Some("Patient".to_string()),
-                    identifier: None,
-                    display: None,
-                });
-            }
+            && !patient_id.is_empty()
+        {
+            encounter.subject = Some(Reference {
+                reference: Some(format!("Patient/{}", patient_id)),
+                type_: Some("Patient".to_string()),
+                identifier: None,
+                display: None,
+            });
+        }
 
         Ok(encounter)
     }
@@ -227,25 +246,65 @@ impl EncounterConverter {
         // - Current state flags
         // For now, we use a simple mapping
         match patient_class {
-            "P" => "planned".to_string(),      // Preadmit
+            "P" => "planned".to_string(),                 // Preadmit
             "I" | "O" | "E" => "in-progress".to_string(), // Inpatient, Outpatient, Emergency
-            _ => "finished".to_string(),        // Default to finished
+            _ => "finished".to_string(),                  // Default to finished
         }
     }
 
     /// Convert HL7 v2 patient class to FHIR encounter class
     fn convert_patient_class(class: &str) -> Coding {
         let (code, display, system) = match class {
-            "I" => ("IMP", "inpatient encounter", "http://terminology.hl7.org/CodeSystem/v3-ActCode"),
-            "O" => ("AMB", "ambulatory", "http://terminology.hl7.org/CodeSystem/v3-ActCode"),
-            "E" => ("EMER", "emergency", "http://terminology.hl7.org/CodeSystem/v3-ActCode"),
-            "P" => ("PRENC", "pre-admission", "http://terminology.hl7.org/CodeSystem/v3-ActCode"),
-            "R" => ("AMB", "ambulatory", "http://terminology.hl7.org/CodeSystem/v3-ActCode"), // Recurring
-            "B" => ("IMP", "inpatient encounter", "http://terminology.hl7.org/CodeSystem/v3-ActCode"), // Obstetrics
-            "C" => ("AMB", "ambulatory", "http://terminology.hl7.org/CodeSystem/v3-ActCode"), // Commercial Account
-            "N" => ("IMP", "inpatient encounter", "http://terminology.hl7.org/CodeSystem/v3-ActCode"), // Not Applicable
-            "U" => ("AMB", "ambulatory", "http://terminology.hl7.org/CodeSystem/v3-ActCode"), // Unknown
-            _ => ("AMB", "ambulatory", "http://terminology.hl7.org/CodeSystem/v3-ActCode"),
+            "I" => (
+                "IMP",
+                "inpatient encounter",
+                "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+            ),
+            "O" => (
+                "AMB",
+                "ambulatory",
+                "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+            ),
+            "E" => (
+                "EMER",
+                "emergency",
+                "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+            ),
+            "P" => (
+                "PRENC",
+                "pre-admission",
+                "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+            ),
+            "R" => (
+                "AMB",
+                "ambulatory",
+                "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+            ), // Recurring
+            "B" => (
+                "IMP",
+                "inpatient encounter",
+                "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+            ), // Obstetrics
+            "C" => (
+                "AMB",
+                "ambulatory",
+                "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+            ), // Commercial Account
+            "N" => (
+                "IMP",
+                "inpatient encounter",
+                "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+            ), // Not Applicable
+            "U" => (
+                "AMB",
+                "ambulatory",
+                "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+            ), // Unknown
+            _ => (
+                "AMB",
+                "ambulatory",
+                "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+            ),
         };
 
         Coding {
@@ -257,7 +316,11 @@ impl EncounterConverter {
     }
 
     /// Create an encounter participant from practitioner info
-    fn create_participant(terser: &Terser, path: &str, role_code: &str) -> Option<EncounterParticipant> {
+    fn create_participant(
+        terser: &Terser,
+        path: &str,
+        role_code: &str,
+    ) -> Option<EncounterParticipant> {
         // Get practitioner ID (whole-field read returns component 1)
         let id = terser.get(path).ok().flatten()?;
         if id.is_empty() {
@@ -277,7 +340,9 @@ impl EncounterConverter {
         Some(EncounterParticipant {
             type_: Some(vec![CodeableConcept {
                 coding: Some(vec![Coding {
-                    system: Some("http://terminology.hl7.org/CodeSystem/v3-ParticipationType".to_string()),
+                    system: Some(
+                        "http://terminology.hl7.org/CodeSystem/v3-ParticipationType".to_string(),
+                    ),
                     version: None,
                     code: Some(role_code.to_string()),
                     display: Some(role_display.to_string()),
@@ -296,7 +361,10 @@ impl EncounterConverter {
 
     /// Convert HL7 v2 datetime format to FHIR datetime format
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
-        if datetime.len() >= 14 {
+        // Byte-slice checks on `[u8]` never split a char boundary, and an
+        // all-ASCII-digit prefix makes the `&str` slices below safe.
+        let bytes = datetime.as_bytes();
+        if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
             Ok(format!(
                 "{}-{}-{}T{}:{}:{}",
                 &datetime[0..4],
@@ -306,7 +374,7 @@ impl EncounterConverter {
                 &datetime[10..12],
                 &datetime[12..14]
             ))
-        } else if datetime.len() >= 8 {
+        } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
             Ok(format!(
                 "{}-{}-{}",
                 &datetime[0..4],
@@ -369,6 +437,26 @@ mod tests {
     }
 
     #[test]
+    fn test_non_ascii_admit_datetime_is_dropped_without_panic() {
+        // PV1-44/PV1-45 are lenient (.ok()), but must never panic.
+        let mut pv1 = String::from("PV1|1|I");
+        for _ in 3..44 {
+            pv1.push('|');
+        }
+        pv1.push_str("|123\u{e9}56789012");
+        let hl7 = format!(
+            "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+             PID|1||MRN123^^^MRN||DOE^JOHN||19800101|M\r\
+             {pv1}"
+        );
+
+        let message = parse_message(&hl7).unwrap();
+        let encounter = EncounterConverter::convert(&message).unwrap();
+        assert_eq!(encounter.period.unwrap().start, None);
+        assert!(EncounterConverter::convert_datetime("123\u{e9}56789012").is_err());
+    }
+
+    #[test]
     fn test_encounter_with_participants() {
         let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
                    PID|1||MRN789|||TEST^PATIENT||19700101|M\r\
@@ -387,6 +475,12 @@ mod tests {
         assert!(participants[0].individual.is_some());
         let individual = participants[0].individual.as_ref().unwrap();
         assert!(individual.reference.is_some());
-        assert!(individual.reference.as_ref().unwrap().contains("Practitioner/"));
+        assert!(
+            individual
+                .reference
+                .as_ref()
+                .unwrap()
+                .contains("Practitioner/")
+        );
     }
 }

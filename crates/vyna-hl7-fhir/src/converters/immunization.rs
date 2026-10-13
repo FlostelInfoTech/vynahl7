@@ -1,10 +1,10 @@
 //! Immunization converter - RXA segment to FHIR Immunization resource
 
+use crate::error::{ConversionError, ConversionResult};
+use crate::resources::common::*;
+use crate::resources::immunization::*;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
-use crate::error::{ConversionError, ConversionResult};
-use crate::resources::immunization::*;
-use crate::resources::common::*;
 
 pub struct ImmunizationConverter;
 
@@ -50,7 +50,8 @@ impl ImmunizationConverter {
         };
 
         // RXA-20: Completion Status -> status
-        let status = terser.get(&path("20"))
+        let status = terser
+            .get(&path("20"))
             .ok()
             .flatten()
             .map(Self::convert_status)
@@ -63,19 +64,16 @@ impl ImmunizationConverter {
         let patient = Self::extract_patient_reference(&terser)?;
 
         // RXA-3: Date/Time Start of Administration -> occurrenceDateTime
-        let occurrence_date_time = terser.get(&path("3"))
+        let occurrence_date_time = terser
+            .get(&path("3"))
             .ok()
             .flatten()
             .map(Self::convert_datetime)
             .transpose()?
             .ok_or_else(|| ConversionError::MissingField("RXA-3".to_string(), "RXA".to_string()))?;
 
-        let mut immunization = Immunization::new(
-            status,
-            vaccine_code,
-            patient,
-            occurrence_date_time,
-        );
+        let mut immunization =
+            Immunization::new(status, vaccine_code, patient, occurrence_date_time);
 
         // PV1-19: Visit Number -> encounter reference
         if let Ok(Some(visit_num)) = terser.get("PV1-19") {
@@ -89,9 +87,10 @@ impl ImmunizationConverter {
 
         // RXA-22: System Entry Date/Time -> recorded
         if let Ok(Some(recorded_dt)) = terser.get(&path("22"))
-            && let Ok(recorded) = Self::convert_datetime(recorded_dt) {
-                immunization.recorded = Some(recorded);
-            }
+            && let Ok(recorded) = Self::convert_datetime(recorded_dt)
+        {
+            immunization.recorded = Some(recorded);
+        }
 
         // RXA-9: Information Authority -> primarySource / reportOrigin
         if let Ok(Some(auth_code)) = terser.get(&path("9")) {
@@ -101,7 +100,9 @@ impl ImmunizationConverter {
                     immunization.primary_source = Some(false);
                     immunization.report_origin = Some(CodeableConcept {
                         coding: Some(vec![Coding {
-                            system: Some("http://terminology.hl7.org/CodeSystem/v2-0356".to_string()),
+                            system: Some(
+                                "http://terminology.hl7.org/CodeSystem/v2-0356".to_string(),
+                            ),
                             code: Some(auth_code.to_string()),
                             display: None,
                             version: None,
@@ -141,41 +142,53 @@ impl ImmunizationConverter {
 
         // RXA-16: Substance Expiration Date -> expirationDate
         if let Ok(Some(exp_date)) = terser.get(&path("16"))
-            && let Ok(date) = Self::convert_date(exp_date) {
-                immunization.expiration_date = Some(date);
-            }
+            && let Ok(date) = Self::convert_date(exp_date)
+        {
+            immunization.expiration_date = Some(date);
+        }
 
         // RXA-20: Substance Refusal Reason (when status is not-done)
         if immunization.status == "not-done"
-            && let Ok(Some(refusal_reason)) = terser.get(&path("18")) {
-                immunization.status_reason = Some(CodeableConcept {
-                    coding: Some(vec![Coding {
-                        system: Some("http://terminology.hl7.org/CodeSystem/v2-0443".to_string()),
-                        code: Some(refusal_reason.to_string()),
-                        display: None,
-                        version: None,
-                    }]),
-                    text: None,
-                });
-            }
+            && let Ok(Some(refusal_reason)) = terser.get(&path("18"))
+        {
+            immunization.status_reason = Some(CodeableConcept {
+                coding: Some(vec![Coding {
+                    system: Some("http://terminology.hl7.org/CodeSystem/v2-0443".to_string()),
+                    code: Some(refusal_reason.to_string()),
+                    display: None,
+                    version: None,
+                }]),
+                text: None,
+            });
+        }
 
         // RXA-7: Administered Units + RXA-6: Administered Amount -> doseQuantity
         if let Ok(Some(amount_str)) = terser.get(&path("6"))
-            && let Ok(amount) = amount_str.parse::<f64>() {
-                let mut dose = Quantity {
-                    value: Some(amount),
-                    unit: None,
-                    system: Some("http://unitsofmeasure.org".to_string()),
-                    code: None,
-                };
+            && !amount_str.is_empty()
+        {
+            // A present-but-unparseable amount is an error, not a
+            // silent omission of the dose quantity.
+            let amount = amount_str.parse::<f64>().map_err(|_| {
+                ConversionError::InvalidDataType(
+                    "RXA-6".to_string(),
+                    "numeric".to_string(),
+                    amount_str.to_string(),
+                )
+            })?;
+            let mut dose = Quantity {
+                value: Some(amount),
+                unit: None,
+                system: Some("http://unitsofmeasure.org".to_string()),
+                code: None,
+            };
 
-                if let Ok(Some(units)) = terser.get(&path("7")) {
-                    dose.unit = Some(units.to_string());
-                    dose.code = Some(units.to_string());
-                }
-
-                immunization.dose_quantity = Some(dose);
+            if let Ok(Some(units)) = terser.get(&path("7")) {
+                dose.unit = Some(units.to_string());
+                dose.code = Some(units.to_string());
             }
+
+            immunization.dose_quantity = Some(dose);
+        }
 
         // RXA-10: Administering Provider -> performer
         if let Ok(Some(performer_id)) = terser.get(&path("10")) {
@@ -237,14 +250,18 @@ impl ImmunizationConverter {
             "CP" => "completed",
             "PA" => "completed", // Partially administered - still completed in FHIR
             "NA" => "not-done",
-            "RE" => "not-done",  // Refused
-            _ => "completed",    // Default to completed
-        }.to_string()
+            "RE" => "not-done", // Refused
+            _ => "completed",   // Default to completed
+        }
+        .to_string()
     }
 
     /// Convert HL7 datetime (YYYYMMDDHHMMSS) to FHIR ISO 8601 format
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
-        if datetime.len() >= 14 {
+        // Byte-slice checks on `[u8]` never split a char boundary, and an
+        // all-ASCII-digit prefix makes the `&str` slices below safe.
+        let bytes = datetime.as_bytes();
+        if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
             Ok(format!(
                 "{}-{}-{}T{}:{}:{}",
                 &datetime[0..4],
@@ -254,7 +271,7 @@ impl ImmunizationConverter {
                 &datetime[10..12],
                 &datetime[12..14]
             ))
-        } else if datetime.len() >= 8 {
+        } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
             // Date only
             Ok(format!(
                 "{}-{}-{}",
@@ -266,35 +283,30 @@ impl ImmunizationConverter {
             Err(ConversionError::InvalidFormat(
                 "RXA-3".to_string(),
                 "RXA".to_string(),
-                format!("Invalid datetime format: {}", datetime)
+                format!("Invalid datetime format: {}", datetime),
             ))
         }
     }
 
     /// Convert HL7 date (YYYYMMDD) to FHIR date format
     fn convert_date(date: &str) -> ConversionResult<String> {
-        if date.len() >= 8 {
-            Ok(format!(
-                "{}-{}-{}",
-                &date[0..4],
-                &date[4..6],
-                &date[6..8]
-            ))
+        let bytes = date.as_bytes();
+        if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
+            Ok(format!("{}-{}-{}", &date[0..4], &date[4..6], &date[6..8]))
         } else {
             Err(ConversionError::InvalidFormat(
                 "RXA-16".to_string(),
                 "RXA".to_string(),
-                format!("Invalid date format: {}", date)
+                format!("Invalid date format: {}", date),
             ))
         }
     }
 
     /// Extract vaccine code from RXA-5 field
     fn extract_vaccine_code(terser: &Terser, base_path: &str) -> ConversionResult<CodeableConcept> {
-        let code = terser.get(base_path)
-            .ok()
-            .flatten()
-            .ok_or_else(|| ConversionError::MissingField(base_path.to_string(), "RXA".to_string()))?;
+        let code = terser.get(base_path).ok().flatten().ok_or_else(|| {
+            ConversionError::MissingField(base_path.to_string(), "RXA".to_string())
+        })?;
 
         let mut coding = Coding {
             system: Some("http://hl7.org/fhir/sid/cvx".to_string()), // CVX vaccine codes
@@ -316,7 +328,8 @@ impl ImmunizationConverter {
 
     /// Extract patient reference from PID segment
     fn extract_patient_reference(terser: &Terser) -> ConversionResult<Reference> {
-        let patient_id = terser.get("PID-3")
+        let patient_id = terser
+            .get("PID-3")
             .ok()
             .flatten()
             .ok_or_else(|| ConversionError::MissingSegment("PID".to_string()))?;
@@ -394,6 +407,26 @@ mod tests {
 
         assert_eq!(immunizations.len(), 1);
         assert_eq!(immunizations[0].status, "not-done");
+    }
+
+    #[test]
+    fn test_unparseable_amount_returns_error() {
+        let hl7 = "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|MSG123|P|2.5\r\
+                   PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000||08^HepB adult^CVX|lots|mL||||||||||||CP";
+
+        let message = parse_message(hl7).unwrap();
+        let result = ImmunizationConverter::convert_all(&message);
+        assert!(matches!(
+            result,
+            Err(ConversionError::InvalidDataType(_, _, _))
+        ));
+    }
+
+    #[test]
+    fn test_non_ascii_datetime_returns_error_without_panic() {
+        assert!(ImmunizationConverter::convert_datetime("123\u{e9}56789012").is_err());
+        assert!(ImmunizationConverter::convert_date("12\u{e9}\u{e9}5678").is_err());
     }
 
     #[test]

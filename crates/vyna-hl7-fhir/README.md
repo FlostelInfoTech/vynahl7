@@ -7,12 +7,13 @@ Converter library for transforming HL7 v2.x messages to FHIR R4 resources.
 ✅ **Core Functionality Complete** - Production-ready converters with comprehensive testing
 
 ### Completed ✅
-- **12 FHIR R4 resource definitions:**
+- **13 FHIR R4 resource definitions:**
   - Patient, Observation, Practitioner, Encounter
   - DiagnosticReport, AllergyIntolerance, Medication/MedicationAdministration
   - Condition, Procedure, Immunization, ServiceRequest, Specimen
+  - Bundle (message-level container)
 - Common FHIR data types (HumanName, Address, ContactPoint, Identifier, CodeableConcept, Period, etc.)
-- **12 Production-ready converters:**
+- **12 Production-ready forward converters (HL7 v2 → FHIR):**
   - Patient (PID → Patient) - **100% tested**
   - Observation (OBX → Observation) - **100% tested**
   - Practitioner (PV1/ORC → Practitioner) - **100% tested**
@@ -22,9 +23,16 @@ Converter library for transforming HL7 v2.x messages to FHIR R4 resources.
   - MedicationAdministration (RXA → MedicationAdministration) - **100% tested**
   - Condition (PRB/DG1 → Condition) - **100% tested**
   - Procedure (PR1 → Procedure) - **100% tested**
-  - Immunization (RXA → Immunization) - **100% tested** ✨ NEW
-  - ServiceRequest (ORC → ServiceRequest) - **100% tested** ✨ NEW
-  - Specimen (SPM → Specimen) - **100% tested** ✨ NEW
+  - Immunization (RXA → Immunization) - **100% tested**
+  - ServiceRequest (ORC → ServiceRequest) - **100% tested**
+  - Specimen (SPM → Specimen) - **100% tested**
+- **4 Reverse converters (FHIR → HL7 v2):**
+  - Patient (Patient → PID), Observation (Observation → OBX)
+  - Practitioner (Practitioner → PV1/ORC fields), Encounter (Encounter → PV1)
+- **Message-level conversion** - `convert_message_to_bundle` dispatches on
+  MSH-9 (ADT, ORU, VXU, PPR, OMP) and assembles a Bundle; `BundleBuilder`
+  mixes typed and mapping-engine resources
+- Declarative YAML mapping engine (`mapping.rs`, see `mappings/`)
 - Error handling and conversion result types
 - Complete test suite, including converter regression and mapping-parity tests ✅
 - Terser 1-based path indexing (see TERSER_INDEXING.md)
@@ -32,7 +40,6 @@ Converter library for transforming HL7 v2.x messages to FHIR R4 resources.
 
 ### Future Enhancements 📋
 - Additional resources (CarePlan, Goal, CareTeam, etc.)
-- Batch/Bundle processing for multiple resources
 - Performance optimization for large message volumes
 - Extended validation and conformance checking
 - FHIR Questionnaire/QuestionnaireResponse support
@@ -44,23 +51,25 @@ vyna-hl7-fhir/
 ├── src/
 │   ├── lib.rs                 # Main library entry point
 │   ├── error.rs               # Conversion error types
-│   ├── resources/
-│   │   ├── mod.rs            # Resource module exports
-│   │   ├── common.rs         # Common FHIR data types
-│   │   ├── patient.rs        # FHIR Patient resource
-│   │   ├── observation.rs    # FHIR Observation resource
-│   │   └── practitioner.rs   # FHIR Practitioner resource
-│   └── converters/
+│   ├── bundle.rs              # Message-level Bundle conversion
+│   ├── mapping.rs             # Declarative YAML mapping engine
+│   ├── resources/             # FHIR R4 resources (patient, observation,
+│   │   │                       practitioner, encounter, diagnostic_report,
+│   │   │                       allergy_intolerance, medication, condition,
+│   │   │                       procedure, immunization, service_request,
+│   │   │                       specimen, bundle, common)
+│   │   └── mod.rs            # Resource module exports
+│   └── converters/            # Forward converters, one module per resource
 │       ├── mod.rs            # Converter module exports
-│       ├── patient.rs        # PID → Patient converter
-│       ├── observation.rs    # OBX → Observation converter
-│       └── practitioner.rs   # PV1/ORC → Practitioner converter
+│       └── reverse/          # Reverse converters (patient, observation,
+│                               practitioner, encounter)
+├── mappings/                  # Declarative YAML mappings
 ├── examples/
 │   ├── convert_adt.rs        # ADT^A01 patient admission example
 │   ├── convert_oru.rs        # ORU^R01 laboratory results example
-│   ├── convert_vxu.rs        # VXU^V04 immunization record example ✨ NEW
-│   ├── convert_orm.rs        # ORM^O01 laboratory order example ✨ NEW
-│   └── convert_oml.rs        # OML^O21 specimen collection example ✨ NEW
+│   ├── convert_vxu.rs        # VXU^V04 immunization record example
+│   ├── convert_orm.rs        # ORM^O01 laboratory order example
+│   └── convert_oml.rs        # OML^O21 specimen collection example
 ├── TERSER_INDEXING.md        # Path indexing documentation (1-based)
 ├── EXAMPLES.md               # Detailed examples documentation
 └── README.md                 # This file
@@ -123,6 +132,7 @@ All converters use 1-based Terser paths as documented in TERSER_INDEXING.md.
 ### MedicationConverter (RXA → MedicationAdministration)
 - RXA-3 → effectiveDateTime, RXA-5 → medicationCodeableConcept
 - RXA-6/7 → dosage.dose, RXA-20 → status
+- `convert_medication` builds a standalone Medication from RXA-5
 - Links to Patient (subject)
 
 ### ConditionConverter (PRB/DG1 → Condition)
@@ -156,6 +166,19 @@ All converters use 1-based Terser paths as documented in TERSER_INDEXING.md.
 - SPM-18 → receivedTime, SPM-20 → status (Y→available, N→unavailable)
 - SPM-24 → condition, SPM-30 → accessionIdentifier
 - Links to Patient (subject)
+
+### Reverse converters (FHIR → HL7 v2)
+- PatientReverseConverter (Patient → PID), ObservationReverseConverter
+  (Observation → OBX), PractitionerReverseConverter, EncounterReverseConverter
+  (Encounter → PV1, round-tripping type_ ↔ PV1-4 and serviceProvider ↔ PV1-10)
+
+### Message-level conversion (message → Bundle)
+- `convert_message_to_bundle` dispatches on MSH-9: ADT → Patient (+Encounter
+  when PV1 is present), ORU → Observations (+DiagnosticReports when OBR is
+  present), VXU → Immunizations, PPR → Conditions, OMP → Patient +
+  ServiceRequests
+- `BundleBuilder` appends typed resources (`add_resource`, which reports
+  serialization failures) or pre-serialized JSON (`add_json`)
 
 ## Data Type Conversions
 

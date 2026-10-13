@@ -2,6 +2,7 @@
 name = "vyna-hl7-testpanel"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -16,15 +17,15 @@ egui = "0.36"
 egui_extras = { version = "0.36", features = ["syntect"] }
 
 # VynaHL7 crates
-vyna-hl7-core = { path = "../vyna-hl7-core" }
-vyna-hl7-parser = { path = "../vyna-hl7-parser" }
-vyna-hl7-terser = { path = "../vyna-hl7-terser" }
-vyna-hl7-validator = { path = "../vyna-hl7-validator" }
-vyna-hl7-fhir = { path = "../vyna-hl7-fhir" }
-vyna-hl7-mllp = { path = "../vyna-hl7-mllp" }
-vyna-hl7-http = { path = "../vyna-hl7-http", features = ["auth"] }
-vyna-hl7-xml = { path = "../vyna-hl7-xml" }
-vyna-hl7-templates = { path = "../vyna-hl7-templates" }
+vyna-hl7-core.workspace = true
+vyna-hl7-parser.workspace = true
+vyna-hl7-terser.workspace = true
+vyna-hl7-validator.workspace = true
+vyna-hl7-fhir.workspace = true
+vyna-hl7-mllp.workspace = true
+vyna-hl7-http = { workspace = true, features = ["auth"] }
+vyna-hl7-xml.workspace = true
+vyna-hl7-templates.workspace = true
 
 # Async runtime for MLLP/HTTP/FTP
 tokio = { version = "1.48", features = [

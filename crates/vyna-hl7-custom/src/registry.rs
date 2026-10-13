@@ -3,10 +3,10 @@
 use crate::error::{CustomSegmentError, Result};
 use crate::segment::CustomSegment;
 use once_cell::sync::Lazy;
-use vyna_hl7_core::Segment;
 use std::any::Any;
 use std::collections::HashMap;
 use std::sync::RwLock;
+use vyna_hl7_core::Segment;
 
 /// Factory trait for creating custom segments from generic segments
 ///
@@ -161,10 +161,9 @@ impl CustomSegmentRegistry {
             return Err(CustomSegmentError::InvalidSegmentId(segment_id.to_string()));
         }
 
-        let mut factories = self
-            .factories
-            .write()
-            .map_err(|e| CustomSegmentError::Other(format!("Failed to acquire write lock: {}", e)))?;
+        let mut factories = self.factories.write().map_err(|e| {
+            CustomSegmentError::Other(format!("Failed to acquire write lock: {}", e))
+        })?;
 
         // Check for duplicate registration
         if factories.contains_key(segment_id) {
@@ -192,7 +191,11 @@ impl CustomSegmentRegistry {
     ///
     /// # Returns
     ///
-    /// `Some(FactoryInfo)` if the segment is registered, `None` otherwise
+    /// `Some(FactoryInfo)` if the segment is registered, `None` otherwise.
+    /// A poisoned registry lock also yields `None` (indistinguishable from
+    /// "not registered") rather than panicking; use the fallible
+    /// [`create`](Self::create)/[`parse_segment`](Self::parse_segment)
+    /// paths when a poisoned lock must surface as an error.
     ///
     /// # Example
     ///
@@ -254,7 +257,8 @@ impl CustomSegmentRegistry {
     ///
     /// # Returns
     ///
-    /// `true` if the segment is registered, `false` otherwise
+    /// `true` if the segment is registered, `false` otherwise. A poisoned
+    /// registry lock yields `false` rather than panicking.
     ///
     /// # Example
     ///
@@ -274,7 +278,8 @@ impl CustomSegmentRegistry {
     ///
     /// # Returns
     ///
-    /// A vector of registered segment IDs
+    /// A vector of registered segment IDs, or an empty vector when the
+    /// registry lock is poisoned (rather than panicking).
     ///
     /// # Example
     ///
@@ -319,6 +324,8 @@ impl CustomSegmentRegistry {
     }
 
     /// Clear all registered segments (mainly for testing)
+    ///
+    /// Does nothing when the registry lock is poisoned.
     ///
     /// # Example
     ///
@@ -452,6 +459,30 @@ mod tests {
 
         // Unregistered segment returns None
         assert!(registry.get("ZXX").is_none());
+    }
+
+    #[test]
+    fn test_lock_poison_degrades_gracefully() {
+        let registry = CustomSegmentRegistry::new();
+        registry.register::<TestZPV>().unwrap();
+
+        // Poison the lock by panicking while holding the write guard.
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = registry.factories.write().unwrap();
+            panic!("intentional poison");
+        }));
+
+        // Documented behavior: infallible reads degrade to "not
+        // registered" instead of panicking...
+        assert!(registry.get("ZPV").is_none());
+        assert!(!registry.is_registered("ZPV"));
+        assert!(registry.registered_ids().is_empty());
+
+        // ...while fallible paths surface the poison as an error.
+        let segment = Segment::new("ZPV");
+        assert!(registry.create("ZPV", &segment).is_err());
+        assert!(registry.parse_segment(&segment).is_err());
+        assert!(registry.register::<TestZPV>().is_err());
     }
 
     #[test]

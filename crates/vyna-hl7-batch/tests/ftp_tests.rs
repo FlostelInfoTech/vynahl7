@@ -23,7 +23,7 @@ fn scratch_dir(suffix: &str) -> std::path::PathBuf {
 
 /// Start an anonymous FTP server rooted at `root`; returns the control address.
 async fn start_server(root: &std::path::Path) -> SocketAddr {
-    std::fs::create_dir_all(root).unwrap();
+    tokio::fs::create_dir_all(root).await.unwrap();
     let port = PORT.fetch_add(1, Ordering::SeqCst);
     // Distinct passive range per server so parallel tests never share ports.
     let base: u16 = 30000 + (port - 21210) * 20;
@@ -79,7 +79,7 @@ async fn ftp_round_trip() {
     assert!(ftp.list("inbox").await.unwrap().is_empty());
 
     ftp.close().await.unwrap();
-    std::fs::remove_dir_all(&dir).unwrap();
+    tokio::fs::remove_dir_all(&dir).await.unwrap();
 }
 
 #[tokio::test]
@@ -100,7 +100,7 @@ async fn ftp_missing_paths_behave_like_filesystem() {
     ));
 
     ftp.close().await.unwrap();
-    std::fs::remove_dir_all(&dir).unwrap();
+    tokio::fs::remove_dir_all(&dir).await.unwrap();
 }
 
 #[tokio::test]
@@ -121,7 +121,29 @@ async fn ftp_poller_consumes_and_archives() {
     let ftp = poller.transport_mut();
     assert_eq!(ftp.get("archive/drop.hl7").await.unwrap(), MSH.as_bytes());
     ftp.close().await.unwrap();
-    std::fs::remove_dir_all(&dir).unwrap();
+    tokio::fs::remove_dir_all(&dir).await.unwrap();
+}
+
+#[tokio::test]
+async fn ftp_get_refuses_oversize_files() {
+    let dir = scratch_dir("toolarge");
+    let addr = start_server(&dir).await;
+    let mut ftp = connect(addr).await;
+    ftp.put("inbox/big.hl7", MSH.as_bytes()).await.unwrap();
+    ftp.close().await.unwrap();
+
+    let mut capped = FtpTransport::connect(
+        FtpConfig::new(&addr.to_string(), "anonymous", "test").with_max_file_bytes(4),
+    )
+    .await
+    .unwrap();
+    let result = capped.get("inbox/big.hl7").await;
+    assert!(
+        matches!(result, Err(BatchError::TooLarge { limit: 4, .. })),
+        "unexpected: {result:?}"
+    );
+    capped.close().await.unwrap();
+    tokio::fs::remove_dir_all(&dir).await.unwrap();
 }
 
 #[tokio::test]

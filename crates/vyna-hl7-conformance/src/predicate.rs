@@ -179,21 +179,22 @@ impl PredicateParser {
             return Ok(Condition::And(Box::new(left), Box::new(right)));
         }
 
-        // Handle NOT
-        if trimmed.to_uppercase().starts_with("NOT ") {
+        // Handle NOT (byte-compared: the match pins ASCII bytes, so
+        // slicing at 4 is always a character boundary).
+        if trimmed.len() >= 4 && trimmed.as_bytes()[..4].eq_ignore_ascii_case(b"NOT ") {
             let inner = Self::parse(&trimmed[4..])?;
             return Ok(Condition::Not(Box::new(inner)));
         }
 
         // Handle IS VALUED
-        if let Some(pos) = trimmed.to_uppercase().find(" IS VALUED") {
+        if let Some(pos) = Self::find_ascii_insensitive(trimmed, " IS VALUED") {
             let path = trimmed[..pos].trim().to_string();
             Self::validate_path(&path)?;
             return Ok(Condition::IsValued(path));
         }
 
         // Handle IS NOT VALUED
-        if let Some(pos) = trimmed.to_uppercase().find(" IS NOT VALUED") {
+        if let Some(pos) = Self::find_ascii_insensitive(trimmed, " IS NOT VALUED") {
             let path = trimmed[..pos].trim().to_string();
             Self::validate_path(&path)?;
             return Ok(Condition::IsNotValued(path));
@@ -235,24 +236,45 @@ impl PredicateParser {
     }
 
     /// Find operator position, ignoring quoted strings
+    ///
+    /// The operator is matched ASCII case-insensitively against the
+    /// original bytes: indexing an uppercased copy would panic (or split
+    /// at the wrong place) whenever a non-ASCII character maps to a
+    /// different number of bytes. The returned index is always a
+    /// character boundary and safe to slice with.
     fn find_operator(input: &str, operator: &str) -> Option<usize> {
-        let upper = input.to_uppercase();
+        let bytes = input.as_bytes();
+        let needle = operator.as_bytes();
         let mut in_quotes = false;
-        let mut i = 0;
 
-        while i < input.len() {
-            if input.as_bytes()[i] == b'\'' {
+        for (i, _) in input.char_indices() {
+            if bytes[i] == b'\'' {
                 in_quotes = !in_quotes;
             }
 
-            if !in_quotes && upper[i..].starts_with(operator) {
+            if !in_quotes
+                && bytes.len() - i >= needle.len()
+                && bytes[i..i + needle.len()].eq_ignore_ascii_case(needle)
+            {
                 return Some(i);
             }
-
-            i += 1;
         }
 
         None
+    }
+
+    /// ASCII case-insensitive substring search.
+    ///
+    /// Returns an index into the original string (safe to slice with):
+    /// the needle starts with an ASCII byte, and only an ASCII byte can
+    /// match it, so a hit always lands on a character boundary.
+    fn find_ascii_insensitive(haystack: &str, needle: &str) -> Option<usize> {
+        let hay = haystack.as_bytes();
+        let ndl = needle.as_bytes();
+        if ndl.len() > hay.len() {
+            return None;
+        }
+        (0..=hay.len() - ndl.len()).find(|&i| hay[i..i + ndl.len()].eq_ignore_ascii_case(ndl))
     }
 
     /// Parse comparison expression (path op value)
@@ -265,9 +287,12 @@ impl PredicateParser {
                 let path = input[..op_pos].trim().to_string();
                 let value_part = input[op_pos + op.len()..].trim();
 
-                // Remove quotes if present (single or double)
-                let value = if (value_part.starts_with('\'') && value_part.ends_with('\''))
-                    || (value_part.starts_with('"') && value_part.ends_with('"'))
+                // Remove quotes if present (single or double). A lone
+                // quote (length 1) is kept literally: stripping it would
+                // slice [1..0] and panic.
+                let value = if value_part.len() >= 2
+                    && ((value_part.starts_with('\'') && value_part.ends_with('\''))
+                        || (value_part.starts_with('"') && value_part.ends_with('"')))
                 {
                     value_part[1..value_part.len() - 1].to_string()
                 } else {
@@ -302,9 +327,8 @@ impl PredicateParser {
 
     /// Parse a string as a number
     fn parse_number(s: &str) -> Result<f64> {
-        s.parse::<f64>().map_err(|_| {
-            ConformanceError::InvalidPredicate(format!("Invalid number: {}", s))
-        })
+        s.parse::<f64>()
+            .map_err(|_| ConformanceError::InvalidPredicate(format!("Invalid number: {}", s)))
     }
 }
 
@@ -390,20 +414,14 @@ mod tests {
     fn test_parse_is_valued() {
         let result = PredicateParser::parse("PID-8 IS VALUED");
         assert!(result.is_ok());
-        assert_eq!(
-            result.unwrap(),
-            Condition::IsValued("PID-8".to_string())
-        );
+        assert_eq!(result.unwrap(), Condition::IsValued("PID-8".to_string()));
     }
 
     #[test]
     fn test_parse_is_not_valued() {
         let result = PredicateParser::parse("PID-7 IS NOT VALUED");
         assert!(result.is_ok());
-        assert_eq!(
-            result.unwrap(),
-            Condition::IsNotValued("PID-7".to_string())
-        );
+        assert_eq!(result.unwrap(), Condition::IsNotValued("PID-7".to_string()));
     }
 
     #[test]
@@ -455,7 +473,10 @@ mod tests {
         assert!(result.is_ok());
         match result.unwrap() {
             Condition::Or(left, right) => {
-                assert_eq!(*left, Condition::Equals("PID-8".to_string(), "M".to_string()));
+                assert_eq!(
+                    *left,
+                    Condition::Equals("PID-8".to_string(), "M".to_string())
+                );
                 assert_eq!(
                     *right,
                     Condition::Equals("PID-8".to_string(), "F".to_string())
@@ -562,6 +583,46 @@ mod tests {
     #[test]
     fn test_invalid_expression() {
         let result = PredicateParser::parse("some random text");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_non_ascii_literal_does_not_panic() {
+        // U+017F (2 bytes) uppercases to "S" (1 byte), shifting every
+        // byte index after it; the parser must not panic on it.
+        let result = PredicateParser::parse("PID-8 = 'ſ' AND PID-7 IS VALUED");
+        assert!(result.is_ok());
+        match result.unwrap() {
+            Condition::And(left, right) => {
+                assert_eq!(
+                    *left,
+                    Condition::Equals("PID-8".to_string(), "ſ".to_string())
+                );
+                assert_eq!(*right, Condition::IsValued("PID-7".to_string()));
+            }
+            _ => panic!("Expected And condition"),
+        }
+    }
+
+    #[test]
+    fn test_parse_multibyte_before_is_valued_does_not_panic() {
+        let result = PredicateParser::parse("PID-8 = 'Müller' OR PID-8 = 'ß'");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_lone_quote_does_not_panic() {
+        let result = PredicateParser::parse("PID-8 = '");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_byte_shifting_case_map_does_not_panic() {
+        // 'ſ' (2 bytes) uppercases to "S" (1 byte), shifting every
+        // later byte index; slicing the uppercased copy panicked here.
+        // The path is invalid (no dash), so an error — not a panic — is
+        // the correct outcome.
+        let result = PredicateParser::parse("ſé = 'M'");
         assert!(result.is_err());
     }
 }

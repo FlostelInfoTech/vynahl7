@@ -70,8 +70,7 @@ pub const XML_DECLARATION: &str = r#"<?xml version="1.0" encoding="UTF-8"?>"#;
 /// ```
 #[cfg(feature = "convert")]
 pub fn er7_to_xml(er7: &str) -> XmlResult<String> {
-    let message =
-        vyna_hl7_parser::parse_message(er7).map_err(|e| XmlError::ParseError(e.to_string()))?;
+    let message = vyna_hl7_parser::parse_message(er7)?;
     let encoder = XmlEncoder::new();
     encoder.encode(&message)
 }
@@ -212,11 +211,45 @@ mod tests {
         let decoder = XmlDecoder::new();
         let decoded = decoder.decode(&xml).unwrap();
 
-        // Compare segments
-        assert_eq!(message.segments.len(), decoded.segments.len());
+        // The round-trip must preserve the whole message, not just the
+        // segment ids: fields, repetitions, components, and values.
+        assert_eq!(message, decoded);
+        assert_eq!(message.encode(), decoded.encode());
+    }
 
-        for (orig, dec) in message.segments.iter().zip(decoded.segments.iter()) {
-            assert_eq!(orig.id, dec.id);
-        }
+    #[test]
+    fn test_roundtrip_repetitions_and_subcomponents() {
+        use vyna_hl7_core::field::{Component, Field, Repetition, SubComponent};
+
+        let mut message = Message::new();
+        let mut pid = Segment::new("PID");
+        let _ = pid.set_field_value(1, "1");
+
+        // Repeated field: two address repetitions.
+        let mut addr = Field::new();
+        addr.add_repetition(Repetition::from_value("Addr1"));
+        addr.add_repetition(Repetition::from_value("Addr2"));
+        let _ = pid.set_field(11, addr);
+
+        // Components plus subcomponents plus an entity-escaped value.
+        let mut name = Field::new();
+        let mut rep = Repetition::new();
+        let mut family = Component::new();
+        family.add_subcomponent(SubComponent::new("Smith"));
+        family.add_subcomponent(SubComponent::new("Johnny"));
+        rep.add_component(family);
+        rep.add_component(Component::from_value("J&R"));
+        name.add_repetition(rep);
+        let _ = pid.set_field(5, name);
+        message.add_segment(pid);
+
+        let encoder = XmlEncoder::new();
+        let xml = encoder.encode(&message).unwrap();
+        assert!(xml.contains("PID.5.1.2"));
+
+        let decoder = XmlDecoder::new();
+        let decoded = decoder.decode(&xml).unwrap();
+        assert_eq!(message, decoded);
+        assert_eq!(message.encode(), decoded.encode());
     }
 }

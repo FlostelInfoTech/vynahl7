@@ -14,7 +14,7 @@ use tokio::io::AsyncReadExt;
 use crate::{BatchError, FileEntry, FileTransport};
 
 /// Connection parameters for [`FtpTransport`].
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct FtpConfig {
     /// Server address as `host:port`.
     pub addr: String,
@@ -24,23 +24,58 @@ pub struct FtpConfig {
     pub password: String,
     /// TCP connect timeout.
     pub connect_timeout: Duration,
+    /// Per-operation timeout for protocol commands and transfers
+    /// (`None` waits forever). Defaults to
+    /// [`DEFAULT_COMMAND_TIMEOUT`](crate::DEFAULT_COMMAND_TIMEOUT).
+    pub command_timeout: Option<Duration>,
+    /// Refuse downloads larger than this. Defaults to
+    /// [`DEFAULT_MAX_FILE_BYTES`](crate::DEFAULT_MAX_FILE_BYTES).
+    pub max_file_bytes: u64,
+}
+
+// The password must never leak into logs via `{:?}`.
+impl std::fmt::Debug for FtpConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FtpConfig")
+            .field("addr", &self.addr)
+            .field("username", &self.username)
+            .field("password", &"<redacted>")
+            .field("connect_timeout", &self.connect_timeout)
+            .field("command_timeout", &self.command_timeout)
+            .field("max_file_bytes", &self.max_file_bytes)
+            .finish()
+    }
 }
 
 impl FtpConfig {
-    /// Connect to `addr` (`host:port`) with the given credentials and a 10s
-    /// connect timeout.
+    /// Connect to `addr` (`host:port`) with the given credentials, a 10s
+    /// connect timeout, and default command timeout and size caps.
     pub fn new(addr: &str, username: &str, password: &str) -> Self {
         Self {
             addr: addr.to_string(),
             username: username.to_string(),
             password: password.to_string(),
             connect_timeout: Duration::from_secs(10),
+            command_timeout: Some(crate::DEFAULT_COMMAND_TIMEOUT),
+            max_file_bytes: crate::DEFAULT_MAX_FILE_BYTES,
         }
     }
 
     /// Override the TCP connect timeout.
     pub fn with_connect_timeout(mut self, timeout: Duration) -> Self {
         self.connect_timeout = timeout;
+        self
+    }
+
+    /// Override the per-operation timeout (`None` waits forever).
+    pub fn with_command_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.command_timeout = timeout;
+        self
+    }
+
+    /// Refuse downloads larger than `limit` bytes.
+    pub fn with_max_file_bytes(mut self, limit: u64) -> Self {
+        self.max_file_bytes = limit;
         self
     }
 }
@@ -83,10 +118,13 @@ impl FtpTransport {
                 )))
             })?;
         let mut stream = AsyncFtpStream::connect_timeout(addr, self.config.connect_timeout).await?;
-        stream
-            .login(&self.config.username, &self.config.password)
-            .await?;
-        stream.transfer_type(FileType::Binary).await?;
+        let timeout = self.config.command_timeout;
+        crate::timed(
+            timeout,
+            stream.login(&self.config.username, &self.config.password),
+        )
+        .await?;
+        crate::timed(timeout, stream.transfer_type(FileType::Binary)).await?;
         self.stream = Some(stream);
         Ok(())
     }
@@ -104,34 +142,32 @@ impl FtpTransport {
                 prefix.push('/');
             }
             prefix.push_str(&part);
-            match self.stream()?.mkdir(&prefix).await {
+            let timeout = self.config.command_timeout;
+            match crate::timed(timeout, self.stream()?.mkdir(&prefix)).await {
                 Ok(()) => {}
-                Err(e) if is_file_unavailable(&e) => {}
-                Err(e) => return Err(BatchError::from(e)),
+                Err(BatchError::Ftp(e)) if is_file_unavailable(&e) => {}
+                Err(e) => return Err(e),
             }
         }
         Ok(())
     }
-}
 
-/// FTP 550 (file unavailable): missing file or directory.
-fn is_file_unavailable(e: &FtpError) -> bool {
-    matches!(
-        e,
-        FtpError::UnexpectedResponse(resp) if resp.status == Status::FileUnavailable
-    )
-}
+    /// Single-round-trip listing via MLSD. Falls back to NLST when the
+    /// server does not support it.
+    async fn list_via_mlsd(&mut self, dir: Option<&str>) -> Result<Vec<FileEntry>, BatchError> {
+        let timeout = self.config.command_timeout;
+        let lines = crate::timed(timeout, self.stream()?.mlsd(dir)).await?;
+        Ok(parse_mlsd_entries(dir, &lines))
+    }
 
-impl FileTransport for FtpTransport {
-    async fn list(&mut self, dir: &str) -> Result<Vec<FileEntry>, BatchError> {
-        let dir = match dir.trim_matches('/').is_empty() {
-            true => None,
-            false => Some(dir.trim_matches('/')),
-        };
-        let names = match self.stream()?.nlst(dir).await {
+    /// Legacy listing: NLST plus SIZE/MDTM per file (2N round trips).
+    /// Kept for servers without MLSD.
+    async fn list_via_nlst(&mut self, dir: Option<&str>) -> Result<Vec<FileEntry>, BatchError> {
+        let timeout = self.config.command_timeout;
+        let names = match crate::timed(timeout, self.stream()?.nlst(dir)).await {
             Ok(names) => names,
-            Err(e) if is_file_unavailable(&e) => return Ok(Vec::new()),
-            Err(e) => return Err(BatchError::from(e)),
+            Err(BatchError::Ftp(e)) if is_file_unavailable(&e) => return Ok(Vec::new()),
+            Err(e) => return Err(e),
         };
         let mut entries = Vec::new();
         for name in names {
@@ -145,10 +181,11 @@ impl FileTransport for FtpTransport {
                 Some(d) => format!("{d}/{base}"),
                 None => base.to_string(),
             };
-            let size = self.stream()?.size(&path).await.ok().map(|s| s as u64);
-            let modified_ms = self
-                .stream()?
-                .mdtm(&path)
+            let size = crate::timed(timeout, self.stream()?.size(&path))
+                .await
+                .ok()
+                .map(|s| s as u64);
+            let modified_ms = crate::timed(timeout, self.stream()?.mdtm(&path))
                 .await
                 .ok()
                 .and_then(|dt| dt.and_utc().timestamp_millis().try_into().ok());
@@ -161,29 +198,117 @@ impl FileTransport for FtpTransport {
         entries.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(entries)
     }
+}
+
+/// FTP 550 (file unavailable): missing file or directory.
+fn is_file_unavailable(e: &FtpError) -> bool {
+    matches!(
+        e,
+        FtpError::UnexpectedResponse(resp) if resp.status == Status::FileUnavailable
+    )
+}
+
+/// Parse MLSD lines into entries, skipping directories and unparseable
+/// lines. A missing `modify` fact parses as the Unix epoch, which is
+/// reported as unknown rather than as a bogus 1970 timestamp.
+fn parse_mlsd_entries(dir: Option<&str>, lines: &[String]) -> Vec<FileEntry> {
+    use suppaftp::list::ListParser;
+
+    let mut entries = Vec::new();
+    for line in lines {
+        let Ok(file) = ListParser::parse_mlsd(line) else {
+            continue;
+        };
+        if !file.is_file() {
+            continue;
+        }
+        let path = match dir {
+            Some(d) => format!("{d}/{}", file.name()),
+            None => file.name().to_string(),
+        };
+        let modified_ms = file
+            .modified()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_millis() as u64)
+            .filter(|ms| *ms > 0);
+        entries.push(FileEntry {
+            path,
+            size: Some(file.size() as u64),
+            modified_ms,
+        });
+    }
+    entries.sort_by(|a, b| a.path.cmp(&b.path));
+    entries
+}
+
+impl FileTransport for FtpTransport {
+    async fn list(&mut self, dir: &str) -> Result<Vec<FileEntry>, BatchError> {
+        let dir = match dir.trim_matches('/').is_empty() {
+            true => None,
+            false => Some(dir.trim_matches('/')),
+        };
+        match self.list_via_mlsd(dir).await {
+            Ok(entries) => Ok(entries),
+            // Missing dir behaves like the filesystem transport; servers
+            // without MLSD fall back to NLST.
+            Err(BatchError::Ftp(e)) if is_file_unavailable(&e) => Ok(Vec::new()),
+            Err(BatchError::Ftp(_)) => self.list_via_nlst(dir).await,
+            Err(e) => Err(e),
+        }
+    }
 
     async fn get(&mut self, path: &str) -> Result<Vec<u8>, BatchError> {
-        let mut download = match self.stream()?.retr_as_stream(path).await {
+        let timeout = self.config.command_timeout;
+        let limit = self.config.max_file_bytes;
+        // Refuse huge files before RETR when the server reports a size.
+        if let Ok(size) = crate::timed(timeout, self.stream()?.size(path)).await
+            && size as u64 > limit
+        {
+            return Err(BatchError::TooLarge {
+                path: path.to_string(),
+                limit,
+            });
+        }
+        let download = match crate::timed(timeout, self.stream()?.retr_as_stream(path)).await {
             Ok(s) => s,
-            Err(e) if is_file_unavailable(&e) => {
+            Err(BatchError::Ftp(e)) if is_file_unavailable(&e) => {
                 return Err(BatchError::Invalid(format!("no such file: '{path}'")));
             }
-            Err(e) => return Err(BatchError::from(e)),
+            Err(e) => return Err(e),
         };
+        // Cap the read as well: SIZE may be unsupported or lie.
+        let mut capped = download.take(limit.saturating_add(1));
         let mut buf = Vec::new();
-        download
-            .read_to_end(&mut buf)
-            .await
-            .map_err(|e| BatchError::from(FtpError::ConnectionError(e)))?;
+        crate::timed(timeout, async {
+            capped
+                .read_to_end(&mut buf)
+                .await
+                .map_err(FtpError::ConnectionError)
+        })
+        .await?;
+        let download = capped.into_inner();
+        if buf.len() as u64 > limit {
+            // Drain the completion reply (if any) before reporting.
+            let _ = crate::timed(timeout, download.finish()).await;
+            return Err(BatchError::TooLarge {
+                path: path.to_string(),
+                limit,
+            });
+        }
         // Some servers accept RETR and report the missing file (550) only in
         // the transfer completion reply.
-        download.finish().await.map_err(|e| {
-            if is_file_unavailable(&e) {
-                BatchError::Invalid(format!("no such file: '{path}'"))
-            } else {
-                BatchError::from(e)
-            }
-        })?;
+        crate::timed(timeout, download.finish())
+            .await
+            .map_err(|e| {
+                if let BatchError::Ftp(inner) = &e
+                    && is_file_unavailable(inner)
+                {
+                    BatchError::Invalid(format!("no such file: '{path}'"))
+                } else {
+                    e
+                }
+            })?;
         Ok(buf)
     }
 
@@ -199,19 +324,21 @@ impl FileTransport for FtpTransport {
         self.temp_counter += 1;
         let temp = format!("{path}.tmp-{}-{}", std::process::id(), self.temp_counter);
         let mut cursor = std::io::Cursor::new(data);
-        if let Err(e) = self.stream()?.put_file(&temp, &mut cursor).await {
-            let _ = self.stream()?.rm(&temp).await;
-            return Err(BatchError::from(e));
+        let timeout = self.config.command_timeout;
+        if let Err(e) = crate::timed(timeout, self.stream()?.put_file(&temp, &mut cursor)).await {
+            let _ = crate::timed(timeout, self.stream()?.rm(&temp)).await;
+            return Err(e);
         }
-        self.stream()?.rename(temp.as_str(), path).await?;
+        crate::timed(timeout, self.stream()?.rename(temp.as_str(), path)).await?;
         Ok(())
     }
 
     async fn delete(&mut self, path: &str) -> Result<(), BatchError> {
-        match self.stream()?.rm(path).await {
+        let timeout = self.config.command_timeout;
+        match crate::timed(timeout, self.stream()?.rm(path)).await {
             Ok(()) => Ok(()),
-            Err(e) if is_file_unavailable(&e) => Ok(()),
-            Err(e) => Err(BatchError::from(e)),
+            Err(BatchError::Ftp(e)) if is_file_unavailable(&e) => Ok(()),
+            Err(e) => Err(e),
         }
     }
 
@@ -221,19 +348,95 @@ impl FileTransport for FtpTransport {
             let parent = parts[..parts.len() - 1].join("/");
             self.mkdir_p(&parent).await?;
         }
-        match self.stream()?.rename(from, to).await {
+        let timeout = self.config.command_timeout;
+        match crate::timed(timeout, self.stream()?.rename(from, to)).await {
             Ok(()) => Ok(()),
-            Err(e) if is_file_unavailable(&e) => {
+            Err(BatchError::Ftp(e)) if is_file_unavailable(&e) => {
                 Err(BatchError::Invalid(format!("no such file: '{from}'")))
             }
-            Err(e) => Err(BatchError::from(e)),
+            Err(e) => Err(e),
         }
     }
 
     async fn close(&mut self) -> Result<(), BatchError> {
         if let Some(mut stream) = self.stream.take() {
-            stream.quit().await?;
+            crate::timed(self.config.command_timeout, stream.quit()).await?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_redacts_password() {
+        let config = FtpConfig::new("host:21", "user", "s3cr3t-pw");
+        let debug = format!("{config:?}");
+        assert!(!debug.contains("s3cr3t-pw"), "leaked: {debug}");
+        assert!(debug.contains("host:21"));
+        assert!(debug.contains("user"));
+        assert!(debug.contains("<redacted>"));
+    }
+
+    #[test]
+    fn defaults_carry_size_cap_and_command_timeout() {
+        let config = FtpConfig::new("host:21", "u", "p");
+        assert_eq!(config.max_file_bytes, crate::DEFAULT_MAX_FILE_BYTES);
+        assert_eq!(config.command_timeout, Some(crate::DEFAULT_COMMAND_TIMEOUT));
+        let config = config.with_max_file_bytes(1024).with_command_timeout(None);
+        assert_eq!(config.max_file_bytes, 1024);
+        assert_eq!(config.command_timeout, None);
+    }
+
+    #[test]
+    fn mlsd_lines_parse_to_entries() {
+        let lines = vec![
+            "type=file;size=57;modify=20240101120000; a.hl7".to_string(),
+            "type=dir;modify=20240101120000; subdir".to_string(),
+            "type=bogus;size=7; nope.hl7".to_string(),
+        ];
+        let entries = parse_mlsd_entries(Some("inbox"), &lines);
+        // Only the file survives; dirs and unparseable lines are skipped.
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].path, "inbox/a.hl7");
+        assert_eq!(entries[0].size, Some(57));
+        assert!(entries[0].modified_ms.is_some());
+    }
+
+    #[test]
+    fn mlsd_without_modify_reports_unknown_time() {
+        let lines = vec!["type=file;size=3; b.hl7".to_string()];
+        let entries = parse_mlsd_entries(None, &lines);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].path, "b.hl7");
+        assert_eq!(entries[0].modified_ms, None);
+    }
+
+    #[tokio::test]
+    async fn hanging_server_hits_command_timeout() {
+        use tokio::io::AsyncWriteExt;
+
+        // Fake server: greeting, then silence. Login must time out
+        // instead of hanging on the missing USER reply.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            socket.write_all(b"220 fake\r\n").await.unwrap();
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        });
+        let config = FtpConfig::new(&addr.to_string(), "u", "p")
+            .with_connect_timeout(Duration::from_secs(5))
+            .with_command_timeout(Some(Duration::from_millis(200)));
+        let start = std::time::Instant::now();
+        let result = FtpTransport::connect(config).await;
+        assert!(start.elapsed() < Duration::from_secs(10));
+        match result {
+            Err(BatchError::Timeout(_)) => {}
+            Err(e) => panic!("unexpected error: {e:?}"),
+            Ok(_) => panic!("expected a timeout, got a connection"),
+        }
     }
 }

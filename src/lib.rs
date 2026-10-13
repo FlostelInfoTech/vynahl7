@@ -5,20 +5,32 @@
 //! ## Features
 //!
 //! - **Parsing and Serialization**: Parse HL7 pipe-delimited messages and serialize back
-//! - **Multiple HL7 Versions**: Support for v2.3, v2.4, v2.5, v2.6, v2.7, v2.8
-//! - **Message Validation**: 43 message schemas across all HL7 versions (v2.3-v2.8)
+//! - **Multiple HL7 Versions**: v2.1 through v2.8.2 (2.1, 2.2, 2.3, 2.3.1, 2.4, 2.5,
+//!   2.5.1, 2.6, 2.7, 2.7.1, 2.8, 2.8.1, 2.8.2)
+//! - **Message Validation**: JSON schemas per HL7 version (e.g. 47 message schemas
+//!   for v2.5 covering ADT, ORU, ORM, SIU, MDM, DFT, QRY, BAR, pharmacy, laboratory,
+//!   immunization, problem, and acknowledgment messages)
 //! - **Terser API**: Easy field access using path notation
-//! - **MLLP Support**: Network transmission protocol
+//! - **MLLP Support**: Network transmission protocol for intra-organization messaging
+//! - **HTTP Support**: HL7-over-HTTP transport for inter-organization messaging
 //!
 //! ## Supported Message Types
 //!
-//! - **ADT** (17 schemas): A01-A13, A17, A28, A31, A40
+//! Message schemas ship per HL7 version (23 for v2.1 up to 47 for v2.4-v2.6).
+//! The v2.5 set covers:
+//!
+//! - **ADT** (18 schemas): A01-A13, A17, A28, A31, A34, A40
 //! - **SIU** (4 schemas): S12-S15 (Scheduling)
 //! - **MDM** (3 schemas): T01, T02, T04 (Medical Documents)
 //! - **DFT** (2 schemas): P03, P11 (Financial Transactions)
 //! - **QRY** (3 schemas): A19, Q01, Q02 (Queries)
+//! - **BAR** (2 schemas): P01, P02 (Billing Accounts)
+//! - **Pharmacy** (6 schemas): RDE O11, RAS O17, RDS O13, RGV O15, RRD O14, RRA O18
+//! - **Laboratory/Orders** (4 schemas): OUL R21, OML O21, OMP O09, PPR PC1
 //! - **ORU** (1 schema): R01 (Observation Results)
 //! - **ORM** (1 schema): O01 (Orders)
+//! - **VXU** (1 schema): V04 (Immunization)
+//! - **MFN** (1 schema): M01 (Master File Notification)
 //! - **ACK** (1 schema): General Acknowledgment
 //!
 //! ## Quick Start
@@ -39,18 +51,19 @@
 //! ```
 
 pub use vyna_hl7_core as core;
+pub use vyna_hl7_http as http;
+pub use vyna_hl7_mllp as mllp;
 pub use vyna_hl7_parser as parser;
 pub use vyna_hl7_terser as terser;
 pub use vyna_hl7_validator as validator;
-pub use vyna_hl7_mllp as mllp;
 
 // Re-export commonly used types
 pub use vyna_hl7_core::{
+    Version,
     delimiters::Delimiters,
     encoding::Encoding,
     error::{Error, Result},
     field::{Component, Field, Repetition, SubComponent},
     message::Message,
     segment::Segment,
-    Version,
 };

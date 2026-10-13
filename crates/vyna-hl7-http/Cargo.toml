@@ -2,6 +2,7 @@
 name = "vyna-hl7-http"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -49,8 +50,8 @@ tokio-tungstenite = { version = "0.30", optional = true }
 futures-util = { version = "0.3", optional = true }
 
 # Protocol - Retry (optional)
-reqwest-retry = { version = "0.9", optional = true }
-reqwest-middleware = { version = "0.5", optional = true }
+# Note: retry uses the hand-rolled executor in retry.rs (backed by rand);
+# no reqwest middleware crates are involved.
 rand = { version = "0.10", optional = true }
 
 # Operational - Logging (optional)

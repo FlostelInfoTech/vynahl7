@@ -6,8 +6,8 @@
 
 #[cfg(test)]
 mod tests {
-    use vyna_hl7_core::delimiters::Delimiters;
     use crate::parse_field;
+    use vyna_hl7_core::delimiters::Delimiters;
 
     #[test]
     fn test_parse_field_simple() {

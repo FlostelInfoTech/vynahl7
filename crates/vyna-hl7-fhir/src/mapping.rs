@@ -522,7 +522,10 @@ impl MappingEngine {
 
 /// `YYYYMMDD[HHMMSS...]` -> `YYYY-MM-DD`.
 fn format_date(text: &str) -> Option<String> {
-    if text.len() >= 8 && text[..8].bytes().all(|b| b.is_ascii_digit()) {
+    // Byte-slice checks on `[u8]` never split a char boundary, and an
+    // all-ASCII-digit prefix makes the `&str` slices below safe.
+    let bytes = text.as_bytes();
+    if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
         return Some(format!("{}-{}-{}", &text[0..4], &text[4..6], &text[6..8]));
     }
     None
@@ -530,7 +533,8 @@ fn format_date(text: &str) -> Option<String> {
 
 /// HL7 datetime -> FHIR ISO 8601 (date-only when short).
 fn format_datetime(text: &str) -> Option<String> {
-    if text.len() >= 14 && text[..14].bytes().all(|b| b.is_ascii_digit()) {
+    let bytes = text.as_bytes();
+    if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
         Some(format!(
             "{}-{}-{}T{}:{}:{}",
             &text[0..4],
@@ -556,6 +560,18 @@ mod tests {
 
     fn message() -> Message {
         parse_message(SAMPLE).unwrap()
+    }
+
+    #[test]
+    fn format_helpers_reject_non_ascii_without_panic() {
+        // Misaligned multi-byte chars used to panic on byte slicing.
+        assert_eq!(format_date("123\u{e9}5678"), None);
+        assert_eq!(format_date("19800101"), Some("1980-01-01".to_string()));
+        assert_eq!(format_datetime("123\u{e9}56789012"), None);
+        assert_eq!(
+            format_datetime("20240315100000"),
+            Some("2024-03-15T10:00:00".to_string())
+        );
     }
 
     #[test]
