@@ -54,7 +54,7 @@ fn create_ack(original: &Message) -> Message {
         .get(9)
         .and_then(|f| f.value())
         .unwrap_or("0");
-    msh.fields.push(Field::from_value(&format!("ACK{}", msg_id)));
+    msh.fields.push(Field::from_value(format!("ACK{}", msg_id)));
     msh.fields.push(Field::from_value("P"));
     msh.fields.push(Field::from_value("2.5"));
     ack.segments.push(msh);

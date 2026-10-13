@@ -145,7 +145,7 @@ fn create_ack(msg: &Message) -> Message {
     }
 
     // Timestamp
-    msh.fields.push(Field::from_value(&format!("{}", chrono::Utc::now().format("%Y%m%d%H%M%S"))));
+    msh.fields.push(Field::from_value(format!("{}", chrono::Utc::now().format("%Y%m%d%H%M%S"))));
 
     // Security
     msh.fields.push(Field::from_value(""));

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// * `password` - Password
 ///
 /// # Returns
-/// A formatted "Basic <base64-encoded-credentials>" string
+/// A formatted `Basic <base64-encoded-credentials>` header value
 ///
 /// # Example
 /// ```
@@ -309,7 +309,7 @@ pub fn verify_jwt(
 /// Extract and verify JWT from Authorization header
 ///
 /// # Arguments
-/// * `header` - The Authorization header value (should be "Bearer <token>")
+/// * `header` - The Authorization header value (should be `Bearer <token>`)
 /// * `config` - JWT configuration
 ///
 /// # Returns

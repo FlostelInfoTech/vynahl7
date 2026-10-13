@@ -70,7 +70,8 @@ pub const XML_DECLARATION: &str = r#"<?xml version="1.0" encoding="UTF-8"?>"#;
 /// ```
 #[cfg(feature = "convert")]
 pub fn er7_to_xml(er7: &str) -> XmlResult<String> {
-    let message = vyna_hl7_parser::parse(er7).map_err(|e| XmlError::ParseError(e.to_string()))?;
+    let message =
+        vyna_hl7_parser::parse_message(er7).map_err(|e| XmlError::ParseError(e.to_string()))?;
     let encoder = XmlEncoder::new();
     encoder.encode(&message)
 }

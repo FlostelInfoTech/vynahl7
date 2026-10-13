@@ -260,7 +260,7 @@ pub fn parse_date(s: &str) -> Option<NaiveDate> {
     }
 }
 
-/// Parse HL7 timestamp (TS/DTM) format: YYYYMMDDHHMMSS[.SSSS][+/-ZZZZ]
+/// Parse HL7 timestamp (TS/DTM) format: `YYYYMMDDHHMMSS[.SSSS][+/-ZZZZ]`
 pub fn parse_timestamp(s: &str) -> Option<NaiveDateTime> {
     if s.len() < 8 {
         return None;

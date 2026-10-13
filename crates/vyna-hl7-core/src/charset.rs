@@ -109,7 +109,7 @@ impl CharacterSet {
 
     /// Decode raw wire bytes to text using the MSH-18 declaration.
     ///
-    /// This is [`detect`] followed by [`decode`](Self::decode), plus
+    /// This is [`detect`](Self::detect) followed by [`decode`](Self::decode), plus
     /// tolerance for a leading UTF-8 byte-order mark when the declared (or
     /// default) character set is UTF-8.
     pub fn decode_message(bytes: &[u8]) -> Result<String> {

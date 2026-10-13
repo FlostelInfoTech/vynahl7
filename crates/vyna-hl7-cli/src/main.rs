@@ -113,7 +113,7 @@ enum Commands {
         #[arg(value_name = "FILE")]
         input: String,
 
-        /// Destination: mllp://host:port or http(s)://host[:port]/path
+        /// Destination: `mllp://host:port` or `http(s)://host[:port]/path`
         #[arg(long, value_name = "URL")]
         to: String,
 
@@ -698,9 +698,7 @@ fn convert_command(
         "fhir" => {
             #[cfg(feature = "fhir")]
             {
-                use vyna_hl7_fhir::converter::MessageConverter;
-                let converter = MessageConverter::new();
-                match converter.convert(&message) {
+                match vyna_hl7_fhir::bundle::convert_message_to_bundle(&message) {
                     Ok(bundle) => {
                         if pretty {
                             println!("{}", serde_json::to_string_pretty(&bundle)?);

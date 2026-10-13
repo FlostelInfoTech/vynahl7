@@ -2,7 +2,7 @@
 //!
 //! This crate renders the JSON message schemas embedded in
 //! [`vyna_hl7_validator`] as Rust structs annotated with the
-//! [`vyna_hl7_macros`] derive macros, giving every message a strongly-typed
+//! `vyna_hl7_macros` derive macros, giving every message a strongly-typed
 //! API in the spirit of HAPI's generated model classes.
 //!
 //! ```rust

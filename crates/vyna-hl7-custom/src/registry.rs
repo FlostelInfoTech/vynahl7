@@ -184,7 +184,7 @@ impl CustomSegmentRegistry {
     /// Get metadata about a registered segment factory
     ///
     /// Returns the segment ID and type name for a registered factory.
-    /// To create a custom segment instance, use [`parse_segment()`] instead.
+    /// To create a custom segment instance, use [`parse_segment()`](Self::parse_segment) instead.
     ///
     /// # Arguments
     ///

@@ -220,7 +220,7 @@ async fn test_tls_multiple_messages() {
         let mut msh = Segment::new("MSH");
         msh.fields.push(Field::from_value("|"));
         msh.fields.push(Field::from_value("^~\\&"));
-        msh.fields.push(Field::from_value(&format!("TEST_{}", i)));
+        msh.fields.push(Field::from_value(format!("TEST_{}", i)));
         msg.segments.push(msh);
 
         let response = client
@@ -307,7 +307,7 @@ async fn test_tls_concurrent_connections() {
             let mut msh = Segment::new("MSH");
             msh.fields.push(Field::from_value("|"));
             msh.fields.push(Field::from_value("^~\\&"));
-            msh.fields.push(Field::from_value(&format!("CONCURRENT_{}", i)));
+            msh.fields.push(Field::from_value(format!("CONCURRENT_{}", i)));
             msg.segments.push(msh);
 
             let response = client

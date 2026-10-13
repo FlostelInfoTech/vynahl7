@@ -243,7 +243,7 @@ fn inner_generic_type(ty: &Type) -> Option<&Type> {
 /// - `#[hl7(id = "XXX")]` - Required. Specifies the 3-character segment ID.
 /// - `#[hl7(field = N)]` - Specifies which field number (1-based) this struct field maps to.
 /// - `#[hl7(component = N)]` - Specifies which component within the field (1-based).
-/// - `#[hl7(optional)]` - Marks the field as optional (also inferred from Option<T>).
+/// - `#[hl7(optional)]` - Marks the field as optional (also inferred from `Option<T>`).
 ///
 /// # Field types
 ///
@@ -481,7 +481,7 @@ pub fn derive_segment(input: TokenStream) -> TokenStream {
 /// - `#[hl7(trigger_event = "XXX")]` - Specifies the trigger event (e.g., "A01").
 /// - `#[hl7(segment)]` - Marks a field as a segment.
 /// - `#[hl7(segment, optional)]` - Marks a field as an optional segment.
-/// - `#[hl7(segment, repeating)]` - Marks a field as a repeating segment (Vec<T>).
+/// - `#[hl7(segment, repeating)]` - Marks a field as a repeating segment (`Vec<T>`).
 ///
 /// # Segment matching
 ///

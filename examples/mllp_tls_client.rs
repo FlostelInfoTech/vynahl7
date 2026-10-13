@@ -88,7 +88,7 @@ fn create_test_message() -> Message {
     msh.fields.push(Field::from_value("SENDING_FAC"));
     msh.fields.push(Field::from_value("RECEIVING_APP"));
     msh.fields.push(Field::from_value("RECEIVING_FAC"));
-    msh.fields.push(Field::from_value(&format!("{}", chrono::Utc::now().format("%Y%m%d%H%M%S"))));
+    msh.fields.push(Field::from_value(format!("{}", chrono::Utc::now().format("%Y%m%d%H%M%S"))));
     msh.fields.push(Field::from_value(""));
     msh.fields.push(Field::from_value("ADT^A01"));
     msh.fields.push(Field::from_value("MSG001"));
@@ -99,7 +99,7 @@ fn create_test_message() -> Message {
     // EVN segment
     let mut evn = Segment::new("EVN");
     evn.fields.push(Field::from_value("A01"));
-    evn.fields.push(Field::from_value(&format!("{}", chrono::Utc::now().format("%Y%m%d%H%M%S"))));
+    evn.fields.push(Field::from_value(format!("{}", chrono::Utc::now().format("%Y%m%d%H%M%S"))));
     msg.segments.push(evn);
 
     // PID segment

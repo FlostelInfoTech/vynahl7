@@ -210,11 +210,11 @@ async fn main() -> Result<()> {
                     #[cfg(feature = "logging")]
                     logging::log_hl7_message(&response, "sent");
 
-                    return Ok(response);
+                    Ok(response)
                 }
                 Err(e) => {
                     tracing::error!("Routing error: {}", e);
-                    return Err(e);
+                    Err(e)
                 }
             }
         }

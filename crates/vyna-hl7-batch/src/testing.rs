@@ -1,6 +1,6 @@
 //! Test doubles for transport consumers.
 //!
-//! [`MemTransport`] is an in-memory [`FileTransport`](crate::FileTransport)
+//! [`MemTransport`] is an in-memory [`FileTransport`]
 //! for unit-testing pollers and processors without touching the network or
 //! the filesystem. Available with `feature = "testing"`.
 

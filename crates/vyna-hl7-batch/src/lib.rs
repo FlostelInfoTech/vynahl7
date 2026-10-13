@@ -12,8 +12,8 @@
 //!   the whole drop because of one bad message.
 //! - [`FileTransport`]: async trait for file movement, with a
 //!   [`FilesystemTransport`] drop-folder implementation built in,
-//!   [`FtpTransport`](ftp::FtpTransport) behind `feature = "ftp"`, and
-//!   [`SftpTransport`](sftp::SftpTransport) behind `feature = "sftp"`.
+//!   `FtpTransport` behind `feature = "ftp"`, and `SftpTransport`
+//!   behind `feature = "sftp"`.
 //! - [`Poller`]: poll an inbox, parse each file with [`Intake`], and settle
 //!   (archive or delete) what was consumed.
 //!

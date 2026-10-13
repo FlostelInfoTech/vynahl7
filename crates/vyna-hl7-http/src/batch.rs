@@ -151,7 +151,7 @@ impl MessageBatch {
 #[cfg(feature = "batch")]
 pub struct BatchProcessor<F>
 where
-    F: FnMut(Vec<Message>) -> (),
+    F: FnMut(Vec<Message>),
 {
     batch: MessageBatch,
     flush_callback: F,
@@ -160,7 +160,7 @@ where
 #[cfg(feature = "batch")]
 impl<F> BatchProcessor<F>
 where
-    F: FnMut(Vec<Message>) -> (),
+    F: FnMut(Vec<Message>),
 {
     /// Create a new batch processor
     ///

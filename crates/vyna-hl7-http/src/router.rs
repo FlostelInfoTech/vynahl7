@@ -306,7 +306,7 @@ mod tests {
     #[test]
     fn test_add_route() {
         let mut router = MessageRouter::new();
-        router.add_route("ADT", "A01", Arc::new(|msg| Ok(msg)));
+        router.add_route("ADT", "A01", Arc::new(Ok));
         assert_eq!(router.route_count(), 1);
         assert!(router.has_route("ADT", "A01"));
     }
@@ -314,7 +314,7 @@ mod tests {
     #[test]
     fn test_add_type_route() {
         let mut router = MessageRouter::new();
-        router.add_type_route("ADT", Arc::new(|msg| Ok(msg)));
+        router.add_type_route("ADT", Arc::new(Ok));
         assert_eq!(router.route_count(), 1);
         assert!(router.has_route("ADT", "A01"));
         assert!(router.has_route("ADT", "A04"));
@@ -323,9 +323,9 @@ mod tests {
     #[test]
     fn test_router_builder() {
         let router = RouterBuilder::new()
-            .route("ADT", "A01", Arc::new(|msg| Ok(msg)))
-            .route("ORU", "R01", Arc::new(|msg| Ok(msg)))
-            .default(Arc::new(|msg| Ok(msg)))
+            .route("ADT", "A01", Arc::new(Ok))
+            .route("ORU", "R01", Arc::new(Ok))
+            .default(Arc::new(Ok))
             .build();
 
         assert_eq!(router.route_count(), 2);
@@ -337,8 +337,8 @@ mod tests {
     #[test]
     fn test_route_keys() {
         let mut router = MessageRouter::new();
-        router.add_route("ADT", "A01", Arc::new(|msg| Ok(msg)));
-        router.add_route("ORU", "R01", Arc::new(|msg| Ok(msg)));
+        router.add_route("ADT", "A01", Arc::new(Ok));
+        router.add_route("ORU", "R01", Arc::new(Ok));
 
         let keys = router.route_keys();
         assert_eq!(keys.len(), 2);

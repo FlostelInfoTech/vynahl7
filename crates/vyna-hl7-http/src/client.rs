@@ -56,7 +56,7 @@ impl HttpClient {
     /// Create a new HTTP client
     ///
     /// # Arguments
-    /// * `endpoint` - The HTTP endpoint URL (e.g., "https://api.example.com/hl7")
+    /// * `endpoint` - The HTTP endpoint URL (e.g., <https://api.example.com/hl7>)
     ///
     /// # Errors
     /// Returns an error if the URL is invalid or the HTTP client cannot be created

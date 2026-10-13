@@ -63,7 +63,7 @@ fn create_ack(original: &Message) -> Message {
         .get(9)
         .and_then(|f| f.value())
         .unwrap_or("0");
-    msh.fields.push(Field::from_value(&format!("ACK{}", msg_id)));
+    msh.fields.push(Field::from_value(format!("ACK{}", msg_id)));
     msh.fields.push(Field::from_value("P"));
     msh.fields.push(Field::from_value("2.5"));
     ack.segments.push(msh);
@@ -102,6 +102,8 @@ impl BenchResult {
         self.iterations as f64 / self.total_duration.as_secs_f64()
     }
 
+    // Kept for ad-hoc per-result debugging; the summary table is the default output.
+    #[allow(dead_code)]
     fn print(&self) {
         println!();
         println!("  {}", "─".repeat(72));
@@ -146,7 +148,7 @@ fn compute_stats(
     message_size: usize,
     concurrent_clients: usize,
     total_duration: Duration,
-    latencies: &mut Vec<Duration>,
+    latencies: &mut [Duration],
 ) -> BenchResult {
     latencies.sort();
     let count = latencies.len();
