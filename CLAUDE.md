@@ -143,6 +143,7 @@ The project uses fluent builders for message creation. Builders are located in `
 - `siu.rs` - Scheduling messages
 - `orm.rs`, `oru.rs` - Order/result messages
 - `pharmacy.rs`, `laboratory.rs` - Specialized message builders
+- `bar.rs` - Billing messages (P01, P02); `mfn.rs` - Master file notifications (M01)
 - `fields.rs` - Complex field builders (XPN, XAD, XTN, CX, XCN)
 
 **Validation Architecture:**

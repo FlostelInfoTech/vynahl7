@@ -5,11 +5,13 @@
 
 pub mod ack;
 pub mod adt;
+pub mod bar;
 pub mod batch;
 pub mod dft;
 pub mod fields;
 pub mod laboratory;
 pub mod mdm;
+pub mod mfn;
 pub mod omp;
 pub mod orm;
 pub mod oru;

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-13
+
+### Added
+
+- BAR builders: `BarP01Builder` (add patient accounts: demographics, visit, account, diagnoses, procedures, guarantor, insurance) and delegating `BarP02Builder` (purge)
+- MFN builder: `MfnM01Builder` with schema-valid master-file defaults plus `add_segment` payload passthrough for record data
+- Conformance coverage for BAR_P01, BAR_P02, MFN_M01 (56 tests total)
+
+### Fixed
+
+- Table 0292 (CVX) gains verified code 141 (CDC IIS: Influenza, split virus, trivalent, preservative, Active); snapshot ceiling (01-122, 141, 998-999) now documented at the source
+- ORU OBX-5 takes the shape of OBX-2: coded/composite value types split delimiters into structure, `ST`/`TX`/`FT` stay literal so text escapes correctly
+- Last pre-existing clippy warnings removed workspace-wide (`table_iso4217` rename, mllp test-server `while let`, redundant borrows)
+
 ## [0.6.0] - 2026-10-13
 
 ### Changed

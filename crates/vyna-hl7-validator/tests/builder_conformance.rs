@@ -1197,3 +1197,78 @@ fn field_builders_emit_structure() {
     );
     assert!(addr.encode(&delims).contains("Springfield^IL"));
 }
+
+#[test]
+fn bar_p01_conforms() {
+    use vyna_hl7_core::builders::bar::{BarP01Builder, Diagnosis, Insurance, Procedure};
+
+    let message = BarP01Builder::new(Version::V2_5)
+        .sending_application("SEND")
+        .sending_facility("SFAC")
+        .receiving_application("RECV")
+        .receiving_facility("RFAC")
+        .patient_id("12345")
+        .patient_name("Smith", "John")
+        .patient_account("ACCT1")
+        .patient_class("I")
+        .assigned_location("3N^301^B")
+        .visit_number("VN1")
+        .add_diagnosis(Diagnosis::new("I10^Essential hypertension^I10", "F"))
+        .add_procedure(Procedure::new(
+            "C4^Coronary angiography^C4",
+            "20240115130000",
+        ))
+        .guarantor_name("Smith", "John")
+        .insurance(Insurance::new("PPO^Preferred^L", "BCBS001"))
+        .build()
+        .unwrap();
+
+    assert_conformant(&message, "BAR", "P01");
+}
+
+#[test]
+fn bar_p02_conforms() {
+    use vyna_hl7_core::builders::bar::{BarP02Builder, Diagnosis};
+
+    let message = BarP02Builder::new(Version::V2_5)
+        .sending_application("SEND")
+        .sending_facility("SFAC")
+        .receiving_application("RECV")
+        .receiving_facility("RFAC")
+        .patient_id("12345")
+        .patient_name("Smith", "John")
+        .patient_class("I")
+        .add_diagnosis(Diagnosis::new("I10^Essential hypertension^I10", "F"))
+        .build()
+        .unwrap();
+
+    assert_conformant(&message, "BAR", "P02");
+}
+
+#[test]
+fn mfn_m01_conforms() {
+    use vyna_hl7_core::builders::mfn::MfnM01Builder;
+    use vyna_hl7_core::{Field, Segment};
+
+    let mut loc = Segment::new("LOC");
+    loc.add_field(Field::from_value("LOC1"));
+    loc.add_field(Field::from_delimited("Ward 3N^3N^L"));
+    let message = MfnM01Builder::new(Version::V2_5)
+        .sending_application("SEND")
+        .sending_facility("SFAC")
+        .receiving_application("RECV")
+        .receiving_facility("RFAC")
+        .master_file_id("LOC")
+        .master_file_text("Location")
+        .file_event("UPD")
+        .response_level("NE")
+        .record_event("MUP")
+        .mf_control_id("MF100")
+        .primary_key("LOC1")
+        .primary_key_type("CE")
+        .add_segment(loc)
+        .build()
+        .unwrap();
+
+    assert_conformant(&message, "MFN", "M01");
+}

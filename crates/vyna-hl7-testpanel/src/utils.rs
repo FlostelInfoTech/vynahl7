@@ -743,9 +743,9 @@ fn add_component_nodes(
 
                             // Use Terser notation: SEG-F-C-S (e.g., MSH-9-1-1)
                             let sub_label = if let Some(name) = sub_name {
-                                format!("{} ({}): {}", sub_path, name, &subcomp.value)
+                                format!("{} ({}): {}", sub_path, name, subcomp.value)
                             } else {
-                                format!("{}: {}", sub_path, &subcomp.value)
+                                format!("{}: {}", sub_path, subcomp.value)
                             };
 
                             comp_node.children.push(TreeNode {

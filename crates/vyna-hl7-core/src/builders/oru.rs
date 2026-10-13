@@ -34,9 +34,22 @@ pub struct Observation {
     pub set_id: u32,
     pub value_type: String,
     pub identifier: String,
+    /// Observation value. Takes the shape of `value_type`: free-text types
+    /// (`ST`/`TX`/`FT`) stay literal, every other type splits `~`/`^`/`&`
+    /// into structure (atomic values are unaffected by splitting).
     pub value: String,
     pub units: Option<String>,
     pub status: String,
+}
+
+/// OBX-5 takes the shape of OBX-2: free-text types stay literal (delimiter
+/// characters are data and must escape on the wire), every other type splits
+/// `~`/`^`/`&` into structure.
+fn observation_value_field(value_type: &str, value: &str) -> Field {
+    match value_type {
+        "ST" | "TX" | "FT" => Field::from_value(value),
+        _ => Field::from_delimited(value),
+    }
 }
 
 impl OruR01Builder {
@@ -202,7 +215,7 @@ impl OruR01Builder {
             obx.add_field(Field::from_value(&obs.value_type)); // OBX-2: Value Type
             obx.add_field(Field::from_delimited(&obs.identifier)); // OBX-3: Observation Identifier
             obx.add_field(Field::from_value("")); // OBX-4: Observation Sub-ID
-            obx.add_field(Field::from_value(&obs.value)); // OBX-5: Observation Value
+            obx.add_field(observation_value_field(&obs.value_type, &obs.value)); // OBX-5: Observation Value
 
             if let Some(units) = &obs.units {
                 obx.add_field(Field::from_delimited(units)); // OBX-6: Units
@@ -340,5 +353,55 @@ mod tests {
         let fields: Vec<&str> = obr.split('|').collect();
         assert_eq!(fields[2], "");
         assert_eq!(fields[3], "VYN-ACC-1");
+    }
+
+    fn obx_lines(msg: &Message) -> Vec<String> {
+        msg.encode()
+            .split(['\r', '\n'])
+            .filter(|l| l.starts_with("OBX|"))
+            .map(str::to_string)
+            .collect()
+    }
+
+    fn observation(value_type: &str, value: &str) -> Observation {
+        Observation {
+            set_id: 1,
+            value_type: value_type.to_string(),
+            identifier: "8867-4^Heart rate^LN".to_string(),
+            value: value.to_string(),
+            units: None,
+            status: "F".to_string(),
+        }
+    }
+
+    #[test]
+    fn coded_obx5_splits_into_structure() {
+        let msg = OruR01Builder::new(Version::V2_5)
+            .add_observation(observation("CWE", "POS^Positive^L"))
+            .build()
+            .unwrap();
+        let lines = obx_lines(&msg);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("|POS^Positive^L|"), "{}", lines[0]);
+        let obx = msg.get_segment_by_id("OBX").unwrap();
+        assert_eq!(
+            obx.get_field(5)
+                .unwrap()
+                .get_component(0, 1)
+                .unwrap()
+                .value(),
+            Some("Positive")
+        );
+    }
+
+    #[test]
+    fn text_obx5_keeps_delimiters_literal() {
+        let msg = OruR01Builder::new(Version::V2_5)
+            .add_observation(observation("TX", "R&D follow-up"))
+            .build()
+            .unwrap();
+        let lines = obx_lines(&msg);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("R\\T\\D follow-up"), "{}", lines[0]);
     }
 }

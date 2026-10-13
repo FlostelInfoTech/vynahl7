@@ -183,23 +183,17 @@ impl MockMllpServer {
 
                 // Handle connection
                 tokio::spawn(async move {
-                    loop {
-                        match conn.receive_message().await {
-                            Ok(msg) => {
-                                // Process message with handler
-                                match handler(msg) {
-                                    Ok(response) => {
-                                        if let Err(_e) = conn.send_message(&response).await {
-                                            break; // Send failed
-                                        }
-                                    }
-                                    Err(_e) => {
-                                        break; // Handler error
-                                    }
+                    // Receive error or connection closed ends the loop.
+                    while let Ok(msg) = conn.receive_message().await {
+                        // Process message with handler
+                        match handler(msg) {
+                            Ok(response) => {
+                                if let Err(_e) = conn.send_message(&response).await {
+                                    break; // Send failed
                                 }
                             }
                             Err(_e) => {
-                                break; // Receive error or connection closed
+                                break; // Handler error
                             }
                         }
                     }

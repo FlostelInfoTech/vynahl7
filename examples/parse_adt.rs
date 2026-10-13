@@ -100,7 +100,7 @@ PV1|1|I|WARD^ROOM^BED|||ATTEND^DOCTOR^A|||MED||||1|||ATTEND^DOCTOR^A||VN12345|||
     println!("--- Message Encoding ---");
     let encoded = message.encode();
     println!("Encoded message (first 100 chars):");
-    println!("{}\n", &encoded.chars().take(100).collect::<String>());
+    println!("{}\n", encoded.chars().take(100).collect::<String>());
 
     println!("=== Example Complete ===");
 

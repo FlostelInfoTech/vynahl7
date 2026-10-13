@@ -95,16 +95,16 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-vyna-hl7-core = "0.6.0"
-vyna-hl7-parser = "0.6.0"
-vyna-hl7-terser = "0.6.0"
-vyna-hl7-validator = "0.6.0"
-vyna-hl7-conformance = "0.6.0"   # Optional: for conformance profile validation
-vyna-hl7-orchestration = "0.6.0" # Optional: for routing, filtering, and workflows
-vyna-hl7-custom = "0.6.0"        # Optional: for custom Z-segment support
-vyna-hl7-mllp = "0.6.0"          # Optional: for MLLP network support with TLS/mTLS (intra-organization)
-vyna-hl7-http = "0.6.0"          # Optional: for HTTP transport with TLS/mTLS (inter-organization)
-vyna-hl7-fhir = "0.6.0"          # Optional: for FHIR conversion (12 converters)
+vyna-hl7-core = "0.7.0"
+vyna-hl7-parser = "0.7.0"
+vyna-hl7-terser = "0.7.0"
+vyna-hl7-validator = "0.7.0"
+vyna-hl7-conformance = "0.7.0"   # Optional: for conformance profile validation
+vyna-hl7-orchestration = "0.7.0" # Optional: for routing, filtering, and workflows
+vyna-hl7-custom = "0.7.0"        # Optional: for custom Z-segment support
+vyna-hl7-mllp = "0.7.0"          # Optional: for MLLP network support with TLS/mTLS (intra-organization)
+vyna-hl7-http = "0.7.0"          # Optional: for HTTP transport with TLS/mTLS (inter-organization)
+vyna-hl7-fhir = "0.7.0"          # Optional: for FHIR conversion (12 converters)
 ```
 
 ### Parsing a Message
