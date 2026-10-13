@@ -150,7 +150,7 @@ impl QryA19Builder {
         // QRD-8: Who Subject Filter
         if let Some((family, given)) = &self.patient_name {
             let name = format!("{}^{}", family, given);
-            qrd.add_field(Field::from_value(&name));
+            qrd.add_field(Field::from_delimited(&name));
         } else if let Some(id) = &self.patient_id {
             qrd.add_field(Field::from_value(id));
         } else {
@@ -161,7 +161,7 @@ impl QryA19Builder {
         qrd.add_field(Field::from_value("DEM"));
 
         // QRD-10: What Department Data Code
-        qrd.add_field(Field::from_value(
+        qrd.add_field(Field::from_delimited(
             self.what_department_data_code.as_deref().unwrap_or(""),
         ));
 
@@ -277,11 +277,11 @@ impl QryQ01Builder {
         qrd.add_field(composite_field(
             self.quantity_limited_request.as_deref().unwrap_or(""),
         )); // Quantity Limited Request
-        qrd.add_field(Field::from_value(
+        qrd.add_field(Field::from_delimited(
             self.who_subject_filter.as_deref().unwrap_or(""),
         )); // Who Subject Filter
-        qrd.add_field(Field::from_value(&self.what_subject_filter)); // What Subject Filter
-        qrd.add_field(Field::from_value(
+        qrd.add_field(Field::from_delimited(&self.what_subject_filter)); // What Subject Filter
+        qrd.add_field(Field::from_delimited(
             self.what_department_data_code.as_deref().unwrap_or(""),
         )); // What Department Data Code
 
@@ -404,11 +404,11 @@ impl QryQ02Builder {
         qrd.add_field(composite_field(
             self.quantity_limited_request.as_deref().unwrap_or(""),
         )); // Quantity Limited Request
-        qrd.add_field(Field::from_value(
+        qrd.add_field(Field::from_delimited(
             self.who_subject_filter.as_deref().unwrap_or(""),
         )); // Who Subject Filter
-        qrd.add_field(Field::from_value(&self.what_subject_filter)); // What Subject Filter
-        qrd.add_field(Field::from_value(
+        qrd.add_field(Field::from_delimited(&self.what_subject_filter)); // What Subject Filter
+        qrd.add_field(Field::from_delimited(
             self.what_department_data_code.as_deref().unwrap_or(""),
         )); // What Department Data Code
 

@@ -110,6 +110,10 @@ impl ImmunizationDose {
 fn set_field(segment: &mut Segment, index: usize, value: &str) {
     let _ = segment.set_field(index, Field::from_value(value));
 }
+/// Set a segment field from HL7-delimited content (`~`, `^`, `&` are split).
+fn set_delimited_field(segment: &mut Segment, index: usize, value: &str) {
+    let _ = segment.set_field(index, Field::from_delimited(value));
+}
 
 /// Builder for VXU^V04 - Unsolicited Vaccination Record Update
 pub struct VxuV04Builder {
@@ -231,7 +235,7 @@ impl VxuV04Builder {
             set_field(&mut pid, 3, id);
         }
         if let Some((family, given)) = self.patient_name.as_ref() {
-            set_field(&mut pid, 5, &format!("{family}^{given}"));
+            set_delimited_field(&mut pid, 5, &format!("{family}^{given}"));
         }
         if let Some(dob) = self.date_of_birth.as_deref() {
             set_field(&mut pid, 7, dob);
@@ -246,7 +250,7 @@ impl VxuV04Builder {
             let mut orc = Segment::new("ORC");
             let control = dose.order_control.as_deref().unwrap_or(&self.order_control);
             orc.add_field(Field::from_value(control)); // ORC-1
-            orc.add_field(Field::from_value(
+            orc.add_field(Field::from_delimited(
                 dose.placer_order_number.as_deref().unwrap_or(""),
             )); // ORC-2
             self.base.message.add_segment(orc);
@@ -278,15 +282,15 @@ impl VxuV04Builder {
                 "",                                                           // 22
             ];
             for value in values {
-                rxa.add_field(Field::from_value(value));
+                rxa.add_field(Field::from_delimited(value));
             }
             self.base.message.add_segment(rxa);
 
             // RXR segment (only when a route is set; RXR-1 is required)
             if let Some(route) = &dose.route {
                 let mut rxr = Segment::new("RXR");
-                rxr.add_field(Field::from_value(route)); // RXR-1
-                rxr.add_field(Field::from_value(dose.site.as_deref().unwrap_or(""))); // RXR-2
+                rxr.add_field(Field::from_delimited(route)); // RXR-1
+                rxr.add_field(Field::from_delimited(dose.site.as_deref().unwrap_or(""))); // RXR-2
                 self.base.message.add_segment(rxr);
             }
         }
@@ -339,7 +343,15 @@ mod tests {
 
         let pid = message.get_segment_by_id("PID").unwrap();
         assert_eq!(pid.get_field_value(3), Some("12345"));
-        assert_eq!(pid.get_field_value(5), Some("Smith^John"));
+        assert_eq!(pid.get_field_value(5), Some("Smith"));
+        assert_eq!(
+            pid.get_field(5)
+                .unwrap()
+                .get_component(0, 1)
+                .unwrap()
+                .value(),
+            Some("John")
+        );
 
         let orc = message.get_segment_by_id("ORC").unwrap();
         assert_eq!(orc.get_field_value(1), Some("RE"));
@@ -349,7 +361,15 @@ mod tests {
         assert_eq!(rxa.get_field_value(3), Some("20240101100000"));
         // RXA-4 defaults to the start time; RXA-20 defaults to CP.
         assert_eq!(rxa.get_field_value(4), Some("20240101100000"));
-        assert_eq!(rxa.get_field_value(5), Some("08^HepB adult^CVX"));
+        assert_eq!(rxa.get_field_value(5), Some("08"));
+        assert_eq!(
+            rxa.get_field(5)
+                .unwrap()
+                .get_component(0, 1)
+                .unwrap()
+                .value(),
+            Some("HepB adult")
+        );
         assert_eq!(rxa.get_field_value(6), Some("1.0"));
         assert_eq!(rxa.get_field_value(20), Some("CP"));
     }
@@ -369,8 +389,26 @@ mod tests {
 
         let rxas = message.get_segments_by_id("RXA");
         assert_eq!(rxas.len(), 2);
-        assert_eq!(rxas[0].get_field_value(5), Some("08^HepB adult^CVX"));
-        assert_eq!(rxas[1].get_field_value(5), Some("20^DTaP^CVX"));
+        assert_eq!(rxas[0].get_field_value(5), Some("08"));
+        assert_eq!(
+            rxas[0]
+                .get_field(5)
+                .unwrap()
+                .get_component(0, 1)
+                .unwrap()
+                .value(),
+            Some("HepB adult")
+        );
+        assert_eq!(rxas[1].get_field_value(5), Some("20"));
+        assert_eq!(
+            rxas[1]
+                .get_field(5)
+                .unwrap()
+                .get_component(0, 1)
+                .unwrap()
+                .value(),
+            Some("DTaP")
+        );
 
         let orcs = message.get_segments_by_id("ORC");
         assert_eq!(orcs.len(), 2);
@@ -389,8 +427,24 @@ mod tests {
             .build()
             .unwrap();
         let rxr = with_route.get_segment_by_id("RXR").unwrap();
-        assert_eq!(rxr.get_field_value(1), Some("IM^Intramuscular^HL70162"));
-        assert_eq!(rxr.get_field_value(2), Some("LD^Left Deltoid^HL70163"));
+        assert_eq!(rxr.get_field_value(1), Some("IM"));
+        assert_eq!(
+            rxr.get_field(1)
+                .unwrap()
+                .get_component(0, 1)
+                .unwrap()
+                .value(),
+            Some("Intramuscular")
+        );
+        assert_eq!(rxr.get_field_value(2), Some("LD"));
+        assert_eq!(
+            rxr.get_field(2)
+                .unwrap()
+                .get_component(0, 1)
+                .unwrap()
+                .value(),
+            Some("Left Deltoid")
+        );
 
         // Site alone must not emit RXR: RXR-1 is required when present.
         let site_only = minimal_builder()
@@ -424,7 +478,15 @@ mod tests {
         let rxa = message.get_segment_by_id("RXA").unwrap();
         assert_eq!(rxa.get_field_value(15), Some("LOT123"));
         assert_eq!(rxa.get_field_value(16), Some("20251231"));
-        assert_eq!(rxa.get_field_value(17), Some("MFR123^Merck^MVX"));
+        assert_eq!(rxa.get_field_value(17), Some("MFR123"));
+        assert_eq!(
+            rxa.get_field(17)
+                .unwrap()
+                .get_component(0, 1)
+                .unwrap()
+                .value(),
+            Some("Merck")
+        );
         assert_eq!(rxa.get_field_value(20), Some("RE"));
     }
 }

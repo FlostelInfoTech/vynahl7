@@ -138,7 +138,7 @@ impl MdmT01Builder {
         pid.add_field(Field::from_value(""));
 
         if let Some((family, given)) = &self.patient_name {
-            pid.add_field(Field::from_value(format!("{}^{}", family, given)));
+            pid.add_field(Field::from_delimited(format!("{}^{}", family, given)));
         }
 
         self.base.message.add_segment(pid);
@@ -154,7 +154,7 @@ impl MdmT01Builder {
         // TXA segment
         let mut txa = Segment::new("TXA");
         txa.add_field(Field::from_value("1")); // Set ID
-        txa.add_field(Field::from_value(self.document_type.as_deref().unwrap_or(""))); // Document Type
+        txa.add_field(Field::from_delimited(self.document_type.as_deref().unwrap_or(""))); // Document Type
         for _ in 3..12 {
             txa.add_field(Field::from_value(""));
         }
@@ -175,7 +175,7 @@ impl MdmT01Builder {
             let mut obx = Segment::new("OBX");
             obx.add_field(Field::from_value("1")); // Set ID
             obx.add_field(Field::from_value("TX")); // Value Type
-            obx.add_field(Field::from_value(identifier)); // Observation Identifier
+            obx.add_field(Field::from_delimited(identifier)); // Observation Identifier
             obx.add_field(Field::from_value("")); // Observation Sub-ID
             obx.add_field(Field::from_value(
                 self.observation_value.as_deref().unwrap_or(""),

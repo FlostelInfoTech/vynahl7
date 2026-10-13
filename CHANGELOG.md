@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-13
+
+### Fixed
+
+- Builder wire corruption: composite values passed through `Field::from_value` were stored as a single component and escape-encoded on output (`PID-5` built from `Smith`/`John` encoded as `Smith\S\John`). Builders now split composites into real structure, so built messages encode with literal delimiters and Terser paths resolve on built messages
+- `vynahl7 validate` and the testpanel Validator tab now auto-select the message schema from MSH-9, falling back to structural validation with an explicit note when no schema exists (QBP/RSP/batch)
+- Testpanel enriched samples corrected to schema truth (17/17 pass strict validation): RDE recast as a CVX-coded influenza vaccine order (v2.5 tables RXE-2 to 0292 in every version), PR1-3 procedure-method code `C4`, DRG/DG1 coding-system cleanup, TXA-17/18 remap, case-sensitive vocabulary fixes
+- Conformance test data corrected where proper structure exposed real values: FT1-7 coding system `CPT` is not a table 0396 code, now `C4`
+
+### Added
+
+- `Field::from_delimited` constructor (splits `~`/`^`/`&` into structure) plus `set_delimited_field` builder helpers; `from_value` documented as literal-only
+- CLI `validate --format json` gains a `schema_applied` flag and fallback note
+- Conformance suite: wire-escape regression check inside `assert_conformant` plus 7 composite-structure tests (53 total)
+
 ## [0.5.0] - 2026-10-13
 
 ### Fixed

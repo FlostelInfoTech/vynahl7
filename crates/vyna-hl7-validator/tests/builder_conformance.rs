@@ -23,7 +23,22 @@ fn assert_conformant(message: &Message, message_type: &str, trigger_event: &str)
         built.errors
     );
 
-    let parsed = vyna_hl7_parser::parse_message(&message.encode()).unwrap();
+    // Composite builder inputs must encode with literal delimiters: a composite
+    // stored as one component would escape to \S\, \T\, or \R\ on the wire,
+    // which validates cleanly (short merged values) while corrupting data.
+    let wire = message.encode();
+    for escape in ["\\S\\", "\\T\\", "\\R\\"] {
+        assert!(
+            !wire.contains(escape),
+            "{}^{} wire contains {} (composite stored as one component): {}",
+            message_type,
+            trigger_event,
+            escape,
+            wire.lines().find(|l| l.contains(escape)).unwrap_or("")
+        );
+    }
+
+    let parsed = vyna_hl7_parser::parse_message(&wire).unwrap();
     let reparsed = validator.validate(&parsed);
     assert!(
         reparsed.errors.is_empty(),
@@ -504,7 +519,7 @@ fn dft_p03_conforms() {
         .patient_name("Smith", "John")
         .transaction_date("20240115")
         .transaction_type("CG")
-        .transaction_code("99213^Visit^CPT")
+        .transaction_code("99213^Visit^C4")
         .transaction_amount("150.00")
         .build()
         .unwrap();
@@ -525,7 +540,7 @@ fn dft_p11_conforms() {
         .patient_name("Smith", "John")
         .transaction_date("20240115")
         .transaction_type("CG")
-        .transaction_code("99213^Visit^CPT")
+        .transaction_code("99213^Visit^C4")
         .transaction_amount("150.00")
         .build()
         .unwrap();
@@ -967,4 +982,218 @@ fn oru_r01_conforms() {
         .unwrap();
 
     assert_conformant(&message, "ORU", "R01");
+}
+
+/// Assert one built component value (0-based component index).
+fn assert_component(
+    message: &Message,
+    segment: &str,
+    field: usize,
+    component: usize,
+    expected: &str,
+) {
+    let seg = message
+        .get_segments_by_id(segment)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("missing {segment} segment"));
+    let actual = seg
+        .get_field(field)
+        .unwrap_or_else(|| panic!("missing {segment}-{field}"))
+        .get_component(0, component)
+        .and_then(|c| c.value())
+        .unwrap_or("");
+    assert_eq!(
+        actual,
+        expected,
+        "{segment}-{field} component {}",
+        component + 1
+    );
+}
+
+#[test]
+fn composites_become_structure_not_escapes() {
+    use vyna_hl7_core::builders::dft::DftP03Builder;
+
+    let message = DftP03Builder::new(Version::V2_5)
+        .sending_application("SEND")
+        .sending_facility("SFAC")
+        .receiving_application("RECV")
+        .receiving_facility("RFAC")
+        .patient_id("12345")
+        .patient_name("Smith", "John")
+        .transaction_date("20240115")
+        .transaction_type("CG")
+        .transaction_code("99213^Visit^C4")
+        .transaction_amount("150.00")
+        .build()
+        .unwrap();
+
+    assert_component(&message, "PID", 5, 0, "Smith");
+    assert_component(&message, "PID", 5, 1, "John");
+    assert_component(&message, "FT1", 7, 0, "99213");
+    assert_component(&message, "FT1", 7, 1, "Visit");
+    assert_component(&message, "FT1", 7, 2, "C4");
+    assert!(message.encode().contains("99213^Visit^C4"));
+}
+
+#[test]
+fn pharmacy_composites_become_structure() {
+    use vyna_hl7_core::builders::pharmacy::RdeO11Builder;
+
+    let message = RdeO11Builder::new(Version::V2_5)
+        .sending_application("SEND")
+        .sending_facility("SFAC")
+        .receiving_application("RECV")
+        .receiving_facility("RFAC")
+        .patient_id("12345")
+        .patient_name("Smith", "John")
+        .placer_order_number("RX1")
+        .order_control("NW")
+        .give_code("08^HEPB^CVX")
+        .give_amount_minimum("1")
+        .give_units("TAB^Tablet^L")
+        .route("PO")
+        .build()
+        .unwrap();
+
+    assert_component(&message, "PID", 5, 0, "Smith");
+    assert_component(&message, "RXE", 2, 0, "08");
+    assert_component(&message, "RXE", 2, 2, "CVX");
+    assert!(message.encode().contains("08^HEPB^CVX"));
+}
+
+#[test]
+fn siu_composites_become_structure() {
+    use vyna_hl7_core::builders::siu::SiuS12Builder;
+
+    let message = SiuS12Builder::new(Version::V2_5)
+        .sending_application("SEND")
+        .sending_facility("SFAC")
+        .receiving_application("RECV")
+        .receiving_facility("RFAC")
+        .placer_appointment_id("APT1")
+        .filler_appointment_id("FAPT1")
+        .patient_id("12345")
+        .patient_name("Smith", "John")
+        .event_reason("APT^Routine^L")
+        .filler_contact("W1^Smith^John")
+        .entered_by("W2^Jones^Amy")
+        .resource_action_code("A")
+        .build()
+        .unwrap();
+
+    assert_component(&message, "PID", 5, 1, "John");
+    assert_component(&message, "SCH", 6, 0, "APT");
+    assert_component(&message, "SCH", 16, 0, "W1");
+    assert_component(&message, "SCH", 16, 2, "John");
+}
+
+#[test]
+fn ack_msh9_becomes_structure() {
+    use vyna_hl7_core::builders::ack::AckBuilder;
+
+    let message = AckBuilder::new(Version::V2_5, "M1", "SND", "SFAC")
+        .trigger_event("A01")
+        .accept()
+        .build()
+        .unwrap();
+
+    assert_component(&message, "MSH", 9, 0, "ACK");
+    assert_component(&message, "MSH", 9, 1, "A01");
+}
+
+#[test]
+fn oru_composites_become_structure() {
+    use vyna_hl7_core::builders::oru::{Observation, OruR01Builder};
+
+    let message = OruR01Builder::new(Version::V2_5)
+        .sending_application("SEND")
+        .sending_facility("SFAC")
+        .receiving_application("RECV")
+        .receiving_facility("RFAC")
+        .patient_id("12345")
+        .patient_name("Smith", "John")
+        .placer_order_number("ORD1")
+        .filler_order_number("FILL1")
+        .universal_service_id("CHEM^Chem^L")
+        .result_status("F")
+        .add_observation(Observation {
+            set_id: 1,
+            value_type: "NM".to_string(),
+            identifier: "8867-4^Heart rate^LN".to_string(),
+            value: "72".to_string(),
+            units: Some("/min".to_string()),
+            status: "F".to_string(),
+        })
+        .build()
+        .unwrap();
+
+    assert_component(&message, "PID", 5, 0, "Smith");
+    assert_component(&message, "OBR", 4, 0, "CHEM");
+    assert_component(&message, "OBX", 3, 0, "8867-4");
+    assert_component(&message, "OBX", 3, 2, "LN");
+}
+
+#[test]
+fn vxu_and_qry_composites_become_structure() {
+    use vyna_hl7_core::builders::qry::QryA19Builder;
+    use vyna_hl7_core::builders::vxu::{ImmunizationDose, VxuV04Builder};
+
+    let vxu = VxuV04Builder::new(Version::V2_5)
+        .sending_application("SEND")
+        .sending_facility("SFAC")
+        .receiving_application("RECV")
+        .receiving_facility("RFAC")
+        .patient_id("12345")
+        .patient_name("Smith", "John")
+        .add_immunization(
+            ImmunizationDose::new("08^HEPB^CVX", "20240115130000")
+                .amount("0.5")
+                .units("mL"),
+        )
+        .build()
+        .unwrap();
+    assert_component(&vxu, "RXA", 5, 0, "08");
+    assert_component(&vxu, "RXA", 5, 2, "CVX");
+
+    let qry = QryA19Builder::new(Version::V2_5)
+        .sending_application("SEND")
+        .sending_facility("SFAC")
+        .receiving_application("RECV")
+        .receiving_facility("RFAC")
+        .query_id("Q1")
+        .patient_id("12345")
+        .patient_name("Smith", "John")
+        .quantity_limited_request("10^RD")
+        .what_department_data_code("LAB")
+        .build()
+        .unwrap();
+    assert_component(&qry, "QRD", 8, 0, "Smith");
+    assert_component(&qry, "QRD", 8, 1, "John");
+}
+
+#[test]
+fn field_builders_emit_structure() {
+    use vyna_hl7_core::Delimiters;
+    use vyna_hl7_core::builders::fields::{XadBuilder, XpnBuilder};
+
+    let delims = Delimiters::default();
+    let name = XpnBuilder::new()
+        .family_name("Smith")
+        .given_name("John")
+        .build_field();
+    assert_eq!(name.get_component(0, 0).unwrap().value(), Some("Smith"));
+    assert_eq!(name.get_component(0, 1).unwrap().value(), Some("John"));
+    assert_eq!(name.encode(&delims), "Smith^John");
+
+    let addr = XadBuilder::new()
+        .city("Springfield")
+        .state("IL")
+        .build_field();
+    assert_eq!(
+        addr.get_component(0, 2).unwrap().value(),
+        Some("Springfield")
+    );
+    assert!(addr.encode(&delims).contains("Springfield^IL"));
 }

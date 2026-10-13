@@ -123,7 +123,7 @@ impl XpnBuilder {
 
     /// Build as Field
     pub fn build_field(self) -> Field {
-        Field::from_value(self.build())
+        Field::from_delimited(self.build())
     }
 }
 
@@ -253,7 +253,7 @@ impl XadBuilder {
 
     /// Build as Field
     pub fn build_field(self) -> Field {
-        Field::from_value(self.build())
+        Field::from_delimited(self.build())
     }
 }
 
@@ -383,7 +383,7 @@ impl XtnBuilder {
 
     /// Build as Field
     pub fn build_field(self) -> Field {
-        Field::from_value(self.build())
+        Field::from_delimited(self.build())
     }
 }
 
@@ -500,7 +500,7 @@ impl CxBuilder {
 
     /// Build as Field
     pub fn build_field(self) -> Field {
-        Field::from_value(self.build())
+        Field::from_delimited(self.build())
     }
 }
 
@@ -663,7 +663,7 @@ impl XcnBuilder {
 
     /// Build as Field
     pub fn build_field(self) -> Field {
-        Field::from_value(self.build())
+        Field::from_delimited(self.build())
     }
 }
 
@@ -721,14 +721,14 @@ impl QpdBuilder {
         let mut qpd = crate::segment::Segment::new("QPD");
 
         // QPD-1: Message Query Name
-        qpd.add_field(Field::from_value(self.message_query_name.as_deref().unwrap_or("")));
+        qpd.add_field(Field::from_delimited(self.message_query_name.as_deref().unwrap_or("")));
 
         // QPD-2: Query Tag
         qpd.add_field(Field::from_value(self.query_tag.as_deref().unwrap_or("")));
 
         // QPD-3+: User Parameters
         for param in &self.parameters {
-            qpd.add_field(Field::from_value(param));
+            qpd.add_field(Field::from_delimited(param));
         }
 
         qpd
@@ -930,7 +930,7 @@ impl QakBuilder {
         qak.add_field(Field::from_value(self.query_response_status.as_deref().unwrap_or("OK")));
 
         // QAK-3: Message Query Name
-        qak.add_field(Field::from_value(self.message_query_name.as_deref().unwrap_or("")));
+        qak.add_field(Field::from_delimited(self.message_query_name.as_deref().unwrap_or("")));
 
         // QAK-4: Hit Count Total
         qak.add_field(Field::from_value(

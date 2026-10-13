@@ -71,6 +71,10 @@ impl Problem {
 fn set_field(segment: &mut Segment, index: usize, value: &str) {
     let _ = segment.set_field(index, Field::from_value(value));
 }
+/// Set a segment field from HL7-delimited content (`~`, `^`, `&` are split).
+fn set_delimited_field(segment: &mut Segment, index: usize, value: &str) {
+    let _ = segment.set_field(index, Field::from_delimited(value));
+}
 
 /// Builder for PPR^PC1 - Patient Problem (Add problem)
 pub struct PprPc1Builder {
@@ -193,7 +197,7 @@ impl PprPc1Builder {
             set_field(&mut pid, 3, id);
         }
         if let Some((family, given)) = self.patient_name.as_ref() {
-            set_field(&mut pid, 5, &format!("{family}^{given}"));
+            set_delimited_field(&mut pid, 5, &format!("{family}^{given}"));
         }
         if let Some(dob) = self.date_of_birth.as_deref() {
             set_field(&mut pid, 7, dob);
@@ -216,16 +220,16 @@ impl PprPc1Builder {
             let mut prb = Segment::new("PRB");
             set_field(&mut prb, 1, &problem.action_code);
             set_field(&mut prb, 2, &problem.action_datetime);
-            set_field(&mut prb, 3, &problem.problem_id);
+            set_delimited_field(&mut prb, 3, &problem.problem_id);
             set_field(&mut prb, 4, &problem.instance_id);
             if let Some(priority) = problem.priority.as_deref() {
-                set_field(&mut prb, 6, priority);
+                set_delimited_field(&mut prb, 6, priority);
             }
             if let Some(classification) = problem.classification.as_deref() {
-                set_field(&mut prb, 10, classification);
+                set_delimited_field(&mut prb, 10, classification);
             }
             if let Some(status) = problem.life_cycle_status.as_deref() {
-                set_field(&mut prb, 14, status);
+                set_delimited_field(&mut prb, 14, status);
             }
             if let Some(onset) = problem.onset_datetime.as_deref() {
                 set_field(&mut prb, 16, onset);
@@ -294,7 +298,15 @@ mod tests {
         let prb = message.get_segment_by_id("PRB").unwrap();
         assert_eq!(prb.get_field_value(1), Some("AD"));
         assert_eq!(prb.get_field_value(2), Some("20240101100000"));
-        assert_eq!(prb.get_field_value(3), Some("38341003^Hypertension^SCT"));
+        assert_eq!(prb.get_field_value(3), Some("38341003"));
+        assert_eq!(
+            prb.get_field(3)
+                .unwrap()
+                .get_component(0, 1)
+                .unwrap()
+                .value(),
+            Some("Hypertension")
+        );
         assert_eq!(prb.get_field_value(4), Some("PROB-1"));
     }
 
@@ -354,8 +366,24 @@ mod tests {
 
         let prb = message.get_segment_by_id("PRB").unwrap();
         assert_eq!(prb.get_field_value(6), Some("1"));
-        assert_eq!(prb.get_field_value(10), Some("359939006^Diagnosis^SCT"));
-        assert_eq!(prb.get_field_value(14), Some("A^Active^HL70528"));
+        assert_eq!(prb.get_field_value(10), Some("359939006"));
+        assert_eq!(
+            prb.get_field(10)
+                .unwrap()
+                .get_component(0, 1)
+                .unwrap()
+                .value(),
+            Some("Diagnosis")
+        );
+        assert_eq!(prb.get_field_value(14), Some("A"));
+        assert_eq!(
+            prb.get_field(14)
+                .unwrap()
+                .get_component(0, 1)
+                .unwrap()
+                .value(),
+            Some("Active")
+        );
         assert_eq!(prb.get_field_value(16), Some("20230101"));
     }
 }

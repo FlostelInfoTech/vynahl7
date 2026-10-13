@@ -240,10 +240,42 @@ impl Field {
     }
 
     /// Create from a single value
+    ///
+    /// The value is stored literally as one repetition with one component:
+    /// HL7 delimiters (`~`, `^`, `&`) in the input are NOT split and will be
+    /// escape-encoded on output. For delimited content use [`Field::from_delimited`].
     pub fn from_value<S: Into<String>>(value: S) -> Self {
         Self {
             repetitions: vec![Repetition::from_value(value)],
         }
+    }
+
+    /// Create from HL7-delimited content, splitting repetitions (`~`),
+    /// components (`^`), and subcomponents (`&`) into structure
+    ///
+    /// Unlike [`Field::from_value`], delimiter characters here are structure,
+    /// not literal text: `Field::from_delimited("DOE^JOHN")` yields two
+    /// components and encodes back to `DOE^JOHN`, while
+    /// `Field::from_value("DOE^JOHN")` yields one component and encodes to
+    /// `DOE\S\JOHN`. Use this constructor for composite values; use
+    /// [`Field::from_value`] for literal values that may contain delimiter
+    /// characters as text.
+    pub fn from_delimited<S: AsRef<str>>(value: S) -> Self {
+        let repetitions = value
+            .as_ref()
+            .split('~')
+            .map(|rep| {
+                let components = rep
+                    .split('^')
+                    .map(|comp| {
+                        let subcomponents = comp.split('&').map(SubComponent::new).collect();
+                        Component { subcomponents }
+                    })
+                    .collect();
+                Repetition { components }
+            })
+            .collect();
+        Self { repetitions }
     }
 
     /// Add a repetition
@@ -376,5 +408,38 @@ mod tests {
 
         let encoded = field.encode(&delims);
         assert!(encoded.contains("\\F\\"));
+    }
+
+    #[test]
+    fn test_from_delimited_splits_structure() {
+        let field = Field::from_delimited("DOE^JOHN^A");
+        assert_eq!(field.get_component(0, 0).unwrap().value(), Some("DOE"));
+        assert_eq!(field.get_component(0, 1).unwrap().value(), Some("JOHN"));
+        assert_eq!(field.get_component(0, 2).unwrap().value(), Some("A"));
+
+        let field = Field::from_delimited("A1&B1^C1~A2&B2^C2");
+        assert_eq!(field.get_subcomponent(0, 0, 1).unwrap().as_str(), "B1");
+        assert_eq!(field.get_subcomponent(1, 0, 1).unwrap().as_str(), "B2");
+
+        // Empty segments are preserved as empty structure
+        let field = Field::from_delimited("DOE^^A");
+        assert_eq!(field.get_component(0, 1).unwrap().value(), Some(""));
+    }
+
+    #[test]
+    fn test_from_delimited_roundtrip() {
+        let delims = Delimiters::default();
+        for value in ["DOE^JOHN", "A&B^C~D^E&F", "", "PLAIN"] {
+            let field = Field::from_delimited(value);
+            assert_eq!(field.encode(&delims), value);
+        }
+    }
+
+    #[test]
+    fn test_from_value_keeps_delimiters_literal() {
+        let delims = Delimiters::default();
+        let field = Field::from_value("DOE^JOHN");
+        assert_eq!(field.get_repetition(0).unwrap().components.len(), 1);
+        assert_eq!(field.encode(&delims), "DOE\\S\\JOHN");
     }
 }

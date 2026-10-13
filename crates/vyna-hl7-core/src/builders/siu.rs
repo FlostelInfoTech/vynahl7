@@ -120,24 +120,26 @@ impl SiuS12Builder {
 
         // SCH segment
         let mut sch = Segment::new("SCH");
-        sch.add_field(Field::from_value(self.placer_appointment_id.as_deref().unwrap_or("")));
-        sch.add_field(Field::from_value(self.filler_appointment_id.as_deref().unwrap_or("")));
+        sch.add_field(Field::from_delimited(self.placer_appointment_id.as_deref().unwrap_or("")));
+        sch.add_field(Field::from_delimited(self.filler_appointment_id.as_deref().unwrap_or("")));
         for _ in 3..6 {
             sch.add_field(Field::from_value(""));
         }
-        sch.add_field(Field::from_value(
+        sch.add_field(Field::from_delimited(
             self.event_reason.as_deref().unwrap_or(""),
         )); // SCH-6: Event Reason
         for _ in 7..16 {
             sch.add_field(Field::from_value(""));
         }
-        sch.add_field(Field::from_value(
+        sch.add_field(Field::from_delimited(
             self.filler_contact.as_deref().unwrap_or(""),
         )); // SCH-16: Filler Contact Person
         for _ in 17..20 {
             sch.add_field(Field::from_value(""));
         }
-        sch.add_field(Field::from_value(self.entered_by.as_deref().unwrap_or(""))); // SCH-20: Entered By Person
+        sch.add_field(Field::from_delimited(
+            self.entered_by.as_deref().unwrap_or(""),
+        )); // SCH-20: Entered By Person
         self.base.message.add_segment(sch);
 
         // RGS segment (required by the schema)
@@ -159,7 +161,7 @@ impl SiuS12Builder {
             pid.add_field(Field::from_value(""));
 
             if let Some((family, given)) = &self.patient_name {
-                pid.add_field(Field::from_value(format!("{}^{}", family, given)));
+                pid.add_field(Field::from_delimited(format!("{}^{}", family, given)));
             }
 
             self.base.message.add_segment(pid);

@@ -316,8 +316,32 @@ impl ValidatorTab {
                         });
                     }
 
-                    // Use the Validator for schema validation
-                    let validator = Validator::new(version);
+                    // Use the Validator for schema validation, selecting the
+                    // schema from MSH-9 (ACK carries no trigger event).
+                    let schema_key = message.get_message_type().map(|(msg_type, trigger)| {
+                        if msg_type == "ACK" {
+                            (msg_type, String::new())
+                        } else {
+                            (msg_type, trigger)
+                        }
+                    });
+                    let mut validator = Validator::new(version);
+                    let mut schema_applied = false;
+                    if let Some((msg_type, trigger)) = &schema_key
+                        && let Ok(schema_validator) =
+                            Validator::for_message_type(version, msg_type, trigger)
+                    {
+                        validator = schema_validator;
+                        schema_applied = true;
+                    }
+                    if !schema_applied {
+                        self.validation_results.push(ValidationItem {
+                            severity: Severity::Warning,
+                            location: "Schema".to_string(),
+                            message: "No schema for this message type; structure-only validation."
+                                .to_string(),
+                        });
+                    }
                     let validation_result = validator.validate(&message);
 
                     if !validation_result.is_valid {

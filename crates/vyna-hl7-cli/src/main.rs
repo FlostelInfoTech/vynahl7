@@ -507,7 +507,25 @@ fn validate_command(
     } else {
         vyna_hl7_validator::ValidationContext::standard()
     };
-    let validator = Validator::new(hl7_version).with_context(context);
+    // Select the message schema from MSH-9 so validation checks structure,
+    // not just the envelope. ACK carries no trigger event; types without a
+    // schema fall back to structure-only validation.
+    let schema_key = message.get_message_type().map(|(msg_type, trigger)| {
+        if msg_type == "ACK" {
+            (msg_type, String::new())
+        } else {
+            (msg_type, trigger)
+        }
+    });
+    let mut validator = Validator::new(hl7_version);
+    let mut schema_applied = false;
+    if let Some((msg_type, trigger)) = &schema_key
+        && let Ok(schema_validator) = Validator::for_message_type(hl7_version, msg_type, trigger)
+    {
+        validator = schema_validator;
+        schema_applied = true;
+    }
+    let validator = validator.with_context(context);
     let result = validator.validate(&message);
 
     match format {
@@ -539,6 +557,7 @@ fn validate_command(
                 "valid": result.is_valid(),
                 "error_count": result.errors.len(),
                 "warning_count": result.warnings.len(),
+                "schema_applied": schema_applied,
                 "errors": errors_json,
                 "warnings": warnings_json,
             });
@@ -563,6 +582,13 @@ fn validate_command(
                 for warning in &result.warnings {
                     println!("  • {} - {}", warning.location.yellow(), warning.message);
                 }
+            }
+
+            if !schema_applied {
+                println!(
+                    "\n{}",
+                    "Note: no schema for this message type; structure-only validation.".yellow()
+                );
             }
 
             if result.is_valid() && result.warnings.is_empty() {

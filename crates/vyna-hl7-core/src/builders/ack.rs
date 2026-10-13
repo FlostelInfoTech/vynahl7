@@ -582,7 +582,7 @@ impl AckBuilder {
 
         // MSA-6: Error Condition (optional)
         if let Some(ref error_code) = self.error_code {
-            msa.add_field(Field::from_value(error_code));
+            msa.add_field(Field::from_delimited(error_code));
         }
 
         Ok(msa)
@@ -604,18 +604,18 @@ impl AckBuilder {
             location_parts.push(field.to_string());
         }
         let error_location = location_parts.join("^");
-        err.add_field(Field::from_value(&error_location));
+        err.add_field(Field::from_delimited(&error_location));
 
         // ERR-2: Error Location (v2.5+)
         // Format: Segment ID^Segment Sequence^Field Position^Field Repetition^Component Number^Subcomponent Number
-        err.add_field(Field::from_value(&error_location));
+        err.add_field(Field::from_delimited(&error_location));
 
         // ERR-3: HL7 Error Code
         let error_code_field = format!(
             "{}^{}^HL70357",
             error.error_code, error.error_code_description
         );
-        err.add_field(Field::from_value(&error_code_field));
+        err.add_field(Field::from_delimited(&error_code_field));
 
         // ERR-4: Severity
         err.add_field(Field::from_value(error.severity.as_str()));
@@ -773,7 +773,7 @@ mod tests {
         // MSH-8: Security
         msh.add_field(Field::from_value(""));
         // MSH-9: Message Type
-        msh.add_field(Field::from_value("ADT^A01"));
+        msh.add_field(Field::from_delimited("ADT^A01"));
         // MSH-10: Control ID
         msh.add_field(Field::from_value("MSG001"));
         // MSH-11: Processing ID
@@ -814,9 +814,14 @@ mod tests {
         let msa = ack.segment("MSA").unwrap();
         assert_eq!(msa.get_field_value(1), Some("AE"));
         assert_eq!(msa.get_field_value(3), Some("Invalid patient ID"));
+        assert_eq!(msa.get_field_value(6), Some("204"));
         assert_eq!(
-            msa.get_field_value(6),
-            Some("204^Unknown Key Identifier")
+            msa.get_field(6)
+                .unwrap()
+                .get_component(0, 1)
+                .unwrap()
+                .value(),
+            Some("Unknown Key Identifier")
         );
     }
 
@@ -920,7 +925,7 @@ mod tests {
             "P",
             "2.5",
         ] {
-            msh.add_field(Field::from_value(value));
+            msh.add_field(Field::from_delimited(value));
         }
         if let Some(charset) = declaration {
             for _ in 13..=17 {

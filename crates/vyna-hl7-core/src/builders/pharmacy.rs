@@ -16,7 +16,7 @@ fn pid_segment(patient_id: Option<&str>, patient_name: &Option<(String, String)>
     pid.add_field(Field::from_value(""));
 
     if let Some((family, given)) = patient_name {
-        pid.add_field(Field::from_value(format!("{family}^{given}")));
+        pid.add_field(Field::from_delimited(format!("{family}^{given}")));
     }
 
     pid
@@ -25,13 +25,13 @@ fn pid_segment(patient_id: Option<&str>, patient_name: &Option<(String, String)>
 fn orc_segment(order_control: &str, placer_order_number: Option<&str>) -> Segment {
     let mut orc = Segment::new("ORC");
     orc.add_field(Field::from_value(order_control)); // ORC-1: Order Control
-    orc.add_field(Field::from_value(placer_order_number.unwrap_or(""))); // ORC-2: Placer Order Number
+    orc.add_field(Field::from_delimited(placer_order_number.unwrap_or(""))); // ORC-2: Placer Order Number
     orc
 }
 
 fn rxr_segment(route: Option<&str>) -> Segment {
     let mut rxr = Segment::new("RXR");
-    rxr.add_field(Field::from_value(route.unwrap_or(""))); // RXR-1: Route
+    rxr.add_field(Field::from_delimited(route.unwrap_or(""))); // RXR-1: Route
     rxr
 }
 
@@ -175,12 +175,16 @@ impl RdeO11Builder {
         // RXE segment
         let mut rxe = Segment::new("RXE");
         rxe.add_field(Field::from_value("")); // Quantity/Timing
-        rxe.add_field(Field::from_value(self.give_code.as_deref().unwrap_or(""))); // RXE-2: Give Code
+        rxe.add_field(Field::from_delimited(
+            self.give_code.as_deref().unwrap_or(""),
+        )); // RXE-2: Give Code
         rxe.add_field(Field::from_value(
             self.give_amount_minimum.as_deref().unwrap_or(""),
         )); // RXE-3: Give Amount - Minimum
         rxe.add_field(Field::from_value("")); // Give Amount - Maximum
-        rxe.add_field(Field::from_value(self.give_units.as_deref().unwrap_or(""))); // RXE-5: Give Units
+        rxe.add_field(Field::from_delimited(
+            self.give_units.as_deref().unwrap_or(""),
+        )); // RXE-5: Give Units
 
         self.base.message.add_segment(rxe);
 
@@ -333,7 +337,7 @@ impl RasO17Builder {
         rxa.add_field(Field::from_value("1")); // Administration Sub-ID Counter
         rxa.add_field(Field::from_value(start)); // RXA-3: Start of Administration
         rxa.add_field(Field::from_value(end)); // RXA-4: End of Administration
-        rxa.add_field(Field::from_value(
+        rxa.add_field(Field::from_delimited(
             self.administered_code.as_deref().unwrap_or(""),
         )); // RXA-5: Administered Code
         rxa.add_field(Field::from_value(self.amount.as_deref().unwrap_or(""))); // RXA-6: Administered Amount
@@ -482,7 +486,7 @@ impl RdsO13Builder {
         // RXD segment
         let mut rxd = Segment::new("RXD");
         rxd.add_field(Field::from_value("0")); // Dispense Sub-ID Counter
-        rxd.add_field(Field::from_value(
+        rxd.add_field(Field::from_delimited(
             self.dispense_code.as_deref().unwrap_or(""),
         )); // RXD-2: Dispense/Give Code
         rxd.add_field(Field::from_value(
@@ -635,12 +639,16 @@ impl RgvO15Builder {
         rxg.add_field(Field::from_value("0")); // Give Sub-ID Counter
         rxg.add_field(Field::from_value("")); // Dispense Sub-ID Counter
         rxg.add_field(Field::from_value("")); // Quantity/Timing
-        rxg.add_field(Field::from_value(self.give_code.as_deref().unwrap_or(""))); // RXG-4: Give Code
+        rxg.add_field(Field::from_delimited(
+            self.give_code.as_deref().unwrap_or(""),
+        )); // RXG-4: Give Code
         rxg.add_field(Field::from_value(
             self.give_amount_minimum.as_deref().unwrap_or(""),
         )); // RXG-5: Give Amount - Minimum
         rxg.add_field(Field::from_value("")); // Give Amount - Maximum
-        rxg.add_field(Field::from_value(self.give_units.as_deref().unwrap_or(""))); // RXG-7: Give Units
+        rxg.add_field(Field::from_delimited(
+            self.give_units.as_deref().unwrap_or(""),
+        )); // RXG-7: Give Units
 
         self.base.message.add_segment(rxg);
         self.base

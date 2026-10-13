@@ -117,7 +117,7 @@ impl DftP03Builder {
         pid.add_field(Field::from_value(""));
 
         if let Some((family, given)) = &self.patient_name {
-            pid.add_field(Field::from_value(format!("{}^{}", family, given)));
+            pid.add_field(Field::from_delimited(format!("{}^{}", family, given)));
         }
 
         self.base.message.add_segment(pid);
@@ -135,7 +135,7 @@ impl DftP03Builder {
         ft1.add_field(Field::from_value(
             self.transaction_type.as_deref().unwrap_or("CG"),
         )); // FT1-6: Transaction Type
-        ft1.add_field(Field::from_value(
+        ft1.add_field(Field::from_delimited(
             self.transaction_code.as_deref().unwrap_or(""),
         )); // FT1-7: Transaction Code
         if self.transaction_amount.is_some() {

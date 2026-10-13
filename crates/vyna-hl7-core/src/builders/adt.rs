@@ -1320,7 +1320,7 @@ impl AdtA40Builder {
             set_field(&mut pid, 3, id);
         }
         if let Some((family, given)) = self.base.patient_name.as_ref() {
-            set_field(&mut pid, 5, &format!("{family}^{given}"));
+            set_delimited_field(&mut pid, 5, &format!("{family}^{given}"));
         }
         if let Some(dob) = self.base.dob.as_deref() {
             set_field(&mut pid, 7, dob);
@@ -1372,6 +1372,10 @@ impl AdtA40Builder {
 /// Set a segment field, ignoring the impossible index-0 error.
 fn set_field(segment: &mut Segment, index: usize, value: &str) {
     let _ = segment.set_field(index, Field::from_value(value));
+}
+/// Set a segment field from HL7-delimited content (`~`, `^`, `&` are split).
+fn set_delimited_field(segment: &mut Segment, index: usize, value: &str) {
+    let _ = segment.set_field(index, Field::from_delimited(value));
 }
 
 /// Builder for ADT^A34 - Merge Patient - Patient ID Only
@@ -1487,7 +1491,7 @@ impl AdtA34Builder {
             set_field(&mut pid, 3, id);
         }
         if let Some((family, given)) = self.base.patient_name.as_ref() {
-            set_field(&mut pid, 5, &format!("{family}^{given}"));
+            set_delimited_field(&mut pid, 5, &format!("{family}^{given}"));
         }
         if let Some(dob) = self.base.dob.as_deref() {
             set_field(&mut pid, 7, dob);
@@ -1499,9 +1503,9 @@ impl AdtA34Builder {
 
         // MRG segment (MRG-1 prior patient ID is schema-required)
         let mut mrg = Segment::new("MRG");
-        set_field(&mut mrg, 1, self.prior_patient_id.as_deref().unwrap_or(""));
+        set_delimited_field(&mut mrg, 1, self.prior_patient_id.as_deref().unwrap_or(""));
         if let Some((family, given)) = self.prior_patient_name.as_ref() {
-            set_field(&mut mrg, 7, &format!("{family}^{given}"));
+            set_delimited_field(&mut mrg, 7, &format!("{family}^{given}"));
         }
         self.base.base.message.add_segment(mrg);
 
@@ -1568,7 +1572,17 @@ mod tests {
             .unwrap();
         assert_eq!(
             with.get_segment_by_id("MRG").unwrap().get_field_value(7),
-            Some("Smyth^Jon")
+            Some("Smyth")
+        );
+        assert_eq!(
+            with.get_segment_by_id("MRG")
+                .unwrap()
+                .get_field(7)
+                .unwrap()
+                .get_component(0, 1)
+                .unwrap()
+                .value(),
+            Some("Jon")
         );
     }
 

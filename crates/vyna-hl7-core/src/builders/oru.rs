@@ -161,7 +161,7 @@ impl OruR01Builder {
 
         if let Some((family, given)) = &self.patient_name {
             let name = format!("{}^{}", family, given);
-            pid.add_field(Field::from_value(&name));
+            pid.add_field(Field::from_delimited(&name));
         } else {
             pid.add_field(Field::from_value(""));
         }
@@ -176,16 +176,16 @@ impl OruR01Builder {
             for _ in 2..19 {
                 pv1.add_field(Field::from_value(""));
             }
-            pv1.add_field(Field::from_value(visit)); // PV1-19: Visit Number
+            pv1.add_field(Field::from_delimited(visit)); // PV1-19: Visit Number
             self.base.message.add_segment(pv1);
         }
 
         // Create OBR segment
         let mut obr = Segment::new("OBR");
         obr.add_field(Field::from_value("1")); // OBR-1: Set ID
-        obr.add_field(Field::from_value(self.placer_order_number.as_deref().unwrap_or(""))); // OBR-2: Placer Order Number
-        obr.add_field(Field::from_value(self.filler_order_number.as_deref().unwrap_or(""))); // OBR-3: Filler Order Number
-        obr.add_field(Field::from_value(self.universal_service_id.as_deref().unwrap_or(""))); // OBR-4: Universal Service ID
+        obr.add_field(Field::from_delimited(self.placer_order_number.as_deref().unwrap_or(""))); // OBR-2: Placer Order Number
+        obr.add_field(Field::from_delimited(self.filler_order_number.as_deref().unwrap_or(""))); // OBR-3: Filler Order Number
+        obr.add_field(Field::from_delimited(self.universal_service_id.as_deref().unwrap_or(""))); // OBR-4: Universal Service ID
         if let Some(status) = self.result_status.as_deref() {
             for _ in 5..25 {
                 obr.add_field(Field::from_value(""));
@@ -200,12 +200,12 @@ impl OruR01Builder {
             let mut obx = Segment::new("OBX");
             obx.add_field(Field::from_value(obs.set_id.to_string())); // OBX-1: Set ID
             obx.add_field(Field::from_value(&obs.value_type)); // OBX-2: Value Type
-            obx.add_field(Field::from_value(&obs.identifier)); // OBX-3: Observation Identifier
+            obx.add_field(Field::from_delimited(&obs.identifier)); // OBX-3: Observation Identifier
             obx.add_field(Field::from_value("")); // OBX-4: Observation Sub-ID
             obx.add_field(Field::from_value(&obs.value)); // OBX-5: Observation Value
 
             if let Some(units) = &obs.units {
-                obx.add_field(Field::from_value(units)); // OBX-6: Units
+                obx.add_field(Field::from_delimited(units)); // OBX-6: Units
             } else {
                 obx.add_field(Field::from_value(""));
             }

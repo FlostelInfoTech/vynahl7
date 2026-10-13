@@ -82,6 +82,10 @@ impl MedicationOrder {
 fn set_field(segment: &mut Segment, index: usize, value: &str) {
     let _ = segment.set_field(index, Field::from_value(value));
 }
+/// Set a segment field from HL7-delimited content (`~`, `^`, `&` are split).
+fn set_delimited_field(segment: &mut Segment, index: usize, value: &str) {
+    let _ = segment.set_field(index, Field::from_delimited(value));
+}
 
 /// Builder for OMP^O09 - Pharmacy/Treatment Order
 pub struct OmpO09Builder {
@@ -211,7 +215,7 @@ impl OmpO09Builder {
             set_field(&mut pid, 3, id);
         }
         if let Some((family, given)) = self.patient_name.as_ref() {
-            set_field(&mut pid, 5, &format!("{family}^{given}"));
+            set_delimited_field(&mut pid, 5, &format!("{family}^{given}"));
         }
         if let Some(dob) = self.date_of_birth.as_deref() {
             set_field(&mut pid, 7, dob);
@@ -237,12 +241,12 @@ impl OmpO09Builder {
                 .unwrap_or(&self.order_control);
             set_field(&mut orc, 1, control);
             if let Some(placer) = order.placer_order_number.as_deref() {
-                set_field(&mut orc, 2, placer);
+                set_delimited_field(&mut orc, 2, placer);
             }
             self.base.message.add_segment(orc);
 
             let mut rxo = Segment::new("RXO");
-            set_field(&mut rxo, 1, &order.give_code);
+            set_delimited_field(&mut rxo, 1, &order.give_code);
             if let Some(amount) = order.amount_minimum.as_deref() {
                 set_field(&mut rxo, 2, amount);
             }
@@ -250,10 +254,10 @@ impl OmpO09Builder {
                 set_field(&mut rxo, 3, amount);
             }
             if let Some(units) = order.units.as_deref() {
-                set_field(&mut rxo, 4, units);
+                set_delimited_field(&mut rxo, 4, units);
             }
             if let Some(form) = order.dosage_form.as_deref() {
-                set_field(&mut rxo, 5, form);
+                set_delimited_field(&mut rxo, 5, form);
             }
             if let Some(refills) = order.refills.as_deref() {
                 set_field(&mut rxo, 13, refills);
@@ -261,9 +265,9 @@ impl OmpO09Builder {
             self.base.message.add_segment(rxo);
 
             let mut rxr = Segment::new("RXR");
-            set_field(&mut rxr, 1, &order.route);
+            set_delimited_field(&mut rxr, 1, &order.route);
             if let Some(site) = order.site.as_deref() {
-                set_field(&mut rxr, 2, site);
+                set_delimited_field(&mut rxr, 2, site);
             }
             self.base.message.add_segment(rxr);
         }
@@ -318,10 +322,26 @@ mod tests {
         assert_eq!(orc.get_field_value(1), Some("NW"));
 
         let rxo = message.get_segment_by_id("RXO").unwrap();
-        assert_eq!(rxo.get_field_value(1), Some("00093-0058^Lorazepam^NDC"));
+        assert_eq!(rxo.get_field_value(1), Some("00093-0058"));
+        assert_eq!(
+            rxo.get_field(1)
+                .unwrap()
+                .get_component(0, 1)
+                .unwrap()
+                .value(),
+            Some("Lorazepam")
+        );
 
         let rxr = message.get_segment_by_id("RXR").unwrap();
-        assert_eq!(rxr.get_field_value(1), Some("PO^Oral^HL70162"));
+        assert_eq!(rxr.get_field_value(1), Some("PO"));
+        assert_eq!(
+            rxr.get_field(1)
+                .unwrap()
+                .get_component(0, 1)
+                .unwrap()
+                .value(),
+            Some("Oral")
+        );
     }
 
     #[test]
@@ -338,8 +358,26 @@ mod tests {
 
         let rxos = message.get_segments_by_id("RXO");
         assert_eq!(rxos.len(), 2);
-        assert_eq!(rxos[0].get_field_value(1), Some("00093-0058^Lorazepam^NDC"));
-        assert_eq!(rxos[1].get_field_value(1), Some("00071-0156^Aspirin^NDC"));
+        assert_eq!(rxos[0].get_field_value(1), Some("00093-0058"));
+        assert_eq!(
+            rxos[0]
+                .get_field(1)
+                .unwrap()
+                .get_component(0, 1)
+                .unwrap()
+                .value(),
+            Some("Lorazepam")
+        );
+        assert_eq!(rxos[1].get_field_value(1), Some("00071-0156"));
+        assert_eq!(
+            rxos[1]
+                .get_field(1)
+                .unwrap()
+                .get_component(0, 1)
+                .unwrap()
+                .value(),
+            Some("Aspirin")
+        );
 
         let orcs = message.get_segments_by_id("ORC");
         assert_eq!(orcs[0].get_field_value(2), Some("RX-1"));
@@ -363,8 +401,24 @@ mod tests {
         let rxo = message.get_segment_by_id("RXO").unwrap();
         assert_eq!(rxo.get_field_value(2), Some("1"));
         assert_eq!(rxo.get_field_value(3), Some("2"));
-        assert_eq!(rxo.get_field_value(4), Some("TAB^Tablet^HL70164"));
-        assert_eq!(rxo.get_field_value(5), Some("TAB^Tablet^HL70164"));
+        assert_eq!(rxo.get_field_value(4), Some("TAB"));
+        assert_eq!(
+            rxo.get_field(4)
+                .unwrap()
+                .get_component(0, 1)
+                .unwrap()
+                .value(),
+            Some("Tablet")
+        );
+        assert_eq!(rxo.get_field_value(5), Some("TAB"));
+        assert_eq!(
+            rxo.get_field(5)
+                .unwrap()
+                .get_component(0, 1)
+                .unwrap()
+                .value(),
+            Some("Tablet")
+        );
         assert_eq!(rxo.get_field_value(13), Some("3"));
     }
 }

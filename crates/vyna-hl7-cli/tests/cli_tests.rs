@@ -226,7 +226,7 @@ fn validate_profiles_change_severity() {
     // MSH-12 2.3 validated against 2.5: drift warns by default, fails strict.
     let drift = write_temp(
         "drift.hl7",
-        "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.3\rPID|1||7\r",
+        "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.3\rEVN||20240101\rPID|1||7||DOE^JOHN\rPV1||I\r",
     );
     let file = drift.to_str().unwrap().to_string();
     let run = |extra: &[&str]| {
@@ -260,6 +260,47 @@ fn validate_profiles_change_severity() {
     assert_eq!(json["valid"], true);
 
     std::fs::remove_file(drift).unwrap();
+}
+
+#[test]
+fn validate_applies_message_schema() {
+    // A structurally incomplete ADT must fail: schema validation runs.
+    let file = write_temp(
+        "incomplete.hl7",
+        "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\rPID|1||7\r",
+    );
+    let output = vynahl7()
+        .args(["validate", file.to_str().unwrap(), "--format", "json"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["schema_applied"], true);
+    assert_eq!(json["valid"], false);
+    assert!(
+        json["errors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["message"].as_str().unwrap().contains("Required segment"))
+    );
+    std::fs::remove_file(file).unwrap();
+}
+
+#[test]
+fn validate_falls_back_without_schema() {
+    // QBP has no schema: structure-only validation, honestly reported.
+    let file = write_temp(
+        "qbp.hl7",
+        "MSH|^~\\&|S|F|R|D|20240101||QBP^Q11|M1|P|2.5\rQPD|Q1^Tabular^HL7\r",
+    );
+    let output = vynahl7()
+        .args(["validate", file.to_str().unwrap(), "--format", "json"])
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["schema_applied"], false);
+    assert_eq!(json["valid"], true);
+    std::fs::remove_file(file).unwrap();
 }
 
 #[tokio::test]
