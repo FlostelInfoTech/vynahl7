@@ -1,6 +1,6 @@
 //! ServiceRequest converter - ORC/OBR segments to FHIR ServiceRequest resource
 
-use super::patient::{valid_hl7_date, valid_hl7_time};
+use super::patient::{split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time};
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
 use crate::resources::service_request::*;
@@ -67,8 +67,11 @@ impl ServiceRequestConverter {
 
         let mut service_request = ServiceRequest::new(status, intent, subject);
 
-        // ORC-2: Placer Order Number -> identifier
-        if let Ok(Some(placer_id)) = terser.get(&orc_path("2")) {
+        // ORC-2: Placer Order Number -> identifier. Empty is absent:
+        // it must not become an identifier with an empty value.
+        if let Ok(Some(placer_id)) = terser.get(&orc_path("2"))
+            && !placer_id.is_empty()
+        {
             let mut identifiers = service_request.identifier.unwrap_or_default();
             identifiers.push(Identifier {
                 system: Some("http://hospital.example.org/placer-order-number".to_string()),
@@ -80,8 +83,10 @@ impl ServiceRequestConverter {
             service_request.identifier = Some(identifiers);
         }
 
-        // ORC-3: Filler Order Number -> identifier
-        if let Ok(Some(filler_id)) = terser.get(&orc_path("3")) {
+        // ORC-3: Filler Order Number -> identifier (same empty rule).
+        if let Ok(Some(filler_id)) = terser.get(&orc_path("3"))
+            && !filler_id.is_empty()
+        {
             let mut identifiers = service_request.identifier.unwrap_or_default();
             identifiers.push(Identifier {
                 system: Some("http://hospital.example.org/filler-order-number".to_string()),
@@ -93,8 +98,10 @@ impl ServiceRequestConverter {
             service_request.identifier = Some(identifiers);
         }
 
-        // ORC-4: Placer Group Number -> requisition
-        if let Ok(Some(group_id)) = terser.get(&orc_path("4")) {
+        // ORC-4: Placer Group Number -> requisition (same empty rule).
+        if let Ok(Some(group_id)) = terser.get(&orc_path("4"))
+            && !group_id.is_empty()
+        {
             service_request.requisition = Some(Identifier {
                 system: Some("http://hospital.example.org/requisition".to_string()),
                 value: Some(group_id.to_string()),
@@ -183,11 +190,23 @@ impl ServiceRequestConverter {
         }
 
         // OBR-5: Priority -> priority
-        if let Ok(Some(priority_code)) = terser.get(&obr_path("5")) {
+        if let Ok(Some(priority_code)) = terser.get(&obr_path("5"))
+            && !priority_code.is_empty()
+        {
             service_request.priority = Some(Self::convert_priority(priority_code));
-        } else if let Ok(Some(tq1_priority)) = terser.get("TQ1-9") {
-            // TQ1-9: Priority (alternative location)
-            service_request.priority = Some(Self::convert_priority(tq1_priority));
+        } else {
+            // TQ1-9: Priority (alternative location), paired with this
+            // order by index so the Nth order reads the Nth TQ1.
+            let tq1_path = if orc_index == 0 {
+                "TQ1-9".to_string()
+            } else {
+                format!("TQ1({})-9", orc_index + 1)
+            };
+            if let Ok(Some(tq1_priority)) = terser.get(&tq1_path)
+                && !tq1_priority.is_empty()
+            {
+                service_request.priority = Some(Self::convert_priority(tq1_priority));
+            }
         }
 
         // OBR-13: Relevant Clinical Information -> note
@@ -274,33 +293,48 @@ impl ServiceRequestConverter {
     }
 
     /// Convert HL7 datetime (YYYYMMDDHHMMSS) to FHIR ISO 8601 format
+    ///
+    /// `YYYYMMDDHHMM` keeps its minutes and a trailing HL7 zone is
+    /// preserved as `±HH:MM`.
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
+        let (stem, offset) = split_hl7_offset(datetime);
+        let zone = offset.as_deref().unwrap_or("");
         // Byte-slice checks on `[u8]` never split a char boundary, and an
         // all-ASCII-digit prefix makes the `&str` slices below safe.
-        let bytes = datetime.as_bytes();
+        let bytes = stem.as_bytes();
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
-            if valid_hl7_date(&datetime[0..8]) && valid_hl7_time(&datetime[8..14]) {
+            if valid_hl7_date(&stem[0..8]) && valid_hl7_time(&stem[8..14]) {
                 Ok(format!(
-                    "{}-{}-{}T{}:{}:{}",
-                    &datetime[0..4],
-                    &datetime[4..6],
-                    &datetime[6..8],
-                    &datetime[8..10],
-                    &datetime[10..12],
-                    &datetime[12..14]
+                    "{}-{}-{}T{}:{}:{}{}",
+                    &stem[0..4],
+                    &stem[4..6],
+                    &stem[6..8],
+                    &stem[8..10],
+                    &stem[10..12],
+                    &stem[12..14],
+                    zone
+                ))
+            } else {
+                Err(Self::invalid_datetime_format())
+            }
+        } else if bytes.len() >= 12 && bytes[..12].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_date(&stem[0..8]) && valid_hl7_hour_min(&stem[8..12]) {
+                Ok(format!(
+                    "{}-{}-{}T{}:{}{}",
+                    &stem[0..4],
+                    &stem[4..6],
+                    &stem[6..8],
+                    &stem[8..10],
+                    &stem[10..12],
+                    zone
                 ))
             } else {
                 Err(Self::invalid_datetime_format())
             }
         } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
             // Date only; still requires a real calendar date.
-            if valid_hl7_date(&datetime[0..8]) {
-                Ok(format!(
-                    "{}-{}-{}",
-                    &datetime[0..4],
-                    &datetime[4..6],
-                    &datetime[6..8]
-                ))
+            if valid_hl7_date(&stem[0..8]) {
+                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
             } else {
                 Err(Self::invalid_datetime_format())
             }
@@ -537,5 +571,74 @@ mod tests {
             "error leaks source: {msg}"
         );
         assert!(msg.contains("ORC-15/ORC-9"));
+    }
+
+    #[test]
+    fn test_empty_orc_identifiers_treated_as_absent() {
+        // ORC-2/3/4 present-but-empty leave identifier/requisition unset.
+        let hl7 = "MSH|^~\\&|CPOE|Hospital|LAB|Hospital|20240315||ORM^O01|MSG123|P|2.5\r\
+                   PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+                   ORC|NW||||A";
+        let message = parse_message(hl7).unwrap();
+        let requests = ServiceRequestConverter::convert_all(&message).unwrap();
+        assert_eq!(requests[0].identifier, None);
+        assert_eq!(requests[0].requisition, None);
+    }
+
+    #[test]
+    fn test_tq1_priority_paired_with_orc_index() {
+        // No OBR-5 anywhere, so TQ1-9 decides; each order must read its
+        // own TQ1, and an empty TQ1-9 leaves priority unset.
+        let tq1 = |priority: &str| {
+            let mut fields = vec![String::new(); 9];
+            fields[0] = "1".to_string();
+            fields[8] = priority.to_string();
+            format!("TQ1|{}", fields.join("|"))
+        };
+        let hl7 = format!(
+            "MSH|^~\\&|CPOE|Hospital|LAB|Hospital|20240315||ORM^O01|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+             ORC|NW|O1|||A\rOBR|1|O1||CBC^CBC^LN\r{}\r\
+             ORC|NW|O2|||A\rOBR|1|O2||BMP^BMP^LN\r{}\r\
+             ORC|NW|O3|||A\rOBR|1|O3||GLU^GLU^LN\r{}",
+            tq1("S"),
+            tq1("R"),
+            tq1("")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let requests = ServiceRequestConverter::convert_all(&message).unwrap();
+        assert_eq!(requests.len(), 3);
+        assert_eq!(requests[0].priority.as_deref(), Some("stat"));
+        assert_eq!(requests[1].priority.as_deref(), Some("routine"));
+        assert_eq!(requests[2].priority, None);
+    }
+
+    #[test]
+    fn test_datetime_preserves_minutes_and_zone() {
+        assert_eq!(
+            ServiceRequestConverter::convert_datetime("202403151000").unwrap(),
+            "2024-03-15T10:00"
+        );
+        assert_eq!(
+            ServiceRequestConverter::convert_datetime("20240315100000+0500").unwrap(),
+            "2024-03-15T10:00:00+05:00"
+        );
+
+        let mut fields = vec![String::new(); 15];
+        fields[0] = "NW".to_string();
+        fields[1] = "ORD123".to_string();
+        fields[4] = "A".to_string();
+        fields[14] = "20240315100000+0500".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|CPOE|H|LAB|H|20240315||ORM^O01|M|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rORC|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let requests = ServiceRequestConverter::convert_all(&message).unwrap();
+        assert_eq!(
+            requests[0].authored_on.as_deref(),
+            Some("2024-03-15T10:00:00+05:00")
+        );
     }
 }

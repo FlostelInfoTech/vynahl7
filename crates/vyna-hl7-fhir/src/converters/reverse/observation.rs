@@ -88,7 +88,9 @@ impl ObservationReverseConverter {
         } else if observation.value_boolean.is_some() {
             "ST".to_string() // Boolean as string
         } else if observation.value_date_time.is_some() {
-            "DT".to_string() // Date/Time
+            // DTM, not DT: the forward converter reads DT as date-only
+            // and would drop the time on re-forward.
+            "DTM".to_string() // Date/Time
         } else {
             "ST".to_string() // Default to string
         }
@@ -167,6 +169,10 @@ impl ObservationReverseConverter {
             format!("{}-{}", parts[0], parts[1])
         } else if parts.len() == 1 {
             parts[0].clone()
+        } else if let Some(text) = range.text.as_ref().filter(|t| !t.is_empty()) {
+            // Text-only ranges round-trip: the forward converter reads
+            // OBX-7 into range text.
+            text.clone()
         } else {
             String::new()
         }
@@ -175,13 +181,15 @@ impl ObservationReverseConverter {
     /// Convert FHIR observation status to HL7 v2 result status
     fn convert_status_to_hl7(status: &str) -> String {
         match status {
-            "registered" => "O",       // Order received
-            "preliminary" => "P",      // Preliminary
-            "final" => "F",            // Final
-            "amended" => "C",          // Corrected
-            "corrected" => "C",        // Corrected
-            "cancelled" => "X",        // Cancelled
-            "entered-in-error" => "W", // Wrong
+            "registered" => "O",  // Order received
+            "preliminary" => "P", // Preliminary
+            "final" => "F",       // Final
+            "amended" => "C",     // Corrected
+            "corrected" => "C",   // Corrected
+            "cancelled" => "X",   // Cancelled
+            // D, not W: the forward converter reads D as
+            // entered-in-error and W as final.
+            "entered-in-error" => "D", // Deleted (entered in error)
             _ => "F",                  // Default to final
         }
         .to_string()
@@ -340,5 +348,58 @@ mod tests {
             ObservationReverseConverter::format_reference_range(&range),
             "70-100"
         );
+    }
+
+    fn round_trip(obx: &Segment) -> Observation {
+        use crate::converters::observation::ObservationConverter;
+        use vyna_hl7_core::delimiters::Delimiters;
+        use vyna_hl7_parser::parse_message;
+
+        let hl7 = format!(
+            "MSH|^~\\&|A|B|C|D|20240315||ORU^R01|1|P|2.5\r\
+             PID|1||1||A^B||19800101|M\r{}",
+            obx.encode(&Delimiters::default())
+        );
+        let message = parse_message(&hl7).unwrap();
+        let observations = ObservationConverter::convert_all(&message).unwrap();
+        assert_eq!(observations.len(), 1);
+        observations.into_iter().next().unwrap()
+    }
+
+    #[test]
+    fn test_entered_in_error_round_trips() {
+        let mut observation = Observation::new("entered-in-error".to_string(), create_code());
+        observation.value_string = Some("x".to_string());
+        let obx = ObservationReverseConverter::convert(&observation, 1).unwrap();
+        // D re-forwards to entered-in-error; W would become final.
+        assert_eq!(obx.get_field_value(11), Some("D"));
+        assert_eq!(round_trip(&obx).status, "entered-in-error");
+    }
+
+    #[test]
+    fn test_value_datetime_with_time_round_trips() {
+        let mut observation = Observation::new("final".to_string(), create_code());
+        observation.value_date_time = Some("2024-03-15T10:00:00".to_string());
+        let obx = ObservationReverseConverter::convert(&observation, 1).unwrap();
+        assert_eq!(obx.get_field_value(2), Some("DTM"));
+        let back = round_trip(&obx);
+        assert_eq!(back.value_date_time.as_deref(), Some("2024-03-15T10:00:00"));
+    }
+
+    #[test]
+    fn test_text_only_reference_range_round_trips() {
+        let mut observation = Observation::new("final".to_string(), create_code());
+        observation.value_string = Some("x".to_string());
+        observation.reference_range = Some(vec![ObservationReferenceRange {
+            low: None,
+            high: None,
+            type_: None,
+            text: Some("normal range".to_string()),
+        }]);
+        let obx = ObservationReverseConverter::convert(&observation, 1).unwrap();
+        assert_eq!(obx.get_field_value(7), Some("normal range"));
+        let back = round_trip(&obx);
+        let ranges = back.reference_range.as_ref().unwrap();
+        assert_eq!(ranges[0].text.as_deref(), Some("normal range"));
     }
 }

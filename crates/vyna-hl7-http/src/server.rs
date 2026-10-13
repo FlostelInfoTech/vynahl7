@@ -31,6 +31,21 @@ use tower::Service;
 /// The handler is wrapped in an Arc for thread-safe sharing.
 pub type MessageHandler = Arc<dyn Fn(Message) -> Result<Message> + Send + Sync>;
 
+/// Default bound on a single TLS handshake (see
+/// [`HttpServer::with_tls_handshake_timeout`]).
+#[cfg(feature = "tls")]
+pub const DEFAULT_TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Default bound on a single TLS connection lifetime (see
+/// [`HttpServer::with_tls_connection_timeout`]).
+#[cfg(feature = "tls")]
+pub const DEFAULT_TLS_CONNECTION_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Default cap on a single request body (see [`HttpServer::with_max_body_size`]).
+///
+/// Matches axum's implicit 2 MB default, now explicit and configurable.
+pub const DEFAULT_MAX_BODY_SIZE: usize = 2 * 1024 * 1024;
+
 /// HTTP server for receiving HL7 v2.x messages
 ///
 /// # Example
@@ -56,21 +71,6 @@ pub type MessageHandler = Arc<dyn Fn(Message) -> Result<Message> + Send + Sync>;
 /// # Ok(())
 /// # }
 /// ```
-/// Default bound on a single TLS handshake (see
-/// [`HttpServer::with_tls_handshake_timeout`]).
-#[cfg(feature = "tls")]
-pub const DEFAULT_TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Default bound on a single TLS connection lifetime (see
-/// [`HttpServer::with_tls_connection_timeout`]).
-#[cfg(feature = "tls")]
-pub const DEFAULT_TLS_CONNECTION_TIMEOUT: Duration = Duration::from_secs(300);
-
-/// Default cap on a single request body (see [`HttpServer::with_max_body_size`]).
-///
-/// Matches axum's implicit 2 MB default, now explicit and configurable.
-pub const DEFAULT_MAX_BODY_SIZE: usize = 2 * 1024 * 1024;
-
 #[derive(Clone)]
 pub struct HttpServer {
     handler: MessageHandler,

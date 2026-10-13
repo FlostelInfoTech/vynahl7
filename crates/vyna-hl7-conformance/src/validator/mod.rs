@@ -547,10 +547,12 @@ impl ConformanceValidator {
             // Check each repetition
             for (rep_index, repetition) in field.repetitions.iter().enumerate() {
                 // Get the encoded value of this repetition
-                // Use default delimiters for length calculation
+                // Use default delimiters for length calculation.
+                // Length is counted in characters, not bytes, so
+                // multibyte text is not falsely over the limit.
                 let delimiters = vyna_hl7_core::Delimiters::default();
                 let value = repetition.encode(&delimiters);
-                let actual_length = value.len();
+                let actual_length = value.chars().count();
 
                 if actual_length > max_length {
                     let location = if segment_index > 0 {
@@ -846,5 +848,45 @@ mod tests {
             result.warnings[0].message
         );
         assert_eq!(result.warnings[0].rule.as_deref(), Some("PID-5 usage=C"));
+    }
+
+    /// Profile limiting PID-5 to `max` characters.
+    fn length_profile(max: usize) -> ConformanceProfile {
+        let metadata = ProfileMetadata::new("Length".to_string(), "1.0".to_string(), Version::V2_5);
+        let mut message = MessageProfile::new("ADT".to_string(), "A01".to_string());
+        let mut pid = SegmentProfile::new("PID".to_string(), Usage::Required, Cardinality::one());
+        let mut name = FieldProfile::new(5, Usage::Required, Cardinality::one());
+        name.length = Some(max);
+        pid.add_field(name);
+        message.add_segment(pid);
+        ConformanceProfile::new(metadata, message)
+    }
+
+    #[test]
+    fn test_field_length_counts_characters_not_bytes() {
+        // 6 chars (11 bytes) at max 6: valid.
+        let validator = ConformanceValidator::new(length_profile(6));
+        let value = format!("{}X", "ü".repeat(5));
+        assert_eq!(value.chars().count(), 6);
+        let result =
+            validator.validate(&conditional_message(&format!("PID|1||PATID1234||{value}")));
+        assert!(
+            result.is_valid(),
+            "expected valid, got: {:?}",
+            result.errors
+        );
+
+        // 7 chars at max 6 still exceeds.
+        let value = format!("{}X", "ü".repeat(6));
+        let result =
+            validator.validate(&conditional_message(&format!("PID|1||PATID1234||{value}")));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| { e.error_type == ConformanceErrorType::ExceedsMaxLength }),
+            "expected a max-length error, got: {:?}",
+            result.errors
+        );
     }
 }

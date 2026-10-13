@@ -86,70 +86,70 @@ impl PatientReverseConverter {
         Ok(pid)
     }
 
-    /// Set patient identifiers in PID-3
+    /// Set patient identifiers in PID-3, one repetition per identifier
     fn set_identifiers(pid: &mut Segment, identifiers: &[Identifier]) -> ConversionResult<()> {
-        if let Some(first) = identifiers.first() {
-            // Set first identifier value
-            if let Some(ref value) = first.value {
-                let _ = pid.set_field_value(3, value);
+        for (rep, identifier) in identifiers.iter().enumerate() {
+            // Identifier value as component 1 (0-indexed: 0)
+            if let Some(ref value) = identifier.value {
+                let _ = pid.set_component(3, rep, 0, value);
             }
 
-            // Set assigning authority as component 4 (0-indexed: 3)
-            if let Some(ref system) = first.system {
+            // Assigning authority as component 4 (0-indexed: 3)
+            if let Some(ref system) = identifier.system {
                 // Strip urn:oid: prefix if present
                 let authority = system.strip_prefix("urn:oid:").unwrap_or(system);
-                let _ = pid.set_component(3, 0, 3, authority);
+                let _ = pid.set_component(3, rep, 3, authority);
             }
 
-            // Set identifier type code as component 5 (0-indexed: 4)
-            if let Some(ref type_) = first.type_
+            // Identifier type code as component 5 (0-indexed: 4)
+            if let Some(ref type_) = identifier.type_
                 && let Some(ref coding) = type_.coding
                 && let Some(first_coding) = coding.first()
                 && let Some(ref code) = first_coding.code
             {
-                let _ = pid.set_component(3, 0, 4, code);
+                let _ = pid.set_component(3, rep, 4, code);
             }
         }
         Ok(())
     }
 
-    /// Set patient names in PID-5
+    /// Set patient names in PID-5, one repetition per name
     fn set_names(pid: &mut Segment, names: &[HumanName]) -> ConversionResult<()> {
-        if let Some(first) = names.first() {
+        for (rep, name) in names.iter().enumerate() {
             // XPN structure: 1=Family, 2=Given, 3=Middle, 4=Suffix, 5=Prefix, 7=Type
 
             // Family name - component 1 (0-indexed: 0)
-            if let Some(ref family) = first.family {
-                let _ = pid.set_component(5, 0, 0, family);
+            if let Some(ref family) = name.family {
+                let _ = pid.set_component(5, rep, 0, family);
             }
 
             // Given names - component 2 (0-indexed: 1)
-            if let Some(ref given) = first.given {
+            if let Some(ref given) = name.given {
                 if let Some(first_given) = given.first() {
-                    let _ = pid.set_component(5, 0, 1, first_given);
+                    let _ = pid.set_component(5, rep, 1, first_given);
                 }
                 // Middle name - component 3 (0-indexed: 2)
                 if given.len() > 1 {
-                    let _ = pid.set_component(5, 0, 2, &given[1]);
+                    let _ = pid.set_component(5, rep, 2, &given[1]);
                 }
             }
 
             // Suffix - component 4 (0-indexed: 3)
-            if let Some(ref suffix) = first.suffix
+            if let Some(ref suffix) = name.suffix
                 && let Some(first_suffix) = suffix.first()
             {
-                let _ = pid.set_component(5, 0, 3, first_suffix);
+                let _ = pid.set_component(5, rep, 3, first_suffix);
             }
 
             // Prefix - component 5 (0-indexed: 4)
-            if let Some(ref prefix) = first.prefix
+            if let Some(ref prefix) = name.prefix
                 && let Some(first_prefix) = prefix.first()
             {
-                let _ = pid.set_component(5, 0, 4, first_prefix);
+                let _ = pid.set_component(5, rep, 4, first_prefix);
             }
 
             // Name type - component 7 (0-indexed: 6)
-            if let Some(ref use_) = first.use_ {
+            if let Some(ref use_) = name.use_ {
                 let type_code = match use_.as_str() {
                     "official" => "L",
                     "maiden" => "M",
@@ -157,74 +157,80 @@ impl PatientReverseConverter {
                     "temp" => "T",
                     _ => "L",
                 };
-                let _ = pid.set_component(5, 0, 6, type_code);
+                let _ = pid.set_component(5, rep, 6, type_code);
             }
         }
         Ok(())
     }
 
-    /// Set addresses in PID-11
+    /// Set addresses in PID-11, one repetition per address
     fn set_addresses(pid: &mut Segment, addresses: &[Address]) -> ConversionResult<()> {
-        if let Some(first) = addresses.first() {
+        for (rep, address) in addresses.iter().enumerate() {
             // XAD structure: 1=Street, 2=Other, 3=City, 4=State, 5=ZIP, 6=Country, 7=Type
 
             // Street address - component 1 (0-indexed: 0)
-            if let Some(ref lines) = first.line {
+            if let Some(ref lines) = address.line {
                 if let Some(first_line) = lines.first() {
-                    let _ = pid.set_component(11, 0, 0, first_line);
+                    let _ = pid.set_component(11, rep, 0, first_line);
                 }
                 // Other designation - component 2 (0-indexed: 1)
                 if lines.len() > 1 {
-                    let _ = pid.set_component(11, 0, 1, &lines[1]);
+                    let _ = pid.set_component(11, rep, 1, &lines[1]);
                 }
             }
 
             // City - component 3 (0-indexed: 2)
-            if let Some(ref city) = first.city {
-                let _ = pid.set_component(11, 0, 2, city);
+            if let Some(ref city) = address.city {
+                let _ = pid.set_component(11, rep, 2, city);
             }
 
             // State - component 4 (0-indexed: 3)
-            if let Some(ref state) = first.state {
-                let _ = pid.set_component(11, 0, 3, state);
+            if let Some(ref state) = address.state {
+                let _ = pid.set_component(11, rep, 3, state);
             }
 
             // Postal code - component 5 (0-indexed: 4)
-            if let Some(ref postal_code) = first.postal_code {
-                let _ = pid.set_component(11, 0, 4, postal_code);
+            if let Some(ref postal_code) = address.postal_code {
+                let _ = pid.set_component(11, rep, 4, postal_code);
             }
 
             // Country - component 6 (0-indexed: 5)
-            if let Some(ref country) = first.country {
-                let _ = pid.set_component(11, 0, 5, country);
+            if let Some(ref country) = address.country {
+                let _ = pid.set_component(11, rep, 5, country);
             }
 
             // Address type - component 7 (0-indexed: 6)
-            if let Some(ref use_) = first.use_ {
+            if let Some(ref use_) = address.use_ {
                 let type_code = match use_.as_str() {
                     "home" => "H",
                     "work" => "O",
                     "billing" => "B",
                     _ => "H",
                 };
-                let _ = pid.set_component(11, 0, 6, type_code);
+                let _ = pid.set_component(11, rep, 6, type_code);
             }
         }
         Ok(())
     }
 
-    /// Set telecoms in PID-13 (home) and PID-14 (work)
+    /// Set telecoms in PID-13 (home) and PID-14 (work), one repetition
+    /// per telecom of that use (a whole-field write would overwrite all
+    /// but the last).
     fn set_telecoms(pid: &mut Segment, telecoms: &[ContactPoint]) -> ConversionResult<()> {
+        let mut home_rep = 0usize;
+        let mut work_rep = 0usize;
         for telecom in telecoms {
             if let Some(ref value) = telecom.value
                 && let Some(ref use_) = telecom.use_
             {
                 match use_.as_str() {
                     "home" => {
-                        let _ = pid.set_field_value(13, value);
+                        let _ = pid.set_component(13, home_rep, 0, value);
+                        home_rep += 1;
                     }
                     "work" => {
-                        let _ = pid.set_field_value(14, value);
+                        let _ = pid.set_component(14, work_rep, 0, value);
+                        work_rep += 1;
                     }
                     _ => {}
                 }
@@ -386,5 +392,131 @@ mod tests {
         let pid = PatientReverseConverter::convert(&patient).unwrap();
 
         assert_eq!(pid.get_field_value(8), Some("M"));
+    }
+
+    fn rep_component(pid: &Segment, field: usize, rep: usize, comp: usize) -> Option<String> {
+        pid.get_field(field)
+            .and_then(|f| f.repetitions.get(rep))
+            .and_then(|r| r.components.get(comp))
+            .and_then(|c| c.value())
+            .map(|s| s.to_string())
+    }
+
+    #[test]
+    fn test_names_emit_every_entry_as_repetition() {
+        let mut patient = Patient::new();
+        patient.name = Some(vec![
+            HumanName {
+                use_: Some("official".to_string()),
+                text: None,
+                family: Some("Smith".to_string()),
+                given: Some(vec!["John".to_string()]),
+                prefix: None,
+                suffix: None,
+            },
+            HumanName {
+                use_: Some("maiden".to_string()),
+                text: None,
+                family: Some("Jones".to_string()),
+                given: Some(vec!["Johnny".to_string()]),
+                prefix: None,
+                suffix: None,
+            },
+        ]);
+        let pid = PatientReverseConverter::convert(&patient).unwrap();
+        assert_eq!(pid.get_field(5).unwrap().repetitions.len(), 2);
+        assert_eq!(rep_component(&pid, 5, 0, 0).as_deref(), Some("Smith"));
+        assert_eq!(rep_component(&pid, 5, 1, 0).as_deref(), Some("Jones"));
+        assert_eq!(rep_component(&pid, 5, 1, 1).as_deref(), Some("Johnny"));
+        assert_eq!(rep_component(&pid, 5, 1, 6).as_deref(), Some("M"));
+    }
+
+    #[test]
+    fn test_addresses_emit_every_entry_as_repetition() {
+        let mut patient = Patient::new();
+        patient.address = Some(vec![
+            Address {
+                use_: Some("home".to_string()),
+                type_: None,
+                text: None,
+                line: Some(vec!["1 Main St".to_string()]),
+                city: Some("Springfield".to_string()),
+                state: None,
+                postal_code: None,
+                country: None,
+            },
+            Address {
+                use_: Some("work".to_string()),
+                type_: None,
+                text: None,
+                line: Some(vec!["2 Work Rd".to_string()]),
+                city: Some("Chicago".to_string()),
+                state: None,
+                postal_code: None,
+                country: None,
+            },
+        ]);
+        let pid = PatientReverseConverter::convert(&patient).unwrap();
+        assert_eq!(pid.get_field(11).unwrap().repetitions.len(), 2);
+        assert_eq!(
+            rep_component(&pid, 11, 0, 2).as_deref(),
+            Some("Springfield")
+        );
+        assert_eq!(rep_component(&pid, 11, 1, 0).as_deref(), Some("2 Work Rd"));
+        assert_eq!(rep_component(&pid, 11, 1, 2).as_deref(), Some("Chicago"));
+    }
+
+    #[test]
+    fn test_identifiers_emit_every_entry_as_repetition() {
+        let mut patient = Patient::new();
+        patient.identifier = Some(vec![
+            Identifier {
+                use_: None,
+                type_: None,
+                system: None,
+                value: Some("A1".to_string()),
+                assigner: None,
+            },
+            Identifier {
+                use_: None,
+                type_: None,
+                system: Some("urn:oid:HOSP".to_string()),
+                value: Some("B2".to_string()),
+                assigner: None,
+            },
+        ]);
+        let pid = PatientReverseConverter::convert(&patient).unwrap();
+        assert_eq!(pid.get_field(3).unwrap().repetitions.len(), 2);
+        assert_eq!(rep_component(&pid, 3, 0, 0).as_deref(), Some("A1"));
+        assert_eq!(rep_component(&pid, 3, 1, 0).as_deref(), Some("B2"));
+        assert_eq!(rep_component(&pid, 3, 1, 3).as_deref(), Some("HOSP"));
+    }
+
+    #[test]
+    fn test_telecoms_emit_every_entry_as_repetition() {
+        let mut patient = Patient::new();
+        patient.telecom = Some(vec![
+            ContactPoint {
+                system: Some("phone".to_string()),
+                value: Some("111".to_string()),
+                use_: Some("home".to_string()),
+            },
+            ContactPoint {
+                system: Some("phone".to_string()),
+                value: Some("222".to_string()),
+                use_: Some("home".to_string()),
+            },
+            ContactPoint {
+                system: Some("phone".to_string()),
+                value: Some("333".to_string()),
+                use_: Some("work".to_string()),
+            },
+        ]);
+        let pid = PatientReverseConverter::convert(&patient).unwrap();
+        assert_eq!(pid.get_field(13).unwrap().repetitions.len(), 2);
+        assert_eq!(rep_component(&pid, 13, 0, 0).as_deref(), Some("111"));
+        assert_eq!(rep_component(&pid, 13, 1, 0).as_deref(), Some("222"));
+        assert_eq!(pid.get_field(14).unwrap().repetitions.len(), 1);
+        assert_eq!(rep_component(&pid, 14, 0, 0).as_deref(), Some("333"));
     }
 }

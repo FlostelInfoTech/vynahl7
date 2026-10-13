@@ -27,6 +27,18 @@ pub fn encode_basic_auth(username: &str, password: &str) -> String {
     format!("Basic {}", BASE64_STANDARD.encode(credentials.as_bytes()))
 }
 
+/// Strip an auth scheme (case-insensitive per RFC 9110 section 11.1)
+/// from an `Authorization` header value, returning the credentials part.
+#[cfg(feature = "auth")]
+fn strip_auth_scheme<'a>(header: &'a str, scheme: &str) -> Option<&'a str> {
+    let (name, credentials) = header.split_once(' ')?;
+    if name.eq_ignore_ascii_case(scheme) {
+        Some(credentials)
+    } else {
+        None
+    }
+}
+
 /// Verify HTTP Basic Authentication credentials using constant-time comparison
 ///
 /// This function uses constant-time comparison to prevent timing attacks.
@@ -46,18 +58,6 @@ pub fn encode_basic_auth(username: &str, password: &str) -> String {
 /// assert!(verify_basic_auth(&header, "user", "pass"));
 /// assert!(!verify_basic_auth(&header, "wrong", "creds"));
 /// ```
-/// Strip an auth scheme (case-insensitive per RFC 9110 section 11.1)
-/// from an `Authorization` header value, returning the credentials part.
-#[cfg(feature = "auth")]
-fn strip_auth_scheme<'a>(header: &'a str, scheme: &str) -> Option<&'a str> {
-    let (name, credentials) = header.split_once(' ')?;
-    if name.eq_ignore_ascii_case(scheme) {
-        Some(credentials)
-    } else {
-        None
-    }
-}
-
 #[cfg(feature = "auth")]
 pub fn verify_basic_auth(header: &str, username: &str, password: &str) -> bool {
     use base64::prelude::*;
@@ -488,5 +488,109 @@ mod tests {
         assert!(constant_time_compare("", ""));
         assert!(!constant_time_compare("same-length-1", "same-length-2"));
         assert!(constant_time_compare("identical", "identical"));
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "oauth")]
+mod jwt_tests {
+    use super::{JwtClaims, JwtConfig, verify_jwt, verify_jwt_from_header};
+    use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    const SECRET: &[u8] = b"test-secret-key-for-jwt-tests";
+
+    fn now() -> usize {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize
+    }
+
+    fn claims(exp: usize, iss: &str, aud: &str) -> JwtClaims {
+        JwtClaims {
+            sub: "user-123".to_string(),
+            iss: Some(iss.to_string()),
+            aud: Some(aud.to_string()),
+            exp: Some(exp),
+            nbf: None,
+            iat: Some(now()),
+            jti: None,
+        }
+    }
+
+    fn mint(claims: &JwtClaims, algorithm: Algorithm) -> String {
+        encode(
+            &Header::new(algorithm),
+            claims,
+            &EncodingKey::from_secret(SECRET),
+        )
+        .unwrap()
+    }
+
+    fn config() -> JwtConfig {
+        JwtConfig::new_hs256(SECRET)
+            .with_issuer("https://auth.example.com")
+            .with_audience("vyna-hl7")
+    }
+
+    #[test]
+    fn test_verify_jwt_valid_accepted() {
+        let token = mint(
+            &claims(now() + 3600, "https://auth.example.com", "vyna-hl7"),
+            Algorithm::HS256,
+        );
+        let decoded = verify_jwt(&token, &config()).unwrap();
+        assert_eq!(decoded.sub, "user-123");
+    }
+
+    #[test]
+    fn test_verify_jwt_expired_rejected() {
+        let token = mint(
+            &claims(now() - 3600, "https://auth.example.com", "vyna-hl7"),
+            Algorithm::HS256,
+        );
+        assert!(verify_jwt(&token, &config()).is_err());
+    }
+
+    #[test]
+    fn test_verify_jwt_wrong_issuer_rejected() {
+        let token = mint(
+            &claims(now() + 3600, "https://evil.example.com", "vyna-hl7"),
+            Algorithm::HS256,
+        );
+        assert!(verify_jwt(&token, &config()).is_err());
+    }
+
+    #[test]
+    fn test_verify_jwt_wrong_audience_rejected() {
+        let token = mint(
+            &claims(now() + 3600, "https://auth.example.com", "other-app"),
+            Algorithm::HS256,
+        );
+        assert!(verify_jwt(&token, &config()).is_err());
+    }
+
+    #[test]
+    fn test_verify_jwt_wrong_algorithm_rejected() {
+        let token = mint(
+            &claims(now() + 3600, "https://auth.example.com", "vyna-hl7"),
+            Algorithm::HS384,
+        );
+        assert!(verify_jwt(&token, &config()).is_err());
+    }
+
+    #[test]
+    fn test_verify_jwt_from_header() {
+        let token = mint(
+            &claims(now() + 3600, "https://auth.example.com", "vyna-hl7"),
+            Algorithm::HS256,
+        );
+        let header = format!("Bearer {token}");
+        let decoded = verify_jwt_from_header(&header, &config()).unwrap();
+        assert_eq!(decoded.sub, "user-123");
+
+        assert!(verify_jwt_from_header("Basic dXNlcjpwYXNz", &config()).is_err());
+        assert!(verify_jwt_from_header("Bearer not-a-jwt", &config()).is_err());
     }
 }

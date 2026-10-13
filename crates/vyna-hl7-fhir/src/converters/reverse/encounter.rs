@@ -59,6 +59,11 @@ impl EncounterReverseConverter {
         // PV1-7: Attending Doctor (from participant with type ATND)
         // PV1-8: Referring Doctor (from participant with type REF)
         // PV1-9: Consulting Doctor (from participant with type CON)
+        // Each role repeats (~) for multiple participants. The XCN-1 id
+        // comes from the reference ("Practitioner/{id}"); the display is
+        // the family name (XCN-2), falling back to XCN-1 when no
+        // reference exists.
+        let mut reps = [0usize; 3];
         if let Some(ref participants) = encounter.participant {
             for participant in participants {
                 if let Some(ref types) = participant.type_ {
@@ -67,25 +72,31 @@ impl EncounterReverseConverter {
                             for code in coding {
                                 if let Some(ref code_val) = code.code
                                     && let Some(ref individual) = participant.individual
+                                    && let Some((field, slot)) = match code_val.as_str() {
+                                        "ATND" => Some((7, 0)),
+                                        "REF" => Some((8, 1)),
+                                        "CON" => Some((9, 2)),
+                                        _ => None,
+                                    }
                                 {
-                                    let doctor_ref = individual
-                                        .display
-                                        .as_ref()
-                                        .or(individual.reference.as_ref())
-                                        .cloned()
-                                        .unwrap_or_default();
-
-                                    match code_val.as_str() {
-                                        "ATND" => {
-                                            let _ = pv1.set_field_value(7, &doctor_ref);
-                                        }
-                                        "REF" => {
-                                            let _ = pv1.set_field_value(8, &doctor_ref);
-                                        }
-                                        "CON" => {
-                                            let _ = pv1.set_field_value(9, &doctor_ref);
-                                        }
-                                        _ => {}
+                                    let id = individual
+                                        .reference
+                                        .as_deref()
+                                        .and_then(|r| r.rsplit('/').next())
+                                        .filter(|s| !s.is_empty());
+                                    let display =
+                                        individual.display.as_deref().filter(|s| !s.is_empty());
+                                    // Skip participants carrying neither.
+                                    let Some(value) = id.or(display) else {
+                                        continue;
+                                    };
+                                    let rep = reps[slot];
+                                    reps[slot] += 1;
+                                    let _ = pv1.set_component(field, rep, 0, value);
+                                    if id.is_some()
+                                        && let Some(display) = display
+                                    {
+                                        let _ = pv1.set_component(field, rep, 1, display);
                                     }
                                 }
                             }
@@ -313,6 +324,98 @@ mod tests {
 
         let pv1 = EncounterReverseConverter::convert(&encounter).unwrap();
         assert_eq!(pv1.get_field_value(10), Some("NEURO"));
+    }
+
+    fn participant(
+        role: &str,
+        reference: Option<&str>,
+        display: Option<&str>,
+    ) -> crate::resources::encounter::EncounterParticipant {
+        use crate::resources::encounter::EncounterParticipant;
+        EncounterParticipant {
+            type_: Some(vec![CodeableConcept {
+                coding: Some(vec![Coding {
+                    system: None,
+                    version: None,
+                    code: Some(role.to_string()),
+                    display: None,
+                }]),
+                text: None,
+            }]),
+            period: None,
+            individual: Some(Reference {
+                reference: reference.map(|s| s.to_string()),
+                type_: Some("Practitioner".to_string()),
+                identifier: None,
+                display: display.map(|s| s.to_string()),
+            }),
+        }
+    }
+
+    #[test]
+    fn test_participant_writes_practitioner_id() {
+        let mut encounter = Encounter::new("finished".to_string());
+        encounter.participant = Some(vec![participant(
+            "ATND",
+            Some("Practitioner/DOC123"),
+            Some("Smith"),
+        )]);
+        let pv1 = EncounterReverseConverter::convert(&encounter).unwrap();
+        // The id lands in XCN-1; the display stays in the name component.
+        assert_eq!(pv1.get_field_value(7), Some("DOC123"));
+        let family = pv1
+            .get_field(7)
+            .and_then(|f| f.repetitions.first())
+            .and_then(|r| r.components.get(1))
+            .and_then(|c| c.value());
+        assert_eq!(family, Some("Smith"));
+
+        // Without a reference the display still fills the field.
+        let mut encounter = Encounter::new("finished".to_string());
+        encounter.participant = Some(vec![participant("REF", None, Some("Jones"))]);
+        let pv1 = EncounterReverseConverter::convert(&encounter).unwrap();
+        assert_eq!(pv1.get_field_value(8), Some("Jones"));
+    }
+
+    #[test]
+    fn test_participant_round_trips_through_pv1() {
+        use crate::converters::encounter::EncounterConverter;
+        use vyna_hl7_core::delimiters::Delimiters;
+        use vyna_hl7_parser::parse_message;
+
+        let mut encounter = Encounter::new("finished".to_string());
+        encounter.participant = Some(vec![participant(
+            "ATND",
+            Some("Practitioner/DOC123"),
+            Some("Smith"),
+        )]);
+        let pv1 = EncounterReverseConverter::convert(&encounter).unwrap();
+        let hl7 = format!(
+            "MSH|^~\\&|A|B|C|D|20240315||ADT^A01|1|P|2.5\r\
+             PID|1||1||A^B||19800101|M\r{}",
+            pv1.encode(&Delimiters::default())
+        );
+        let back = EncounterConverter::convert(&parse_message(&hl7).unwrap()).unwrap();
+        let individual = back.participant.as_ref().unwrap()[0]
+            .individual
+            .as_ref()
+            .unwrap();
+        assert_eq!(individual.reference.as_deref(), Some("Practitioner/DOC123"));
+        assert_eq!(individual.display.as_deref(), Some("Smith"));
+    }
+
+    #[test]
+    fn test_multiple_participants_emit_repetitions() {
+        let mut encounter = Encounter::new("finished".to_string());
+        encounter.participant = Some(vec![
+            participant("ATND", Some("Practitioner/D1"), Some("Doc1")),
+            participant("ATND", Some("Practitioner/D2"), Some("Doc2")),
+        ]);
+        let pv1 = EncounterReverseConverter::convert(&encounter).unwrap();
+        let field = pv1.get_field(7).unwrap();
+        assert_eq!(field.repetitions.len(), 2);
+        assert_eq!(field.repetitions[0].components[0].value(), Some("D1"));
+        assert_eq!(field.repetitions[1].components[0].value(), Some("D2"));
     }
 
     #[test]

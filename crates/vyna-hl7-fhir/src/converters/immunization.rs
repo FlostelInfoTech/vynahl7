@@ -1,6 +1,8 @@
 //! Immunization converter - RXA segment to FHIR Immunization resource
 
-use super::patient::{valid_hl7_date, valid_hl7_time};
+use super::patient::{
+    split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time, valid_hl7_year_month,
+};
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
 use crate::resources::immunization::*;
@@ -95,8 +97,12 @@ impl ImmunizationConverter {
             immunization.recorded = Some(recorded);
         }
 
-        // RXA-9: Information Authority -> primarySource / reportOrigin
-        if let Ok(Some(auth_code)) = terser.get(&path("9")) {
+        // RXA-9: Information Authority -> primarySource / reportOrigin.
+        // Empty is absent: it takes the default, not a false flag with an
+        // empty report origin.
+        if let Ok(Some(auth_code)) = terser.get(&path("9"))
+            && !auth_code.is_empty()
+        {
             match auth_code {
                 "00" => immunization.primary_source = Some(true),
                 _ => {
@@ -260,33 +266,48 @@ impl ImmunizationConverter {
     }
 
     /// Convert HL7 datetime (YYYYMMDDHHMMSS) to FHIR ISO 8601 format
+    ///
+    /// `YYYYMMDDHHMM` keeps its minutes and a trailing HL7 zone is
+    /// preserved as `±HH:MM`.
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
+        let (stem, offset) = split_hl7_offset(datetime);
+        let zone = offset.as_deref().unwrap_or("");
         // Byte-slice checks on `[u8]` never split a char boundary, and an
         // all-ASCII-digit prefix makes the `&str` slices below safe.
-        let bytes = datetime.as_bytes();
+        let bytes = stem.as_bytes();
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
-            if valid_hl7_date(&datetime[0..8]) && valid_hl7_time(&datetime[8..14]) {
+            if valid_hl7_date(&stem[0..8]) && valid_hl7_time(&stem[8..14]) {
                 Ok(format!(
-                    "{}-{}-{}T{}:{}:{}",
-                    &datetime[0..4],
-                    &datetime[4..6],
-                    &datetime[6..8],
-                    &datetime[8..10],
-                    &datetime[10..12],
-                    &datetime[12..14]
+                    "{}-{}-{}T{}:{}:{}{}",
+                    &stem[0..4],
+                    &stem[4..6],
+                    &stem[6..8],
+                    &stem[8..10],
+                    &stem[10..12],
+                    &stem[12..14],
+                    zone
+                ))
+            } else {
+                Err(Self::invalid_datetime(datetime))
+            }
+        } else if bytes.len() >= 12 && bytes[..12].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_date(&stem[0..8]) && valid_hl7_hour_min(&stem[8..12]) {
+                Ok(format!(
+                    "{}-{}-{}T{}:{}{}",
+                    &stem[0..4],
+                    &stem[4..6],
+                    &stem[6..8],
+                    &stem[8..10],
+                    &stem[10..12],
+                    zone
                 ))
             } else {
                 Err(Self::invalid_datetime(datetime))
             }
         } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
             // Date only; still requires a real calendar date.
-            if valid_hl7_date(&datetime[0..8]) {
-                Ok(format!(
-                    "{}-{}-{}",
-                    &datetime[0..4],
-                    &datetime[4..6],
-                    &datetime[6..8]
-                ))
+            if valid_hl7_date(&stem[0..8]) {
+                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
             } else {
                 Err(Self::invalid_datetime(datetime))
             }
@@ -305,21 +326,36 @@ impl ImmunizationConverter {
     }
 
     /// Convert HL7 date (YYYYMMDD) to FHIR date format
+    ///
+    /// `YYYYMM` month precision is preserved as `YYYY-MM`.
     fn convert_date(date: &str) -> ConversionResult<String> {
-        let bytes = date.as_bytes();
-        if bytes.len() >= 8
-            && bytes[..8].iter().all(|b| b.is_ascii_digit())
-            && valid_hl7_date(&date[0..8])
-        {
-            Ok(format!("{}-{}-{}", &date[0..4], &date[4..6], &date[6..8]))
+        let (stem, _) = split_hl7_offset(date);
+        let bytes = stem.as_bytes();
+        if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_date(&stem[0..8]) {
+                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
+            } else {
+                Err(Self::invalid_date())
+            }
+        } else if bytes.len() >= 6 && bytes[..6].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_year_month(&stem[0..6]) {
+                Ok(format!("{}-{}", &stem[0..4], &stem[4..6]))
+            } else {
+                Err(Self::invalid_date())
+            }
         } else {
-            Err(ConversionError::InvalidFormat(
-                "RXA-16".to_string(),
-                "RXA".to_string(),
-                // Redacted: never embed the source value (may be PHI).
-                "expected YYYYMMDD calendar date or YYYY year".to_string(),
-            ))
+            Err(Self::invalid_date())
         }
+    }
+
+    /// Redacted bad-date error: field location + reason only, never the value.
+    fn invalid_date() -> ConversionError {
+        ConversionError::InvalidFormat(
+            "RXA-16".to_string(),
+            "RXA".to_string(),
+            // Redacted: never embed the source value (may be PHI).
+            "expected YYYYMMDD calendar date or YYYYMM month".to_string(),
+        )
     }
 
     /// Extract vaccine code from RXA-5 field
@@ -461,6 +497,46 @@ mod tests {
 
         let message = parse_message(hl7).unwrap();
         assert!(ImmunizationConverter::convert_all(&message).is_err());
+    }
+
+    #[test]
+    fn test_empty_rxa9_treated_as_absent() {
+        // RXA-9 present-but-empty takes the default instead of emitting
+        // primarySource=false with an empty report origin.
+        let hl7 = "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|MSG123|P|2.5\r\
+                   PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000||08^HepB adult^CVX|1.0|mL||||||||||||CP";
+
+        let message = parse_message(hl7).unwrap();
+        let immunizations = ImmunizationConverter::convert_all(&message).unwrap();
+        assert_eq!(immunizations[0].primary_source, Some(true));
+        assert_eq!(immunizations[0].report_origin, None);
+    }
+
+    #[test]
+    fn test_datetime_preserves_minutes_zone_and_month() {
+        assert_eq!(
+            ImmunizationConverter::convert_datetime("202403151000").unwrap(),
+            "2024-03-15T10:00"
+        );
+        assert_eq!(
+            ImmunizationConverter::convert_datetime("20240315100000+0500").unwrap(),
+            "2024-03-15T10:00:00+05:00"
+        );
+        assert_eq!(
+            ImmunizationConverter::convert_date("202512").unwrap(),
+            "2025-12"
+        );
+
+        let hl7 = "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|MSG123|P|2.5\r\
+                   PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000+0500||08^HepB adult^CVX|1.0|mL||||||||||||CP";
+        let message = parse_message(hl7).unwrap();
+        let immunizations = ImmunizationConverter::convert_all(&message).unwrap();
+        assert_eq!(
+            immunizations[0].occurrence_date_time,
+            "2024-03-15T10:00:00+05:00"
+        );
     }
 
     #[test]

@@ -150,6 +150,18 @@ impl TemplateEngine {
                     "Field position must be 1-based (got 0)",
                 ));
             }
+            if seg_template.id == "MSH"
+                && (field_templates.contains_key(&1) || field_templates.contains_key(&2))
+            {
+                // MSH-1/MSH-2 are the delimiters: encode derives them
+                // from the message delimiters and drops anything built
+                // here, so templating them is rejected, not ignored.
+                return Err(Error::substitution(
+                    "MSH-1 and MSH-2 hold the message delimiters and \
+                     cannot be set from a template (delimiters come \
+                     from encoding)",
+                ));
+            }
             // Get the maximum field position to size the fields vector
             let max_pos = field_templates.keys().max().copied().unwrap_or(0);
             if max_pos > MAX_TEMPLATE_POSITION {
@@ -274,31 +286,35 @@ impl TemplateEngine {
     /// Supports {{variable_name}} syntax (inner whitespace allowed).
     /// When `escape_values` is set, each substituted value is
     /// ER7-escaped so it lands as literal text instead of structure.
+    /// Expansion is a single pass: substituted values are copied
+    /// verbatim and never rescanned, so a value containing
+    /// `{{another}}` cannot double-expand.
     fn substitute_variables(
         &self,
         placeholder: &str,
         variables: &HashMap<String, String>,
         escape_values: bool,
     ) -> Result<String> {
-        let mut result = placeholder.to_string();
+        let mut result = String::with_capacity(placeholder.len());
+        let mut last_end = 0;
 
-        // Find all {{variable}} patterns
         for cap in placeholder_regex().captures_iter(placeholder) {
+            let matched = cap.get(0).expect("capture holds the full match");
+            result.push_str(&placeholder[last_end..matched.start()]);
+
             let var_name = cap[1].trim();
             let var_value = variables
                 .get(var_name)
                 .ok_or_else(|| Error::substitution(format!("Variable '{}' not found", var_name)))?;
 
-            let replacement = if escape_values {
-                Self::escape_literal(var_value)
+            if escape_values {
+                result.push_str(&Self::escape_literal(var_value));
             } else {
-                var_value.clone()
-            };
-
-            // Replace the exact matched text: rebuilding the pattern from
-            // the trimmed name would leave "{{ name }}" spellings behind.
-            result = result.replace(&cap[0], &replacement);
+                result.push_str(var_value);
+            }
+            last_end = matched.end();
         }
+        result.push_str(&placeholder[last_end..]);
 
         Ok(result)
     }
@@ -771,5 +787,51 @@ mod tests {
             .components;
         assert_eq!(components.len(), 1000);
         assert_eq!(components[999].value(), Some("x"));
+    }
+
+    #[test]
+    fn test_substitution_does_not_reprocess_values() {
+        let engine = TemplateEngine::new();
+        let mut vars = HashMap::new();
+        vars.insert("a".to_string(), "{{b}}".to_string());
+        vars.insert("b".to_string(), "X".to_string());
+
+        // Single pass: the substituted "{{b}}" is copied verbatim,
+        // not expanded again.
+        let result = engine.substitute_variables("{{a}} {{b}}", &vars, false);
+        assert_eq!(result.unwrap(), "{{b}} X");
+
+        // Repeated placeholders still each expand.
+        let result = engine.substitute_variables("{{b}} {{b}}", &vars, false);
+        assert_eq!(result.unwrap(), "X X");
+    }
+
+    #[test]
+    fn test_create_message_rejects_msh_delimiter_fields() {
+        for pos in [1, 2] {
+            let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+            let mut msh = SegmentTemplate::new("MSH");
+            msh.add_field(pos, FieldTemplate::new().with_default("X"));
+            template.add_segment(msh);
+
+            let engine = TemplateEngine::new();
+            let result = engine.create_message(&template);
+            assert!(result.is_err(), "MSH-{pos} must be rejected");
+            assert!(
+                result.unwrap_err().to_string().contains("delimiters"),
+                "MSH-{pos} error must name the delimiters"
+            );
+        }
+
+        // Other segments keep position 1: only MSH reserves it.
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut pid = SegmentTemplate::new("PID");
+        pid.add_field(1, FieldTemplate::new().with_default("1"));
+        template.add_segment(pid);
+        let message = TemplateEngine::new().create_message(&template).unwrap();
+        assert_eq!(
+            message.get_segment_by_id("PID").unwrap().get_field_value(1),
+            Some("1")
+        );
     }
 }

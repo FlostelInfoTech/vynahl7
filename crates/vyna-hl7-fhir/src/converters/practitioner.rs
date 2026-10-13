@@ -236,22 +236,30 @@ impl PractitionerConverter {
         let mut practitioners = Vec::new();
 
         // Try attending doctor
-        if let Ok(attending) = Self::convert_attending_doctor(message) {
+        if let Ok(attending) = Self::convert_attending_doctor(message)
+            && !Self::is_empty_practitioner(&attending)
+        {
             practitioners.push(attending);
         }
 
         // Try referring doctor
-        if let Ok(referring) = Self::convert_referring_doctor(message) {
+        if let Ok(referring) = Self::convert_referring_doctor(message)
+            && !Self::is_empty_practitioner(&referring)
+        {
             practitioners.push(referring);
         }
 
         // Try consulting doctor
-        if let Ok(consulting) = Self::convert_consulting_doctor(message) {
+        if let Ok(consulting) = Self::convert_consulting_doctor(message)
+            && !Self::is_empty_practitioner(&consulting)
+        {
             practitioners.push(consulting);
         }
 
         // Try ordering provider
-        if let Ok(ordering) = Self::convert_ordering_provider(message) {
+        if let Ok(ordering) = Self::convert_ordering_provider(message)
+            && !Self::is_empty_practitioner(&ordering)
+        {
             practitioners.push(ordering);
         }
 
@@ -260,6 +268,15 @@ impl PractitionerConverter {
         }
 
         Ok(practitioners)
+    }
+
+    /// True when a conversion carried no identifying data (the source
+    /// field was absent): `active` alone is not a practitioner.
+    fn is_empty_practitioner(practitioner: &Practitioner) -> bool {
+        practitioner.id.is_none()
+            && practitioner.identifier.is_none()
+            && practitioner.name.is_none()
+            && practitioner.qualification.is_none()
     }
 }
 
@@ -325,5 +342,24 @@ mod tests {
 
         // Should extract attending (PV1-7), referring (PV1-8), and consulting (PV1-9)
         assert!(!practitioners.is_empty());
+    }
+
+    #[test]
+    fn test_extract_all_skips_absent_doctors() {
+        // A PV1 without doctors yields no practitioners at all, not three
+        // empty ones.
+        let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                   PID|1||MRN123|||DOE^JOHN||19800101|M\r\
+                   PV1|1|I";
+        let message = parse_message(hl7).unwrap();
+        assert!(PractitionerConverter::extract_all_practitioners(&message).is_err());
+
+        // Only the valued field converts.
+        let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                   PV1|1|I|||||123^SMITH^JAMES";
+        let message = parse_message(hl7).unwrap();
+        let practitioners = PractitionerConverter::extract_all_practitioners(&message).unwrap();
+        assert_eq!(practitioners.len(), 1);
+        assert_eq!(practitioners[0].id.as_deref(), Some("123"));
     }
 }

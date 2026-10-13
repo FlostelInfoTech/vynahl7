@@ -1,6 +1,6 @@
 //! Specimen converter - SPM segment to FHIR Specimen resource
 
-use super::patient::{valid_hl7_date, valid_hl7_time};
+use super::patient::{split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time};
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
 use crate::resources::specimen::*;
@@ -81,8 +81,11 @@ impl SpecimenConverter {
             });
         }
 
-        // SPM-20: Specimen Availability -> status
-        if let Ok(Some(availability)) = terser.get(&spm_path("20")) {
+        // SPM-20: Specimen Availability -> status. Empty is absent:
+        // it leaves status unset instead of defaulting to available.
+        if let Ok(Some(availability)) = terser.get(&spm_path("20"))
+            && !availability.is_empty()
+        {
             specimen.status = Some(Self::convert_status(availability));
         }
 
@@ -262,33 +265,48 @@ impl SpecimenConverter {
     }
 
     /// Convert HL7 datetime (YYYYMMDDHHMMSS) to FHIR ISO 8601 format
+    ///
+    /// `YYYYMMDDHHMM` keeps its minutes and a trailing HL7 zone is
+    /// preserved as `±HH:MM`.
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
+        let (stem, offset) = split_hl7_offset(datetime);
+        let zone = offset.as_deref().unwrap_or("");
         // Byte-slice checks on `[u8]` never split a char boundary, and an
         // all-ASCII-digit prefix makes the `&str` slices below safe.
-        let bytes = datetime.as_bytes();
+        let bytes = stem.as_bytes();
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
-            if valid_hl7_date(&datetime[0..8]) && valid_hl7_time(&datetime[8..14]) {
+            if valid_hl7_date(&stem[0..8]) && valid_hl7_time(&stem[8..14]) {
                 Ok(format!(
-                    "{}-{}-{}T{}:{}:{}",
-                    &datetime[0..4],
-                    &datetime[4..6],
-                    &datetime[6..8],
-                    &datetime[8..10],
-                    &datetime[10..12],
-                    &datetime[12..14]
+                    "{}-{}-{}T{}:{}:{}{}",
+                    &stem[0..4],
+                    &stem[4..6],
+                    &stem[6..8],
+                    &stem[8..10],
+                    &stem[10..12],
+                    &stem[12..14],
+                    zone
+                ))
+            } else {
+                Err(Self::invalid_datetime(datetime))
+            }
+        } else if bytes.len() >= 12 && bytes[..12].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_date(&stem[0..8]) && valid_hl7_hour_min(&stem[8..12]) {
+                Ok(format!(
+                    "{}-{}-{}T{}:{}{}",
+                    &stem[0..4],
+                    &stem[4..6],
+                    &stem[6..8],
+                    &stem[8..10],
+                    &stem[10..12],
+                    zone
                 ))
             } else {
                 Err(Self::invalid_datetime(datetime))
             }
         } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
             // Date only; still requires a real calendar date.
-            if valid_hl7_date(&datetime[0..8]) {
-                Ok(format!(
-                    "{}-{}-{}",
-                    &datetime[0..4],
-                    &datetime[4..6],
-                    &datetime[6..8]
-                ))
+            if valid_hl7_date(&stem[0..8]) {
+                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
             } else {
                 Err(Self::invalid_datetime(datetime))
             }
@@ -487,6 +505,53 @@ mod tests {
         let collection = specimens[0].collection.as_ref().unwrap();
         assert_eq!(collection.collected_date_time, None);
         assert!(collection.quantity.is_some());
+    }
+
+    #[test]
+    fn test_empty_spm20_leaves_status_unset() {
+        let mut fields = vec![String::new(); 30];
+        fields[0] = "1".to_string();
+        fields[1] = "SPEC123".to_string();
+        fields[3] = "BLD^Blood^HL70487".to_string();
+        fields[19] = String::new(); // SPM-20 present-but-empty
+        let hl7 = format!(
+            "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||OML^O21|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rSPM|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let specimens = SpecimenConverter::convert_all(&message).unwrap();
+        assert_eq!(specimens[0].status, None);
+    }
+
+    #[test]
+    fn test_datetime_preserves_minutes_and_zone() {
+        assert_eq!(
+            SpecimenConverter::convert_datetime("202403151000").unwrap(),
+            "2024-03-15T10:00"
+        );
+        assert_eq!(
+            SpecimenConverter::convert_datetime("20240315100000+0500").unwrap(),
+            "2024-03-15T10:00:00+05:00"
+        );
+
+        let mut fields = vec![String::new(); 30];
+        fields[0] = "1".to_string();
+        fields[1] = "SPEC123".to_string();
+        fields[3] = "BLD^Blood^HL70487".to_string();
+        fields[16] = "20240315100000+0500".to_string(); // SPM-17
+        let hl7 = format!(
+            "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||OML^O21|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rSPM|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let specimens = SpecimenConverter::convert_all(&message).unwrap();
+        let collection = specimens[0].collection.as_ref().unwrap();
+        assert_eq!(
+            collection.collected_date_time.as_deref(),
+            Some("2024-03-15T10:00:00+05:00")
+        );
     }
 
     #[test]

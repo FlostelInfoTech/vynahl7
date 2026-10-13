@@ -482,7 +482,8 @@ pub struct RecoveryReport {
 /// Layout under the directory (one process per directory):
 /// `pending/{id}.meta.json` + `{id}.body`, likewise `inflight/` and
 /// `dead/`. Writes go through temp files plus atomic renames with fsync,
-/// so an acknowledged enqueue survives a crash.
+/// so an acknowledged enqueue survives a crash. Opening reaps `.tmp-*`
+/// files stranded by a crash between the temp write and the rename.
 pub struct FileQueue {
     pending: PathBuf,
     inflight: PathBuf,
@@ -529,6 +530,12 @@ impl FileQueue {
             clock,
             max_depth: None,
         };
+        // Crash orphans from an interrupted write_entry predate this handle;
+        // reaping runs once here rather than in recover() so a dequeue can
+        // never delete a temp file another live handle is still writing.
+        for dir in [&queue.pending, &queue.inflight, &queue.dead] {
+            reap_temp_files(dir)?;
+        }
         let report = queue.recover()?;
         Ok((queue, report))
     }
@@ -746,6 +753,27 @@ fn meta_path(dir: &Path, id: &str) -> PathBuf {
 
 fn body_path(dir: &Path, id: &str) -> PathBuf {
     dir.join(format!("{id}.body"))
+}
+
+/// Delete `.tmp-*` files stranded by a crash between temp write and
+/// rename. Only regular files go: anything else under that prefix is left
+/// alone rather than risking an unrelated directory.
+fn reap_temp_files(dir: &Path) -> Result<(), QueueError> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        if !entry.file_name().to_string_lossy().starts_with(".tmp-") {
+            continue;
+        }
+        if !entry.file_type()?.is_file() {
+            continue;
+        }
+        match std::fs::remove_file(entry.path()) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(QueueError::Io(e)),
+        }
+    }
+    Ok(())
 }
 
 /// Entry ids from `*.meta.json` files, sorted for determinism.
@@ -1296,6 +1324,37 @@ mod tests {
         let leased = queue.dequeue().unwrap().unwrap();
         assert_eq!(leased.id, id);
         assert_eq!(leased.body, b"MSH");
+        queue.ack(&id).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn file_open_reaps_crash_temp_files() {
+        let dir = scratch_dir();
+        let id = {
+            let (mut queue, _) = FileQueue::open(&dir).unwrap();
+            queue.enqueue(b"MSH", HashMap::new()).unwrap()
+        };
+        // Simulate crashes between temp write and rename in every state dir.
+        for sub in ["pending", "inflight", "dead"] {
+            std::fs::write(dir.join(sub).join(".tmp-123-abc"), b"partial").unwrap();
+        }
+        let (mut queue, _) = FileQueue::open(&dir).unwrap();
+        for sub in ["pending", "inflight", "dead"] {
+            let leftovers: Vec<_> = std::fs::read_dir(dir.join(sub))
+                .unwrap()
+                .map(|e| e.unwrap().file_name())
+                .collect();
+            assert!(
+                !leftovers
+                    .iter()
+                    .any(|n| n.to_string_lossy().starts_with(".tmp-")),
+                "{sub} still holds crash temp files: {leftovers:?}"
+            );
+        }
+        // Real entries survive the reaping.
+        let leased = queue.dequeue().unwrap().unwrap();
+        assert_eq!(leased.id, id);
         queue.ack(&id).unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
     }

@@ -28,10 +28,15 @@ impl MemTransport {
     }
 
     /// Seed one file.
+    ///
+    /// Panics when `path` is absolute, escapes the root with `..`, or is
+    /// empty, mirroring the [`BatchError::Invalid`] rejections of the ops.
     pub fn with_file(mut self, path: &str, data: &[u8]) -> Self {
+        let normalized = normalize(path).expect("invalid path");
+        assert!(!normalized.is_empty(), "invalid path: empty path");
         self.tick += 1;
         let tick = self.tick;
-        self.files.insert(normalize(path), (data.to_vec(), tick));
+        self.files.insert(normalized, (data.to_vec(), tick));
         self
     }
 
@@ -43,16 +48,14 @@ impl MemTransport {
     }
 }
 
-fn normalize(path: &str) -> String {
-    crate::transport::clean_relative_parts(path)
-        .unwrap_or_default()
-        .join("/")
+fn normalize(path: &str) -> Result<String, BatchError> {
+    Ok(crate::transport::clean_relative_parts(path)?.join("/"))
 }
 
 impl FileTransport for MemTransport {
     async fn list(&mut self, dir: &str) -> Result<Vec<FileEntry>, BatchError> {
         self.check_open()?;
-        let prefix = normalize(dir);
+        let prefix = normalize(dir)?;
         let mut entries = Vec::new();
         for (path, (data, mtime)) in &self.files {
             let parent = match path.rfind('/') {
@@ -73,14 +76,14 @@ impl FileTransport for MemTransport {
     async fn get(&mut self, path: &str) -> Result<Vec<u8>, BatchError> {
         self.check_open()?;
         self.files
-            .get(&normalize(path))
+            .get(&normalize(path)?)
             .map(|(data, _)| data.clone())
             .ok_or_else(|| BatchError::Invalid(format!("no such file: '{path}'")))
     }
 
     async fn put(&mut self, path: &str, data: &[u8]) -> Result<(), BatchError> {
         self.check_open()?;
-        let normalized = normalize(path);
+        let normalized = normalize(path)?;
         if normalized.is_empty() {
             return Err(BatchError::Invalid("empty path".to_string()));
         }
@@ -92,14 +95,17 @@ impl FileTransport for MemTransport {
 
     async fn delete(&mut self, path: &str) -> Result<(), BatchError> {
         self.check_open()?;
-        self.files.remove(&normalize(path));
+        self.files.remove(&normalize(path)?);
         Ok(())
     }
 
     async fn rename(&mut self, from: &str, to: &str) -> Result<(), BatchError> {
         self.check_open()?;
-        let from = normalize(from);
-        let to = normalize(to);
+        let from = normalize(from)?;
+        let to = normalize(to)?;
+        if to.is_empty() {
+            return Err(BatchError::Invalid("empty path".to_string()));
+        }
         match self.files.remove(&from) {
             Some(data) => {
                 self.files.insert(to, data);
@@ -144,6 +150,54 @@ mod tests {
             transport.list("").await,
             Err(BatchError::NotConnected)
         ));
+    }
+
+    #[tokio::test]
+    async fn mem_rejects_escape_paths_in_every_op() {
+        // Mirrors FilesystemTransport: `..` and absolute paths are
+        // BatchError::Invalid in every op, never silently normalized.
+        let mut transport = MemTransport::new().with_file("inbox/a.hl7", MSH.as_bytes());
+        for dir in ["..", "../evil", "/abs"] {
+            assert!(
+                matches!(transport.list(dir).await, Err(BatchError::Invalid(_))),
+                "list({dir:?}) must be rejected"
+            );
+        }
+        for path in ["..", "../evil", "/abs"] {
+            assert!(
+                matches!(transport.get(path).await, Err(BatchError::Invalid(_))),
+                "get({path:?}) must be rejected"
+            );
+            assert!(
+                matches!(transport.put(path, b"x").await, Err(BatchError::Invalid(_))),
+                "put({path:?}) must be rejected"
+            );
+            assert!(
+                matches!(transport.delete(path).await, Err(BatchError::Invalid(_))),
+                "delete({path:?}) must be rejected"
+            );
+        }
+        assert!(matches!(
+            transport.rename("inbox/a.hl7", "..").await,
+            Err(BatchError::Invalid(_))
+        ));
+        assert!(matches!(
+            transport.rename("../evil", "b.hl7").await,
+            Err(BatchError::Invalid(_))
+        ));
+        assert!(matches!(
+            transport.rename("inbox/a.hl7", "").await,
+            Err(BatchError::Invalid(_))
+        ));
+        // The rejected ops changed nothing.
+        assert_eq!(transport.get("inbox/a.hl7").await.unwrap(), MSH.as_bytes());
+        assert_eq!(transport.list("").await.unwrap().len(), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid path")]
+    fn mem_with_file_rejects_escape_paths() {
+        let _ = MemTransport::new().with_file("../evil.hl7", MSH.as_bytes());
     }
 
     #[tokio::test]

@@ -108,7 +108,7 @@ macro_rules! z_segment {
             )*
         }
 
-        paste::paste! {
+        $crate::macros::paste::paste! {
             impl $name {
                 /// Create a new builder for this segment
                 #[allow(dead_code)]
@@ -158,7 +158,7 @@ macro_rules! z_segment {
             }
         }
 
-        paste::paste! {
+        $crate::macros::paste::paste! {
             /// Builder for the custom segment
             #[allow(dead_code)]
             #[derive(Debug, Default)]
@@ -201,7 +201,9 @@ pub const fn __is_z_segment_id(id: &str) -> bool {
     !id.is_empty() && id.as_bytes()[0] == b'Z'
 }
 
-// Export paste for use in the macro
+// Re-export paste for `z_segment!`, which resolves it through
+// `$crate::macros::paste` so downstream crates need no `paste`
+// dependency of their own.
 #[doc(hidden)]
 pub use paste;
 
@@ -320,5 +322,16 @@ mod tests {
         assert!(!__is_z_segment_id("PID"));
         assert!(!__is_z_segment_id(""));
         assert!(!__is_z_segment_id("zpv"));
+    }
+
+    #[test]
+    fn test_paste_reexport_for_macro_expansion() {
+        // `z_segment!` expands through this re-export so downstream
+        // crates need no `paste` dependency; every in-crate expansion
+        // above already exercises that path.
+        crate::macros::paste::paste! {
+            #[allow(dead_code)]
+            struct [<PasteReexportProbe>];
+        }
     }
 }

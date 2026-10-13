@@ -70,6 +70,13 @@ impl<'a> TerserQuery<'a> {
     ///
     /// The condition function receives a reference to a Terser for convenience.
     ///
+    /// # Panics
+    ///
+    /// Panics when `path` is malformed (or the segment index is out
+    /// of range) instead of masking the error as `None`: `None` means
+    /// the condition failed or the addressed value is absent. Use
+    /// [`Terser::get`](crate::Terser::get) for fallible access.
+    ///
     /// # Examples
     ///
     /// ```
@@ -94,7 +101,10 @@ impl<'a> TerserQuery<'a> {
     /// ```
     pub fn get_if(&self, path: &str, condition: impl Fn(&Terser) -> bool) -> Option<&str> {
         if condition(&self.terser) {
-            self.terser.get(path).ok().flatten()
+            match self.terser.get(path) {
+                Ok(value) => value,
+                Err(err) => panic!("TerserQuery::get_if: invalid path {path:?}: {err}"),
+            }
         } else {
             None
         }
@@ -615,6 +625,35 @@ PID|1||PAT001||DOE^JOHN||19800101|M";
         });
 
         assert_eq!(name_female, None);
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid path")]
+    fn test_get_if_propagates_malformed_path() {
+        let hl7 = r"MSH|^~\&|APP|FAC|||20250115||ADT^A01|123|P|2.5
+PID|1||PAT001||DOE^JOHN||19800101|M";
+
+        let message = parse_message(hl7).unwrap();
+        let query = TerserQuery::new(&message);
+
+        // A malformed path panics like Terser::get errors, instead of
+        // masking as None.
+        let _ = query.get_if("PID-5-1-2-3-4", |_| true);
+    }
+
+    #[test]
+    fn test_get_if_none_for_absent_or_failed_condition() {
+        let hl7 = r"MSH|^~\&|APP|FAC|||20250115||ADT^A01|123|P|2.5
+PID|1||PAT001||DOE^JOHN||19800101|M";
+
+        let message = parse_message(hl7).unwrap();
+        let query = TerserQuery::new(&message);
+
+        // None is kept only for absent values and failed conditions.
+        assert_eq!(query.get_if("PID-99", |_| true), None);
+        assert_eq!(query.get_if("PID-5-1", |_| false), None);
+        // A false condition short-circuits without touching the path.
+        assert_eq!(query.get_if("PID-5-1-2-3-4", |_| false), None);
     }
 
     #[test]

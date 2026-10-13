@@ -501,4 +501,44 @@ mod tests {
         assert!(!parser.is_successful());
         assert!(parser.parse_acknowledgment().is_err());
     }
+
+    #[test]
+    fn test_get_data_segments_excludes_dsc() {
+        let hl7 = "MSH|^~\\&|HOSPMPI|HOSP|CLIN|CLIN|20250115||RSP^K22|RSP-001|P|2.5\r\
+                   MSA|AA|Q-1\r\
+                   QAK|tag|OK|Q22|2|2|0\r\
+                   QPD|Q22^Find Candidates^HL7|tag|@PID.5.1^SMITH\r\
+                   PID|1||1001^^^MPI^MR\r\
+                   DSC|CONT123\r";
+        let message = parse_message(hl7).unwrap();
+        let parser = QueryResultParser::new(&message);
+
+        // The continuation pointer is metadata, not data.
+        let ids: Vec<&str> = parser
+            .get_data_segments()
+            .iter()
+            .map(|s| s.id.as_str())
+            .collect();
+        assert_eq!(ids, vec!["PID"]);
+    }
+
+    #[test]
+    fn test_get_data_segments_falls_back_after_qak_without_qpd() {
+        let hl7 = "MSH|^~\\&|HOSPMPI|HOSP|CLIN|CLIN|20250115||RSP^K22|RSP-001|P|2.5\r\
+                   MSA|AA|Q-1\r\
+                   QAK|tag|OK|Q22|1|1|0\r\
+                   PID|1||1001^^^MPI^MR\r\
+                   DSC|CONT123\r";
+        let message = parse_message(hl7).unwrap();
+        let parser = QueryResultParser::new(&message);
+
+        // Without QPD, segments after QAK are returned, still
+        // excluding the continuation pointer.
+        let ids: Vec<&str> = parser
+            .get_data_segments()
+            .iter()
+            .map(|s| s.id.as_str())
+            .collect();
+        assert_eq!(ids, vec!["PID"]);
+    }
 }

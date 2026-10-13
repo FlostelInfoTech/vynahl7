@@ -549,4 +549,33 @@ OBX|5|NM|CO2||24";
         assert_eq!(values.get("PID-5-1"), Some(&Some("DOE")));
         assert_eq!(values.get("PID-11-3"), Some(&Some("Boston")));
     }
+
+    #[test]
+    fn test_get_multiple_malformed_path_errors() {
+        let hl7 = r"MSH|^~\&|APP|FAC|||20250115||ADT^A01|123|P|2.5
+PID|1||PAT001||DOE^JOHN";
+
+        let message = parse_message(hl7).unwrap();
+        let bulk = BulkTerser::new(&message);
+
+        // A malformed path is an error like Terser::get, even when a
+        // valid path is requested alongside it.
+        assert!(bulk.get_multiple(&["PID-5-1-2-3-4"]).is_err());
+        assert!(bulk.get_multiple(&["PID-5-1", "PID-5-1-2-3-4"]).is_err());
+    }
+
+    #[test]
+    fn test_get_multiple_out_of_range_segment_index_errors() {
+        let hl7 = r"MSH|^~\&|APP|FAC|||20250115||ADT^A01|123|P|2.5
+PID|1||PAT001||DOE^JOHN";
+
+        let message = parse_message(hl7).unwrap();
+        let bulk = BulkTerser::new(&message);
+
+        // The message holds one PID: index 9 exceeds it.
+        assert!(bulk.get_multiple(&["PID(9)-5"]).is_err());
+        // A missing segment id is still Ok(None), not an error.
+        let values = bulk.get_multiple(&["OBX-5"]).unwrap();
+        assert_eq!(values.get("OBX-5"), Some(&None));
+    }
 }

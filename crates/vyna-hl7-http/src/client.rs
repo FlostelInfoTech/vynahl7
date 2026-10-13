@@ -378,7 +378,7 @@ impl HttpClient {
             .unwrap_or("")
             .to_string();
 
-        if !content_type.contains("hl7") {
+        if !crate::server::is_hl7_content_type(&content_type) {
             return Err(Error::ContentType {
                 expected: CONTENT_TYPE_HL7_ER7.to_string(),
                 actual: content_type.clone(),
@@ -547,6 +547,44 @@ mod tests {
             .with_tls(TlsClientConfig::new().unwrap())
             .unwrap();
         assert_eq!(client.timeout, Duration::from_secs(5));
+    }
+
+    #[tokio::test]
+    async fn test_spoof_response_content_type_rejected() {
+        use axum::{Router, routing::post};
+
+        async fn spoof() -> impl axum::response::IntoResponse {
+            ([("content-type", "application/hl7-evil")], "MSH|^~\\&|A\r")
+        }
+
+        async fn valid_with_charset() -> impl axum::response::IntoResponse {
+            (
+                [("content-type", "x-application/hl7-v2+er7; charset=utf-8")],
+                "MSH|^~\\&|A\r",
+            )
+        }
+
+        let app = Router::new()
+            .route("/spoof", post(spoof))
+            .route("/valid", post(valid_with_charset));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        // A substring "hl7" must not be enough to pass the response gate.
+        let spoofed = HttpClient::new(format!("http://{addr}/spoof")).unwrap();
+        let err = spoofed.send_message_raw("MSH|^~\\&|A\r").await.unwrap_err();
+        assert!(
+            matches!(err, Error::ContentType { .. }),
+            "spoof type accepted: {err:?}"
+        );
+
+        // The exact media type with parameters is still accepted.
+        let valid = HttpClient::new(format!("http://{addr}/valid")).unwrap();
+        let body = valid.send_message_raw("MSH|^~\\&|A\r").await.unwrap();
+        assert_eq!(body, "MSH|^~\\&|A\r");
     }
 
     #[tokio::test]

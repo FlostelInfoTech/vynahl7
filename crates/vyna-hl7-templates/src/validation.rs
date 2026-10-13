@@ -139,27 +139,49 @@ impl TemplateValidator {
             let trigger = repetition
                 .and_then(|r| r.get_component(1))
                 .and_then(|c| c.value());
-            if let Some(msg_type) = msg_type
-                && msg_type != template.message_type
-            {
-                result.add_error(
-                    ValidationError::new(format!(
-                        "Message type mismatch: expected {}, got {}",
-                        template.message_type, msg_type
-                    ))
-                    .with_location("MSH-9.1"),
-                );
+            match msg_type {
+                Some(t) if t == template.message_type => {}
+                Some(t) => {
+                    result.add_error(
+                        ValidationError::new(format!(
+                            "Message type mismatch: expected {}, got {}",
+                            template.message_type, t
+                        ))
+                        .with_location("MSH-9.1"),
+                    );
+                }
+                // An absent MSH-9 cannot pass the check: like an empty
+                // one, it fails instead of silently skipping.
+                None => {
+                    result.add_error(
+                        ValidationError::new(format!(
+                            "Message type is missing: expected {}",
+                            template.message_type
+                        ))
+                        .with_location("MSH-9.1"),
+                    );
+                }
             }
-            if let Some(trigger) = trigger
-                && trigger != template.trigger_event
-            {
-                result.add_error(
-                    ValidationError::new(format!(
-                        "Trigger event mismatch: expected {}, got {}",
-                        template.trigger_event, trigger
-                    ))
-                    .with_location("MSH-9.2"),
-                );
+            match trigger {
+                Some(t) if t == template.trigger_event => {}
+                Some(t) => {
+                    result.add_error(
+                        ValidationError::new(format!(
+                            "Trigger event mismatch: expected {}, got {}",
+                            template.trigger_event, t
+                        ))
+                        .with_location("MSH-9.2"),
+                    );
+                }
+                None => {
+                    result.add_error(
+                        ValidationError::new(format!(
+                            "Trigger event is missing: expected {}",
+                            template.trigger_event
+                        ))
+                        .with_location("MSH-9.2"),
+                    );
+                }
             }
         } else {
             result.add_error(ValidationError::new("MSH segment is required"));
@@ -223,15 +245,16 @@ impl TemplateValidator {
                 );
             }
 
-            // Check field length if specified
+            // Check field length if specified (in characters, not
+            // bytes: multibyte text must not warn under the limit).
             if let Some(max_length) = field_template.length
                 && let Some(value) = field.value()
-                && value.len() > max_length
+                && value.chars().count() > max_length
             {
                 result.add_warning(
                     ValidationWarning::new(format!(
                         "Field length {} exceeds maximum {}",
-                        value.len(),
+                        value.chars().count(),
                         max_length
                     ))
                     .with_location(&location),
@@ -543,6 +566,62 @@ mod tests {
                 .errors
                 .iter()
                 .any(|e| e.message.contains("Trigger event mismatch"))
+        );
+    }
+
+    #[test]
+    fn test_absent_msh9_fails_type_trigger_check() {
+        // MSH present but MSH-9 absent: fails like an empty MSH-9,
+        // instead of passing with valid=true.
+        let mut msh = vyna_hl7_core::Segment::new("MSH");
+        msh.set_field(3, Field::from_value("APP")).unwrap();
+        let mut message = Message::new();
+        message.add_segment(msh);
+        let template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+
+        let result = TemplateValidator::validate(&message, &template);
+        assert!(!result.valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.message.contains("Message type is missing")),
+            "unexpected errors: {:?}",
+            result.errors
+        );
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.message.contains("Trigger event is missing")),
+            "unexpected errors: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_field_length_counts_characters_not_bytes() {
+        // 100 chars (200 bytes) under a 150 limit: no warning.
+        let mut message = create_test_message();
+        message.segments[1].fields[2] = Field::from_value("ü".repeat(100));
+
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut pid_segment = SegmentTemplate::new("PID");
+        pid_segment.add_field(3, FieldTemplate::new().with_length(150));
+        template.add_segment(pid_segment);
+
+        let result = TemplateValidator::validate(&message, &template);
+        assert!(result.valid);
+        assert!(!result.has_warnings());
+
+        // 200 chars over the limit still warns, reporting the count.
+        message.segments[1].fields[2] = Field::from_value("ü".repeat(200));
+        let result = TemplateValidator::validate(&message, &template);
+        assert!(result.has_warnings());
+        assert!(
+            result.warnings.iter().any(|w| w.message.contains("200")),
+            "unexpected warnings: {:?}",
+            result.warnings
         );
     }
 }

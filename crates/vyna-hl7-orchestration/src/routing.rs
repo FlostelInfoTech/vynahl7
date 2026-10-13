@@ -369,4 +369,49 @@ mod tests {
         assert!(results[0].is_ok());
         assert!(results[1].is_ok());
     }
+
+    #[tokio::test]
+    async fn test_route_all_no_match_uses_default_handler() {
+        let mut router = ContentRouter::new();
+        router.add_route("adt", |_| false, |msg| async move { Ok(msg) });
+        router.set_default_handler(|msg| async move { Ok(msg) });
+
+        let results = router.route_all(create_adt_message()).await;
+        assert_eq!(results.len(), 1);
+        assert!(results[0].is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_route_all_no_match_no_default_is_empty() {
+        let mut router = ContentRouter::new();
+        router.add_route("adt", |_| false, |msg| async move { Ok(msg) });
+
+        let results = router.route_all(create_adt_message()).await;
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_route_all_wraps_handler_error_with_route_name() {
+        let mut router = ContentRouter::new();
+        router.add_route(
+            "failing",
+            |_| true,
+            |_| async move { Err(OrchestrationError::custom("boom")) },
+        );
+
+        let results = router.route_all(create_adt_message()).await;
+        assert_eq!(results.len(), 1);
+        assert!(matches!(
+            &results[0],
+            Err(OrchestrationError::RouteExecutionFailed { route, .. })
+                if route == "failing"
+        ));
+        assert!(
+            results[0]
+                .as_ref()
+                .unwrap_err()
+                .to_string()
+                .contains("boom")
+        );
+    }
 }

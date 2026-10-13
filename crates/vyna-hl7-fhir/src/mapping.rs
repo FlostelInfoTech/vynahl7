@@ -51,7 +51,9 @@ use serde_json::Value;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
 
-use crate::converters::patient::{valid_hl7_date, valid_hl7_time};
+use crate::converters::patient::{
+    split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time, valid_hl7_year_month,
+};
 use crate::error::{ConversionError, ConversionResult};
 
 /// Shipped example mappings, embedded at compile time.
@@ -138,6 +140,13 @@ struct PathStep {
 /// to the index, so an unbounded index from mapping YAML could exhaust
 /// memory. Real FHIR arrays stay far below this.
 const MAX_ARRAY_INDEX: usize = 1000;
+
+/// Maximum target-path depth (dot-separated steps) accepted.
+///
+/// Assignment recurses per step, so an uncapped target could exhaust
+/// the stack. Mirrors the predicate parser's recursion cap; real FHIR
+/// paths stay far below this.
+const MAX_TARGET_DEPTH: usize = 64;
 
 impl Mapping {
     /// Parse and validate a mapping from YAML text.
@@ -312,6 +321,12 @@ fn parse_target(target: &str) -> Result<Vec<PathStep>, String> {
             key: key.to_string(),
             index,
         });
+    }
+    if steps.len() > MAX_TARGET_DEPTH {
+        return Err(format!(
+            "target depth {} exceeds limit {MAX_TARGET_DEPTH} in '{target}'",
+            steps.len()
+        ));
     }
     Ok(steps)
 }
@@ -539,39 +554,65 @@ impl MappingEngine {
     }
 }
 
-/// `YYYYMMDD[HHMMSS...]` -> `YYYY-MM-DD`.
+/// `YYYYMMDD[HHMMSS...]` -> `YYYY-MM-DD` (`YYYYMM` -> `YYYY-MM`).
 fn format_date(text: &str) -> Option<String> {
+    // A zone suffix cannot apply to a date, so format the stem alone.
+    let (stem, _) = split_hl7_offset(text);
     // Byte-slice checks on `[u8]` never split a char boundary, and an
     // all-ASCII-digit prefix makes the `&str` slices below safe.
-    let bytes = text.as_bytes();
-    if bytes.len() >= 8
-        && bytes[..8].iter().all(|b| b.is_ascii_digit())
-        && valid_hl7_date(&text[0..8])
-    {
-        return Some(format!("{}-{}-{}", &text[0..4], &text[4..6], &text[6..8]));
+    let bytes = stem.as_bytes();
+    if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
+        // An all-digit stem with an impossible day is unformattable, not
+        // month precision.
+        return valid_hl7_date(&stem[0..8])
+            .then(|| format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]));
+    }
+    if bytes.len() >= 6 && bytes[..6].iter().all(|b| b.is_ascii_digit()) {
+        return valid_hl7_year_month(&stem[0..6])
+            .then(|| format!("{}-{}", &stem[0..4], &stem[4..6]));
     }
     None
 }
 
 /// HL7 datetime -> FHIR ISO 8601 (date-only when short).
+///
+/// `YYYYMMDDHHMM` keeps its minutes and a trailing HL7 zone is
+/// preserved as `±HH:MM`.
 fn format_datetime(text: &str) -> Option<String> {
-    let bytes = text.as_bytes();
+    let (stem, offset) = split_hl7_offset(text);
+    let zone = offset.as_deref().unwrap_or("");
+    let bytes = stem.as_bytes();
     if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
-        if valid_hl7_date(&text[0..8]) && valid_hl7_time(&text[8..14]) {
+        if valid_hl7_date(&stem[0..8]) && valid_hl7_time(&stem[8..14]) {
             Some(format!(
-                "{}-{}-{}T{}:{}:{}",
-                &text[0..4],
-                &text[4..6],
-                &text[6..8],
-                &text[8..10],
-                &text[10..12],
-                &text[12..14]
+                "{}-{}-{}T{}:{}:{}{}",
+                &stem[0..4],
+                &stem[4..6],
+                &stem[6..8],
+                &stem[8..10],
+                &stem[10..12],
+                &stem[12..14],
+                zone
+            ))
+        } else {
+            None
+        }
+    } else if bytes.len() >= 12 && bytes[..12].iter().all(|b| b.is_ascii_digit()) {
+        if valid_hl7_date(&stem[0..8]) && valid_hl7_hour_min(&stem[8..12]) {
+            Some(format!(
+                "{}-{}-{}T{}:{}{}",
+                &stem[0..4],
+                &stem[4..6],
+                &stem[6..8],
+                &stem[8..10],
+                &stem[10..12],
+                zone
             ))
         } else {
             None
         }
     } else {
-        format_date(text)
+        format_date(stem)
     }
 }
 
@@ -930,5 +971,55 @@ fields:
             Mapping::from_yaml("resourceType: X\nfields:\n  - target: a[1000]\n    constant: 1\n",)
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn engine_rejects_target_depth_over_limit_at_load() {
+        let deep = |n: usize| vec!["a"; n].join(".");
+        let yaml = |target: &str| {
+            format!("resourceType: X\nfields:\n  - target: {target}\n    constant: 1\n")
+        };
+        // At the cap: accepted and applied.
+        let mapping = Mapping::from_yaml(&yaml(&deep(64))).unwrap();
+        let out = MappingEngine::apply(&mapping, &message()).unwrap();
+        assert_eq!(out.len(), 1);
+        // Over the cap: rejected at load instead of overflowing the
+        // stack at apply time.
+        for n in [65, 20_000] {
+            let err = Mapping::from_yaml(&yaml(&deep(n))).unwrap_err();
+            assert!(err.to_string().contains("exceeds limit"), "{err}");
+        }
+    }
+
+    #[test]
+    fn engine_format_preserves_month_minutes_and_zone() {
+        assert_eq!(format_date("198001"), Some("1980-01".to_string()));
+        assert_eq!(format_date("198013"), None);
+        assert_eq!(
+            format_datetime("202403151000"),
+            Some("2024-03-15T10:00".to_string())
+        );
+        assert_eq!(
+            format_datetime("20240315100000+0500"),
+            Some("2024-03-15T10:00:00+05:00".to_string())
+        );
+        // Impossible stems still fail instead of degrading precision.
+        assert_eq!(format_datetime("20240230100000"), None);
+        assert_eq!(format_datetime("202402301000"), None);
+
+        let mut fields = vec![String::new(); 30];
+        fields[0] = "1".to_string();
+        fields[28] = "20240315100000+0500".to_string();
+        let message = parse_message(&format!(
+            "MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|{}",
+            fields.join("|")
+        ))
+        .unwrap();
+        let mapping = Mapping::from_yaml(
+            "resourceType: X\nfields:\n  - target: a\n    source: PID-29\n    format: datetime\n",
+        )
+        .unwrap();
+        let out = MappingEngine::apply(&mapping, &message).unwrap();
+        assert_eq!(out[0]["a"], "2024-03-15T10:00:00+05:00");
     }
 }

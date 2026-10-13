@@ -485,9 +485,11 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
     // Generate field extraction code for from_segment
     let mut from_segment_fields = Vec::new();
     let mut to_segment_fields = Vec::new();
-    // (field, component) pairs already mapped, to reject duplicates that
-    // would silently last-win in to_segment.
-    let mut mapped: std::collections::HashMap<(usize, Option<usize>), String> =
+    // Mapped positions, to reject duplicates and whole-field /
+    // component overlaps that would silently last-win in to_segment.
+    let mut whole_mapped: std::collections::HashMap<usize, String> =
+        std::collections::HashMap::new();
+    let mut component_mapped: std::collections::HashMap<(usize, usize), String> =
         std::collections::HashMap::new();
 
     for field in fields {
@@ -549,19 +551,58 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
             ));
         }
 
-        if let Some(first) = mapped.insert((field_num, attrs.component), field_name.to_string()) {
-            let location = match attrs.component {
-                Some(comp) => format!("field {field_num} component {comp}"),
-                None => format!("field {field_num}"),
-            };
-            return Err(syn::Error::new_spanned(
-                field,
-                format!(
-                    "duplicate HL7 mapping: field `{field_name}` and field \
-                     `{first}` both map to {location}; the second write \
-                     would silently overwrite the first",
-                ),
-            ));
+        match attrs.component {
+            None => {
+                if let Some(first) = whole_mapped.get(&field_num) {
+                    return Err(syn::Error::new_spanned(
+                        field,
+                        format!(
+                            "duplicate HL7 mapping: field `{field_name}` and field \
+                             `{first}` both map to field {field_num}; the second \
+                             write would silently overwrite the first",
+                        ),
+                    ));
+                }
+                if let Some(((_, comp), first)) =
+                    component_mapped.iter().find(|((f, _), _)| *f == field_num)
+                {
+                    return Err(syn::Error::new_spanned(
+                        field,
+                        format!(
+                            "overlapping HL7 mapping: field `{field_name}` maps to \
+                             field {field_num} while field `{first}` maps to field \
+                             {field_num} component {comp}; the whole-field write \
+                             would silently overwrite the component value",
+                        ),
+                    ));
+                }
+                whole_mapped.insert(field_num, field_name.to_string());
+            }
+            Some(comp) => {
+                if let Some(first) = whole_mapped.get(&field_num) {
+                    return Err(syn::Error::new_spanned(
+                        field,
+                        format!(
+                            "overlapping HL7 mapping: field `{field_name}` maps to \
+                             field {field_num} component {comp} while field `{first}` \
+                             maps to field {field_num}; the whole-field write would \
+                             silently overwrite the component value",
+                        ),
+                    ));
+                }
+                if let Some(first) =
+                    component_mapped.insert((field_num, comp), field_name.to_string())
+                {
+                    return Err(syn::Error::new_spanned(
+                        field,
+                        format!(
+                            "duplicate HL7 mapping: field `{field_name}` and field \
+                             `{first}` both map to field {field_num} component {comp}; \
+                             the second write would silently overwrite the first",
+                        ),
+                    ));
+                }
+            }
         }
 
         if is_repeating {
@@ -748,9 +789,11 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
 /// groups are not distinguished positionally.
 ///
 /// Before matching segments, `from_message` compares a present MSH-9
-/// against the declared `message_type`/`trigger_event`; a mismatch fails
-/// the conversion, so an ORU message cannot convert into an ADT struct.
-/// Messages without MSH-9 skip the check.
+/// against the declared `message_type`/`trigger_event`: when either
+/// component holds content, both must agree (a missing component
+/// counts as empty), so an ORU message (even a partial `ORU` without
+/// a trigger) cannot convert into an ADT struct. Messages without
+/// MSH-9 skip the check.
 ///
 /// # Example
 ///
@@ -964,16 +1007,35 @@ fn derive_message_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
             pub fn from_message(message: &vyna_hl7_core::message::Message) -> Option<Self> {
                 // A present MSH-9 must agree with the declared type and
                 // trigger; each declared value that is empty is not checked.
-                // Messages without MSH-9 skip the check (partial or
-                // programmatically built messages carry no MSH).
-                if let Some((__actual_type, __actual_trigger)) =
-                    message.get_message_type()
+                // Only MSH-9 without any content skips the check
+                // (programmatically built messages carry no MSH): a
+                // partial MSH-9 still enforces the values it holds, with
+                // a missing component counting as empty.
                 {
-                    if !#message_type.is_empty() && __actual_type != #message_type {
-                        return None;
-                    }
-                    if !#trigger_event.is_empty() && __actual_trigger != #trigger_event {
-                        return None;
+                    let __msh9 = message
+                        .get_segment_by_id("MSH")
+                        .and_then(|__msh| __msh.get_field(9))
+                        .and_then(|__field| __field.get_repetition(0));
+                    let __actual_type = __msh9
+                        .and_then(|__rep| __rep.get_component(0))
+                        .and_then(|__comp| __comp.value());
+                    let __actual_trigger = __msh9
+                        .and_then(|__rep| __rep.get_component(1))
+                        .and_then(|__comp| __comp.value());
+                    let __has_content =
+                        __actual_type.is_some_and(|__s| !__s.is_empty())
+                            || __actual_trigger.is_some_and(|__s| !__s.is_empty());
+                    if __has_content {
+                        if !#message_type.is_empty()
+                            && __actual_type.unwrap_or("") != #message_type
+                        {
+                            return None;
+                        }
+                        if !#trigger_event.is_empty()
+                            && __actual_trigger.unwrap_or("") != #trigger_event
+                        {
+                            return None;
+                        }
                     }
                 }
                 Some(Self {
@@ -1518,6 +1580,29 @@ mod tests {
     }
 
     #[test]
+    fn segment_impl_rejects_whole_component_overlap() {
+        // A whole-field mapping plus a component mapping on the same
+        // field silently loses the component value in to_segment
+        // (the whole-field write overwrites it); reject in both
+        // declaration orders.
+        let err = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { \
+                 #[hl7(field = 3, component = 1)] a: String, \
+                 #[hl7(field = 3)] b: String }",
+        ))
+        .unwrap_err();
+        assert!(err_message(err).contains("overlapping"));
+
+        let err = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { \
+                 #[hl7(field = 3)] b: String, \
+                 #[hl7(field = 3, component = 1)] a: String }",
+        ))
+        .unwrap_err();
+        assert!(err_message(err).contains("overlapping"));
+    }
+
+    #[test]
     fn segment_impl_required_field_fails_when_absent() {
         // A missing required field must fail conversion (?), never
         // silently become "" via unwrap_or_default().
@@ -1575,8 +1660,30 @@ mod tests {
         .expect("valid struct must expand");
         let rendered = tokens.to_string().replace(' ', "");
         assert!(
-            rendered.contains("get_message_type"),
-            "from_message must validate MSH-9: {rendered}"
+            rendered.contains("get_component(0)") && rendered.contains("get_component(1)"),
+            "from_message must validate MSH-9 components: {rendered}"
+        );
+    }
+
+    #[test]
+    fn message_impl_enforces_partial_msh9_agreement() {
+        // get_message_type returns None for a partial MSH-9 (type
+        // without trigger), which skipped the check entirely; the
+        // generated code must read the components structurally so a
+        // partial "ORU" still fails against ADT/A01.
+        let tokens = derive_message_impl(parse_input(
+            "#[hl7(message_type = \"ADT\", trigger_event = \"A01\")] struct M { \
+             #[hl7(segment)] pid: Pid }",
+        ))
+        .expect("valid struct must expand");
+        let rendered = tokens.to_string().replace(' ', "");
+        assert!(
+            !rendered.contains("get_message_type"),
+            "partial MSH-9 must not skip the check: {rendered}"
+        );
+        assert!(
+            rendered.contains("has_content"),
+            "any MSH-9 content must trigger agreement: {rendered}"
         );
     }
 

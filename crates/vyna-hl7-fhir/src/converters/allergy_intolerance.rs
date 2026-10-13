@@ -50,7 +50,11 @@ impl AllergyIntoleranceConverter {
         } else {
             format!("AL1({})-2", al1_index + 1)
         };
-        if let Ok(Some(allergen_type)) = terser.get(&type_path) {
+        // Empty is absent: it leaves the category unset instead of
+        // defaulting to environment.
+        if let Ok(Some(allergen_type)) = terser.get(&type_path)
+            && !allergen_type.is_empty()
+        {
             allergy.category = Some(vec![Self::convert_allergen_type(allergen_type)]);
         }
 
@@ -60,7 +64,10 @@ impl AllergyIntoleranceConverter {
         } else {
             format!("AL1({})-3", al1_index + 1)
         };
-        if let Ok(Some(code)) = terser.get(&code_path) {
+        // Empty is absent (same rule as the allergen type above).
+        if let Ok(Some(code)) = terser.get(&code_path)
+            && !code.is_empty()
+        {
             // AL1-3-2: description text, AL1-3-3: coding system (1-based indexing)
             let text = terser
                 .get(&format!("{code_path}-2"))
@@ -91,7 +98,10 @@ impl AllergyIntoleranceConverter {
         } else {
             format!("AL1({})-4", al1_index + 1)
         };
-        if let Ok(Some(severity)) = terser.get(&severity_path) {
+        // Empty is absent (same rule as the allergen type above).
+        if let Ok(Some(severity)) = terser.get(&severity_path)
+            && !severity.is_empty()
+        {
             allergy.criticality = Some(Self::convert_severity(severity));
         }
 
@@ -198,6 +208,31 @@ mod tests {
         assert_eq!(coding.display.as_deref(), Some("ASPIRIN"));
         assert_eq!(coding.system.as_deref(), Some("RXNORM"));
         assert_eq!(concept.text.as_deref(), Some("ASPIRIN"));
+    }
+
+    #[test]
+    fn test_empty_al1_fields_treated_as_absent() {
+        // AL1-2 present-but-empty leaves the category unset instead of
+        // defaulting to environment.
+        let hl7 = "MSH|^~\\&|System|Hospital|EMR|Hospital|20240315||ADT^A01|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   AL1|1||1191^ASPIRIN|SV";
+        let message = parse_message(hl7).unwrap();
+        let allergies = AllergyIntoleranceConverter::convert_all(&message).unwrap();
+        assert_eq!(allergies[0].category, None);
+        // Valued siblings still convert.
+        assert!(allergies[0].code.is_some());
+        assert_eq!(allergies[0].criticality.as_deref(), Some("high"));
+
+        // Empty code and severity are likewise absent.
+        let hl7 = "MSH|^~\\&|System|Hospital|EMR|Hospital|20240315||ADT^A01|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   AL1|1|DA||";
+        let message = parse_message(hl7).unwrap();
+        let allergies = AllergyIntoleranceConverter::convert_all(&message).unwrap();
+        assert_eq!(allergies[0].category, Some(vec!["medication".to_string()]));
+        assert_eq!(allergies[0].code, None);
+        assert_eq!(allergies[0].criticality, None);
     }
 
     #[test]
