@@ -15,7 +15,7 @@ Conformance profile validation for HL7 v2.x messages.
 
 ```toml
 [dependencies]
-vyna-hl7-conformance = "0.19"
+vyna-hl7-conformance = "0.9"
 ```
 
 ## Quick Example

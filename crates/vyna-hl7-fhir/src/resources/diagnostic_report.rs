@@ -1,7 +1,7 @@
 //! FHIR DiagnosticReport resource definition
 
-use serde::{Deserialize, Serialize};
 use super::common::*;
+use serde::{Deserialize, Serialize};
 
 /// FHIR DiagnosticReport resource
 #[derive(Debug, Clone, Serialize, Deserialize)]

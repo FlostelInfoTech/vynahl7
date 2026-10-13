@@ -20,13 +20,13 @@ MLLP (Minimal Lower Layer Protocol) support for HL7 v2.x message transmission ov
 
 ```toml
 [dependencies]
-vyna-hl7-mllp = "0.19"
+vyna-hl7-mllp = "0.9"
 
 # For TLS support
-vyna-hl7-mllp = { version = "0.19", features = ["tls"] }
+vyna-hl7-mllp = { version = "0.9", features = ["tls"] }
 
 # For testing
-vyna-hl7-mllp = { version = "0.19", features = ["testing"] }
+vyna-hl7-mllp = { version = "0.9", features = ["testing"] }
 ```
 
 ## Quick Start - Client

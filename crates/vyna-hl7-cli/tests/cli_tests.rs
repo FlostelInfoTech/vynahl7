@@ -350,6 +350,29 @@ fn validate_valid_exits_zero() {
 }
 
 #[test]
+fn validate_unrecognized_version_fails_loudly() {
+    let file = write_temp(
+        "good.hl7",
+        "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\rEVN||20240101\rPID|1||7||DOE^JOHN\rPV1||I\r",
+    );
+    let output = vynahl7()
+        .args([
+            "validate",
+            file.to_str().unwrap(),
+            "--hl7-version",
+            "9.9",
+            "--format",
+            "json",
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success(), "typo'd version must not validate");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Unrecognized HL7 version"), "{stderr}");
+    std::fs::remove_file(file).unwrap();
+}
+
+#[test]
 fn extract_invalid_path_fails_on_stderr() {
     let file = write_temp("extract.hl7", ADT_A);
     for format in ["text", "json"] {

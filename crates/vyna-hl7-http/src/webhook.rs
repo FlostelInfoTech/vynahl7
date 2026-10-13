@@ -9,11 +9,11 @@ use crate::{Error, Result};
 #[cfg(feature = "webhooks")]
 use reqwest::Client;
 #[cfg(feature = "webhooks")]
-use vyna_hl7_core::Message;
-#[cfg(feature = "webhooks")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "webhooks")]
 use std::time::Duration;
+#[cfg(feature = "webhooks")]
+use vyna_hl7_core::Message;
 
 /// Webhook payload containing HL7 message information
 #[cfg(feature = "webhooks")]
@@ -65,23 +65,11 @@ impl WebhookPayload {
 
         let terser = Terser::new(message);
 
-        let message_type = terser
-            .get("MSH-9-1")
-            .ok()
-            .flatten()
-            .map(|s| s.to_string());
+        let message_type = terser.get("MSH-9-1").ok().flatten().map(|s| s.to_string());
 
-        let trigger_event = terser
-            .get("MSH-9-2")
-            .ok()
-            .flatten()
-            .map(|s| s.to_string());
+        let trigger_event = terser.get("MSH-9-2").ok().flatten().map(|s| s.to_string());
 
-        let message_control_id = terser
-            .get("MSH-10")
-            .ok()
-            .flatten()
-            .map(|s| s.to_string());
+        let message_control_id = terser.get("MSH-10").ok().flatten().map(|s| s.to_string());
 
         Self {
             event: event.to_string(),
@@ -106,8 +94,11 @@ impl WebhookPayload {
 }
 
 /// Webhook configuration
+///
+/// The `Debug` impl redacts header values: custom headers routinely carry
+/// secrets such as API keys.
 #[cfg(feature = "webhooks")]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WebhookConfig {
     /// The webhook URL to send notifications to
     pub url: String,
@@ -119,6 +110,24 @@ pub struct WebhookConfig {
     pub include_message_content: bool,
     /// Custom headers to include in the webhook request
     pub headers: Vec<(String, String)>,
+}
+
+#[cfg(feature = "webhooks")]
+impl std::fmt::Debug for WebhookConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let redacted: Vec<(&str, &str)> = self
+            .headers
+            .iter()
+            .map(|(name, _)| (name.as_str(), "[REDACTED]"))
+            .collect();
+        f.debug_struct("WebhookConfig")
+            .field("url", &self.url)
+            .field("timeout", &self.timeout)
+            .field("max_retries", &self.max_retries)
+            .field("include_message_content", &self.include_message_content)
+            .field("headers", &redacted)
+            .finish()
+    }
 }
 
 #[cfg(feature = "webhooks")]
@@ -204,9 +213,7 @@ impl WebhookClient {
     /// # }
     /// ```
     pub fn new(config: WebhookConfig) -> Result<Self> {
-        let client = Client::builder()
-            .timeout(config.timeout)
-            .build()?;
+        let client = Client::builder().timeout(config.timeout).build()?;
 
         Ok(Self { config, client })
     }
@@ -255,7 +262,8 @@ impl WebhookClient {
                 Ok(response) => {
                     if response.status().is_success() {
                         return Ok(());
-                    } else if response.status().is_server_error() && retries < self.config.max_retries
+                    } else if response.status().is_server_error()
+                        && retries < self.config.max_retries
                     {
                         retries += 1;
                         tokio::time::sleep(Duration::from_millis(100 * (1 << retries))).await;
@@ -391,5 +399,16 @@ mod tests {
         assert_eq!(config.max_retries, 5);
         assert!(config.include_message_content);
         assert_eq!(config.headers.len(), 1);
+    }
+
+    #[test]
+    fn test_webhook_debug_redacts_header_values() {
+        let config = WebhookConfig::new("https://example.com/webhook")
+            .with_header("X-API-Key", "super-secret-value");
+
+        let rendered = format!("{:?}", config);
+        assert!(!rendered.contains("super-secret-value"));
+        assert!(rendered.contains("X-API-Key"));
+        assert!(rendered.contains("[REDACTED]"));
     }
 }

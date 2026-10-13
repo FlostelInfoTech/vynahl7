@@ -18,7 +18,7 @@ Transform HL7 messages using field mappings, transformation functions, and decla
 
 ```toml
 [dependencies]
-vyna-hl7-transform = "0.19"
+vyna-hl7-transform = "0.9"
 ```
 
 ## Quick Example

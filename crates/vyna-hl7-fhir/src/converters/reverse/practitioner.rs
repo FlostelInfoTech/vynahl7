@@ -42,69 +42,74 @@ impl PractitionerReverseConverter {
 
         // Component 1: ID Number
         if let Some(ref identifiers) = practitioner.identifier
-            && let Some(first_id) = identifiers.first() {
-                if let Some(ref value) = first_id.value {
-                    components[0] = value.clone();
-                }
-
-                // Component 9: Assigning Authority
-                if let Some(ref system) = first_id.system {
-                    // Extract authority from system URL
-                    let authority = system
-                        .strip_prefix("urn:oid:")
-                        .unwrap_or(system.split('/').next_back().unwrap_or(""));
-                    components[8] = authority.to_string();
-                }
-
-                // Component 13: Identifier Type Code
-                if let Some(ref type_) = first_id.type_
-                    && let Some(ref coding) = type_.coding
-                        && let Some(first_coding) = coding.first()
-                            && let Some(ref code) = first_coding.code {
-                                components[12] = code.clone();
-                            }
+            && let Some(first_id) = identifiers.first()
+        {
+            if let Some(ref value) = first_id.value {
+                components[0] = value.clone();
             }
+
+            // Component 9: Assigning Authority
+            if let Some(ref system) = first_id.system {
+                // Extract authority from system URL
+                let authority = system
+                    .strip_prefix("urn:oid:")
+                    .unwrap_or(system.split('/').next_back().unwrap_or(""));
+                components[8] = authority.to_string();
+            }
+
+            // Component 13: Identifier Type Code
+            if let Some(ref type_) = first_id.type_
+                && let Some(ref coding) = type_.coding
+                && let Some(first_coding) = coding.first()
+                && let Some(ref code) = first_coding.code
+            {
+                components[12] = code.clone();
+            }
+        }
 
         // Components 2-6: Name parts
         if let Some(ref names) = practitioner.name
-            && let Some(first_name) = names.first() {
-                // Component 2: Family Name
-                if let Some(ref family) = first_name.family {
-                    components[1] = family.clone();
+            && let Some(first_name) = names.first()
+        {
+            // Component 2: Family Name
+            if let Some(ref family) = first_name.family {
+                components[1] = family.clone();
+            }
+
+            // Component 3: Given Name
+            if let Some(ref given) = first_name.given {
+                if let Some(first_given) = given.first() {
+                    components[2] = first_given.clone();
                 }
-
-                // Component 3: Given Name
-                if let Some(ref given) = first_name.given {
-                    if let Some(first_given) = given.first() {
-                        components[2] = first_given.clone();
-                    }
-                    // Component 4: Second Name (Middle)
-                    if given.len() > 1 {
-                        components[3] = given[1].clone();
-                    }
-                }
-
-                // Component 5: Suffix
-                if let Some(ref suffix) = first_name.suffix
-                    && let Some(first_suffix) = suffix.first() {
-                        components[4] = first_suffix.clone();
-                    }
-
-                // Component 6: Prefix
-                if let Some(ref prefix) = first_name.prefix
-                    && let Some(first_prefix) = prefix.first() {
-                        components[5] = first_prefix.clone();
-                    }
-
-                // Component 10: Name Type Code
-                if let Some(ref use_) = first_name.use_ {
-                    components[9] = match use_.as_str() {
-                        "official" => "L".to_string(),
-                        "nickname" => "N".to_string(),
-                        _ => "L".to_string(),
-                    };
+                // Component 4: Second Name (Middle)
+                if given.len() > 1 {
+                    components[3] = given[1].clone();
                 }
             }
+
+            // Component 5: Suffix
+            if let Some(ref suffix) = first_name.suffix
+                && let Some(first_suffix) = suffix.first()
+            {
+                components[4] = first_suffix.clone();
+            }
+
+            // Component 6: Prefix
+            if let Some(ref prefix) = first_name.prefix
+                && let Some(first_prefix) = prefix.first()
+            {
+                components[5] = first_prefix.clone();
+            }
+
+            // Component 10: Name Type Code
+            if let Some(ref use_) = first_name.use_ {
+                components[9] = match use_.as_str() {
+                    "official" => "L".to_string(),
+                    "nickname" => "N".to_string(),
+                    _ => "L".to_string(),
+                };
+            }
+        }
 
         // Build the XCN string, trimming trailing empty components
         let mut result = components.join("^");
@@ -118,76 +123,83 @@ impl PractitionerReverseConverter {
     /// Create individual XCN components for use in segment fields
     ///
     /// Returns a vector of (component_index, value) tuples for setting in a segment
-    pub fn convert_to_components(practitioner: &Practitioner) -> ConversionResult<Vec<(usize, String)>> {
+    pub fn convert_to_components(
+        practitioner: &Practitioner,
+    ) -> ConversionResult<Vec<(usize, String)>> {
         let mut components = Vec::new();
 
         // Component 1: ID Number (0-indexed: 0)
         if let Some(ref identifiers) = practitioner.identifier
-            && let Some(first_id) = identifiers.first() {
-                if let Some(ref value) = first_id.value {
-                    components.push((0, value.clone()));
-                }
-
-                // Component 9: Assigning Authority (0-indexed: 8)
-                if let Some(ref system) = first_id.system {
-                    let authority = system
-                        .strip_prefix("urn:oid:")
-                        .unwrap_or(system.split('/').next_back().unwrap_or(""));
-                    if !authority.is_empty() {
-                        components.push((8, authority.to_string()));
-                    }
-                }
-
-                // Component 13: Identifier Type Code (0-indexed: 12)
-                if let Some(ref type_) = first_id.type_
-                    && let Some(ref coding) = type_.coding
-                        && let Some(first_coding) = coding.first()
-                            && let Some(ref code) = first_coding.code {
-                                components.push((12, code.clone()));
-                            }
+            && let Some(first_id) = identifiers.first()
+        {
+            if let Some(ref value) = first_id.value {
+                components.push((0, value.clone()));
             }
+
+            // Component 9: Assigning Authority (0-indexed: 8)
+            if let Some(ref system) = first_id.system {
+                let authority = system
+                    .strip_prefix("urn:oid:")
+                    .unwrap_or(system.split('/').next_back().unwrap_or(""));
+                if !authority.is_empty() {
+                    components.push((8, authority.to_string()));
+                }
+            }
+
+            // Component 13: Identifier Type Code (0-indexed: 12)
+            if let Some(ref type_) = first_id.type_
+                && let Some(ref coding) = type_.coding
+                && let Some(first_coding) = coding.first()
+                && let Some(ref code) = first_coding.code
+            {
+                components.push((12, code.clone()));
+            }
+        }
 
         // Name components
         if let Some(ref names) = practitioner.name
-            && let Some(first_name) = names.first() {
-                // Component 2: Family Name (0-indexed: 1)
-                if let Some(ref family) = first_name.family {
-                    components.push((1, family.clone()));
+            && let Some(first_name) = names.first()
+        {
+            // Component 2: Family Name (0-indexed: 1)
+            if let Some(ref family) = first_name.family {
+                components.push((1, family.clone()));
+            }
+
+            // Component 3: Given Name (0-indexed: 2)
+            if let Some(ref given) = first_name.given {
+                if let Some(first_given) = given.first() {
+                    components.push((2, first_given.clone()));
                 }
-
-                // Component 3: Given Name (0-indexed: 2)
-                if let Some(ref given) = first_name.given {
-                    if let Some(first_given) = given.first() {
-                        components.push((2, first_given.clone()));
-                    }
-                    // Component 4: Second Name (0-indexed: 3)
-                    if given.len() > 1 {
-                        components.push((3, given[1].clone()));
-                    }
-                }
-
-                // Component 5: Suffix (0-indexed: 4)
-                if let Some(ref suffix) = first_name.suffix
-                    && let Some(first_suffix) = suffix.first() {
-                        components.push((4, first_suffix.clone()));
-                    }
-
-                // Component 6: Prefix (0-indexed: 5)
-                if let Some(ref prefix) = first_name.prefix
-                    && let Some(first_prefix) = prefix.first() {
-                        components.push((5, first_prefix.clone()));
-                    }
-
-                // Component 10: Name Type Code (0-indexed: 9)
-                if let Some(ref use_) = first_name.use_ {
-                    let type_code = match use_.as_str() {
-                        "official" => "L",
-                        "nickname" => "N",
-                        _ => "L",
-                    };
-                    components.push((9, type_code.to_string()));
+                // Component 4: Second Name (0-indexed: 3)
+                if given.len() > 1 {
+                    components.push((3, given[1].clone()));
                 }
             }
+
+            // Component 5: Suffix (0-indexed: 4)
+            if let Some(ref suffix) = first_name.suffix
+                && let Some(first_suffix) = suffix.first()
+            {
+                components.push((4, first_suffix.clone()));
+            }
+
+            // Component 6: Prefix (0-indexed: 5)
+            if let Some(ref prefix) = first_name.prefix
+                && let Some(first_prefix) = prefix.first()
+            {
+                components.push((5, first_prefix.clone()));
+            }
+
+            // Component 10: Name Type Code (0-indexed: 9)
+            if let Some(ref use_) = first_name.use_ {
+                let type_code = match use_.as_str() {
+                    "official" => "L",
+                    "nickname" => "N",
+                    _ => "L",
+                };
+                components.push((9, type_code.to_string()));
+            }
+        }
 
         Ok(components)
     }
@@ -244,7 +256,8 @@ mod tests {
     #[test]
     fn test_convert_to_components() {
         let practitioner = create_test_practitioner();
-        let components = PractitionerReverseConverter::convert_to_components(&practitioner).unwrap();
+        let components =
+            PractitionerReverseConverter::convert_to_components(&practitioner).unwrap();
 
         // Check that we have the expected components
         let id_component = components.iter().find(|(idx, _)| *idx == 0);

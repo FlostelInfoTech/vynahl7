@@ -86,6 +86,7 @@ impl ImmunizationConverter {
         }
 
         // RXA-22: System Entry Date/Time -> recorded
+        // Lenient by design (see crate docs "Invalid datetime handling").
         if let Ok(Some(recorded_dt)) = terser.get(&path("22"))
             && let Ok(recorded) = Self::convert_datetime(recorded_dt)
         {

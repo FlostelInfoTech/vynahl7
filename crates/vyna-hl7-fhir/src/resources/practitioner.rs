@@ -2,8 +2,8 @@
 //!
 //! Based on FHIR R4 Practitioner: <https://www.hl7.org/fhir/R4/practitioner.html>
 
-use serde::{Deserialize, Serialize};
 use super::common::*;
+use serde::{Deserialize, Serialize};
 
 /// FHIR Practitioner resource - A person with a formal responsibility in the provisioning of healthcare
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

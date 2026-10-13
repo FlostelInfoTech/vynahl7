@@ -625,4 +625,4 @@ Performance improvements are welcome! Please:
 1. Add benchmarks for new features
 2. Run existing benchmarks to verify improvements
 3. Document optimization strategies
-4. Include before/after benchmark results in merge requests
+4. Include before/after benchmark results in pull requests

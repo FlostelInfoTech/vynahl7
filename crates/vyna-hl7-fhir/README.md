@@ -95,6 +95,17 @@ let json = serde_json::to_string_pretty(&patient)?;
 println!("{}", json);
 ```
 
+## Invalid datetime handling
+
+Converters are strict about a resource's *primary* timestamp and lenient
+about *ancillary* ones. An invalid primary timestamp (OBX-14, OBR-7/22,
+RXA-3) fails the conversion with `ConversionError::InvalidFormat`. An
+invalid ancillary timestamp is dropped while the resource still converts:
+Encounter period bounds (PV1-44/45), Specimen collection/received times
+(SPM-17/18), ServiceRequest authored-on with its fallback (ORC-15/9),
+and Immunization recorded-at (RXA-22). See the crate docs for the full
+rule.
+
 ## Converters
 
 All converters use 1-based Terser paths as documented in TERSER_INDEXING.md.

@@ -39,27 +39,30 @@ impl ObservationReverseConverter {
 
         // OBX-6: Units
         if let Some(ref value_quantity) = observation.value_quantity
-            && let Some(ref unit) = value_quantity.unit {
-                let _ = obx.set_field_value(6, unit);
-            }
+            && let Some(ref unit) = value_quantity.unit
+        {
+            let _ = obx.set_field_value(6, unit);
+        }
 
         // OBX-7: Reference Range
         if let Some(ref reference_range) = observation.reference_range
-            && let Some(first_range) = reference_range.first() {
-                let range_text = Self::format_reference_range(first_range);
-                if !range_text.is_empty() {
-                    let _ = obx.set_field_value(7, &range_text);
-                }
+            && let Some(first_range) = reference_range.first()
+        {
+            let range_text = Self::format_reference_range(first_range);
+            if !range_text.is_empty() {
+                let _ = obx.set_field_value(7, &range_text);
             }
+        }
 
         // OBX-8: Abnormal Flags
         if let Some(ref interpretation) = observation.interpretation
             && let Some(first_interp) = interpretation.first()
-                && let Some(ref coding) = first_interp.coding
-                    && let Some(first_coding) = coding.first()
-                        && let Some(ref code) = first_coding.code {
-                            let _ = obx.set_field_value(8, code);
-                        }
+            && let Some(ref coding) = first_interp.coding
+            && let Some(first_coding) = coding.first()
+            && let Some(ref code) = first_coding.code
+        {
+            let _ = obx.set_field_value(8, code);
+        }
 
         // OBX-11: Observation Result Status
         let hl7_status = Self::convert_status_to_hl7(&observation.status);
@@ -146,17 +149,19 @@ impl ObservationReverseConverter {
         let mut parts = Vec::new();
 
         if let Some(ref low) = range.low
-            && let Some(value) = low.value {
-                parts.push(value.to_string());
-            }
+            && let Some(value) = low.value
+        {
+            parts.push(value.to_string());
+        }
 
         if let Some(ref high) = range.high
-            && let Some(value) = high.value {
-                if parts.is_empty() {
-                    parts.push(String::new());
-                }
-                parts.push(value.to_string());
+            && let Some(value) = high.value
+        {
+            if parts.is_empty() {
+                parts.push(String::new());
             }
+            parts.push(value.to_string());
+        }
 
         if parts.len() == 2 {
             format!("{}-{}", parts[0], parts[1])
@@ -170,14 +175,14 @@ impl ObservationReverseConverter {
     /// Convert FHIR observation status to HL7 v2 result status
     fn convert_status_to_hl7(status: &str) -> String {
         match status {
-            "registered" => "O", // Order received
-            "preliminary" => "P", // Preliminary
-            "final" => "F",      // Final
-            "amended" => "C",    // Corrected
-            "corrected" => "C",  // Corrected
-            "cancelled" => "X",  // Cancelled
+            "registered" => "O",       // Order received
+            "preliminary" => "P",      // Preliminary
+            "final" => "F",            // Final
+            "amended" => "C",          // Corrected
+            "corrected" => "C",        // Corrected
+            "cancelled" => "X",        // Cancelled
             "entered-in-error" => "W", // Wrong
-            _ => "F",            // Default to final
+            _ => "F",                  // Default to final
         }
         .to_string()
     }
@@ -201,11 +206,7 @@ impl ObservationReverseConverter {
             "UCUM".to_string()
         } else {
             // Return the last path segment as the system name
-            system
-                .split('/')
-                .next_back()
-                .unwrap_or("L")
-                .to_string()
+            system.split('/').next_back().unwrap_or("L").to_string()
         }
     }
 }

@@ -3,8 +3,8 @@
 //! Represents a request for a service to be performed.
 //! Based on FHIR R4: <https://www.hl7.org/fhir/R4/servicerequest.html>
 
-use serde::{Deserialize, Serialize};
 use super::common::*;
+use serde::{Deserialize, Serialize};
 
 /// FHIR ServiceRequest resource - a record of a request for service such as diagnostic investigations, treatments, or operations
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -119,11 +119,7 @@ pub struct Annotation {
 
 impl ServiceRequest {
     /// Create a new ServiceRequest with required fields
-    pub fn new(
-        status: String,
-        intent: String,
-        subject: Reference,
-    ) -> Self {
+    pub fn new(status: String, intent: String, subject: Reference) -> Self {
         Self {
             resource_type: "ServiceRequest".to_string(),
             id: None,

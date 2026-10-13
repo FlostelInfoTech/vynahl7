@@ -85,6 +85,7 @@ impl SpecimenConverter {
         }
 
         // SPM-18: Specimen Received Date/Time -> receivedTime
+        // Lenient by design (see crate docs "Invalid datetime handling").
         if let Ok(Some(received_dt)) = terser.get(&spm_path("18"))
             && let Ok(received_time) = Self::convert_datetime(received_dt)
         {
@@ -103,6 +104,7 @@ impl SpecimenConverter {
         let mut has_collection = false;
 
         // SPM-17: Specimen Collection Date/Time -> collection.collectedDateTime
+        // Lenient by design (see crate docs "Invalid datetime handling").
         if let Ok(Some(collected_dt)) = terser.get(&spm_path("17"))
             && let Ok(collected_time) = Self::convert_datetime(collected_dt)
         {

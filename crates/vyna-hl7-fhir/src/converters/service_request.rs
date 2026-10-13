@@ -113,6 +113,8 @@ impl ServiceRequestConverter {
         }
 
         // ORC-15: Order Effective Date/Time -> authoredOn
+        // Lenient by design (see crate docs "Invalid datetime handling"):
+        // authored-on is ancillary, with ORC-9 as fallback.
         if let Ok(Some(effective_dt)) = terser.get(&orc_path("15")) {
             if let Ok(authored) = Self::convert_datetime(effective_dt) {
                 service_request.authored_on = Some(authored);

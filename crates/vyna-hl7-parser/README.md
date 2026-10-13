@@ -22,7 +22,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-vyna-hl7-parser = "0.19"
+vyna-hl7-parser = "0.9"
 ```
 
 ## Basic Usage

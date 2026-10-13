@@ -3,9 +3,9 @@
 //! This module defines common HL7 data types as specified in the standard.
 //! These types provide semantic meaning to field values.
 
+use crate::error::Error;
 use chrono::{NaiveDate, NaiveDateTime};
 use std::str::FromStr;
-use crate::error::Error;
 
 /// HL7 data type enum
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -244,16 +244,16 @@ pub fn parse_date(s: &str) -> Option<NaiveDate> {
             NaiveDate::from_ymd_opt(year, 1, 1)
         }
         6 => {
-            // YYYYMM
-            let year = s[0..4].parse::<i32>().ok()?;
-            let month = s[4..6].parse::<u32>().ok()?;
+            // YYYYMM (.get: non-ASCII input yields None, never panics)
+            let year = s.get(0..4)?.parse::<i32>().ok()?;
+            let month = s.get(4..6)?.parse::<u32>().ok()?;
             NaiveDate::from_ymd_opt(year, month, 1)
         }
         8 => {
-            // YYYYMMDD
-            let year = s[0..4].parse::<i32>().ok()?;
-            let month = s[4..6].parse::<u32>().ok()?;
-            let day = s[6..8].parse::<u32>().ok()?;
+            // YYYYMMDD (.get: non-ASCII input yields None, never panics)
+            let year = s.get(0..4)?.parse::<i32>().ok()?;
+            let month = s.get(4..6)?.parse::<u32>().ok()?;
+            let day = s.get(6..8)?.parse::<u32>().ok()?;
             NaiveDate::from_ymd_opt(year, month, day)
         }
         _ => None,
@@ -266,28 +266,27 @@ pub fn parse_timestamp(s: &str) -> Option<NaiveDateTime> {
         return None;
     }
 
-    let year = s[0..4].parse::<i32>().ok()?;
-    let month = s[4..6].parse::<u32>().ok()?;
-    let day = s[6..8].parse::<u32>().ok()?;
+    let year = s.get(0..4)?.parse::<i32>().ok()?;
+    let month = s.get(4..6)?.parse::<u32>().ok()?;
+    let day = s.get(6..8)?.parse::<u32>().ok()?;
 
     let (hour, minute, second) = if s.len() >= 14 {
-        let h = s[8..10].parse::<u32>().ok()?;
-        let m = s[10..12].parse::<u32>().ok()?;
-        let sec = s[12..14].parse::<u32>().ok()?;
+        let h = s.get(8..10)?.parse::<u32>().ok()?;
+        let m = s.get(10..12)?.parse::<u32>().ok()?;
+        let sec = s.get(12..14)?.parse::<u32>().ok()?;
         (h, m, sec)
     } else if s.len() >= 12 {
-        let h = s[8..10].parse::<u32>().ok()?;
-        let m = s[10..12].parse::<u32>().ok()?;
+        let h = s.get(8..10)?.parse::<u32>().ok()?;
+        let m = s.get(10..12)?.parse::<u32>().ok()?;
         (h, m, 0)
     } else if s.len() >= 10 {
-        let h = s[8..10].parse::<u32>().ok()?;
+        let h = s.get(8..10)?.parse::<u32>().ok()?;
         (h, 0, 0)
     } else {
         (0, 0, 0)
     };
 
-    NaiveDate::from_ymd_opt(year, month, day)?
-        .and_hms_opt(hour, minute, second)
+    NaiveDate::from_ymd_opt(year, month, day)?.and_hms_opt(hour, minute, second)
 }
 
 /// Format a date to HL7 DT format (YYYYMMDD)
@@ -319,18 +318,9 @@ mod tests {
 
     #[test]
     fn test_parse_date() {
-        assert_eq!(
-            parse_date("20240315"),
-            NaiveDate::from_ymd_opt(2024, 3, 15)
-        );
-        assert_eq!(
-            parse_date("202403"),
-            NaiveDate::from_ymd_opt(2024, 3, 1)
-        );
-        assert_eq!(
-            parse_date("2024"),
-            NaiveDate::from_ymd_opt(2024, 1, 1)
-        );
+        assert_eq!(parse_date("20240315"), NaiveDate::from_ymd_opt(2024, 3, 15));
+        assert_eq!(parse_date("202403"), NaiveDate::from_ymd_opt(2024, 3, 1));
+        assert_eq!(parse_date("2024"), NaiveDate::from_ymd_opt(2024, 1, 1));
         assert_eq!(parse_date("invalid"), None);
     }
 
@@ -356,5 +346,20 @@ mod tests {
             .and_hms_opt(14, 30, 45)
             .unwrap();
         assert_eq!(format_timestamp(&dt), "20240315143045");
+    }
+
+    #[test]
+    fn test_parse_date_non_ascii_returns_none_without_panic() {
+        // 8/6 bytes but not on char boundaries: slicing panicked here.
+        assert_eq!(parse_date("123456é"), None);
+        assert_eq!(parse_date("1234é"), None);
+        assert!(parse_date("20240315").is_some());
+    }
+
+    #[test]
+    fn test_parse_timestamp_non_ascii_returns_none_without_panic() {
+        assert_eq!(parse_timestamp("1234567é901234"), None);
+        assert_eq!(parse_timestamp("2024é315143045"), None);
+        assert!(parse_timestamp("20240315143045").is_some());
     }
 }

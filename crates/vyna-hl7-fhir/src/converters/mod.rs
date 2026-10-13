@@ -5,16 +5,16 @@
 //! - Forward converters: HL7 v2.x -> FHIR R4
 //! - Reverse converters: FHIR R4 -> HL7 v2.x
 
-pub mod patient;
-pub mod observation;
-pub mod practitioner;
-pub mod encounter;
-pub mod diagnostic_report;
 pub mod allergy_intolerance;
-pub mod medication;
 pub mod condition;
-pub mod procedure;
+pub mod diagnostic_report;
+pub mod encounter;
 pub mod immunization;
+pub mod medication;
+pub mod observation;
+pub mod patient;
+pub mod practitioner;
+pub mod procedure;
 pub mod service_request;
 pub mod specimen;
 
@@ -22,21 +22,21 @@ pub mod specimen;
 pub mod reverse;
 
 // Forward converters (HL7 v2.x -> FHIR R4)
-pub use patient::PatientConverter;
-pub use observation::ObservationConverter;
-pub use practitioner::PractitionerConverter;
-pub use encounter::EncounterConverter;
-pub use diagnostic_report::DiagnosticReportConverter;
 pub use allergy_intolerance::AllergyIntoleranceConverter;
-pub use medication::MedicationConverter;
 pub use condition::ConditionConverter;
-pub use procedure::ProcedureConverter;
+pub use diagnostic_report::DiagnosticReportConverter;
+pub use encounter::EncounterConverter;
 pub use immunization::ImmunizationConverter;
+pub use medication::MedicationConverter;
+pub use observation::ObservationConverter;
+pub use patient::PatientConverter;
+pub use practitioner::PractitionerConverter;
+pub use procedure::ProcedureConverter;
 pub use service_request::ServiceRequestConverter;
 pub use specimen::SpecimenConverter;
 
 // Reverse converters (FHIR R4 -> HL7 v2.x)
-pub use reverse::PatientReverseConverter;
-pub use reverse::ObservationReverseConverter;
 pub use reverse::EncounterReverseConverter;
+pub use reverse::ObservationReverseConverter;
+pub use reverse::PatientReverseConverter;
 pub use reverse::PractitionerReverseConverter;

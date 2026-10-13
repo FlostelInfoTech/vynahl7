@@ -1074,17 +1074,17 @@ See [docs/performance.md](docs/performance.md) for detailed optimization guide.
 - [Design specification](docs/design.md) — architecture, crate catalog, component designs
 - [Integration guide](docs/integration.md) — install, quickstarts, transports, troubleshooting
 - [SBOM](docs/sbom/) — CycloneDX supply-chain record + regeneration
-- [RFCs](docs/rfcs/) — design proposals; [blog](blog/) — tutorials
+- [RFCs](docs/rfcs/) — design proposals
 
 ## Contributing
 
-This is a private repository. Internal contributors, please:
+Contributions are welcome. To contribute, please:
 
 1. Create a feature branch
 2. Add tests for new functionality
 3. Update the living docs (`docs/`) and CHANGELOG for behavior changes
-4. Ensure all tests pass
-5. Submit a merge request
+4. Ensure all tests pass (`cargo test --workspace`, `cargo clippy`, `cargo fmt --check`)
+5. Submit a pull request
 
 ## Roadmap
 

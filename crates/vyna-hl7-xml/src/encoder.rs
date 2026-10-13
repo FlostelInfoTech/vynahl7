@@ -30,7 +30,11 @@ pub struct XmlEncoderConfig {
     /// `"\t"` indents one tab.
     pub indent: String,
 
-    /// Include empty fields as empty elements
+    /// Include empty fields as empty elements.
+    ///
+    /// Repetitions are always emitted (empty ones as `<SEG.F/>`):
+    /// repetition position is order-based, so skipping one would shift
+    /// every later repetition on decode.
     pub include_empty_fields: bool,
 
     /// Escape special characters (`<`, `>`, `&`, ...) in text content.
@@ -136,10 +140,13 @@ impl XmlEncoder {
 
     /// Get the message type name for the root element
     fn get_message_type_name(&self, message: &Message) -> String {
-        // Try to extract from MSH-9
+        // Try to extract from MSH-9. MSH-9 is composite, so the full
+        // repetition value ("ADT^A01") is required: value() returns only
+        // the first component ("ADT"), which would emit a root the
+        // decoder reads back as a spurious segment.
         if let Some(msh) = message.segments.iter().find(|s| s.id == "MSH")
             && let Some(field9) = msh.get_field(9)
-            && let Some(value) = field9.value()
+            && let Some(value) = field9.repetitions.first().and_then(|r| r.full_value())
         {
             // Parse ADT^A01 format
             let parts: Vec<&str> = value.split('^').collect();
@@ -187,20 +194,11 @@ impl XmlEncoder {
     ) -> XmlResult<()> {
         let field_name = format!("{}.{}", segment_id, field_num);
 
-        // Handle field repetitions
-        for (rep_idx, repetition) in field.repetitions.iter().enumerate() {
-            if repetition.is_empty() && !self.config.include_empty_fields {
-                continue;
-            }
-
-            // If there's only one repetition, use the simple format
-            // Multiple repetitions would each be in their own element
-            if field.repetitions.len() == 1 || rep_idx == 0 {
-                self.write_repetition(writer, &field_name, repetition)?;
-            } else {
-                // Repeated field values
-                self.write_repetition(writer, &field_name, repetition)?;
-            }
+        // Every repetition gets its own element, even when empty:
+        // repetition position is order-based (unlike numbered
+        // fields/components), so skipping one would shift the rest.
+        for repetition in field.repetitions.iter() {
+            self.write_repetition(writer, &field_name, repetition)?;
         }
 
         Ok(())
@@ -213,6 +211,12 @@ impl XmlEncoder {
         field_name: &str,
         repetition: &Repetition,
     ) -> XmlResult<()> {
+        // Empty repetitions keep their position as empty elements.
+        if repetition.is_empty() {
+            writer.write_event(Event::Empty(BytesStart::new(field_name)))?;
+            return Ok(());
+        }
+
         // A lone single-valued component is written as simple text; a
         // lone component with subcomponents needs the wrapped form so
         // the subcomponents survive the round-trip.

@@ -1062,13 +1062,14 @@ fn parse_hl7_bool(s: &str) -> Option<bool> {
 /// Parse HL7 datetime format: YYYYMMDDHHMMSS[.SSSS]
 fn parse_hl7_datetime(s: &str) -> Option<NaiveDateTime> {
     // Try full format with optional fractional seconds
+    // (.get: non-ASCII input yields None, never panics)
     if s.len() >= 14 {
-        let year = s[0..4].parse::<i32>().ok()?;
-        let month = s[4..6].parse::<u32>().ok()?;
-        let day = s[6..8].parse::<u32>().ok()?;
-        let hour = s[8..10].parse::<u32>().ok()?;
-        let minute = s[10..12].parse::<u32>().ok()?;
-        let second = s[12..14].parse::<u32>().ok()?;
+        let year = s.get(0..4)?.parse::<i32>().ok()?;
+        let month = s.get(4..6)?.parse::<u32>().ok()?;
+        let day = s.get(6..8)?.parse::<u32>().ok()?;
+        let hour = s.get(8..10)?.parse::<u32>().ok()?;
+        let minute = s.get(10..12)?.parse::<u32>().ok()?;
+        let second = s.get(12..14)?.parse::<u32>().ok()?;
 
         let date = NaiveDate::from_ymd_opt(year, month, day)?;
         let time = NaiveTime::from_hms_opt(hour, minute, second)?;
@@ -1083,21 +1084,21 @@ fn parse_hl7_datetime(s: &str) -> Option<NaiveDateTime> {
 fn parse_hl7_date(s: &str) -> Option<NaiveDate> {
     match s.len() {
         8 => {
-            // YYYYMMDD
-            let year = s[0..4].parse::<i32>().ok()?;
-            let month = s[4..6].parse::<u32>().ok()?;
-            let day = s[6..8].parse::<u32>().ok()?;
+            // YYYYMMDD (.get: non-ASCII yields None, never panics)
+            let year = s.get(0..4)?.parse::<i32>().ok()?;
+            let month = s.get(4..6)?.parse::<u32>().ok()?;
+            let day = s.get(6..8)?.parse::<u32>().ok()?;
             NaiveDate::from_ymd_opt(year, month, day)
         }
         6 => {
             // YYYYMM - default to first day of month
-            let year = s[0..4].parse::<i32>().ok()?;
-            let month = s[4..6].parse::<u32>().ok()?;
+            let year = s.get(0..4)?.parse::<i32>().ok()?;
+            let month = s.get(4..6)?.parse::<u32>().ok()?;
             NaiveDate::from_ymd_opt(year, month, 1)
         }
         4 => {
             // YYYY - default to January 1st
-            let year = s[0..4].parse::<i32>().ok()?;
+            let year = s.get(0..4)?.parse::<i32>().ok()?;
             NaiveDate::from_ymd_opt(year, 1, 1)
         }
         _ => None,
@@ -1107,15 +1108,15 @@ fn parse_hl7_date(s: &str) -> Option<NaiveDate> {
 /// Parse HL7 time format: HHMMSS[.SSSS] or HHMM
 fn parse_hl7_time(s: &str) -> Option<NaiveTime> {
     if s.len() >= 6 {
-        // HHMMSS format
-        let hour = s[0..2].parse::<u32>().ok()?;
-        let minute = s[2..4].parse::<u32>().ok()?;
-        let second = s[4..6].parse::<u32>().ok()?;
+        // HHMMSS format (.get: non-ASCII yields None, never panics)
+        let hour = s.get(0..2)?.parse::<u32>().ok()?;
+        let minute = s.get(2..4)?.parse::<u32>().ok()?;
+        let second = s.get(4..6)?.parse::<u32>().ok()?;
         NaiveTime::from_hms_opt(hour, minute, second)
     } else if s.len() == 4 {
         // HHMM format
-        let hour = s[0..2].parse::<u32>().ok()?;
-        let minute = s[2..4].parse::<u32>().ok()?;
+        let hour = s.get(0..2)?.parse::<u32>().ok()?;
+        let minute = s.get(2..4)?.parse::<u32>().ok()?;
         NaiveTime::from_hms_opt(hour, minute, 0)
     } else {
         None
@@ -4112,5 +4113,16 @@ mod tests {
         assert_eq!(parsed[0].1, "Primary");
         assert_eq!(parsed[1].0, "555-0002");
         assert_eq!(parsed[1].1, "Secondary");
+    }
+
+    #[test]
+    fn test_datetime_helpers_reject_non_ascii_without_panic() {
+        // Byte lengths match the slicing paths but land mid-character.
+        assert_eq!(parse_hl7_datetime("1234567é901234"), None);
+        assert!(parse_hl7_datetime("20240315143045").is_some());
+        assert_eq!(parse_hl7_date("123456é"), None);
+        assert!(parse_hl7_date("20240315").is_some());
+        assert_eq!(parse_hl7_time("1234é"), None);
+        assert!(parse_hl7_time("143045").is_some());
     }
 }

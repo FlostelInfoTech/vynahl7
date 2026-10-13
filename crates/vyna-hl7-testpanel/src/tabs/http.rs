@@ -2,10 +2,10 @@
 
 use crate::samples;
 use egui::{self, Color32, RichText};
-use vyna_hl7_core::CharacterSet;
 use egui_extras::{Size, StripBuilder};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use vyna_hl7_core::CharacterSet;
 
 /// State shared between UI and async tasks
 #[derive(Default)]
@@ -76,8 +76,7 @@ enum AuthType {
 }
 
 /// Load test message count options
-#[derive(Clone, Copy, PartialEq)]
-#[derive(Default)]
+#[derive(Clone, Copy, PartialEq, Default)]
 enum LoadTestCount {
     #[default]
     Count100,
@@ -103,7 +102,6 @@ impl LoadTestCount {
     }
 }
 
-
 pub struct HttpTab {
     // Client settings
     client_url: String,
@@ -119,6 +117,7 @@ pub struct HttpTab {
     client_headers: Vec<(String, String)>,
     new_header_key: String,
     new_header_value: String,
+    client_verify_tls: bool,
 
     // Server settings
     server_port: String,
@@ -159,6 +158,7 @@ impl Default for HttpTab {
             )],
             new_header_key: String::new(),
             new_header_value: String::new(),
+            client_verify_tls: true,
             server_port: "8080".to_string(),
             server_auto_ack: true,
             load_test_count: LoadTestCount::default(),
@@ -221,6 +221,16 @@ impl HttpTab {
             ui.add_enabled(
                 !is_sending,
                 egui::TextEdit::singleline(&mut self.client_url).desired_width(300.0),
+            );
+        });
+
+        ui.horizontal(|ui| {
+            ui.add_enabled(
+                !is_sending,
+                egui::Checkbox::new(
+                    &mut self.client_verify_tls,
+                    "Verify TLS certificates (uncheck only for self-signed test servers)",
+                ),
             );
         });
 
@@ -557,21 +567,22 @@ impl HttpTab {
                 }
 
                 // Show final results
-                if !state.load_test_running && state.load_test_sent > 0
+                if !state.load_test_running
+                    && state.load_test_sent > 0
                     && let (Some(start), Some(end)) =
                         (state.load_test_start_time, state.load_test_end_time)
-                    {
-                        let duration = end.duration_since(start);
-                        let final_throughput = state.load_test_sent as f64 / duration.as_secs_f64();
-                        ui.colored_label(
-                            Color32::GREEN,
-                            format!(
-                                "Complete! {:.2}s total, {:.1} msg/sec avg",
-                                duration.as_secs_f64(),
-                                final_throughput
-                            ),
-                        );
-                    }
+                {
+                    let duration = end.duration_since(start);
+                    let final_throughput = state.load_test_sent as f64 / duration.as_secs_f64();
+                    ui.colored_label(
+                        Color32::GREEN,
+                        format!(
+                            "Complete! {:.2}s total, {:.1} msg/sec avg",
+                            duration.as_secs_f64(),
+                            final_throughput
+                        ),
+                    );
+                }
             }
         }
     }
@@ -691,12 +702,12 @@ impl HttpTab {
             api_key: self.client_api_key.clone(),
             bearer_token: self.client_bearer_token.clone(),
             headers: self.client_headers.clone(),
+            verify_tls: self.client_verify_tls,
         };
 
         if let Some(ref runtime) = self.runtime {
             runtime.spawn(async move {
-                match send_http_request(request).await
-                {
+                match send_http_request(request).await {
                     Ok(response) => {
                         let mut s = state.lock().unwrap();
                         s.client_response = Some(response);
@@ -799,6 +810,7 @@ impl HttpTab {
             api_key: self.client_api_key.clone(),
             bearer_token: self.client_bearer_token.clone(),
             headers: self.client_headers.clone(),
+            verify_tls: self.client_verify_tls,
             count,
             state,
             shutdown,
@@ -844,6 +856,7 @@ struct SendHttpRequest {
     api_key: String,
     bearer_token: String,
     headers: Vec<(String, String)>,
+    verify_tls: bool,
 }
 
 /// Send an HTTP/HTTPS request with HL7 message using reqwest
@@ -860,6 +873,7 @@ async fn send_http_request(request: SendHttpRequest) -> Result<HttpResponse, Str
         api_key,
         bearer_token,
         headers,
+        verify_tls,
     } = request;
     let url = url.trim();
     if !url.starts_with("http://") && !url.starts_with("https://") {
@@ -869,10 +883,11 @@ async fn send_http_request(request: SendHttpRequest) -> Result<HttpResponse, Str
     // Normalize line endings to CR for HL7
     let normalized_message = message.replace("\r\n", "\r").replace('\n', "\r");
 
-    // Build reqwest client (accepts any TLS certificate for flexibility)
+    // Verify TLS certificates unless the user explicitly opted out:
+    // credentials and PHI must not cross an unauthenticated channel.
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(timeout_secs as u64))
-        .danger_accept_invalid_certs(true)
+        .danger_accept_invalid_certs(!verify_tls)
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
@@ -926,12 +941,7 @@ async fn send_http_request(request: SendHttpRequest) -> Result<HttpResponse, Str
     let response_headers: Vec<(String, String)> = response
         .headers()
         .iter()
-        .map(|(k, v)| {
-            (
-                k.as_str().to_string(),
-                v.to_str().unwrap_or("").to_string(),
-            )
-        })
+        .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
         .collect();
 
     let body = response
@@ -1052,9 +1062,10 @@ async fn run_http_server(
                             break;
                         }
                         if let Some((key, value)) = line.split_once(':')
-                            && key.trim().eq_ignore_ascii_case("content-length") {
-                                content_length = value.trim().parse().unwrap_or(0);
-                            }
+                            && key.trim().eq_ignore_ascii_case("content-length")
+                        {
+                            content_length = value.trim().parse().unwrap_or(0);
+                        }
                     }
 
                     // Read body
@@ -1210,6 +1221,7 @@ struct HttpLoadTest {
     api_key: String,
     bearer_token: String,
     headers: Vec<(String, String)>,
+    verify_tls: bool,
     count: u32,
     state: Arc<Mutex<HttpState>>,
     shutdown: Arc<AtomicBool>,
@@ -1230,6 +1242,7 @@ async fn run_http_load_test(params: HttpLoadTest) {
         api_key,
         bearer_token,
         headers,
+        verify_tls,
         count,
         state,
         shutdown,
@@ -1243,10 +1256,11 @@ async fn run_http_load_test(params: HttpLoadTest) {
         return;
     }
 
-    // Build reqwest client with connection pooling
+    // Build reqwest client with connection pooling. Certificates are
+    // verified unless the user opted out in the client settings.
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(timeout_secs as u64))
-        .danger_accept_invalid_certs(true)
+        .danger_accept_invalid_certs(!verify_tls)
         .pool_max_idle_per_host(4)
         .build()
     {

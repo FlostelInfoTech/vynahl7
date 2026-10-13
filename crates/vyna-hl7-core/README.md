@@ -32,7 +32,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-vyna-hl7-core = "0.19"
+vyna-hl7-core = "0.9"
 ```
 
 ## Basic Usage

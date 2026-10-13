@@ -58,14 +58,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-vyna-hl7-http = "0.6"
-vyna-hl7-core = "0.6"
+vyna-hl7-http = "0.9"
+vyna-hl7-core = "0.9"
 
 # With all features
-vyna-hl7-http = { version = "0.6", features = ["full"] }
+vyna-hl7-http = { version = "0.9", features = ["full"] }
 
 # Or selective features
-vyna-hl7-http = { version = "0.6", features = ["tls", "auth", "logging", "metrics"] }
+vyna-hl7-http = { version = "0.9", features = ["tls", "auth", "logging", "metrics"] }
 ```
 
 ### Available Feature Flags

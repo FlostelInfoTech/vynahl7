@@ -2,11 +2,11 @@
 //!
 //! Based on HL7 v2-to-FHIR mapping for practitioner information
 
+use crate::error::{ConversionError, ConversionResult};
+use crate::resources::common::*;
+use crate::resources::practitioner::*;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
-use crate::error::{ConversionError, ConversionResult};
-use crate::resources::practitioner::*;
-use crate::resources::common::*;
 
 /// Converter for transforming HL7 v2 practitioner data to FHIR Practitioner resources
 pub struct PractitionerConverter;
@@ -60,7 +60,10 @@ impl PractitionerConverter {
 
     /// Convert practitioner information from OBX-16 (Responsible Observer) to a FHIR Practitioner resource
     /// Note: obx_index is 0-based internally, but Terser uses 1-based segment indexing
-    pub fn convert_responsible_observer(message: &Message, obx_index: usize) -> ConversionResult<Practitioner> {
+    pub fn convert_responsible_observer(
+        message: &Message,
+        obx_index: usize,
+    ) -> ConversionResult<Practitioner> {
         let terser = Terser::new(message);
         let path = if obx_index == 0 {
             "OBX-16".to_string()
@@ -88,117 +91,129 @@ impl PractitionerConverter {
     /// 13. Identifier Type Code
     ///
     /// Note: Terser uses 1-based component indexing
-    fn convert_xcn_to_practitioner(terser: &Terser, base_path: &str) -> ConversionResult<Practitioner> {
+    fn convert_xcn_to_practitioner(
+        terser: &Terser,
+        base_path: &str,
+    ) -> ConversionResult<Practitioner> {
         let mut practitioner = Practitioner::new();
 
         // XCN-1: ID Number -> Practitioner.identifier (component 1, 1-based indexing)
         if let Ok(Some(id_number)) = terser.get(base_path)
-            && !id_number.is_empty() {
-                let mut identifier = Identifier {
-                    use_: Some("official".to_string()),
-                    type_: None,
-                    system: None,
-                    value: Some(id_number.to_string()),
-                    assigner: None,
-                };
+            && !id_number.is_empty()
+        {
+            let mut identifier = Identifier {
+                use_: Some("official".to_string()),
+                type_: None,
+                system: None,
+                value: Some(id_number.to_string()),
+                assigner: None,
+            };
 
-                // XCN-9: Assigning Authority (component 9, 1-based indexing)
-                if let Ok(Some(authority)) = terser.get(&format!("{}-9", base_path))
-                    && !authority.is_empty() {
-                        identifier.system = Some(format!("urn:oid:{}", authority));
-                    }
-
-                // XCN-13: Identifier Type Code (component 13, 1-based indexing)
-                if let Ok(Some(id_type)) = terser.get(&format!("{}-13", base_path))
-                    && !id_type.is_empty() {
-                        identifier.type_ = Some(CodeableConcept {
-                            coding: Some(vec![Coding {
-                                system: Some("http://terminology.hl7.org/CodeSystem/v2-0203".to_string()),
-                                version: None,
-                                code: Some(id_type.to_string()),
-                                display: None,
-                            }]),
-                            text: Some(id_type.to_string()),
-                        });
-                    }
-
-                practitioner.identifier = Some(vec![identifier]);
-                practitioner.id = Some(id_number.to_string());
+            // XCN-9: Assigning Authority (component 9, 1-based indexing)
+            if let Ok(Some(authority)) = terser.get(&format!("{}-9", base_path))
+                && !authority.is_empty()
+            {
+                identifier.system = Some(format!("urn:oid:{}", authority));
             }
+
+            // XCN-13: Identifier Type Code (component 13, 1-based indexing)
+            if let Ok(Some(id_type)) = terser.get(&format!("{}-13", base_path))
+                && !id_type.is_empty()
+            {
+                identifier.type_ = Some(CodeableConcept {
+                    coding: Some(vec![Coding {
+                        system: Some("http://terminology.hl7.org/CodeSystem/v2-0203".to_string()),
+                        version: None,
+                        code: Some(id_type.to_string()),
+                        display: None,
+                    }]),
+                    text: Some(id_type.to_string()),
+                });
+            }
+
+            practitioner.identifier = Some(vec![identifier]);
+            practitioner.id = Some(id_number.to_string());
+        }
 
         // XCN-2 through XCN-7: Name components -> Practitioner.name
         // XCN-2: Family Name (component 2, 1-based indexing)
         if let Ok(Some(family)) = terser.get(&format!("{}-2", base_path))
-            && !family.is_empty() {
-                let mut name = HumanName {
-                    use_: Some("official".to_string()),
-                    text: None,
-                    family: Some(family.to_string()),
-                    given: None,
-                    prefix: None,
-                    suffix: None,
-                };
+            && !family.is_empty()
+        {
+            let mut name = HumanName {
+                use_: Some("official".to_string()),
+                text: None,
+                family: Some(family.to_string()),
+                given: None,
+                prefix: None,
+                suffix: None,
+            };
 
-                // XCN-3: Given Name (component 3, 1-based indexing)
-                if let Ok(Some(given)) = terser.get(&format!("{}-3", base_path))
-                    && !given.is_empty() {
-                        let mut given_names = vec![given.to_string()];
+            // XCN-3: Given Name (component 3, 1-based indexing)
+            if let Ok(Some(given)) = terser.get(&format!("{}-3", base_path))
+                && !given.is_empty()
+            {
+                let mut given_names = vec![given.to_string()];
 
-                        // XCN-4: Second/Middle Name (component 4, 1-based indexing)
-                        if let Ok(Some(middle)) = terser.get(&format!("{}-4", base_path))
-                            && !middle.is_empty() {
-                                given_names.push(middle.to_string());
-                            }
-
-                        name.given = Some(given_names);
-                    }
-
-                // XCN-5: Suffix (component 5, 1-based indexing)
-                if let Ok(Some(suffix)) = terser.get(&format!("{}-5", base_path))
-                    && !suffix.is_empty() {
-                        name.suffix = Some(vec![suffix.to_string()]);
-                    }
-
-                // XCN-6: Prefix (component 6, 1-based indexing)
-                if let Ok(Some(prefix)) = terser.get(&format!("{}-6", base_path))
-                    && !prefix.is_empty() {
-                        name.prefix = Some(vec![prefix.to_string()]);
-                    }
-
-                // Build display text
-                let mut display_parts = Vec::new();
-                if let Some(ref prefix_vec) = name.prefix {
-                    display_parts.push(prefix_vec.join(" "));
+                // XCN-4: Second/Middle Name (component 4, 1-based indexing)
+                if let Ok(Some(middle)) = terser.get(&format!("{}-4", base_path))
+                    && !middle.is_empty()
+                {
+                    given_names.push(middle.to_string());
                 }
-                if let Some(ref given_vec) = name.given {
-                    display_parts.push(given_vec.join(" "));
-                }
-                if let Some(ref fam) = name.family {
-                    display_parts.push(fam.clone());
-                }
-                if let Some(ref suffix_vec) = name.suffix {
-                    display_parts.push(suffix_vec.join(" "));
-                }
-                name.text = Some(display_parts.join(" "));
 
-                practitioner.name = Some(vec![name]);
+                name.given = Some(given_names);
             }
+
+            // XCN-5: Suffix (component 5, 1-based indexing)
+            if let Ok(Some(suffix)) = terser.get(&format!("{}-5", base_path))
+                && !suffix.is_empty()
+            {
+                name.suffix = Some(vec![suffix.to_string()]);
+            }
+
+            // XCN-6: Prefix (component 6, 1-based indexing)
+            if let Ok(Some(prefix)) = terser.get(&format!("{}-6", base_path))
+                && !prefix.is_empty()
+            {
+                name.prefix = Some(vec![prefix.to_string()]);
+            }
+
+            // Build display text
+            let mut display_parts = Vec::new();
+            if let Some(ref prefix_vec) = name.prefix {
+                display_parts.push(prefix_vec.join(" "));
+            }
+            if let Some(ref given_vec) = name.given {
+                display_parts.push(given_vec.join(" "));
+            }
+            if let Some(ref fam) = name.family {
+                display_parts.push(fam.clone());
+            }
+            if let Some(ref suffix_vec) = name.suffix {
+                display_parts.push(suffix_vec.join(" "));
+            }
+            name.text = Some(display_parts.join(" "));
+
+            practitioner.name = Some(vec![name]);
+        }
 
         // XCN-7: Degree -> Practitioner.qualification (component 7, 1-based indexing)
         if let Ok(Some(degree)) = terser.get(&format!("{}-7", base_path))
-            && !degree.is_empty() {
-                let qualification = PractitionerQualification {
-                    identifier: None,
-                    code: CodeableConcept {
-                        coding: None,
-                        text: Some(degree.to_string()),
-                    },
-                    period: None,
-                    issuer: None,
-                };
+            && !degree.is_empty()
+        {
+            let qualification = PractitionerQualification {
+                identifier: None,
+                code: CodeableConcept {
+                    coding: None,
+                    text: Some(degree.to_string()),
+                },
+                period: None,
+                issuer: None,
+            };
 
-                practitioner.qualification = Some(vec![qualification]);
-            }
+            practitioner.qualification = Some(vec![qualification]);
+        }
 
         practitioner.active = Some(true);
 
@@ -290,7 +305,10 @@ mod tests {
 
         let names = practitioner.name.unwrap();
         assert_eq!(names[0].family, Some("JOHNSON".to_string()));
-        assert_eq!(names[0].given, Some(vec!["EMILY".to_string(), "ROSE".to_string()]));
+        assert_eq!(
+            names[0].given,
+            Some(vec!["EMILY".to_string(), "ROSE".to_string()])
+        );
         assert_eq!(names[0].prefix, Some(vec!["DR".to_string()]));
 
         let quals = practitioner.qualification.unwrap();

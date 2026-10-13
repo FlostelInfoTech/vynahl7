@@ -252,4 +252,57 @@ mod tests {
         assert_eq!(message, decoded);
         assert_eq!(message.encode(), decoded.encode());
     }
+
+    #[test]
+    fn test_roundtrip_parsed_message_root_is_not_a_segment() {
+        // Parsed MSH-9 is composite: the root must be ADT_A01, not <ADT>
+        // (which the decoder would read back as a spurious segment).
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+             PID|1||MRN123||DOE^JOHN||19800101|M",
+        )
+        .unwrap();
+
+        let encoder = XmlEncoder::new();
+        let xml = encoder.encode(&message).unwrap();
+        assert!(xml.contains("<ADT_A01>"), "root names the message: {xml}");
+
+        let decoder = XmlDecoder::new();
+        let decoded = decoder.decode(&xml).unwrap();
+        // No spurious segment from the root element ...
+        assert_eq!(decoded.segments.len(), 2);
+        assert_eq!(decoded.segments[0].id, "MSH");
+        assert_eq!(decoded.segments[1].id, "PID");
+        // ... and the wire form is identical. (Whole empty fields are
+        // omitted by default, so structural equality does not hold for
+        // parsed messages; the ER7 encoding is unaffected.)
+        assert_eq!(message.encode(), decoded.encode());
+    }
+
+    #[test]
+    fn test_roundtrip_interior_empty_repetition_keeps_position() {
+        // "A~~B" is 3 repetitions; dropping the empty middle one would
+        // shift every later repetition index.
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\rPID|1||A~~B\r",
+        )
+        .unwrap();
+        assert_eq!(
+            message.segments[1].get_field(3).unwrap().repetitions.len(),
+            3
+        );
+
+        let encoder = XmlEncoder::new();
+        let xml = encoder.encode(&message).unwrap();
+
+        let decoder = XmlDecoder::new();
+        let decoded = decoder.decode(&xml).unwrap();
+        assert_eq!(
+            decoded.segments[1].get_field(3).unwrap().repetitions.len(),
+            3
+        );
+        // Whole empty fields are omitted by default, so compare the
+        // wire form rather than the structure (see above test).
+        assert_eq!(message.encode(), decoded.encode());
+    }
 }

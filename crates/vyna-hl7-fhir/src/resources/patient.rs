@@ -2,8 +2,8 @@
 //!
 //! Based on FHIR R4 Patient: <https://www.hl7.org/fhir/R4/patient.html>
 
-use serde::{Deserialize, Serialize};
 use super::common::*;
+use serde::{Deserialize, Serialize};
 
 /// FHIR Patient resource - Information about an individual receiving health care services
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -61,10 +61,11 @@ impl PatientReverseConverter {
         // Marital status - PID-16
         if let Some(ref marital_status) = patient.marital_status
             && let Some(ref coding) = marital_status.coding
-                && let Some(first_coding) = coding.first()
-                    && let Some(ref code) = first_coding.code {
-                        let _ = pid.set_field_value(16, code);
-                    }
+            && let Some(first_coding) = coding.first()
+            && let Some(ref code) = first_coding.code
+        {
+            let _ = pid.set_field_value(16, code);
+        }
 
         // Multiple birth - PID-24
         if let Some(multiple_birth) = patient.multiple_birth_boolean {
@@ -103,10 +104,11 @@ impl PatientReverseConverter {
             // Set identifier type code as component 5 (0-indexed: 4)
             if let Some(ref type_) = first.type_
                 && let Some(ref coding) = type_.coding
-                    && let Some(first_coding) = coding.first()
-                        && let Some(ref code) = first_coding.code {
-                            let _ = pid.set_component(3, 0, 4, code);
-                        }
+                && let Some(first_coding) = coding.first()
+                && let Some(ref code) = first_coding.code
+            {
+                let _ = pid.set_component(3, 0, 4, code);
+            }
         }
         Ok(())
     }
@@ -134,15 +136,17 @@ impl PatientReverseConverter {
 
             // Suffix - component 4 (0-indexed: 3)
             if let Some(ref suffix) = first.suffix
-                && let Some(first_suffix) = suffix.first() {
-                    let _ = pid.set_component(5, 0, 3, first_suffix);
-                }
+                && let Some(first_suffix) = suffix.first()
+            {
+                let _ = pid.set_component(5, 0, 3, first_suffix);
+            }
 
             // Prefix - component 5 (0-indexed: 4)
             if let Some(ref prefix) = first.prefix
-                && let Some(first_prefix) = prefix.first() {
-                    let _ = pid.set_component(5, 0, 4, first_prefix);
-                }
+                && let Some(first_prefix) = prefix.first()
+            {
+                let _ = pid.set_component(5, 0, 4, first_prefix);
+            }
 
             // Name type - component 7 (0-indexed: 6)
             if let Some(ref use_) = first.use_ {
@@ -213,17 +217,18 @@ impl PatientReverseConverter {
     fn set_telecoms(pid: &mut Segment, telecoms: &[ContactPoint]) -> ConversionResult<()> {
         for telecom in telecoms {
             if let Some(ref value) = telecom.value
-                && let Some(ref use_) = telecom.use_ {
-                    match use_.as_str() {
-                        "home" => {
-                            let _ = pid.set_field_value(13, value);
-                        }
-                        "work" => {
-                            let _ = pid.set_field_value(14, value);
-                        }
-                        _ => {}
+                && let Some(ref use_) = telecom.use_
+            {
+                match use_.as_str() {
+                    "home" => {
+                        let _ = pid.set_field_value(13, value);
                     }
+                    "work" => {
+                        let _ = pid.set_field_value(14, value);
+                    }
+                    _ => {}
                 }
+            }
         }
         Ok(())
     }
@@ -249,8 +254,7 @@ impl PatientReverseConverter {
     /// Convert FHIR datetime to HL7 v2 datetime
     fn convert_datetime_to_hl7(datetime: &str) -> ConversionResult<String> {
         // Remove dashes, colons, and T separator
-        Ok(datetime
-            .replace(['-', ':', 'T'], ""))
+        Ok(datetime.replace(['-', ':', 'T'], ""))
     }
 }
 
@@ -335,25 +339,20 @@ mod tests {
 
         // Check PID-3 value
         if let Some(field) = pid.get_field(3)
-            && let Some(value) = field.value() {
-                assert!(value.contains("12345"));
-            }
+            && let Some(value) = field.value()
+        {
+            assert!(value.contains("12345"));
+        }
     }
 
     #[test]
     fn test_convert_gender() {
-        assert_eq!(
-            PatientReverseConverter::convert_gender_to_hl7("male"),
-            "M"
-        );
+        assert_eq!(PatientReverseConverter::convert_gender_to_hl7("male"), "M");
         assert_eq!(
             PatientReverseConverter::convert_gender_to_hl7("female"),
             "F"
         );
-        assert_eq!(
-            PatientReverseConverter::convert_gender_to_hl7("other"),
-            "O"
-        );
+        assert_eq!(PatientReverseConverter::convert_gender_to_hl7("other"), "O");
         assert_eq!(
             PatientReverseConverter::convert_gender_to_hl7("unknown"),
             "U"

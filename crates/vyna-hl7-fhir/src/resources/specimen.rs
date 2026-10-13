@@ -3,8 +3,8 @@
 //! Represents a sample to be used for analysis.
 //! Based on FHIR R4: <https://www.hl7.org/fhir/R4/specimen.html>
 
-use serde::{Deserialize, Serialize};
 use super::common::*;
+use serde::{Deserialize, Serialize};
 
 /// FHIR Specimen resource - a sample to be used for analysis
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -144,10 +144,7 @@ pub struct Annotation {
 
 impl Specimen {
     /// Create a new Specimen with required fields
-    pub fn new(
-        type_: CodeableConcept,
-        subject: Reference,
-    ) -> Self {
+    pub fn new(type_: CodeableConcept, subject: Reference) -> Self {
         Self {
             resource_type: "Specimen".to_string(),
             id: None,

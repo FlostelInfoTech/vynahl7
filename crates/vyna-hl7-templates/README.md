@@ -14,7 +14,7 @@ Template system for creating and validating HL7 messages from reusable patterns.
 
 ```toml
 [dependencies]
-vyna-hl7-templates = "0.19"
+vyna-hl7-templates = "0.9"
 ```
 
 ## Quick Example

@@ -1,10 +1,10 @@
 //! AllergyIntolerance converter - AL1 segment to FHIR AllergyIntolerance resource
 
-use vyna_hl7_core::Message;
-use vyna_hl7_terser::Terser;
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::allergy_intolerance::*;
 use crate::resources::common::*;
+use vyna_hl7_core::Message;
+use vyna_hl7_terser::Terser;
 
 pub struct AllergyIntoleranceConverter;
 
@@ -30,7 +30,10 @@ impl AllergyIntoleranceConverter {
         Ok(allergies)
     }
 
-    pub fn convert_single(message: &Message, al1_index: usize) -> ConversionResult<AllergyIntolerance> {
+    pub fn convert_single(
+        message: &Message,
+        al1_index: usize,
+    ) -> ConversionResult<AllergyIntolerance> {
         let terser = Terser::new(message);
         let mut allergy = AllergyIntolerance::new();
 
@@ -97,7 +100,9 @@ impl AllergyIntoleranceConverter {
 
         allergy.clinical_status = Some(CodeableConcept {
             coding: Some(vec![Coding {
-                system: Some("http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical".to_string()),
+                system: Some(
+                    "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical".to_string(),
+                ),
                 version: None,
                 code: Some("active".to_string()),
                 display: Some("Active".to_string()),

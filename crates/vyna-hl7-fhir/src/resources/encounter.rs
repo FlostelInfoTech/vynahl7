@@ -3,8 +3,8 @@
 //! An interaction between a patient and healthcare provider(s) for the purpose
 //! of providing healthcare service(s) or assessing the health status of a patient.
 
-use serde::{Deserialize, Serialize};
 use super::common::*;
+use serde::{Deserialize, Serialize};
 
 /// FHIR Encounter resource
 #[derive(Debug, Clone, Serialize, Deserialize)]

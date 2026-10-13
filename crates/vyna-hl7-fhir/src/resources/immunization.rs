@@ -3,8 +3,8 @@
 //! Represents immunization events (vaccine administration).
 //! Based on FHIR R4: <https://www.hl7.org/fhir/R4/immunization.html>
 
-use serde::{Deserialize, Serialize};
 use super::common::*;
+use serde::{Deserialize, Serialize};
 
 /// FHIR Immunization resource - describes the event of a patient being administered a vaccine
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

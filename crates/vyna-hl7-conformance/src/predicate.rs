@@ -186,15 +186,16 @@ impl PredicateParser {
             return Ok(Condition::Not(Box::new(inner)));
         }
 
-        // Handle IS VALUED
-        if let Some(pos) = Self::find_ascii_insensitive(trimmed, " IS VALUED") {
+        // Handle IS VALUED (quote-aware: a literal such as
+        // 'X IS VALUED' must not match).
+        if let Some(pos) = Self::find_operator(trimmed, " IS VALUED") {
             let path = trimmed[..pos].trim().to_string();
             Self::validate_path(&path)?;
             return Ok(Condition::IsValued(path));
         }
 
         // Handle IS NOT VALUED
-        if let Some(pos) = Self::find_ascii_insensitive(trimmed, " IS NOT VALUED") {
+        if let Some(pos) = Self::find_operator(trimmed, " IS NOT VALUED") {
             let path = trimmed[..pos].trim().to_string();
             Self::validate_path(&path)?;
             return Ok(Condition::IsNotValued(path));
@@ -241,18 +242,22 @@ impl PredicateParser {
     /// original bytes: indexing an uppercased copy would panic (or split
     /// at the wrong place) whenever a non-ASCII character maps to a
     /// different number of bytes. The returned index is always a
-    /// character boundary and safe to slice with.
+    /// character boundary and safe to slice with. Both single and double
+    /// quotes open a literal region (a quote only closes its own kind).
     fn find_operator(input: &str, operator: &str) -> Option<usize> {
         let bytes = input.as_bytes();
         let needle = operator.as_bytes();
-        let mut in_quotes = false;
+        let mut quote: Option<u8> = None;
 
         for (i, _) in input.char_indices() {
-            if bytes[i] == b'\'' {
-                in_quotes = !in_quotes;
+            let b = bytes[i];
+            match quote {
+                Some(q) if b == q => quote = None,
+                None if b == b'\'' || b == b'"' => quote = Some(b),
+                _ => {}
             }
 
-            if !in_quotes
+            if quote.is_none()
                 && bytes.len() - i >= needle.len()
                 && bytes[i..i + needle.len()].eq_ignore_ascii_case(needle)
             {
@@ -263,27 +268,15 @@ impl PredicateParser {
         None
     }
 
-    /// ASCII case-insensitive substring search.
-    ///
-    /// Returns an index into the original string (safe to slice with):
-    /// the needle starts with an ASCII byte, and only an ASCII byte can
-    /// match it, so a hit always lands on a character boundary.
-    fn find_ascii_insensitive(haystack: &str, needle: &str) -> Option<usize> {
-        let hay = haystack.as_bytes();
-        let ndl = needle.as_bytes();
-        if ndl.len() > hay.len() {
-            return None;
-        }
-        (0..=hay.len() - ndl.len()).find(|&i| hay[i..i + ndl.len()].eq_ignore_ascii_case(ndl))
-    }
-
     /// Parse comparison expression (path op value)
     fn parse_comparison(input: &str) -> Result<Option<(String, String, String)>> {
-        // Try operators in order of length (to match >= before =, etc.)
+        // Try operators in order of length (to match >= before =, etc.).
+        // Operators inside quoted literals are ignored: without that,
+        // "PID-8 = 'a>=b'" would split on the quoted ">=".
         let operators = [">=", "<=", "!=", "<>", "=", ">", "<"];
 
         for op in &operators {
-            if let Some(op_pos) = input.find(op) {
+            if let Some(op_pos) = Self::find_operator(input, op) {
                 let path = input[..op_pos].trim().to_string();
                 let value_part = input[op_pos + op.len()..].trim();
 
@@ -316,6 +309,18 @@ impl PredicateParser {
 
         // Basic validation: should contain at least one dash
         if !path.contains('-') {
+            return Err(ConformanceError::InvalidPredicate(format!(
+                "Invalid field path: {}",
+                path
+            )));
+        }
+
+        // Terser paths never contain whitespace, operators, or quotes;
+        // their presence means the condition split misfired.
+        if path
+            .chars()
+            .any(|c| c.is_whitespace() || "=><!'\"".contains(c))
+        {
             return Err(ConformanceError::InvalidPredicate(format!(
                 "Invalid field path: {}",
                 path
@@ -624,5 +629,37 @@ mod tests {
         // the correct outcome.
         let result = PredicateParser::parse("ſé = 'M'");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_quoted_is_valued_literal_is_not_a_keyword() {
+        // The keyword search must skip quoted literals: this is an
+        // equality test against the literal 'X IS VALUED', not IsValued.
+        let parsed = PredicateParser::parse("PID-8 = 'X IS VALUED'").unwrap();
+        assert!(matches!(
+            parsed,
+            Condition::Equals(path, value)
+                if path == "PID-8" && value == "X IS VALUED"
+        ));
+    }
+
+    #[test]
+    fn test_quoted_comparison_operators_do_not_split() {
+        // Operators inside quotes belong to the literal, not the syntax.
+        let parsed = PredicateParser::parse("PID-8 = 'a>=b'").unwrap();
+        assert!(matches!(
+            parsed,
+            Condition::Equals(path, value) if path == "PID-8" && value == "a>=b"
+        ));
+        let parsed = PredicateParser::parse("PID-8 != \"x<y\"").unwrap();
+        assert!(matches!(
+            parsed,
+            Condition::NotEquals(path, value) if path == "PID-8" && value == "x<y"
+        ));
+    }
+
+    #[test]
+    fn test_malformed_path_with_operators_is_rejected() {
+        assert!(PredicateParser::parse("PID-8 = 'X' IS VALUED").is_err());
     }
 }

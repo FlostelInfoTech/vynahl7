@@ -2,10 +2,10 @@
 
 use egui::{self, Color32, RichText};
 use egui_extras::{Column, Size, StripBuilder, TableBuilder};
-use vyna_hl7_core::CharacterSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use vyna_hl7_core::CharacterSet;
 
 /// Connection protocol
 #[derive(Clone, Copy, PartialEq, Default)]
@@ -96,6 +96,7 @@ pub struct FtpTab {
     upload_filename: String,
     upload_content: String,
     selected_file: Option<usize>,
+    sftp_verify_host_key: bool,
 
     // Server settings
     server_port: String,
@@ -129,6 +130,7 @@ impl Default for FtpTab {
             upload_filename: "message.hl7".to_string(),
             upload_content: String::new(),
             selected_file: None,
+            sftp_verify_host_key: true,
 
             // Server defaults
             server_port: "2121".to_string(),
@@ -252,6 +254,18 @@ impl FtpTab {
             );
         });
 
+        if self.protocol == Protocol::Sftp {
+            ui.horizontal(|ui| {
+                ui.add_enabled(
+                    !connected && !connecting,
+                    egui::Checkbox::new(
+                        &mut self.sftp_verify_host_key,
+                        "Verify SSH host key via known_hosts (uncheck only for test servers)",
+                    ),
+                );
+            });
+        }
+
         ui.add_space(5.0);
 
         // Connect/Disconnect buttons
@@ -300,15 +314,16 @@ impl FtpTab {
                     .add_enabled(!transfer_in_progress, egui::Button::new("↑"))
                     .on_hover_text("Parent directory")
                     .clicked()
-                    && self.client_path != "/" {
-                        if let Some(parent) = std::path::Path::new(&self.client_path).parent() {
-                            self.client_path = parent.to_string_lossy().to_string();
-                            if self.client_path.is_empty() {
-                                self.client_path = "/".to_string();
-                            }
+                    && self.client_path != "/"
+                {
+                    if let Some(parent) = std::path::Path::new(&self.client_path).parent() {
+                        self.client_path = parent.to_string_lossy().to_string();
+                        if self.client_path.is_empty() {
+                            self.client_path = "/".to_string();
                         }
-                        self.list_directory(ctx.clone());
                     }
+                    self.list_directory(ctx.clone());
+                }
             });
 
             // File list table
@@ -390,9 +405,10 @@ impl FtpTab {
                     )
                     .clicked()
                     && let Some(i) = self.selected_file
-                        && let Some(entry) = file_list.get(i) {
-                            self.download_file(&entry.name, ctx.clone());
-                        }
+                    && let Some(entry) = file_list.get(i)
+                {
+                    self.download_file(&entry.name, ctx.clone());
+                }
 
                 if transfer_in_progress {
                     ui.spinner();
@@ -439,13 +455,14 @@ impl FtpTab {
                     && let Some(path) = rfd::FileDialog::new()
                         .add_filter("HL7 Messages", &["hl7", "txt"])
                         .pick_file()
-                        && let Ok(bytes) = std::fs::read(&path)
-                        && let Ok(content) = CharacterSet::decode_message(&bytes) {
-                            self.upload_content = content;
-                            if let Some(filename) = path.file_name() {
-                                self.upload_filename = filename.to_string_lossy().to_string();
-                            }
-                        }
+                    && let Ok(bytes) = std::fs::read(&path)
+                    && let Ok(content) = CharacterSet::decode_message(&bytes)
+                {
+                    self.upload_content = content;
+                    if let Some(filename) = path.file_name() {
+                        self.upload_filename = filename.to_string_lossy().to_string();
+                    }
+                }
             });
         }
 
@@ -544,9 +561,10 @@ impl FtpTab {
             if ui
                 .add_enabled(!running && !starting, egui::Button::new("Browse"))
                 .clicked()
-                && let Some(path) = rfd::FileDialog::new().pick_folder() {
-                    self.server_root = path.display().to_string();
-                }
+                && let Some(path) = rfd::FileDialog::new().pick_folder()
+            {
+                self.server_root = path.display().to_string();
+            }
         });
 
         ui.horizontal(|ui| {
@@ -644,6 +662,7 @@ impl FtpTab {
         let port: u16 = self.client_port.parse().unwrap_or(protocol.default_port());
         let username = self.client_username.clone();
         let password = self.client_password.clone();
+        let verify_host_key = self.sftp_verify_host_key;
         let path = self.client_path.clone();
         let state = self.client_state.clone();
 
@@ -670,7 +689,15 @@ impl FtpTab {
                         ftp_connect_and_list(&host, port, &username, &password, &path).await
                     }
                     Protocol::Sftp => {
-                        sftp_connect_and_list(&host, port, &username, &password, &path).await
+                        sftp_connect_and_list(
+                            &host,
+                            port,
+                            &username,
+                            &password,
+                            &path,
+                            verify_host_key,
+                        )
+                        .await
                     }
                 };
 
@@ -724,6 +751,7 @@ impl FtpTab {
         let port: u16 = self.client_port.parse().unwrap_or(protocol.default_port());
         let username = self.client_username.clone();
         let password = self.client_password.clone();
+        let verify_host_key = self.sftp_verify_host_key;
         let path = self.client_path.clone();
         let state = self.client_state.clone();
 
@@ -734,7 +762,15 @@ impl FtpTab {
                         ftp_connect_and_list(&host, port, &username, &password, &path).await
                     }
                     Protocol::Sftp => {
-                        sftp_connect_and_list(&host, port, &username, &password, &path).await
+                        sftp_connect_and_list(
+                            &host,
+                            port,
+                            &username,
+                            &password,
+                            &path,
+                            verify_host_key,
+                        )
+                        .await
                     }
                 };
 
@@ -761,6 +797,7 @@ impl FtpTab {
         let port: u16 = self.client_port.parse().unwrap_or(protocol.default_port());
         let username = self.client_username.clone();
         let password = self.client_password.clone();
+        let verify_host_key = self.sftp_verify_host_key;
         let remote_path = format!(
             "{}/{}",
             self.client_path.trim_end_matches('/'),
@@ -789,7 +826,16 @@ impl FtpTab {
                         ftp_upload(&host, port, &username, &password, &remote_path, &content).await
                     }
                     Protocol::Sftp => {
-                        sftp_upload(&host, port, &username, &password, &remote_path, &content).await
+                        sftp_upload(
+                            &host,
+                            port,
+                            &username,
+                            &password,
+                            &remote_path,
+                            &content,
+                            verify_host_key,
+                        )
+                        .await
                     }
                 };
 
@@ -802,8 +848,15 @@ impl FtpTab {
                                     .await
                             }
                             Protocol::Sftp => {
-                                sftp_connect_and_list(&host, port, &username, &password, &list_path)
-                                    .await
+                                sftp_connect_and_list(
+                                    &host,
+                                    port,
+                                    &username,
+                                    &password,
+                                    &list_path,
+                                    verify_host_key,
+                                )
+                                .await
                             }
                         };
 
@@ -843,6 +896,7 @@ impl FtpTab {
         let port: u16 = self.client_port.parse().unwrap_or(protocol.default_port());
         let username = self.client_username.clone();
         let password = self.client_password.clone();
+        let verify_host_key = self.sftp_verify_host_key;
         let remote_path = format!("{}/{}", self.client_path.trim_end_matches('/'), filename);
         let filename = filename.to_string();
         let state = self.client_state.clone();
@@ -865,7 +919,15 @@ impl FtpTab {
                         ftp_download(&host, port, &username, &password, &remote_path).await
                     }
                     Protocol::Sftp => {
-                        sftp_download(&host, port, &username, &password, &remote_path).await
+                        sftp_download(
+                            &host,
+                            port,
+                            &username,
+                            &password,
+                            &remote_path,
+                            verify_host_key,
+                        )
+                        .await
                     }
                 };
 
@@ -1302,12 +1364,47 @@ async fn run_ftp_server(
 
 // === SFTP Client Implementation (using ssh2) ===
 
+/// Verify the server's host key against the user's known_hosts file.
+///
+/// Must run after the handshake and before any password is sent: without
+/// it, a man-in-the-middle captures the typed password.
+fn verify_sftp_host_key(session: &ssh2::Session, host: &str, port: u16) -> Result<(), String> {
+    use ssh2::{CheckResult, KnownHostFileKind};
+
+    let (key, _key_type) = session
+        .host_key()
+        .ok_or_else(|| "SSH server presented no host key".to_string())?;
+    let mut known_hosts = session
+        .known_hosts()
+        .map_err(|e| format!("Failed to open known hosts: {e}"))?;
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| "Cannot locate home directory for known_hosts lookup".to_string())?;
+    let path = format!("{home}/.ssh/known_hosts");
+    known_hosts
+        .read_file(std::path::Path::new(&path), KnownHostFileKind::OpenSSH)
+        .map_err(|e| {
+            format!("Failed to read {path}: {e} — add this server with ssh-keyscan first")
+        })?;
+    match known_hosts.check_port(host, port, key) {
+        CheckResult::Match => Ok(()),
+        CheckResult::Mismatch => Err(format!(
+            "SSH host key MISMATCH for {host} — possible man-in-the-middle; refusing to send the password"
+        )),
+        CheckResult::NotFound => Err(format!(
+            "SSH host key for {host} is not in {path} — verify it out-of-band, then add it with ssh-keyscan"
+        )),
+        CheckResult::Failure => Err("SSH host key check failed".to_string()),
+    }
+}
+
 async fn sftp_connect_and_list(
     host: &str,
     port: u16,
     username: &str,
     password: &str,
     path: &str,
+    verify_host_key: bool,
 ) -> Result<Vec<FileEntry>, String> {
     let host = host.to_string();
     let username = username.to_string();
@@ -1315,7 +1412,7 @@ async fn sftp_connect_and_list(
     let path = path.to_string();
 
     tokio::task::spawn_blocking(move || {
-        sftp_connect_and_list_sync(&host, port, &username, &password, &path)
+        sftp_connect_and_list_sync(&host, port, &username, &password, &path, verify_host_key)
     })
     .await
     .map_err(|e| format!("Task error: {}", e))?
@@ -1327,6 +1424,7 @@ fn sftp_connect_and_list_sync(
     username: &str,
     password: &str,
     path: &str,
+    verify_host_key: bool,
 ) -> Result<Vec<FileEntry>, String> {
     use std::net::TcpStream;
     use std::time::Duration;
@@ -1353,6 +1451,10 @@ fn sftp_connect_and_list_sync(
     session
         .handshake()
         .map_err(|e| format!("SSH handshake failed: {}", e))?;
+
+    if verify_host_key {
+        verify_sftp_host_key(&session, host, port)?;
+    }
 
     // Authenticate with password
     session
@@ -1417,6 +1519,7 @@ async fn sftp_upload(
     password: &str,
     remote_path: &str,
     content: &str,
+    verify_host_key: bool,
 ) -> Result<(), String> {
     let host = host.to_string();
     let username = username.to_string();
@@ -1425,7 +1528,15 @@ async fn sftp_upload(
     let content = content.to_string();
 
     tokio::task::spawn_blocking(move || {
-        sftp_upload_sync(&host, port, &username, &password, &remote_path, &content)
+        sftp_upload_sync(
+            &host,
+            port,
+            &username,
+            &password,
+            &remote_path,
+            &content,
+            verify_host_key,
+        )
     })
     .await
     .map_err(|e| format!("Task error: {}", e))?
@@ -1438,6 +1549,7 @@ fn sftp_upload_sync(
     password: &str,
     remote_path: &str,
     content: &str,
+    verify_host_key: bool,
 ) -> Result<(), String> {
     use std::io::Write;
     use std::net::TcpStream;
@@ -1460,6 +1572,10 @@ fn sftp_upload_sync(
     session
         .handshake()
         .map_err(|e| format!("SSH handshake failed: {}", e))?;
+
+    if verify_host_key {
+        verify_sftp_host_key(&session, host, port)?;
+    }
 
     session
         .userauth_password(username, password)
@@ -1490,6 +1606,7 @@ async fn sftp_download(
     username: &str,
     password: &str,
     remote_path: &str,
+    verify_host_key: bool,
 ) -> Result<String, String> {
     let host = host.to_string();
     let username = username.to_string();
@@ -1497,7 +1614,14 @@ async fn sftp_download(
     let remote_path = remote_path.to_string();
 
     tokio::task::spawn_blocking(move || {
-        sftp_download_sync(&host, port, &username, &password, &remote_path)
+        sftp_download_sync(
+            &host,
+            port,
+            &username,
+            &password,
+            &remote_path,
+            verify_host_key,
+        )
     })
     .await
     .map_err(|e| format!("Task error: {}", e))?
@@ -1509,6 +1633,7 @@ fn sftp_download_sync(
     username: &str,
     password: &str,
     remote_path: &str,
+    verify_host_key: bool,
 ) -> Result<String, String> {
     use std::io::Read;
     use std::net::TcpStream;
@@ -1531,6 +1656,10 @@ fn sftp_download_sync(
     session
         .handshake()
         .map_err(|e| format!("SSH handshake failed: {}", e))?;
+
+    if verify_host_key {
+        verify_sftp_host_key(&session, host, port)?;
+    }
 
     session
         .userauth_password(username, password)

@@ -110,6 +110,9 @@ impl EncounterConverter {
 
         // PV1-44: Admit Date/Time -> Encounter.period.start
         // PV1-45: Discharge Date/Time -> Encounter.period.end
+        // Lenient by design (see crate docs "Invalid datetime handling"):
+        // period bounds are ancillary, so an invalid value drops the
+        // bound while the encounter still converts.
         let admit_dt = terser.get("PV1-44").ok().flatten();
         let discharge_dt = terser.get("PV1-45").ok().flatten();
 

@@ -2,8 +2,8 @@
 //!
 //! Based on FHIR R4 Observation: <https://www.hl7.org/fhir/R4/observation.html>
 
-use serde::{Deserialize, Serialize};
 use super::common::*;
+use serde::{Deserialize, Serialize};
 
 /// FHIR Observation resource - Measurements and simple assertions
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

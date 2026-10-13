@@ -1,21 +1,20 @@
 //! FHIR Tab - Convert between HL7 v2.x and FHIR R4
 
-use egui::{self, RichText, Color32};
-use egui_extras::{StripBuilder, Size};
-use vyna_hl7_parser::parse_message;
+use crate::samples;
+use egui::{self, Color32, RichText};
+use egui_extras::{Size, StripBuilder};
+use std::sync::{Arc, Mutex};
+use vyna_hl7_core::Delimiters;
 #[allow(unused_imports)]
 use vyna_hl7_core::Message;
-use vyna_hl7_fhir::converters::{
-    PatientConverter, ObservationConverter, EncounterConverter,
-    PractitionerConverter, DiagnosticReportConverter,
-};
 use vyna_hl7_fhir::converters::reverse::{
-    PatientReverseConverter, ObservationReverseConverter,
-    EncounterReverseConverter,
+    EncounterReverseConverter, ObservationReverseConverter, PatientReverseConverter,
 };
-use vyna_hl7_core::Delimiters;
-use crate::samples;
-use std::sync::{Arc, Mutex};
+use vyna_hl7_fhir::converters::{
+    DiagnosticReportConverter, EncounterConverter, ObservationConverter, PatientConverter,
+    PractitionerConverter,
+};
+use vyna_hl7_parser::parse_message;
 
 /// State shared between UI and async FHIR send task
 #[derive(Default)]
@@ -65,6 +64,7 @@ pub struct FhirTab {
     fhir_api_key_header: String,
     fhir_api_key: String,
     fhir_bearer_token: String,
+    fhir_verify_tls: bool,
     fhir_send_state: Arc<Mutex<FhirSendState>>,
     fhir_runtime: Option<tokio::runtime::Runtime>,
 }
@@ -137,6 +137,7 @@ impl Default for FhirTab {
             fhir_api_key_header: "X-API-Key".to_string(),
             fhir_api_key: String::new(),
             fhir_bearer_token: String::new(),
+            fhir_verify_tls: true,
             fhir_send_state: Arc::new(Mutex::new(FhirSendState::default())),
             fhir_runtime: tokio::runtime::Runtime::new().ok(),
         }
@@ -182,7 +183,8 @@ impl FhirTab {
       "country": "USA"
     }
   ]
-}"#.to_string()
+}"#
+        .to_string()
     }
 
     /// Set the HL7 input message content (used by File > Open)
@@ -208,12 +210,12 @@ impl FhirTab {
             ui.selectable_value(
                 &mut self.active_direction,
                 ConversionDirection::Hl7ToFhir,
-                "HL7 v2.x -> FHIR R4"
+                "HL7 v2.x -> FHIR R4",
             );
             ui.selectable_value(
                 &mut self.active_direction,
                 ConversionDirection::FhirToHl7,
-                "FHIR R4 -> HL7 v2.x"
+                "FHIR R4 -> HL7 v2.x",
             );
         });
 
@@ -232,17 +234,44 @@ impl FhirTab {
             egui::ComboBox::from_id_salt("resource_type")
                 .selected_text(self.selected_resource.label())
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.selected_resource, ResourceType::Patient, "Patient (PID)");
-                    ui.selectable_value(&mut self.selected_resource, ResourceType::Observation, "Observation (OBX)");
-                    ui.selectable_value(&mut self.selected_resource, ResourceType::Encounter, "Encounter (PV1)");
-                    ui.selectable_value(&mut self.selected_resource, ResourceType::Practitioner, "Practitioner");
-                    ui.selectable_value(&mut self.selected_resource, ResourceType::DiagnosticReport, "DiagnosticReport (OBR)");
-                    ui.selectable_value(&mut self.selected_resource, ResourceType::All, "All Resources");
+                    ui.selectable_value(
+                        &mut self.selected_resource,
+                        ResourceType::Patient,
+                        "Patient (PID)",
+                    );
+                    ui.selectable_value(
+                        &mut self.selected_resource,
+                        ResourceType::Observation,
+                        "Observation (OBX)",
+                    );
+                    ui.selectable_value(
+                        &mut self.selected_resource,
+                        ResourceType::Encounter,
+                        "Encounter (PV1)",
+                    );
+                    ui.selectable_value(
+                        &mut self.selected_resource,
+                        ResourceType::Practitioner,
+                        "Practitioner",
+                    );
+                    ui.selectable_value(
+                        &mut self.selected_resource,
+                        ResourceType::DiagnosticReport,
+                        "DiagnosticReport (OBR)",
+                    );
+                    ui.selectable_value(
+                        &mut self.selected_resource,
+                        ResourceType::All,
+                        "All Resources",
+                    );
                 });
 
             ui.separator();
 
-            if ui.button(RichText::new("Convert to FHIR").strong()).clicked() {
+            if ui
+                .button(RichText::new("Convert to FHIR").strong())
+                .clicked()
+            {
                 self.convert_to_fhir();
             }
 
@@ -333,6 +362,16 @@ impl FhirTab {
                                         !is_sending,
                                         egui::TextEdit::singleline(&mut self.fhir_server_url)
                                             .desired_width(250.0),
+                                    );
+                                });
+
+                                ui.horizontal(|ui| {
+                                    ui.add_enabled(
+                                        !is_sending,
+                                        egui::Checkbox::new(
+                                            &mut self.fhir_verify_tls,
+                                            "Verify TLS certificates (uncheck only for self-signed test servers)",
+                                        ),
                                     );
                                 });
 
@@ -464,14 +503,29 @@ impl FhirTab {
             egui::ComboBox::from_id_salt("reverse_resource")
                 .selected_text(self.reverse_resource.label())
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.reverse_resource, ReverseResourceType::Patient, "Patient -> PID");
-                    ui.selectable_value(&mut self.reverse_resource, ReverseResourceType::Observation, "Observation -> OBX");
-                    ui.selectable_value(&mut self.reverse_resource, ReverseResourceType::Encounter, "Encounter -> PV1");
+                    ui.selectable_value(
+                        &mut self.reverse_resource,
+                        ReverseResourceType::Patient,
+                        "Patient -> PID",
+                    );
+                    ui.selectable_value(
+                        &mut self.reverse_resource,
+                        ReverseResourceType::Observation,
+                        "Observation -> OBX",
+                    );
+                    ui.selectable_value(
+                        &mut self.reverse_resource,
+                        ReverseResourceType::Encounter,
+                        "Encounter -> PV1",
+                    );
                 });
 
             ui.separator();
 
-            if ui.button(RichText::new("Convert to HL7").strong()).clicked() {
+            if ui
+                .button(RichText::new("Convert to HL7").strong())
+                .clicked()
+            {
                 self.convert_to_hl7();
             }
 
@@ -492,60 +546,57 @@ impl FhirTab {
                 // Left: FHIR Input
                 strip.cell(|ui| {
                     let panel_height = available_height - 10.0;
-                    egui::Frame::group(ui.style())
-                        .show(ui, |ui| {
-                            ui.set_height(panel_height);
-                            ui.set_width(ui.available_width());
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.set_height(panel_height);
+                        ui.set_width(ui.available_width());
 
-                            ui.heading("FHIR R4 Input (JSON)");
+                        ui.heading("FHIR R4 Input (JSON)");
 
-                            egui::ScrollArea::vertical()
-                                .id_salt("fhir_input")
-                                .auto_shrink([false, false])
-                                .show(ui, |ui| {
-                                    ui.add(
-                                        egui::TextEdit::multiline(&mut self.fhir_input)
-                                            .font(egui::TextStyle::Monospace)
-                                            .desired_width(f32::INFINITY)
-                                            .desired_rows(28)
-                                            .code_editor()
-                                    );
-                                });
-                        });
+                        egui::ScrollArea::vertical()
+                            .id_salt("fhir_input")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.add(
+                                    egui::TextEdit::multiline(&mut self.fhir_input)
+                                        .font(egui::TextStyle::Monospace)
+                                        .desired_width(f32::INFINITY)
+                                        .desired_rows(28)
+                                        .code_editor(),
+                                );
+                            });
+                    });
                 });
 
                 // Right: HL7 Output
                 strip.cell(|ui| {
                     let panel_height = available_height - 10.0;
-                    egui::Frame::group(ui.style())
-                        .show(ui, |ui| {
-                            ui.set_height(panel_height);
-                            ui.set_width(ui.available_width());
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.set_height(panel_height);
+                        ui.set_width(ui.available_width());
 
-                            ui.heading("HL7 v2.x Output");
+                        ui.heading("HL7 v2.x Output");
 
-                            if let Some(ref error) = self.fhir_to_hl7_error {
-                                ui.colored_label(Color32::RED, format!("Error: {}", error));
-                            }
+                        if let Some(ref error) = self.fhir_to_hl7_error {
+                            ui.colored_label(Color32::RED, format!("Error: {}", error));
+                        }
 
-                            if !self.hl7_output.is_empty()
-                                && ui.button("Copy to Clipboard").clicked() {
-                                    ui.ctx().copy_text(self.hl7_output.clone());
-                                }
+                        if !self.hl7_output.is_empty() && ui.button("Copy to Clipboard").clicked() {
+                            ui.ctx().copy_text(self.hl7_output.clone());
+                        }
 
-                            egui::ScrollArea::vertical()
-                                .id_salt("hl7_output")
-                                .auto_shrink([false, false])
-                                .show(ui, |ui| {
-                                    ui.add(
-                                        egui::TextEdit::multiline(&mut self.hl7_output.as_str())
-                                            .font(egui::TextStyle::Monospace)
-                                            .desired_width(f32::INFINITY)
-                                            .desired_rows(28)
-                                            .interactive(false)
-                                    );
-                                });
-                        });
+                        egui::ScrollArea::vertical()
+                            .id_salt("hl7_output")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.add(
+                                    egui::TextEdit::multiline(&mut self.hl7_output.as_str())
+                                        .font(egui::TextStyle::Monospace)
+                                        .desired_width(f32::INFINITY)
+                                        .desired_rows(28)
+                                        .interactive(false),
+                                );
+                            });
+                    });
                 });
             });
     }
@@ -555,9 +606,7 @@ impl FhirTab {
         self.hl7_to_fhir_error = None;
 
         // Parse the HL7 message
-        let normalized = self.hl7_input
-            .replace("\r\n", "\r")
-            .replace("\n", "\r");
+        let normalized = self.hl7_input.replace("\r\n", "\r").replace("\n", "\r");
 
         let message = match parse_message(&normalized) {
             Ok(m) => m,
@@ -570,57 +619,53 @@ impl FhirTab {
         let mut results = Vec::new();
 
         match self.selected_resource {
-            ResourceType::Patient => {
-                match PatientConverter::convert(&message) {
-                    Ok(patient) => {
-                        if let Ok(json) = serde_json::to_string_pretty(&patient) {
+            ResourceType::Patient => match PatientConverter::convert(&message) {
+                Ok(patient) => {
+                    if let Ok(json) = serde_json::to_string_pretty(&patient) {
+                        results.push(json);
+                    }
+                }
+                Err(e) => {
+                    self.hl7_to_fhir_error = Some(format!("Patient conversion: {}", e));
+                    return;
+                }
+            },
+            ResourceType::Observation => match ObservationConverter::convert_all(&message) {
+                Ok(observations) => {
+                    for obs in observations {
+                        if let Ok(json) = serde_json::to_string_pretty(&obs) {
                             results.push(json);
                         }
                     }
-                    Err(e) => {
-                        self.hl7_to_fhir_error = Some(format!("Patient conversion: {}", e));
-                        return;
+                }
+                Err(e) => {
+                    self.hl7_to_fhir_error = Some(format!("Observation conversion: {}", e));
+                    return;
+                }
+            },
+            ResourceType::Encounter => match EncounterConverter::convert(&message) {
+                Ok(encounter) => {
+                    if let Ok(json) = serde_json::to_string_pretty(&encounter) {
+                        results.push(json);
                     }
                 }
-            }
-            ResourceType::Observation => {
-                match ObservationConverter::convert_all(&message) {
-                    Ok(observations) => {
-                        for obs in observations {
-                            if let Ok(json) = serde_json::to_string_pretty(&obs) {
-                                results.push(json);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        self.hl7_to_fhir_error = Some(format!("Observation conversion: {}", e));
-                        return;
-                    }
+                Err(e) => {
+                    self.hl7_to_fhir_error = Some(format!("Encounter conversion: {}", e));
+                    return;
                 }
-            }
-            ResourceType::Encounter => {
-                match EncounterConverter::convert(&message) {
-                    Ok(encounter) => {
-                        if let Ok(json) = serde_json::to_string_pretty(&encounter) {
-                            results.push(json);
-                        }
-                    }
-                    Err(e) => {
-                        self.hl7_to_fhir_error = Some(format!("Encounter conversion: {}", e));
-                        return;
-                    }
-                }
-            }
+            },
             ResourceType::Practitioner => {
                 // Try different practitioner extraction methods
                 if let Ok(pract) = PractitionerConverter::convert_attending_doctor(&message)
-                    && let Ok(json) = serde_json::to_string_pretty(&pract) {
-                        results.push(format!("// Attending Doctor\n{}", json));
-                    }
+                    && let Ok(json) = serde_json::to_string_pretty(&pract)
+                {
+                    results.push(format!("// Attending Doctor\n{}", json));
+                }
                 if let Ok(pract) = PractitionerConverter::convert_referring_doctor(&message)
-                    && let Ok(json) = serde_json::to_string_pretty(&pract) {
-                        results.push(format!("// Referring Doctor\n{}", json));
-                    }
+                    && let Ok(json) = serde_json::to_string_pretty(&pract)
+                {
+                    results.push(format!("// Referring Doctor\n{}", json));
+                }
                 if results.is_empty() {
                     self.hl7_to_fhir_error = Some("No practitioners found in message".to_string());
                     return;
@@ -636,7 +681,8 @@ impl FhirTab {
                         }
                     }
                     Err(e) => {
-                        self.hl7_to_fhir_error = Some(format!("DiagnosticReport conversion: {}", e));
+                        self.hl7_to_fhir_error =
+                            Some(format!("DiagnosticReport conversion: {}", e));
                         return;
                     }
                 }
@@ -644,13 +690,15 @@ impl FhirTab {
             ResourceType::All => {
                 // Convert all available resources
                 if let Ok(patient) = PatientConverter::convert(&message)
-                    && let Ok(json) = serde_json::to_string_pretty(&patient) {
-                        results.push(format!("// Patient\n{}", json));
-                    }
+                    && let Ok(json) = serde_json::to_string_pretty(&patient)
+                {
+                    results.push(format!("// Patient\n{}", json));
+                }
                 if let Ok(encounter) = EncounterConverter::convert(&message)
-                    && let Ok(json) = serde_json::to_string_pretty(&encounter) {
-                        results.push(format!("// Encounter\n{}", json));
-                    }
+                    && let Ok(json) = serde_json::to_string_pretty(&encounter)
+                {
+                    results.push(format!("// Encounter\n{}", json));
+                }
                 if let Ok(observations) = ObservationConverter::convert_all(&message) {
                     for (i, obs) in observations.iter().enumerate() {
                         if let Ok(json) = serde_json::to_string_pretty(&obs) {
@@ -674,54 +722,54 @@ impl FhirTab {
 
         match self.reverse_resource {
             ReverseResourceType::Patient => {
-                match serde_json::from_str::<vyna_hl7_fhir::resources::patient::Patient>(&self.fhir_input) {
-                    Ok(patient) => {
-                        match PatientReverseConverter::convert(&patient) {
-                            Ok(segment) => {
-                                let delimiters = Delimiters::default();
-                                self.hl7_output = segment.encode(&delimiters);
-                            }
-                            Err(e) => {
-                                self.fhir_to_hl7_error = Some(format!("Conversion error: {}", e));
-                            }
+                match serde_json::from_str::<vyna_hl7_fhir::resources::patient::Patient>(
+                    &self.fhir_input,
+                ) {
+                    Ok(patient) => match PatientReverseConverter::convert(&patient) {
+                        Ok(segment) => {
+                            let delimiters = Delimiters::default();
+                            self.hl7_output = segment.encode(&delimiters);
                         }
-                    }
+                        Err(e) => {
+                            self.fhir_to_hl7_error = Some(format!("Conversion error: {}", e));
+                        }
+                    },
                     Err(e) => {
                         self.fhir_to_hl7_error = Some(format!("JSON parse error: {}", e));
                     }
                 }
             }
             ReverseResourceType::Observation => {
-                match serde_json::from_str::<vyna_hl7_fhir::resources::observation::Observation>(&self.fhir_input) {
-                    Ok(obs) => {
-                        match ObservationReverseConverter::convert(&obs, 1) {
-                            Ok(segment) => {
-                                let delimiters = Delimiters::default();
-                                self.hl7_output = segment.encode(&delimiters);
-                            }
-                            Err(e) => {
-                                self.fhir_to_hl7_error = Some(format!("Conversion error: {}", e));
-                            }
+                match serde_json::from_str::<vyna_hl7_fhir::resources::observation::Observation>(
+                    &self.fhir_input,
+                ) {
+                    Ok(obs) => match ObservationReverseConverter::convert(&obs, 1) {
+                        Ok(segment) => {
+                            let delimiters = Delimiters::default();
+                            self.hl7_output = segment.encode(&delimiters);
                         }
-                    }
+                        Err(e) => {
+                            self.fhir_to_hl7_error = Some(format!("Conversion error: {}", e));
+                        }
+                    },
                     Err(e) => {
                         self.fhir_to_hl7_error = Some(format!("JSON parse error: {}", e));
                     }
                 }
             }
             ReverseResourceType::Encounter => {
-                match serde_json::from_str::<vyna_hl7_fhir::resources::encounter::Encounter>(&self.fhir_input) {
-                    Ok(encounter) => {
-                        match EncounterReverseConverter::convert(&encounter) {
-                            Ok(segment) => {
-                                let delimiters = Delimiters::default();
-                                self.hl7_output = segment.encode(&delimiters);
-                            }
-                            Err(e) => {
-                                self.fhir_to_hl7_error = Some(format!("Conversion error: {}", e));
-                            }
+                match serde_json::from_str::<vyna_hl7_fhir::resources::encounter::Encounter>(
+                    &self.fhir_input,
+                ) {
+                    Ok(encounter) => match EncounterReverseConverter::convert(&encounter) {
+                        Ok(segment) => {
+                            let delimiters = Delimiters::default();
+                            self.hl7_output = segment.encode(&delimiters);
                         }
-                    }
+                        Err(e) => {
+                            self.fhir_to_hl7_error = Some(format!("Conversion error: {}", e));
+                        }
+                    },
                     Err(e) => {
                         self.fhir_to_hl7_error = Some(format!("JSON parse error: {}", e));
                     }
@@ -750,6 +798,7 @@ impl FhirTab {
             api_key_header: self.fhir_api_key_header.clone(),
             api_key: self.fhir_api_key.clone(),
             bearer_token: self.fhir_bearer_token.clone(),
+            verify_tls: self.fhir_verify_tls,
         };
 
         if let Some(ref runtime) = self.fhir_runtime {
@@ -776,6 +825,7 @@ struct FhirSendRequest {
     api_key_header: String,
     api_key: String,
     bearer_token: String,
+    verify_tls: bool,
 }
 
 /// Send a FHIR resource to a FHIR server via HTTP/HTTPS POST
@@ -789,15 +839,18 @@ async fn send_fhir_request(request: FhirSendRequest) -> Result<FhirSendResponse,
         api_key_header,
         api_key,
         bearer_token,
+        verify_tls,
     } = request;
     let url = url.trim();
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("URL must start with http:// or https://".to_string());
     }
 
+    // Verify TLS certificates unless the user explicitly opted out:
+    // credentials and PHI must not cross an unauthenticated channel.
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
-        .danger_accept_invalid_certs(true)
+        .danger_accept_invalid_certs(!verify_tls)
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 

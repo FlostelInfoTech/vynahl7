@@ -99,9 +99,7 @@ pub fn substring(value: &str, ctx: &TransformContext) -> Result<String> {
         .and_then(|s| s.parse::<usize>().ok())
         .ok_or_else(|| Error::transform_fn("substring requires 'start' in context"))?;
 
-    let length = ctx
-        .get_data("length")
-        .and_then(|s| s.parse::<usize>().ok());
+    let length = ctx.get_data("length").and_then(|s| s.parse::<usize>().ok());
 
     let chars: Vec<char> = value.chars().collect();
 
@@ -139,13 +137,21 @@ pub fn format_date(value: &str, ctx: &TransformContext) -> Result<String> {
         .get_data("format")
         .ok_or_else(|| Error::transform_fn("format_date requires 'format' in context"))?;
 
-    // Parse HL7 date (YYYYMMDD or YYYYMMDDHHMM or YYYYMMDDHHMMSS)
-    let date = if value.len() >= 8 {
-        chrono::NaiveDate::parse_from_str(&value[..8], "%Y%m%d")
-            .map_err(|e| Error::transform_fn(format!("Invalid date format: {}", e)))?
-    } else {
-        return Err(Error::transform_fn("Date must be at least 8 characters (YYYYMMDD)"));
-    };
+    // Parse HL7 date (YYYYMMDD or YYYYMMDDHHMM or YYYYMMDDHHMMSS).
+    // .get() keeps non-ASCII input from panicking on a split boundary.
+    if value.len() < 8 {
+        return Err(Error::transform_fn(
+            "Date must be at least 8 characters (YYYYMMDD)",
+        ));
+    }
+    let head = value
+        .get(..8)
+        .ok_or_else(|| Error::transform_fn(format!("Invalid date format: {value}")))?;
+    if !head.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(Error::transform_fn(format!("Invalid date format: {value}")));
+    }
+    let date = chrono::NaiveDate::parse_from_str(head, "%Y%m%d")
+        .map_err(|e| Error::transform_fn(format!("Invalid date format: {}", e)))?;
 
     // Format according to requested format
     let result = match format.as_str() {
@@ -153,7 +159,12 @@ pub fn format_date(value: &str, ctx: &TransformContext) -> Result<String> {
         "MM/DD/YYYY" => date.format("%m/%d/%Y").to_string(),
         "DD/MM/YYYY" => date.format("%d/%m/%Y").to_string(),
         "YYYYMMDD" => date.format("%Y%m%d").to_string(),
-        _ => return Err(Error::transform_fn(format!("Unsupported date format: {}", format))),
+        _ => {
+            return Err(Error::transform_fn(format!(
+                "Unsupported date format: {}",
+                format
+            )));
+        }
     };
 
     Ok(result)
@@ -180,18 +191,37 @@ pub fn format_datetime(value: &str, ctx: &TransformContext) -> Result<String> {
         .get_data("format")
         .ok_or_else(|| Error::transform_fn("format_datetime requires 'format' in context"))?;
 
-    // Parse HL7 datetime (YYYYMMDDHHMMSS)
+    // Parse HL7 datetime (YYYYMMDDHHMMSS).
+    // .get() keeps non-ASCII input from panicking on a split boundary.
     let datetime = if value.len() >= 14 {
-        NaiveDateTime::parse_from_str(&value[..14], "%Y%m%d%H%M%S")
+        let head = value
+            .get(..14)
+            .ok_or_else(|| Error::transform_fn(format!("Invalid datetime format: {value}")))?;
+        if !head.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(Error::transform_fn(format!(
+                "Invalid datetime format: {value}"
+            )));
+        }
+        NaiveDateTime::parse_from_str(head, "%Y%m%d%H%M%S")
             .map_err(|e| Error::transform_fn(format!("Invalid datetime format: {}", e)))?
     } else if value.len() >= 8 {
         // Date only, default time to 00:00:00
-        let date = chrono::NaiveDate::parse_from_str(&value[..8], "%Y%m%d")
+        let head = value
+            .get(..8)
+            .ok_or_else(|| Error::transform_fn(format!("Invalid datetime format: {value}")))?;
+        if !head.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(Error::transform_fn(format!(
+                "Invalid datetime format: {value}"
+            )));
+        }
+        let date = chrono::NaiveDate::parse_from_str(head, "%Y%m%d")
             .map_err(|e| Error::transform_fn(format!("Invalid date format: {}", e)))?;
         date.and_hms_opt(0, 0, 0)
             .ok_or_else(|| Error::transform_fn("Failed to create datetime"))?
     } else {
-        return Err(Error::transform_fn("Datetime must be at least 8 characters (YYYYMMDD)"));
+        return Err(Error::transform_fn(
+            "Datetime must be at least 8 characters (YYYYMMDD)",
+        ));
     };
 
     // Format according to requested format
@@ -199,7 +229,12 @@ pub fn format_datetime(value: &str, ctx: &TransformContext) -> Result<String> {
         "YYYY-MM-DD HH:MM:SS" => datetime.format("%Y-%m-%d %H:%M:%S").to_string(),
         "ISO8601" => datetime.format("%Y-%m-%dT%H:%M:%S").to_string(),
         "YYYYMMDDHHMMSS" => datetime.format("%Y%m%d%H%M%S").to_string(),
-        _ => return Err(Error::transform_fn(format!("Unsupported datetime format: {}", format))),
+        _ => {
+            return Err(Error::transform_fn(format!(
+                "Unsupported datetime format: {}",
+                format
+            )));
+        }
     };
 
     Ok(result)
@@ -337,17 +372,13 @@ pub fn pad(value: &str, ctx: &TransformContext) -> Result<String> {
         .and_then(|s| s.chars().next())
         .ok_or_else(|| Error::transform_fn("pad requires 'pad_char' in context"))?;
 
-    let side = ctx
-        .get_data("side")
-        .map(|s| s.as_str())
-        .unwrap_or("left");
+    let side = ctx.get_data("side").map(|s| s.as_str()).unwrap_or("left");
 
     if value.len() >= length {
         return Ok(value.to_string());
     }
 
-    let padding = std::iter::repeat_n(pad_char, length - value.len())
-        .collect::<String>();
+    let padding = std::iter::repeat_n(pad_char, length - value.len()).collect::<String>();
 
     match side {
         "left" => Ok(format!("{}{}", padding, value)),
@@ -428,26 +459,22 @@ mod tests {
 
         assert_eq!(substring("SMITH", &ctx).unwrap(), "ITH");
 
-        let ctx = TransformContext::new()
-            .add_data("start".to_string(), "2".to_string());
+        let ctx = TransformContext::new().add_data("start".to_string(), "2".to_string());
 
         assert_eq!(substring("SMITH", &ctx).unwrap(), "ITH");
     }
 
     #[test]
     fn test_format_date() {
-        let ctx = TransformContext::new()
-            .add_data("format".to_string(), "YYYY-MM-DD".to_string());
+        let ctx = TransformContext::new().add_data("format".to_string(), "YYYY-MM-DD".to_string());
 
         assert_eq!(format_date("20240315", &ctx).unwrap(), "2024-03-15");
 
-        let ctx = TransformContext::new()
-            .add_data("format".to_string(), "MM/DD/YYYY".to_string());
+        let ctx = TransformContext::new().add_data("format".to_string(), "MM/DD/YYYY".to_string());
 
         assert_eq!(format_date("20240315", &ctx).unwrap(), "03/15/2024");
 
-        let ctx = TransformContext::new()
-            .add_data("format".to_string(), "DD/MM/YYYY".to_string());
+        let ctx = TransformContext::new().add_data("format".to_string(), "DD/MM/YYYY".to_string());
 
         assert_eq!(format_date("20240315", &ctx).unwrap(), "15/03/2024");
     }
@@ -462,8 +489,7 @@ mod tests {
             "2024-03-15 12:30:45"
         );
 
-        let ctx = TransformContext::new()
-            .add_data("format".to_string(), "ISO8601".to_string());
+        let ctx = TransformContext::new().add_data("format".to_string(), "ISO8601".to_string());
 
         assert_eq!(
             format_datetime("20240315123045", &ctx).unwrap(),
@@ -491,16 +517,15 @@ mod tests {
 
     #[test]
     fn test_prefix() {
-        let ctx = TransformContext::new()
-            .add_data("prefix".to_string(), "MRN-".to_string());
+        let ctx = TransformContext::new().add_data("prefix".to_string(), "MRN-".to_string());
 
         assert_eq!(prefix("12345", &ctx).unwrap(), "MRN-12345");
     }
 
     #[test]
     fn test_suffix() {
-        let ctx = TransformContext::new()
-            .add_data("suffix".to_string(), "@hospital.com".to_string());
+        let ctx =
+            TransformContext::new().add_data("suffix".to_string(), "@hospital.com".to_string());
 
         assert_eq!(suffix("john.doe", &ctx).unwrap(), "john.doe@hospital.com");
     }
@@ -524,10 +549,32 @@ mod tests {
 
     #[test]
     fn test_default_if_empty() {
-        let ctx = TransformContext::new()
-            .add_data("default".to_string(), "UNKNOWN".to_string());
+        let ctx = TransformContext::new().add_data("default".to_string(), "UNKNOWN".to_string());
 
         assert_eq!(default_if_empty("", &ctx).unwrap(), "UNKNOWN");
         assert_eq!(default_if_empty("SMITH", &ctx).unwrap(), "SMITH");
+    }
+
+    #[test]
+    fn test_format_date_non_ascii_returns_error_without_panic() {
+        let ctx = TransformContext::new().add_data("format".to_string(), "YYYY-MM-DD".to_string());
+
+        // 12 bytes with a split boundary inside: slicing panicked here.
+        assert!(format_date("1234567éXXXX", &ctx).is_err());
+        assert_eq!(format_date("20240315", &ctx).unwrap(), "2024-03-15");
+    }
+
+    #[test]
+    fn test_format_datetime_non_ascii_returns_error_without_panic() {
+        let ctx = TransformContext::new()
+            .add_data("format".to_string(), "YYYY-MM-DD HH:MM:SS".to_string());
+
+        // 15 bytes with byte 14 mid-character: slicing panicked here.
+        assert!(format_datetime("1234567890123é", &ctx).is_err());
+        assert!(format_datetime("2024031é", &ctx).is_err());
+        assert_eq!(
+            format_datetime("20240315123045", &ctx).unwrap(),
+            "2024-03-15 12:30:45"
+        );
     }
 }

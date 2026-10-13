@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Credential leaks closed: redacting `Debug` impls for FTP/SFTP/HTTP auth types; constant-time API key compare
 - Unbounded buffering capped: HTTP response size, FTP/SFTP/poller file limits, queue depth caps, WebSocket binary size checks; blocking fs moved to `spawn_blocking`; FTP/SFTP command timeouts
 - CLI `validate` exits 1 on invalid messages; `extract` rejects malformed paths on stderr; proc macros emit spanned errors instead of panicking; dead code removed (`PooledConnectionGuard`, reqwest-retry/middleware deps)
+- XML root element uses the full MSH-9 value (`ADT_A01`, not `ADT`); repetitions always encode (empty ones as empty elements) so positions survive round-trips
+- Remaining byte-slicing panics eliminated (core date/timestamp helpers, custom datetime helpers, transform date formatters)
+- Poller redrops reprocess (composite settled keys + listing reconciliation); per-file failures collected into `PollReport::errors` instead of aborting the poll
+- `WebhookConfig` Debug redacts header values; testpanel verifies TLS certs and SSH host keys by default with explicit opt-outs
+- Predicate parsing ignores quoted keyword/operator lookalikes; `validate` rejects unrecognized `--hl7-version` values
+- FHIR invalid-datetime rule documented (strict primary timestamps, lenient ancillary ones); stale README version pins and private-repo wording fixed
 
 ### Changed
 

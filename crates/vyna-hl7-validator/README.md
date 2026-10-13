@@ -20,7 +20,7 @@ Comprehensive HL7 v2.x message validation for Rust.
 
 ```toml
 [dependencies]
-vyna-hl7-validator = "1.1"
+vyna-hl7-validator = "0.9"
 ```
 
 ## Quick Start

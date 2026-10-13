@@ -503,7 +503,13 @@ fn validate_command(
             "2.8" => Version::V2_8,
             "2.8.1" => Version::V2_8_1,
             "2.8.2" => Version::V2_8_2,
-            _ => message.get_version().unwrap_or(Version::V2_5),
+            other => {
+                // A typo'd version must fail loudly, never silently
+                // validate against a different version than requested.
+                anyhow::bail!(
+                    "Unrecognized HL7 version '{other}': expected one of 2.1, 2.2, 2.3, 2.3.1, 2.4, 2.5, 2.5.1, 2.6, 2.7, 2.7.1, 2.8, 2.8.1, 2.8.2"
+                );
+            }
         }
     } else {
         message.get_version().unwrap_or(Version::V2_5)

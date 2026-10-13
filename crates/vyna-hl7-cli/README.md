@@ -73,7 +73,7 @@ Validate an HL7 message:
 vynahl7 validate message.hl7
 
 # Validate with specific version
-vynahl7 validate message.hl7 --version 2.5
+vynahl7 validate message.hl7 --hl7-version 2.5
 
 # JSON output
 vynahl7 validate message.hl7 --format json

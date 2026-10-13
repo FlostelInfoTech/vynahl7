@@ -22,3 +22,6 @@ quick-xml.workspace = true
 default = []
 # Enable ER7 <-> XML conversion functions
 convert = ["vyna-hl7-parser"]
+
+[dev-dependencies]
+vyna-hl7-parser.workspace = true
