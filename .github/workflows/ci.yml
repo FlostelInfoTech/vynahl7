@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --workspace --all-targets
+      - name: Test (default features)
+        run: cargo test --workspace
+      - name: Test (HTTP TLS + auth)
+        run: cargo test -p vyna-hl7-http --features tls,testing,auth
+      - name: Test (MLLP TLS integration)
+        run: cargo test -p vyna-hl7-mllp --features tls,testing --test tls_integration
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: WASM target check
+        run: cargo build -p vyna-hl7-wasm --target wasm32-unknown-unknown
+
+  fmt:
+    runs-on: ubuntu-latest
+    # Advisory only until the repo-wide rustfmt normalization lands
+    # (large pre-existing baseline drift); then remove continue-on-error.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --check --edition 2024
