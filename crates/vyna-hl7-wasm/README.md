@@ -329,16 +329,16 @@ Requires WebAssembly support (available in all modern browsers).
 
 ## License
 
-Copyright (c) 2024-2026 Alex SHAO Fan <alex.shaofan@flostel.com>. All rights reserved.
+Copyright (c) 2024-2026 Alex SHAO Fan.
 
-This software is proprietary and confidential. Unauthorized copying, distribution, or use is strictly prohibited.
+Licensed under the MIT License — see the [LICENSE](../../LICENSE) file.
 
 ## Contributing
 
-This crate is developed in the private [VynaHL7 repository](https://gitlab.flostel.com/alexshao/VynaHL7). Internal contributors: please create a branch and submit a merge request.
+This crate is developed in the [VynaHL7 repository](https://github.com/FlostelInfoTech/vynahl7). Contributions are welcome: please open an issue or submit a pull request.
 
 ## Resources
 
-- [VynaHL7 Main Repository](https://gitlab.flostel.com/alexshao/VynaHL7)
+- [VynaHL7 Main Repository](https://github.com/FlostelInfoTech/vynahl7)
 - [HL7 v2.x Documentation](https://www.hl7.org/implement/standards/product_brief.cfm?product_id=185)
 - [WebAssembly Documentation](https://webassembly.org/)

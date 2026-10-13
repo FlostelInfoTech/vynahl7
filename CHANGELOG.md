@@ -145,16 +145,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Initial VynaHL7 release (Vyna Healthcare product family internal library), forked from rs7 1.6.1 with versioning restarted at 0.1.0
+- Initial VynaHL7 release (Vyna Healthcare product family library), forked from rs7 1.6.1 with versioning restarted at 0.1.0
 - Renamed project from rs7 to VynaHL7: all crates renamed from `rs7-*` to `vyna-hl7-*`, Rust paths from `rs7_*` to `vyna_hl7_*`, CLI binary to `vynahl7`, and documentation updated accordingly
 
-[Unreleased]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.8.0...HEAD
-[0.8.0]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.7.0...v0.8.0
-[0.7.0]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.6.0...v0.7.0
-[0.6.0]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.5.1...v0.6.0
-[0.5.1]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.5.0...v0.5.1
-[0.5.0]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.4.0...v0.5.0
-[0.4.0]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.3.0...v0.4.0
-[0.3.0]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.2.0...v0.3.0
-[0.2.0]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.1.0...v0.2.0
-[0.1.0]: https://gitlab.flostel.com/alexshao/VynaHL7/releases/tag/v0.1.0
+[Unreleased]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.5.1...v0.6.0
+[0.5.1]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/FlostelInfoTech/vynahl7/releases/tag/v0.1.0

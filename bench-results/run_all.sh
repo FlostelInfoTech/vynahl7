@@ -140,7 +140,7 @@ run_criterion_bench \
   ORU^R01 (lab results), RDE^O11 (pharmacy), SIU^S12 (scheduling), MDM^T02
   (documents), DFT^P03 (financial), ORM^O01 (orders). Throughput is reported
   in bytes/sec to normalize for message size differences." \
-  "  Framework:     Criterion 0.7 (statistical microbenchmark)
+  "  Framework:     Criterion 0.8 (statistical microbenchmark)
   Sample size:   100 iterations per benchmark (Criterion default)
   Metric:        Wall-clock time per operation, byte throughput
   Parse:         vyna_hl7_parser::parse_message() on static HL7 string
@@ -155,7 +155,7 @@ run_criterion_bench \
   density (0-50%), batch/file envelope parsing (1-50 messages), lenient vs strict
   parsing mode, and production-like messy messages with trailing delimiters and
   empty components." \
-    "  Framework:     Criterion 0.7
+    "  Framework:     Criterion 0.8
   Escape test:   Synthetic messages with 0%, 5%, 20%, 50% escaped field values
   Batch test:    BHS/BTS envelope with 1/5/10/50 ADT messages via parse_batch()
   File test:     FHS/FTS envelope with 2 batches of 10 messages via parse_file()
@@ -170,7 +170,7 @@ run_criterion_bench \
   throughput at varying density, and message builder construction cost. This separates
   encoding overhead from parse overhead and quantifies the cost of the builder pattern
   for programmatic message creation." \
-    "  Framework:     Criterion 0.7
+    "  Framework:     Criterion 0.8
   Encode:        message.encode() on pre-parsed Message objects (no parse cost)
   Escapes:       Encoding::encode() and Encoding::decode() with plain/light/heavy input
   Builders:      AdtA01Builder and OruR01Builder full construction + build()" \
@@ -185,7 +185,7 @@ run_criterion_bench \
   checking for DT, TM, DTM, NM, SI, ST, CWE, XPN), vocabulary validation (code set
   validation against HL7 tables 0001, 0004, 0085, 0103), and full parse+validate
   pipeline cost." \
-    "  Framework:     Criterion 0.7
+    "  Framework:     Criterion 0.8
   Schema load:   Validator::for_message_type() (includes JSON schema parsing)
   Validate:      validator.validate() on pre-parsed Message with pre-loaded schema
   DataType:      validate_data_type() for individual field values
@@ -201,7 +201,7 @@ run_criterion_bench \
   (Patient, Observation, Encounter, DiagnosticReport, Practitioner, AllergyIntolerance,
   Condition, Procedure), JSON serialization of converted resources, and full
   parse-to-FHIR-to-JSON pipeline cost." \
-    "  Framework:     Criterion 0.7
+    "  Framework:     Criterion 0.8
   Converters:    Each converter benchmarked on pre-parsed Message (no parse cost)
   Serialization: serde_json::to_string() on converted FHIR resources
   Pipeline:      parse_message() + convert all applicable resources + serialize JSON" \
@@ -215,7 +215,7 @@ run_criterion_bench \
   repeated field access patterns. Measures clinical workflow extraction scenarios:
   patient demographics (6 paths), lab results summary (32 paths across 8 OBX segments),
   and order info (5 paths). Also tests scaling behavior with 10/50/100 unique paths." \
-    "  Framework:     Criterion 0.7
+    "  Framework:     Criterion 0.8
   Comparison:    Same 10 paths accessed 5 times each, Terser vs CachedTerser
   Workflows:     Realistic clinical extraction patterns on pre-parsed ORU message
   Scaling:       Increasing unique path counts with cache hit on second pass" \
@@ -229,7 +229,7 @@ run_criterion_bench \
   interface engine workflows: parse-only (baseline), parse+validate, parse+extract
   (Terser vs CachedTerser), parse+transform+encode (field modification round-trip),
   and interface engine simulation (parse + extract routing fields + generate ACK)." \
-    "  Framework:     Criterion 0.7
+    "  Framework:     Criterion 0.8
   Parse only:    vyna_hl7_parser::parse_message() baseline
   Validate:      parse + Validator::for_message_type().validate()
   Extract:       parse + Terser/CachedTerser get 10 clinical fields

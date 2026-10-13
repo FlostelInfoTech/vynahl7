@@ -356,11 +356,11 @@ The CLI is optimized for speed:
 
 ## License
 
-Copyright (c) 2024-2026 Alex SHAO Fan <alex.shaofan@flostel.com>. All rights reserved.
+Copyright (c) 2024-2026 Alex SHAO Fan.
 
-This software is proprietary and confidential. Unauthorized copying, distribution, or use is strictly prohibited.
+Licensed under the MIT License — see the [LICENSE](../../LICENSE) file.
 
 ## Related Projects
 
-- [vyna-hl7](https://gitlab.flostel.com/alexshao/VynaHL7) - The core HL7 v2.x library for Rust
+- [vyna-hl7](https://github.com/FlostelInfoTech/vynahl7) - The core HL7 v2.x library for Rust
 - [vyna-hl7-wasm](../vyna-hl7-wasm) - WebAssembly bindings for browser/Node.js

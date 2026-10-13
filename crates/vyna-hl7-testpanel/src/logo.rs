@@ -1,11 +1,11 @@
-//! Logo loading and rendering for FLOSTEL INFOTECH branding
+//! Logo loading and rendering for VynaHL7 branding
 
 use egui::{Color32, ColorImage, TextureHandle, TextureOptions};
 use once_cell::sync::OnceCell;
 use std::sync::Arc;
 
-/// The embedded SVG icon data (AI core mark)
-const ICON_SVG: &str = include_str!("../assets/flostel-icon.svg");
+/// The embedded SVG icon data (VynaHL7 mark)
+const ICON_SVG: &str = include_str!("../assets/vyna-icon.svg");
 
 /// Cached logo textures, one per theme
 static LOGO_TEXTURE_LIGHT: OnceCell<Arc<LogoData>> = OnceCell::new();
@@ -46,9 +46,9 @@ pub fn get_logo_texture(ctx: &egui::Context) -> Option<TextureHandle> {
     );
 
     let name = if dark {
-        "flostel_logo_dark"
+        "vyna_logo_dark"
     } else {
-        "flostel_logo_light"
+        "vyna_logo_light"
     };
     Some(ctx.load_texture(name, image, TextureOptions::LINEAR))
 }
@@ -110,7 +110,7 @@ fn render_svg_to_pixels(svg_data: &str, width: u32, height: u32) -> Option<LogoD
     })
 }
 
-/// Display the company logo in the UI
+/// Display the project logo in the UI
 /// Returns true if the logo was displayed, false if fallback text should be used
 pub fn show_logo(ui: &mut egui::Ui, size: f32) -> bool {
     if let Some(texture) = get_logo_texture(ui.ctx()) {
@@ -130,16 +130,16 @@ pub fn show_logo(ui: &mut egui::Ui, size: f32) -> bool {
 /// Display a text-based logo (fallback when SVG loading fails)
 pub fn show_text_logo(ui: &mut egui::Ui, size: f32) {
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("F").size(size).strong().color(Color32::from_rgb(0, 128, 128)));
+        ui.label(egui::RichText::new("V").size(size).strong().color(Color32::from_rgb(0, 128, 128)));
         ui.add_space(-size * 0.25);
-        ui.label(egui::RichText::new("S").size(size * 0.875).strong().color(Color32::from_rgb(255, 0, 0)));
+        ui.label(egui::RichText::new("7").size(size * 0.875).strong().color(Color32::from_rgb(255, 107, 0)));
     });
 }
 
-/// Display the company name
+/// Display the project name
 pub fn show_company_name(ui: &mut egui::Ui, size: f32) {
     ui.label(
-        egui::RichText::new("FLOSTEL INFOTECH")
+        egui::RichText::new("VynaHL7")
             .size(size)
             .strong()
             .color(Color32::from_rgb(0, 128, 128)),

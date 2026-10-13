@@ -267,8 +267,6 @@ cargo bench -p vyna-hl7-parser
 
 ## License
 
-Copyright (c) 2024-2026 Alex SHAO Fan <alex.shaofan@flostel.com>. All rights reserved.
+Copyright (c) 2024-2026 Alex SHAO Fan.
 
-This software is proprietary and confidential. Unauthorized copying, distribution, or use is strictly prohibited.
-
-at your option.
+Licensed under the MIT License — see the [LICENSE](../../LICENSE) file.

@@ -23,4 +23,7 @@ rm vynahl7-sbom.json crates/*/vynahl7-sbom.json
 ```
 
 Keep one SBOM per release (replace, don't accumulate) and regenerate
-whenever dependencies change.
+whenever dependencies change. For public releases, anonymize the
+machine-specific `path+file://` prefix first (replace the absolute
+workspace path with `path+file:///vynahl7`) so contributor machine
+layouts don't leak into `bom-ref`s.

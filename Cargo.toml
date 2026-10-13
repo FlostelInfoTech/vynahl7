@@ -85,10 +85,10 @@ resolver = "2"
 version = "0.8.0"
 edition = "2024"
 authors = ["Alex SHAO Fan <alex.shaofan@flostel.com>"]
-license = "LicenseRef-Proprietary"
-repository = "https://gitlab.flostel.com/alexshao/VynaHL7"
-homepage = "https://gitlab.flostel.com/alexshao/VynaHL7"
-documentation = "https://gitlab.flostel.com/alexshao/VynaHL7"
+license = "MIT"
+repository = "https://github.com/FlostelInfoTech/vynahl7"
+homepage = "https://github.com/FlostelInfoTech/vynahl7"
+documentation = "https://github.com/FlostelInfoTech/vynahl7"
 keywords = ["hl7", "healthcare", "medical", "interoperability"]
 categories = ["parsing", "network-programming", "healthcare"]
 

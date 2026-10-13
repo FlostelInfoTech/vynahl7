@@ -35,7 +35,7 @@ fn main() {
         res.set_icon("assets/vyna_hl7.ico");
         res.set("ProductName", "VynaHL7 Test Panel");
         res.set("FileDescription", "VynaHL7 HL7 v2.x Test Panel GUI");
-        res.set("LegalCopyright", "Copyright © FLOSTEL INFOTECH");
+        res.set("LegalCopyright", "Copyright © 2024-2026 Alex SHAO Fan");
         if let Err(e) = res.compile() {
             eprintln!("Warning: Failed to compile Windows resources: {}", e);
         }

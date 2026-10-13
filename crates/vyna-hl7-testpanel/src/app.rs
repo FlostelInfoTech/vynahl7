@@ -377,9 +377,9 @@ impl eframe::App for VynaHL7TestPanel {
         egui::Panel::bottom("status_bar").show(ui, |ui| {
             ui.add_space(2.0);
             ui.horizontal(|ui| {
-                // Company logo in status bar
+                // Project logo in status bar
                 logo::show_logo(ui, 14.0);
-                ui.label(RichText::new("FLOSTEL INFOTECH").weak().small());
+                ui.label(RichText::new("VynaHL7").weak().small());
                 ui.separator();
                 ui.label(RichText::new(format!("{} {}", self.active_tab.icon(), self.active_tab.label())).weak());
                 ui.separator();

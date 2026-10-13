@@ -1116,9 +1116,9 @@ Developed with AI-assisted tooling ([Claude Code](https://claude.ai/code) and [M
 
 ## License
 
-Copyright (c) 2024-2026 Alex SHAO Fan <alex.shaofan@flostel.com>. All rights reserved.
+Copyright (c) 2024-2026 Alex SHAO Fan.
 
-This software is proprietary and confidential. Unauthorized copying, distribution, or use is strictly prohibited.
+Licensed under the MIT License — see the [LICENSE](LICENSE) file.
 
 ## Comparison with HAPI
 
