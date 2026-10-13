@@ -4,7 +4,6 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-publish = false
 repository.workspace = true
 description = "GUI Test Panel for VynaHL7 HL7 Library - demonstrates parsing, building, validation, MLLP, and FHIR conversion"
 keywords = ["hl7", "healthcare", "gui", "test-panel"]
