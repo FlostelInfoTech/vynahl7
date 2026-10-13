@@ -176,6 +176,44 @@ pub fn verify_api_key_secure(header_value: &str, valid_api_keys: &[String]) -> b
     matched != 0
 }
 
+/// JWT audience claim: RFC 7519 section 4.1.3 allows either a single
+/// string or an array of strings.
+#[cfg(feature = "oauth")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum JwtAudience {
+    /// Single audience value.
+    Single(String),
+    /// Multiple audience values.
+    Multiple(Vec<String>),
+}
+
+#[cfg(feature = "oauth")]
+impl JwtAudience {
+    /// True when `audience` is the value (single form) or a member
+    /// (array form) of this claim.
+    pub fn contains(&self, audience: &str) -> bool {
+        match self {
+            Self::Single(value) => value == audience,
+            Self::Multiple(values) => values.iter().any(|v| v == audience),
+        }
+    }
+}
+
+#[cfg(feature = "oauth")]
+impl From<String> for JwtAudience {
+    fn from(value: String) -> Self {
+        Self::Single(value)
+    }
+}
+
+#[cfg(feature = "oauth")]
+impl From<&str> for JwtAudience {
+    fn from(value: &str) -> Self {
+        Self::Single(value.to_string())
+    }
+}
+
 /// Standard JWT claims structure
 ///
 /// This represents the standard JWT claims as defined in RFC 7519.
@@ -188,9 +226,9 @@ pub struct JwtClaims {
     /// Issuer
     #[serde(skip_serializing_if = "Option::is_none")]
     pub iss: Option<String>,
-    /// Audience
+    /// Audience (single string or array of strings per RFC 7519)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub aud: Option<String>,
+    pub aud: Option<JwtAudience>,
     /// Expiration time (as UTC timestamp)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exp: Option<usize>,
@@ -322,9 +360,9 @@ pub fn verify_jwt(
         validation.set_issuer(&[issuer]);
     }
 
-    if let Some(ref audience) = config.audience {
-        validation.set_audience(&[audience]);
-    }
+    // Audience is checked below against the decoded claim (string or
+    // array form) instead of via set_audience.
+    validation.validate_aud = false;
 
     let decoding_key = match config.algorithm {
         Algorithm::HS256 | Algorithm::HS384 | Algorithm::HS512 => {
@@ -338,6 +376,15 @@ pub fn verify_jwt(
     };
 
     let token_data = decode::<JwtClaims>(token, &decoding_key, &validation)?;
+    if let Some(ref audience) = config.audience
+        && !token_data
+            .claims
+            .aud
+            .as_ref()
+            .is_some_and(|aud| aud.contains(audience))
+    {
+        return Err(jsonwebtoken::errors::ErrorKind::InvalidAudience.into());
+    }
     Ok(token_data.claims)
 }
 
@@ -506,7 +553,7 @@ mod tests {
 #[cfg(test)]
 #[cfg(feature = "oauth")]
 mod jwt_tests {
-    use super::{JwtClaims, JwtConfig, verify_jwt, verify_jwt_from_header};
+    use super::{JwtAudience, JwtClaims, JwtConfig, verify_jwt, verify_jwt_from_header};
     use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -527,7 +574,7 @@ mod jwt_tests {
         JwtClaims {
             sub: "user-123".to_string(),
             iss: Some(iss.to_string()),
-            aud: Some(aud.to_string()),
+            aud: Some(JwtAudience::from(aud)),
             exp: Some(exp),
             nbf,
             iat: Some(now()),
@@ -654,7 +701,7 @@ mod jwt_tests {
         let no_exp = JwtClaims {
             sub: "user-123".to_string(),
             iss: Some("https://auth.example.com".to_string()),
-            aud: Some("vyna-hl7".to_string()),
+            aud: Some(JwtAudience::from("vyna-hl7")),
             exp: None,
             nbf: None,
             iat: None,
@@ -668,6 +715,43 @@ mod jwt_tests {
                 jsonwebtoken::errors::ErrorKind::MissingRequiredClaim(name)
                     if name == "exp"
             ),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    fn mint_raw(claims: &serde_json::Value) -> String {
+        encode(
+            &Header::new(Algorithm::HS256),
+            claims,
+            &EncodingKey::from_secret(SECRET),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_verify_jwt_array_audience_match_accepted() {
+        // RFC 7519 s4.1.3: aud MAY be an array; a matching member accepts.
+        let token = mint_raw(&serde_json::json!({
+            "sub": "user-123",
+            "iss": "https://auth.example.com",
+            "aud": ["other-app", "vyna-hl7"],
+            "exp": now() + 3600,
+        }));
+        let decoded = verify_jwt(&token, &config()).unwrap();
+        assert_eq!(decoded.sub, "user-123");
+    }
+
+    #[test]
+    fn test_verify_jwt_array_audience_mismatch_rejected() {
+        let token = mint_raw(&serde_json::json!({
+            "sub": "user-123",
+            "iss": "https://auth.example.com",
+            "aud": ["other-app", "third-app"],
+            "exp": now() + 3600,
+        }));
+        let err = verify_jwt(&token, &config()).unwrap_err();
+        assert!(
+            matches!(err.kind(), jsonwebtoken::errors::ErrorKind::InvalidAudience),
             "unexpected error: {err:?}"
         );
     }

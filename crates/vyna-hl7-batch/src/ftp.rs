@@ -479,6 +479,10 @@ impl FileTransport for FtpTransport {
     async fn rename(&mut self, from: &str, to: &str) -> Result<(), BatchError> {
         let from_remote = clean_remote(from)?;
         let parts = crate::transport::clean_relative_parts(to)?;
+        // Like MemTransport: an empty cleaned destination is Invalid.
+        if parts.is_empty() {
+            return Err(BatchError::Invalid("empty path".to_string()));
+        }
         if parts.len() > 1 {
             let parent = parts[..parts.len() - 1].join("/");
             self.mkdir_p(&parent).await?;
@@ -808,6 +812,17 @@ mod tests {
             ftp.get("/abs/path.hl7").await,
             Err(BatchError::Invalid(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn rename_rejects_empty_destination() {
+        // No connection: the empty-path check must fire before any I/O,
+        // mirroring MemTransport's Invalid("empty path").
+        let mut ftp = disconnected();
+        match ftp.rename("inbox/a.hl7", "").await {
+            Err(BatchError::Invalid(msg)) => assert_eq!(msg, "empty path"),
+            other => panic!("rename to empty path gave {other:?}"),
+        }
     }
 
     #[tokio::test]

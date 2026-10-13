@@ -1,5 +1,6 @@
 //! Procedure converter - PR1 segment to FHIR Procedure resource
 
+use super::coding_systems::convert_coding_system;
 use super::patient::{
     hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time,
     valid_hl7_year_month,
@@ -124,7 +125,7 @@ impl ProcedureConverter {
             "I9C" | "I9" => "http://hl7.org/fhir/sid/icd-9-cm".to_string(),
             "I10" | "I10P" => "http://hl7.org/fhir/sid/icd-10-pcs".to_string(),
             "C4" | "CPT" => "http://www.ama-assn.org/go/cpt".to_string(),
-            _ => format!("urn:oid:{}", system),
+            _ => convert_coding_system(system),
         }
     }
 
@@ -363,5 +364,37 @@ mod tests {
             ProcedureConverter::convert_datetime("1980").unwrap(),
             "1980"
         );
+    }
+
+    #[test]
+    fn test_coding_system_uses_shared_table_fallback() {
+        // SCT/ICD10/LN resolve via the shared table, not `urn:oid:`.
+        for (system, expected) in [
+            ("SCT", "http://snomed.info/sct"),
+            ("ICD10", "http://hl7.org/fhir/sid/icd-10"),
+            ("LN", "http://loinc.org"),
+        ] {
+            let hl7 = format!(
+                "MSH|^~\\&|System|Hospital|EMR|Hospital|20240315||ADT^A01|M|P|2.5\r\
+                 PID|1||12345|||DOE^JOHN||19800101|M\r\
+                 PR1|1||0016^Appendectomy^{system}||20240315100000"
+            );
+            let message = parse_message(&hl7).unwrap();
+            let proc = &ProcedureConverter::convert_all(&message).unwrap()[0];
+            let coding = &proc.code.as_ref().unwrap().coding.as_ref().unwrap()[0];
+            assert_eq!(coding.system.as_deref(), Some(expected), "PR1-3 {system}");
+        }
+        // Procedure-specific arms are unchanged.
+        for (system, expected) in [
+            ("I9C", "http://hl7.org/fhir/sid/icd-9-cm"),
+            ("C4", "http://www.ama-assn.org/go/cpt"),
+            ("CPT", "http://www.ama-assn.org/go/cpt"),
+        ] {
+            assert_eq!(
+                ProcedureConverter::convert_coding_system(system),
+                expected,
+                "PR1-3 {system}"
+            );
+        }
     }
 }

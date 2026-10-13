@@ -103,22 +103,31 @@ impl Encoding {
                     "H" => {}, // Highlight on - formatting, ignored
                     "N" => {}, // Highlight off - formatting, ignored
                     seq if seq.starts_with('X') => {
-                        // Hexadecimal character
+                        // Hexadecimal escapes carry whole bytes: each pair
+                        // is one Latin-1 codepoint, so multi-pair bodies
+                        // decode pair by pair ("\X0D0A\" -> "\r\n"), not
+                        // as one codepoint.
                         let hex = &seq[1..];
-                        if let Ok(code) = u32::from_str_radix(hex, 16) {
-                            if let Some(decoded_ch) = char::from_u32(code) {
-                                result.push(decoded_ch);
-                            } else {
-                                return Err(Error::Decoding(format!(
-                                    "Invalid hexadecimal escape sequence: \\{}\\",
-                                    truncate_escape(seq)
-                                )));
-                            }
-                        } else {
+                        let well_formed = !hex.is_empty()
+                            && hex.len() % 2 == 0
+                            && hex.bytes().all(|b| b.is_ascii_hexdigit());
+                        if !well_formed {
                             return Err(Error::Decoding(format!(
                                 "Invalid hexadecimal escape sequence: \\{}\\",
                                 truncate_escape(seq)
                             )));
+                        }
+                        for pair in hex.as_bytes().chunks(2) {
+                            let digits = std::str::from_utf8(pair).unwrap_or("");
+                            match u8::from_str_radix(digits, 16) {
+                                Ok(byte) => result.push(byte as char),
+                                Err(_) => {
+                                    return Err(Error::Decoding(format!(
+                                        "Invalid hexadecimal escape sequence: \\{}\\",
+                                        truncate_escape(seq)
+                                    )));
+                                }
+                            }
                         }
                     }
                     seq if seq.starts_with('Z') => {
@@ -272,5 +281,19 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("INVALID"), "{err}");
+    }
+
+    #[test]
+    fn test_decode_multi_pair_hex_escape_decodes_each_byte() {
+        // Each hex pair is one byte: \X0D0A\ is CR LF, not U+0D0A.
+        let delims = Delimiters::default();
+        assert_eq!(Encoding::decode("\\X0D0A\\", &delims).unwrap(), "\r\n");
+        assert_eq!(Encoding::decode("\\X4142\\", &delims).unwrap(), "AB");
+        // Single-pair escapes are unaffected.
+        assert_eq!(Encoding::decode("\\X41\\", &delims).unwrap(), "A");
+        // Empty, odd-length, and non-hex bodies stay errors.
+        for bad in ["\\X\\", "\\X0\\", "\\X0D0\\", "\\XZZ\\", "\\X0G\\"] {
+            assert!(Encoding::decode(bad, &delims).is_err(), "{bad}");
+        }
     }
 }

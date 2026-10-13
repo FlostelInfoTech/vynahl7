@@ -438,9 +438,12 @@ async fn process_inbound(
     true
 }
 
-/// WebSocket broadcast channel
+/// Standalone in-process pub-sub channel for HL7 message text.
 ///
-/// Enables broadcasting HL7 messages to all connected WebSocket clients.
+/// This channel is NOT wired into [`websocket_handler`]: [`broadcast`](Self::broadcast)
+/// reaches only this channel's own [`subscribe`](Self::subscribe) receivers, never
+/// WebSocket clients. To fan out incoming messages to all connected WebSocket clients,
+/// serve a [`WebSocketConfig::with_broadcast`] config instead.
 #[cfg(feature = "websocket")]
 pub struct BroadcastChannel {
     sender: broadcast::Sender<String>,
@@ -469,7 +472,10 @@ impl BroadcastChannel {
         Self { sender }
     }
 
-    /// Broadcast an HL7 message to all connected clients
+    /// Publish an HL7 message to this channel's subscribers.
+    ///
+    /// This only reaches receivers obtained from [`subscribe`](Self::subscribe); it does
+    /// not reach WebSocket clients (see the struct-level docs).
     ///
     /// # Arguments
     ///
@@ -701,6 +707,22 @@ mod tests {
 
         let _sub2 = channel.subscribe();
         assert_eq!(channel.subscriber_count(), 2);
+    }
+
+    #[tokio::test]
+    async fn broadcast_channel_is_standalone_pubsub() {
+        // BroadcastChannel is a standalone primitive: broadcast() reaches
+        // only its own subscribers, never WebSocket server clients (server
+        // fan-out is WebSocketConfig::with_broadcast).
+        let channel = BroadcastChannel::new(8);
+        let mut rx = channel.subscribe();
+        let msg = parse_message("MSH|^~\\&|S|A|R|F|20240101||ADT^A01|P1|P|2.5\r").unwrap();
+        channel.broadcast(&msg);
+        let got = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .expect("own subscriber got nothing")
+            .unwrap();
+        assert!(got.contains("P1"), "unexpected payload: {got}");
     }
 
     #[test]

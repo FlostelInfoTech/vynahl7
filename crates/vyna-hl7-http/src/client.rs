@@ -93,8 +93,14 @@ impl HttpClient {
     pub fn new(endpoint: impl Into<String>) -> Result<Self> {
         let endpoint = endpoint.into();
 
-        // Validate URL
-        if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
+        // Validate URL (schemes are case-insensitive per RFC 9110 4.2.3).
+        let is_http = endpoint
+            .get(..7)
+            .is_some_and(|scheme| scheme.eq_ignore_ascii_case("http://"));
+        let is_https = endpoint
+            .get(..8)
+            .is_some_and(|scheme| scheme.eq_ignore_ascii_case("https://"));
+        if !is_http && !is_https {
             return Err(Error::InvalidUrl(
                 "URL must start with http:// or https://".to_string(),
             ));
@@ -460,6 +466,34 @@ mod tests {
         assert!(HttpClient::new("ftp://example.com").is_err());
         assert!(HttpClient::new("example.com").is_err());
         assert!(HttpClient::new("").is_err());
+    }
+
+    #[test]
+    fn test_new_client_accepts_uppercase_scheme() {
+        // URL schemes are case-insensitive (RFC 9110 section 4.2.3).
+        for endpoint in [
+            "HTTP://example.com/hl7",
+            "HTTPS://example.com/hl7",
+            "HtTp://example.com/hl7",
+            "hTtPs://example.com/hl7",
+        ] {
+            assert!(HttpClient::new(endpoint).is_ok(), "{endpoint:?} rejected");
+        }
+        // Non-http(s) schemes stay rejected regardless of case.
+        for endpoint in [
+            "FTP://example.com",
+            "ftp://example.com",
+            "httpx://example.com",
+            "gopher://example.com",
+        ] {
+            let err = HttpClient::new(endpoint)
+                .err()
+                .unwrap_or_else(|| panic!("{endpoint:?} accepted"));
+            assert!(
+                matches!(err, Error::InvalidUrl(_)),
+                "unexpected error for {endpoint:?}: {err:?}"
+            );
+        }
     }
 
     #[test]

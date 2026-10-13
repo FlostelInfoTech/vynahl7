@@ -237,6 +237,11 @@ impl FromStr for DataType {
 
 /// Parse HL7 date (DT) format: YYYYMMDD or YYYY or YYYYMM
 pub fn parse_date(s: &str) -> Option<NaiveDate> {
+    // Bare digits only: a sign is never part of a date ("+024" must
+    // not parse as year 24), mirroring parse_timestamp.
+    if !s.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
     match s.len() {
         4 => {
             // YYYY
@@ -378,6 +383,16 @@ mod tests {
             .and_hms_opt(14, 30, 45)
             .unwrap();
         assert_eq!(format_timestamp(&dt), "20240315143045");
+    }
+
+    #[test]
+    fn test_parse_date_rejects_signed_years() {
+        // A sign is never part of an HL7 date: "+024" must not parse
+        // as year 24, mirroring parse_timestamp's refusal of signs.
+        assert_eq!(parse_date("+024"), None);
+        assert_eq!(parse_date("-024"), None);
+        assert_eq!(parse_date("+20240315"), None);
+        assert_eq!(parse_date("20240315"), NaiveDate::from_ymd_opt(2024, 3, 15));
     }
 
     #[test]

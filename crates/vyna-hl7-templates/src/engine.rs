@@ -91,6 +91,15 @@ impl TemplateEngine {
     }
 
     /// Create a message from a template
+    ///
+    /// ## Required fields
+    ///
+    /// `required` is template completeness: every `{{variable}}` must
+    /// be bound (an unbound variable is an error), but a bound
+    /// variable may still render empty — `{{name}}` with `name=""`
+    /// yields an empty field, not an error. The components path
+    /// additionally rejects a required field whose components all
+    /// render empty.
     pub fn create_message(&self, template: &MessageTemplate) -> Result<Message> {
         // Merge template default variables with instance variables
         let mut all_vars = template.variables.clone().unwrap_or_default();
@@ -263,8 +272,9 @@ impl TemplateEngine {
             field.add_repetition(Repetition {
                 components: comp_vec,
             });
-            // Field-level `required` applies here too: a required field
-            // that renders empty fails, like the simple-field path.
+            // Field-level `required` additionally rejects an all-empty
+            // render here (the simple-field path allows empty
+            // substitution instead).
             if field_template.required && field.is_empty() {
                 return Err(Error::substitution(
                     "Required field rendered empty (all components empty)",
@@ -272,7 +282,9 @@ impl TemplateEngine {
             }
             Ok(field)
         } else {
-            // Simple field with single value
+            // Simple field with single value. A bound-but-empty value
+            // renders an empty field even when required (completeness,
+            // not a non-empty check).
             let value = if let Some(placeholder) = &field_template.placeholder {
                 let escape = self.literal_variables;
                 self.substitute_variables(placeholder, variables, escape)?
@@ -993,5 +1005,24 @@ mod tests {
             template.add_segment(pid);
             assert!(TemplateEngine::new().create_message(&template).is_err());
         }
+    }
+
+    #[test]
+    fn test_required_scalar_renders_empty_when_bound() {
+        // `required` is template completeness (all variables bound),
+        // not a non-empty check: {{name}} with name="" renders an
+        // empty field successfully. The testpanel builder relies on
+        // this: it binds every variable, empty when unfilled.
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut pid = SegmentTemplate::new("PID");
+        pid.add_field(
+            5,
+            FieldTemplate::new().required().with_placeholder("{{name}}"),
+        );
+        template.add_segment(pid);
+        let mut engine = TemplateEngine::new();
+        engine.set_variable("name", "");
+        let message = engine.create_message(&template).unwrap();
+        assert!(message.segments[0].get_field(5).unwrap().is_empty());
     }
 }

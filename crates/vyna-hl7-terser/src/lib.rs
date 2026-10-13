@@ -198,6 +198,23 @@ impl<'a> TerserMut<'a> {
             )));
         }
 
+        // Reject 0 indices before mutating anything: every path index is
+        // 1-based, and the checks inside the setters run only after
+        // gap-filling has already appended segments or fields.
+        if parsed_path.field_index == 0
+            || parsed_path.component_index == Some(0)
+            || parsed_path.subcomponent_index == Some(0)
+        {
+            return Err(Error::terser_path(
+                "Invalid index 0: HL7 uses 1-based indexing",
+            ));
+        }
+        if parsed_path.component_index.is_none() && parsed_path.subcomponent_index.is_some() {
+            return Err(Error::terser_path(
+                "Cannot set subcomponent without component index",
+            ));
+        }
+
         // Find or create the segment
         let segment_index =
             self.ensure_segment(&parsed_path.segment_id, parsed_path.segment_index)?;
@@ -730,6 +747,30 @@ mod tests {
         let terser = Terser::new(&message);
         assert_eq!(terser.get("MSH-3").unwrap(), Some("APP2"));
         assert!(message.encode().starts_with("MSH|^~\\&|"));
+    }
+
+    #[test]
+    fn test_set_zero_index_rejected_without_mutation() {
+        // 0 indices are 1-based violations: the write must fail before
+        // gap-filling appends segments or fields.
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\rPID|1\r";
+        let mut message = parse_message(hl7).unwrap();
+        let segs_before = message.segments.len();
+        let pid_fields_before = message.get_segments_by_id("PID")[0].fields.len();
+        assert!(TerserMut::new(&mut message).set("ZZZ-0", "x").is_err());
+        assert_eq!(message.segments.len(), segs_before);
+        assert!(message.get_segments_by_id("ZZZ").is_empty());
+        for path in ["PID-9-0", "PID-5-0", "PID-5-1-0"] {
+            assert!(
+                TerserMut::new(&mut message).set(path, "x").is_err(),
+                "{path} must fail"
+            );
+        }
+        assert_eq!(message.segments.len(), segs_before);
+        assert_eq!(
+            message.get_segments_by_id("PID")[0].fields.len(),
+            pid_fields_before
+        );
     }
 
     #[test]

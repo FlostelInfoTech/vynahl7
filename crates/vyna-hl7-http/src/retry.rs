@@ -180,8 +180,7 @@ impl RetryPolicy {
             // streams) are the primary retry case for this client.
             Error::Network(_) => true,
             Error::Http(msg) => {
-                // Retry on 5xx server errors
-                msg.contains("500") || msg.contains("502") || msg.contains("503") || msg.contains("504")
+                http_status_code(msg).is_some_and(|code| (500..=599).contains(&code))
             }
             _ => false,
         }
@@ -193,6 +192,30 @@ impl Default for RetryPolicy {
     fn default() -> Self {
         Self::exponential()
     }
+}
+
+/// Extract the HTTP status code from the two error shapes this crate
+/// emits: the client prefix (`HTTP NNN reason: body...`, see
+/// `HttpClient::post_bytes`) and the webhook trailer (`... status: NNN
+/// reason`, see `webhook.rs`). Only these anchored positions count: the
+/// diagnostic bodies appended after the status may contain arbitrary
+/// digits (e.g. a rejected `15003` value) that must not flip the verdict.
+#[cfg(feature = "retry")]
+fn http_status_code(msg: &str) -> Option<u16> {
+    if let Some(rest) = msg.strip_prefix("HTTP ") {
+        return three_digits(rest);
+    }
+    msg.find("status: ")
+        .and_then(|i| three_digits(&msg[i + "status: ".len()..]))
+}
+
+/// Parse exactly three ASCII digits at the start of `s`.
+#[cfg(feature = "retry")]
+fn three_digits(s: &str) -> Option<u16> {
+    let code = s.get(..3)?;
+    code.bytes()
+        .all(|b| b.is_ascii_digit())
+        .then(|| code.parse().ok())?
 }
 
 /// Retry executor for running operations with retry logic
@@ -444,5 +467,27 @@ mod tests {
         assert!(!policy.is_retryable(&Error::InvalidUrl("ftp://x".into())));
         // Existing 5xx behavior is unchanged.
         assert!(policy.is_retryable(&Error::Http("HTTP 503 Unavailable".into())));
+    }
+
+    #[test]
+    fn diagnostic_body_digits_do_not_make_4xx_retryable() {
+        let policy = RetryPolicy::exponential();
+        // 4xx with 5xx-looking digits in the appended diagnostic body
+        // (client.rs appends bodies after the status line).
+        assert!(!policy.is_retryable(&Error::Http(
+            "HTTP 400 Bad Request: PID-5 value 15003 rejected".into()
+        )));
+        assert!(!policy.is_retryable(&Error::Http(
+            "HTTP 404 Not Found: error 500 in upstream payload".into()
+        )));
+        // Genuine 5xx stays retryable in both client and webhook shapes.
+        assert!(policy.is_retryable(&Error::Http("HTTP 500 Internal Server Error: boom".into())));
+        assert!(policy.is_retryable(&Error::Http("HTTP 503 Unavailable: retry later".into())));
+        assert!(policy.is_retryable(&Error::Http(
+            "Webhook failed with status: 503 Service Unavailable".into()
+        )));
+        assert!(!policy.is_retryable(&Error::Http(
+            "Webhook failed with status: 400 Bad Request".into()
+        )));
     }
 }

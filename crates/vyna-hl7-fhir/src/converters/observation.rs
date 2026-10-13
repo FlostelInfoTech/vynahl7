@@ -209,6 +209,13 @@ impl ObservationConverter {
         if let Ok(Some(interp)) = terser.get(&interp_path)
             && !interp.is_empty()
         {
+            // OBX-8-2 feeds display and text; without it the text
+            // falls back to the code.
+            let interp_text = terser
+                .get(&format!("{interp_path}-2"))
+                .ok()
+                .flatten()
+                .filter(|s| !s.is_empty());
             observation.interpretation = Some(vec![CodeableConcept {
                 coding: Some(vec![Coding {
                     system: Some(
@@ -217,9 +224,9 @@ impl ObservationConverter {
                     ),
                     version: None,
                     code: Some(interp.to_string()),
-                    display: None,
+                    display: interp_text.map(|text| text.to_string()),
                 }]),
-                text: Some(interp.to_string()),
+                text: Some(interp_text.unwrap_or(interp).to_string()),
             }]);
         }
 
@@ -251,11 +258,19 @@ impl ObservationConverter {
                 display: None,
             };
 
-            // Get observer name if available (component 2 = Family Name, 1-based indexing)
-            if let Ok(Some(observer_name)) = terser.get(&format!("{}-2", observer_path))
-                && !observer_name.is_empty()
-            {
-                reference.display = Some(observer_name.to_string());
+            // XCN name parts for display, like the encounter
+            // participant: prefix (6), given (3) + middle (4),
+            // family (2).
+            let mut display_parts = Vec::new();
+            for component in ["6", "3", "4", "2"] {
+                if let Ok(Some(part)) = terser.get(&format!("{observer_path}-{component}"))
+                    && !part.is_empty()
+                {
+                    display_parts.push(part);
+                }
+            }
+            if !display_parts.is_empty() {
+                reference.display = Some(display_parts.join(" "));
             }
 
             observation.performer = Some(vec![reference]);
@@ -751,6 +766,49 @@ mod tests {
             ObservationConverter::convert_datetime("1980").unwrap(),
             "1980"
         );
+    }
+
+    #[test]
+    fn test_obx16_performer_display_builds_full_name() {
+        // OBX-16 is XCN: display is prefix/given/middle/family,
+        // like the encounter participant display.
+        for (obx16, expected) in [
+            ("123^SMITH^JANE", "JANE SMITH"),
+            ("123^SMITH^JANE^A^^DR", "DR JANE A SMITH"),
+        ] {
+            let hl7 = format!(
+                "MSH|^~\\&|A|B|C|D|20240315||ORU^R01|1|P|2.5\r\
+                 OBX|1|NM|WBC^W^LN||7.5|mg/dL||N|||F|||20240315100000||{obx16}"
+            );
+            let message = parse_message(&hl7).unwrap();
+            let obs = &ObservationConverter::convert_all(&message).unwrap()[0];
+            let performer = &obs.performer.as_ref().unwrap()[0];
+            assert_eq!(performer.display.as_deref(), Some(expected), "{obx16}");
+        }
+    }
+
+    #[test]
+    fn test_obx8_interpretation_uses_component_text() {
+        // OBX-8-2 feeds display and text; without it the text
+        // falls back to the code.
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||ORU^R01|1|P|2.5\r\
+                   OBX|1|NM|WBC^W^LN||7.5|mg/dL|4.0-11.0|H^High^HL70078|||F";
+        let message = parse_message(hl7).unwrap();
+        let obs = &ObservationConverter::convert_all(&message).unwrap()[0];
+        let interp = &obs.interpretation.as_ref().unwrap()[0];
+        let coding = &interp.coding.as_ref().unwrap()[0];
+        assert_eq!(coding.code.as_deref(), Some("H"));
+        assert_eq!(coding.display.as_deref(), Some("High"));
+        assert_eq!(interp.text.as_deref(), Some("High"));
+
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||ORU^R01|1|P|2.5\r\
+                   OBX|1|NM|WBC^W^LN||7.5|mg/dL|4.0-11.0|H|||F";
+        let message = parse_message(hl7).unwrap();
+        let obs = &ObservationConverter::convert_all(&message).unwrap()[0];
+        let interp = &obs.interpretation.as_ref().unwrap()[0];
+        let coding = &interp.coding.as_ref().unwrap()[0];
+        assert_eq!(coding.display, None);
+        assert_eq!(interp.text.as_deref(), Some("H"));
     }
 
     #[test]

@@ -182,11 +182,11 @@ fn collect_template_variables(template: &MessageTemplate) -> Vec<TemplateVariabl
                     push(default, field.required, &field_location);
                 }
                 if let Some(components) = &field.components {
-                    for (index, component) in components.iter().enumerate() {
+                    for component in components.iter() {
                         let location = VariableLocation {
                             segment: segment.id.clone(),
                             field: *position,
-                            component: Some(index + 1),
+                            component: Some(component.position),
                         };
                         if let Some(placeholder) = &component.placeholder {
                             push(placeholder, component.required, &location);
@@ -239,7 +239,11 @@ fn backfill_values(
                     Some(index) => field
                         .repetitions
                         .first()
-                        .and_then(|repetition| repetition.components.get(index - 1))
+                        .and_then(|repetition| {
+                            index
+                                .checked_sub(1)
+                                .and_then(|i| repetition.components.get(i))
+                        })
                         .and_then(|component| component.value())
                         .filter(|text| !text.is_empty())
                         .map(str::to_string),
@@ -1387,5 +1391,33 @@ mod tests {
         // The built-in itself is untouched.
         let builtin = tab.template_library.get("ADT_A01").unwrap();
         assert!(builtin.variables.is_none());
+    }
+
+    #[test]
+    fn backfill_uses_component_positions_not_vector_index() {
+        use vyna_hl7_templates::{ComponentTemplate, FieldTemplate, SegmentTemplate};
+        // Components at positions 1 and 3: "Jr" lives at vec[2], so
+        // recording index+1 (2) would backfill the gap instead.
+        let mut template = MessageTemplate::new("POS", "2.5", "ADT", "A01");
+        let mut pid = SegmentTemplate::new("PID");
+        pid.add_field(
+            5,
+            FieldTemplate::new().with_components(vec![
+                ComponentTemplate::new(1).with_placeholder("{{family}}"),
+                ComponentTemplate::new(3).with_placeholder("{{suffix}}"),
+            ]),
+        );
+        template.add_segment(pid);
+        let variables = collect_template_variables(&template);
+        let suffix = variables.iter().find(|v| v.name == "suffix").unwrap();
+        assert_eq!(suffix.locations[0].component, Some(3));
+
+        let mut engine = TemplateEngine::new();
+        engine.set_variable("family", "Doe");
+        engine.set_variable("suffix", "Jr");
+        let message = engine.create_message(&template).unwrap();
+        let restored = backfill_values(&message, &variables);
+        assert_eq!(restored.get("suffix").map(String::as_str), Some("Jr"));
+        assert_eq!(restored.get("family").map(String::as_str), Some("Doe"));
     }
 }

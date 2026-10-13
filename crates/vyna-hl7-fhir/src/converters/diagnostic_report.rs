@@ -82,6 +82,13 @@ impl DiagnosticReportConverter {
                 coding: Some(vec![coding]),
                 text: None,
             }
+        } else if let Ok(Some(text)) = terser.get(&format!("{}-2", code_path))
+            && !text.is_empty()
+        {
+            CodeableConcept {
+                coding: None,
+                text: Some(text.to_string()),
+            }
         } else {
             return Err(ConversionError::MissingField(
                 "OBR-4".to_string(),
@@ -499,5 +506,19 @@ mod tests {
             DiagnosticReportConverter::convert_datetime("2024").unwrap(),
             "2024"
         );
+    }
+
+    #[test]
+    fn test_text_only_obr4_preserved_as_text() {
+        // Empty code with valued text keeps the report, like the
+        // service-request converter (fully-empty still errors).
+        let hl7 = "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||ORU^R01|M|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   OBR|1|L|L|^Lipid panel free text";
+        let message = parse_message(hl7).unwrap();
+        let reports = DiagnosticReportConverter::convert_all(&message).unwrap();
+        let code = &reports[0].code;
+        assert_eq!(code.coding, None);
+        assert_eq!(code.text.as_deref(), Some("Lipid panel free text"));
     }
 }

@@ -325,6 +325,14 @@ impl<'a> StreamingParser<'a> {
             if let Some(rest) = remaining.strip_prefix(delims.field_separator) {
                 self.field_position += sep_len;
                 rest
+            } else if !remaining.is_empty() {
+                // Strict parity: content past the encoding characters
+                // must start with the field separator ("MSH|^~\&XAPP"
+                // would otherwise lose its 'X' here).
+                return Some(Err(Error::parse_at(
+                    "expected field separator after encoding characters",
+                    ErrorLocation::new().line(self.current_line),
+                )));
             } else {
                 remaining
             }
@@ -1232,6 +1240,26 @@ mod tests {
             streaming.segments[0].fields.len(),
             regular.segments[0].fields.len()
         );
+    }
+
+    #[test]
+    fn test_streaming_rejects_missing_separator_after_msh2() {
+        // Strict parity: content past the encoding characters must
+        // start with the field separator on both paths.
+        let bad = "MSH|^~\\&XAPP|FAC\rPID|1";
+        let strict_err = crate::parse_message(bad).unwrap_err().to_string();
+        assert!(
+            strict_err.contains("expected field separator after encoding characters"),
+            "{strict_err}"
+        );
+        let stream_err = parse_streaming(bad).unwrap_err().to_string();
+        assert!(
+            stream_err.contains("expected field separator after encoding characters"),
+            "{stream_err}"
+        );
+        // The bare header still parses on both paths.
+        assert!(parse_streaming("MSH|^~\\&").is_ok());
+        assert!(crate::parse_message("MSH|^~\\&").is_ok());
     }
 
     #[test]

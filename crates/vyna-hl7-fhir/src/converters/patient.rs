@@ -240,11 +240,21 @@ impl PatientConverter {
             let degree = comp(6);
             // PID-5-7: Name Type Code (component 7, 1-based indexing).
             // Kept as an Option to preserve the match below, which maps
-            // any unrecognized code to "usual".
+            // any unrecognized code to "usual". Present-but-empty is
+            // filtered so it leaves `use_` unset instead of
+            // fabricating "usual".
             let name_type = if cur == 0 {
-                terser.get("PID-5-7").ok().flatten()
+                terser
+                    .get("PID-5-7")
+                    .ok()
+                    .flatten()
+                    .filter(|s| !s.is_empty())
             } else {
-                terser.get(&format!("PID-5({})-7", cur + 1)).ok().flatten()
+                terser
+                    .get(&format!("PID-5({})-7", cur + 1))
+                    .ok()
+                    .flatten()
+                    .filter(|s| !s.is_empty())
             };
             if family.is_empty()
                 && given.is_empty()
@@ -354,13 +364,22 @@ impl PatientConverter {
             // PID-11-6: Country (component 6, 1-based indexing)
             let country = comp(6);
             // PID-11-7: Address Type (component 7, 1-based indexing).
-            // Kept as an Option: a present-but-empty type still maps
-            // through the match below (defaulting to home), matching the
-            // long-standing conversion contract.
+            // Kept as an Option to preserve the match below, which maps
+            // any unrecognized code to "home". Present-but-empty is
+            // filtered so it leaves `use_` unset instead of
+            // fabricating "home".
             let addr_type = if cur == 0 {
-                terser.get("PID-11-7").ok().flatten()
+                terser
+                    .get("PID-11-7")
+                    .ok()
+                    .flatten()
+                    .filter(|s| !s.is_empty())
             } else {
-                terser.get(&format!("PID-11({})-7", cur + 1)).ok().flatten()
+                terser
+                    .get(&format!("PID-11({})-7", cur + 1))
+                    .ok()
+                    .flatten()
+                    .filter(|s| !s.is_empty())
             };
             if street.is_empty()
                 && other.is_empty()
@@ -770,7 +789,7 @@ mod tests {
     #[test]
     fn test_convert_patient_with_address() {
         let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
-                   PID|1||MRN123^^^MRN||SMITH^JANE||19900215|F|||123 Main St^^Springfield^IL^62701^USA^^H";
+                   PID|1||MRN123^^^MRN||SMITH^JANE||19900215|F|||123 Main St^^Springfield^IL^62701^USA^H";
 
         let message = parse_message(hl7).unwrap();
         let patient = PatientConverter::convert(&message).unwrap();
@@ -1227,6 +1246,41 @@ mod tests {
         assert_eq!(patient.deceased_date_time, None);
         assert_eq!(patient.deceased_boolean, None);
         assert_eq!(patient.birth_date.as_deref(), Some("1980-01-01"));
+    }
+
+    #[test]
+    fn test_present_but_empty_name_and_address_type_leave_use_unset() {
+        // XPN-7 present-but-empty must not fabricate use=usual, and
+        // XAD-7 present-but-empty must not fabricate use=home; a
+        // valued type still maps.
+        for (pid5, expected) in [
+            ("DOE^JOHN^^^^^", None),
+            ("DOE^JOHN", None),
+            ("DOE^JOHN^^^^^L", Some("official")),
+        ] {
+            let hl7 = format!(
+                "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                 PID|1||ID||{pid5}||19800101|M"
+            );
+            let message = parse_message(&hl7).unwrap();
+            let patient = PatientConverter::convert(&message).unwrap();
+            let name = &patient.name.as_ref().unwrap()[0];
+            assert_eq!(name.use_.as_deref(), expected, "PID-5 {pid5}");
+        }
+        for (pid11, expected) in [
+            ("123 Main^^Springfield^IL^62701^^", None),
+            ("123 Main^^Springfield^IL^62701", None),
+            ("123 Main^^Springfield^IL^62701^USA^H", Some("home")),
+        ] {
+            let hl7 = format!(
+                "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                 PID|1||ID||DOE^JOHN||19800101|M|||{pid11}"
+            );
+            let message = parse_message(&hl7).unwrap();
+            let patient = PatientConverter::convert(&message).unwrap();
+            let address = &patient.address.as_ref().unwrap()[0];
+            assert_eq!(address.use_.as_deref(), expected, "PID-11 {pid11}");
+        }
     }
 
     #[test]

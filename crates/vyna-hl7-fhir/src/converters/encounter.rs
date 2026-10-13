@@ -151,27 +151,31 @@ impl EncounterConverter {
         // PV1-7: Attending Doctor -> Encounter.participant
         // PV1-8: Referring Doctor -> Encounter.participant
         // PV1-9: Consulting Doctor -> Encounter.participant
+        // Every repetition converts: terser paths are 1-based, so the
+        // bare base is the first repetition and (n) is the nth.
         let mut participants = Vec::new();
 
-        if let Ok(Some(attending)) = terser.get("PV1-7")
-            && !attending.is_empty()
-            && let Some(participant) = Self::create_participant(&terser, "PV1-7", "ATND")
-        {
-            participants.push(participant);
-        }
-
-        if let Ok(Some(referring)) = terser.get("PV1-8")
-            && !referring.is_empty()
-            && let Some(participant) = Self::create_participant(&terser, "PV1-8", "REF")
-        {
-            participants.push(participant);
-        }
-
-        if let Ok(Some(consulting)) = terser.get("PV1-9")
-            && !consulting.is_empty()
-            && let Some(participant) = Self::create_participant(&terser, "PV1-9", "CON")
-        {
-            participants.push(participant);
+        for (field, role_code) in [("PV1-7", "ATND"), ("PV1-8", "REF"), ("PV1-9", "CON")] {
+            let mut rep = 0usize;
+            loop {
+                let base = if rep == 0 {
+                    field.to_string()
+                } else {
+                    format!("{field}({})", rep + 1)
+                };
+                // An absent repetition ends the scan. Only absence
+                // breaks: a present-but-empty id (a display-only name)
+                // must still convert, and emptiness is decided inside
+                // create_participant.
+                match terser.get(&base) {
+                    Ok(Some(_)) => {}
+                    _ => break,
+                }
+                rep += 1;
+                if let Some(participant) = Self::create_participant(&terser, &base, role_code) {
+                    participants.push(participant);
+                }
+            }
         }
 
         if !participants.is_empty() {
@@ -257,6 +261,11 @@ impl EncounterConverter {
     }
 
     /// Determine encounter status from patient class and discharge.
+    ///
+    /// FHIR rationale: `finished` needs evidence the encounter ended
+    /// (here, a valued PV1-45 discharge date). A classified but
+    /// undischarged encounter is still active, whatever the class, so
+    /// only a missing class leaves the status `unknown`.
     fn determine_status(patient_class: &str, has_discharge: bool) -> String {
         if has_discharge {
             return "finished".to_string();
@@ -264,7 +273,8 @@ impl EncounterConverter {
         match patient_class {
             "P" => "planned".to_string(),                 // Preadmit
             "I" | "O" | "E" => "in-progress".to_string(), // Inpatient, Outpatient, Emergency
-            _ => "finished".to_string(),                  // Default to finished
+            "" => "unknown".to_string(),                  // No class supplied
+            _ => "in-progress".to_string(),               // Classified but undischarged: active
         }
     }
 
@@ -337,11 +347,9 @@ impl EncounterConverter {
         path: &str,
         role_code: &str,
     ) -> Option<EncounterParticipant> {
-        // Get practitioner ID (whole-field read returns component 1)
-        let id = terser.get(path).ok().flatten()?;
-        if id.is_empty() {
-            return None;
-        }
+        // Practitioner ID (a whole-field read returns component 1);
+        // empty when only a name is supplied.
+        let id = terser.get(path).ok().flatten().filter(|s| !s.is_empty());
 
         // XCN name parts for display, like PractitionerConverter
         // text: prefix (6), given (3) + middle (4), family (2).
@@ -384,6 +392,12 @@ impl EncounterConverter {
             Some(display_parts.join(" "))
         };
 
+        // Gate on id-or-display: a name without an id still yields a
+        // display-only participant instead of being dropped.
+        if id.is_none() && display.is_none() {
+            return None;
+        }
+
         let role_display = match role_code {
             "ATND" => "Attending",
             "REF" => "Referrer",
@@ -405,7 +419,7 @@ impl EncounterConverter {
             }]),
             period: None,
             individual: Some(Reference {
-                reference: Some(format!("Practitioner/{}", id)),
+                reference: id.map(|id| format!("Practitioner/{id}")),
                 type_: Some("Practitioner".to_string()),
                 identifier: None,
                 display,
@@ -706,6 +720,61 @@ mod tests {
             EncounterConverter::convert_datetime("1980").unwrap(),
             "1980"
         );
+    }
+
+    #[test]
+    fn test_non_discharge_classes_without_discharge_are_active_or_unknown() {
+        // R/B/N/garbage without PV1-45 are active encounters; only an
+        // empty class is unknown. Discharge still wins everywhere.
+        for (class, expected) in [
+            ("R", "in-progress"),
+            ("B", "in-progress"),
+            ("N", "in-progress"),
+            ("X", "in-progress"),
+            ("", "unknown"),
+            ("P", "planned"),
+        ] {
+            let hl7 = format!(
+                "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                 PID|1||MRN123^^^MRN||DOE^JOHN||19800101|M\r\
+                 PV1|1|{class}"
+            );
+            let message = parse_message(&hl7).unwrap();
+            let encounter = EncounterConverter::convert(&message).unwrap();
+            assert_eq!(encounter.status, expected, "class {class:?}");
+        }
+    }
+
+    #[test]
+    fn test_participant_with_name_but_no_id_emits_display_only() {
+        // PV1-7 ^SMITH^JANE: no id for a Practitioner/xxx reference,
+        // but the name still yields a display-only participant.
+        let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                   PID|1||MRN123^^^MRN||DOE^JOHN||19800101|M\r\
+                   PV1|1|I|||||^SMITH^JANE";
+        let message = parse_message(hl7).unwrap();
+        let encounter = EncounterConverter::convert(&message).unwrap();
+        let participants = encounter.participant.as_ref().unwrap();
+        assert_eq!(participants.len(), 1);
+        let individual = participants[0].individual.as_ref().unwrap();
+        assert_eq!(individual.reference, None);
+        assert_eq!(individual.display.as_deref(), Some("JANE SMITH"));
+    }
+
+    #[test]
+    fn test_participants_convert_all_pv17_repetitions() {
+        let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                   PID|1||MRN123^^^MRN||DOE^JOHN||19800101|M\r\
+                   PV1|1|I|||||111^A1^G1~222^A2^G2";
+        let message = parse_message(hl7).unwrap();
+        let encounter = EncounterConverter::convert(&message).unwrap();
+        let participants = encounter.participant.as_ref().unwrap();
+        assert_eq!(participants.len(), 2);
+        let refs: Vec<_> = participants
+            .iter()
+            .map(|p| p.individual.as_ref().unwrap().reference.as_deref().unwrap())
+            .collect();
+        assert_eq!(refs, vec!["Practitioner/111", "Practitioner/222"]);
     }
 
     #[test]

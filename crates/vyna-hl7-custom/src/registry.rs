@@ -145,7 +145,7 @@ impl CustomSegmentRegistry {
     ///
     /// Returns an error if:
     /// - The segment ID is already registered (duplicate registration)
-    /// - The segment ID is invalid (doesn't start with 'Z')
+    /// - The segment ID is invalid (must be 'Z' plus 2 ASCII alphanumerics)
     ///
     /// # Example
     ///
@@ -156,8 +156,10 @@ impl CustomSegmentRegistry {
     pub fn register<T: CustomSegment + 'static>(&self) -> Result<&Self> {
         let segment_id = T::segment_id();
 
-        // Validate segment ID starts with 'Z'
-        if !segment_id.starts_with('Z') {
+        // Validate segment ID: 'Z' plus 2 ASCII alphanumerics, the
+        // same predicate `z_segment!` enforces at expansion, so
+        // to_segment() output always passes Segment::validate_id.
+        if !crate::macros::__is_z_segment_id(segment_id) {
             return Err(CustomSegmentError::InvalidSegmentId(segment_id.to_string()));
         }
 
@@ -418,6 +420,39 @@ mod tests {
         let registry = CustomSegmentRegistry::new();
         let result = registry.register::<InvalidSegment>();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_register_rejects_malformed_z_ids() {
+        // Ids that fail Segment::validate_id ("Z", "ZPVX", "Z!") must
+        // fail registration too: to_segment() output would otherwise
+        // fail validation downstream.
+        macro_rules! bad_segment {
+            ($name:ident, $id:literal) => {
+                struct $name;
+                impl CustomSegment for $name {
+                    fn segment_id() -> &'static str {
+                        $id
+                    }
+                    fn from_segment(_: &Segment) -> Result<Self> {
+                        Ok($name)
+                    }
+                    fn to_segment(&self) -> Segment {
+                        Segment::new($id)
+                    }
+                }
+            };
+        }
+        bad_segment!(ShortZ, "Z");
+        bad_segment!(LongZ, "ZPVX");
+        bad_segment!(PunctZ, "Z!");
+        let registry = CustomSegmentRegistry::new();
+        assert!(registry.register::<ShortZ>().is_err());
+        assert!(registry.register::<LongZ>().is_err());
+        assert!(registry.register::<PunctZ>().is_err());
+        assert!(registry.registered_ids().is_empty());
+        // A well-formed Z id still registers.
+        assert!(registry.register::<TestZPV>().is_ok());
     }
 
     #[test]

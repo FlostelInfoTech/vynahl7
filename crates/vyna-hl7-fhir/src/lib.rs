@@ -24,6 +24,8 @@
 //! - Specimen collection/received times (SPM-17, SPM-18)
 //! - ServiceRequest authored-on and its fallback (ORC-15, ORC-9)
 //! - Immunization recorded-at (RXA-22)
+//! - Immunization expiration date (RXA-16)
+//! - Patient death datetime (PID-29)
 //!
 //! Absent and empty datetimes behave the same everywhere (field left unset);
 //! only present-but-invalid values follow the strict/lenient split above.

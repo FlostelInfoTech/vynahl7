@@ -124,7 +124,7 @@ pub fn substring(value: &str, ctx: &TransformContext) -> Result<String> {
 /// Convert HL7 date format (YYYYMMDD) to another format
 ///
 /// Note: This function expects the context to contain a "format" key.
-/// Supported formats: "YYYY-MM-DD", "MM/DD/YYYY", "DD/MM/YYYY"
+/// Supported formats: "YYYY-MM-DD", "MM/DD/YYYY", "DD/MM/YYYY", "YYYYMMDD"
 ///
 /// # Examples
 ///
@@ -186,7 +186,7 @@ pub fn format_date(value: &str, ctx: &TransformContext) -> Result<String> {
 /// Convert HL7 datetime format to another format
 ///
 /// Note: This function expects the context to contain a "format" key.
-/// Supported formats: "YYYY-MM-DD HH:MM:SS", "ISO8601"
+/// Supported formats: "YYYY-MM-DD HH:MM:SS", "ISO8601", "YYYYMMDDHHMMSS"
 ///
 /// HL7 DTM carries variable precision: date (8 digits), hour (10), minute
 /// (12), seconds (14). Shorter, ragged (9/11/13), overlong, or non-numeric
@@ -537,6 +537,11 @@ mod tests {
         let ctx = TransformContext::new().add_data("format".to_string(), "DD/MM/YYYY".to_string());
 
         assert_eq!(format_date("20240315", &ctx).unwrap(), "15/03/2024");
+
+        // Raw HL7 output format (also listed in the docstring).
+        let ctx = TransformContext::new().add_data("format".to_string(), "YYYYMMDD".to_string());
+
+        assert_eq!(format_date("20240315", &ctx).unwrap(), "20240315");
     }
 
     #[test]
@@ -554,6 +559,15 @@ mod tests {
         assert_eq!(
             format_datetime("20240315123045", &ctx).unwrap(),
             "2024-03-15T12:30:45"
+        );
+
+        // Raw HL7 output format (also listed in the docstring).
+        let ctx =
+            TransformContext::new().add_data("format".to_string(), "YYYYMMDDHHMMSS".to_string());
+
+        assert_eq!(
+            format_datetime("20240315123045", &ctx).unwrap(),
+            "20240315123045"
         );
     }
 

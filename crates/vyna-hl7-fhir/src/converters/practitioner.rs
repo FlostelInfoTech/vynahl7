@@ -267,35 +267,29 @@ impl PractitionerConverter {
     }
 
     /// Extract all practitioners from a message (attending, referring, consulting doctors)
+    ///
+    /// Every repetition of each PV1 doctor field converts, as does
+    /// every ORC-12 repetition of every ORC segment, in source order.
     pub fn extract_all_practitioners(message: &Message) -> ConversionResult<Vec<Practitioner>> {
+        let terser = Terser::new(message);
         let mut practitioners = Vec::new();
 
-        // Try attending doctor
-        if let Ok(attending) = Self::convert_attending_doctor(message)
-            && !Self::is_empty_practitioner(&attending)
-        {
-            practitioners.push(attending);
+        // Attending, referring, and consulting doctors (PV1-7/8/9).
+        for base in ["PV1-7", "PV1-8", "PV1-9"] {
+            Self::convert_all_xcn_reps(&terser, base, &mut practitioners);
         }
 
-        // Try referring doctor
-        if let Ok(referring) = Self::convert_referring_doctor(message)
-            && !Self::is_empty_practitioner(&referring)
-        {
-            practitioners.push(referring);
-        }
-
-        // Try consulting doctor
-        if let Ok(consulting) = Self::convert_consulting_doctor(message)
-            && !Self::is_empty_practitioner(&consulting)
-        {
-            practitioners.push(consulting);
-        }
-
-        // Try ordering provider
-        if let Ok(ordering) = Self::convert_ordering_provider(message)
-            && !Self::is_empty_practitioner(&ordering)
-        {
-            practitioners.push(ordering);
+        // Ordering providers: every ORC segment's ORC-12. The segment
+        // count bounds the loop (terser segment indexing is 1-based,
+        // so an out-of-range index errors instead of ending a scan).
+        let orc_count = message.segments.iter().filter(|s| s.id == "ORC").count();
+        for orc in 0..orc_count {
+            let base = if orc == 0 {
+                "ORC-12".to_string()
+            } else {
+                format!("ORC({})-12", orc + 1)
+            };
+            Self::convert_all_xcn_reps(&terser, &base, &mut practitioners);
         }
 
         if practitioners.is_empty() {
@@ -303,6 +297,31 @@ impl PractitionerConverter {
         }
 
         Ok(practitioners)
+    }
+
+    /// Convert every repetition of one XCN field into `out`, skipping
+    /// empty ones. Terser paths are 1-based: the bare base is the
+    /// first repetition and (n) is the nth; an absent repetition ends
+    /// the scan.
+    fn convert_all_xcn_reps(terser: &Terser, base: &str, out: &mut Vec<Practitioner>) {
+        let mut rep = 0usize;
+        loop {
+            let path = if rep == 0 {
+                base.to_string()
+            } else {
+                format!("{base}({})", rep + 1)
+            };
+            match terser.get(&path) {
+                Ok(Some(_)) => {}
+                _ => break,
+            }
+            rep += 1;
+            if let Ok(practitioner) = Self::convert_xcn_to_practitioner(terser, &path)
+                && !Self::is_empty_practitioner(&practitioner)
+            {
+                out.push(practitioner);
+            }
+        }
     }
 
     /// True when a conversion carried no identifying data (the source
@@ -408,6 +427,25 @@ mod tests {
         let names = practitioner.name.as_ref().unwrap();
         assert_eq!(names[0].family, None);
         assert_eq!(names[0].given, Some(vec!["JOHN".to_string()]));
+    }
+
+    #[test]
+    fn test_extract_all_reads_all_orcs_and_repetitions() {
+        // PV1-7 has 2 repetitions, ORC-12 of the first ORC has 2
+        // repetitions, and a second ORC adds one more: all five
+        // practitioners extract in source order.
+        let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ORM^O01|12345|P|2.5\r\
+                   PID|1||MRN123|||DOE^JOHN||19800101|M\r\
+                   PV1|1|I|||||711^PV7A^G~712^PV7B^G\r\
+                   ORC|NW|O1||||||||||111^A1^G1~121^A1B^G1B\r\
+                   ORC|NW|O2||||||||||222^A2^G2";
+        let message = parse_message(hl7).unwrap();
+        let practitioners = PractitionerConverter::extract_all_practitioners(&message).unwrap();
+        let ids: Vec<_> = practitioners
+            .iter()
+            .map(|p| p.id.as_deref().unwrap())
+            .collect();
+        assert_eq!(ids, vec!["711", "712", "111", "121", "222"]);
     }
 
     #[test]

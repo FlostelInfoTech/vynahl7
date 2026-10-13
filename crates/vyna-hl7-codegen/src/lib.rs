@@ -41,10 +41,10 @@ use vyna_hl7_validator::{
 /// so codegen imposes this deterministic order. `MSH` must stay first:
 /// parsers and validators reject messages that do not start with it.
 const SEGMENT_ORDER: &[&str] = &[
-    "MSH", "SFT", "EVN", "SCH", "RGS", "PID", "PD1", "ROL", "NK1", "PV1", "PV2", "DB1",
-    "TXA", "ORC", "OBR", "OBX", "AL1", "DG1", "DRG", "PR1", "PRB", "GT1", "IN1", "IN2",
-    "IN3", "ACC", "UB1", "UB2", "PDA", "RXO", "RXE", "RXR", "RXC", "RXD", "RXG", "RXA",
-    "TQ1", "RDS", "RDE", "RGV", "RRD", "RRA", "RAS", "MSA", "ERR", "QAK", "QPD", "RCP",
+    "MSH", "SFT", "EVN", "SCH", "PID", "PD1", "ROL", "NK1", "PV1", "PV2", "DB1", "TXA", "ORC",
+    "OBR", "OBX", "AL1", "DG1", "DRG", "RGS", "AIS", "AIG", "AIL", "AIP", "PR1", "PRB", "GT1",
+    "IN1", "IN2", "IN3", "ACC", "UB1", "UB2", "PDA", "RXO", "RXE", "RXR", "RXC", "RXD", "RXG",
+    "RXA", "TQ1", "RDS", "RDE", "RGV", "RRD", "RRA", "RAS", "MSA", "ERR", "QAK", "QPD", "RCP",
     "DSC", "FHS", "BHS", "FTS", "BTS", "NTE",
 ];
 
@@ -241,11 +241,17 @@ fn generate_segment_with_name(
             keys.sort_by_key(|(key, _)| key.parse::<usize>().unwrap_or(usize::MAX));
             if !keys.is_empty() {
                 let mut parsed = 0;
+                // Distinct keys can parse to the same component
+                // ("1" vs "01"): emit each number only once.
+                let mut emitted: HashSet<usize> = HashSet::new();
                 for (key, component) in keys {
                     let Some(component_number) = key.parse::<usize>().ok().filter(|n| *n > 0)
                     else {
                         continue;
                     };
+                    if !emitted.insert(component_number) {
+                        continue;
+                    }
                     parsed += 1;
                     render_component_field(
                         &mut body,
@@ -909,6 +915,85 @@ mod tests {
         let mut rx = ["TQ1", "RXR", "RXE", "ORC"];
         rx.sort_by(|a, b| segment_rank(a).cmp(&segment_rank(b)));
         assert_eq!(rx, ["ORC", "RXE", "RXR", "TQ1"]);
+    }
+
+    #[test]
+    fn duplicate_numeric_component_keys_emit_once() {
+        // "1" and "01" both parse to component 1: the second mapping
+        // must be skipped, not rendered as a duplicate attribute.
+        let mut composite = field("Patient Name", false, false);
+        composite.data_type = "XPN".to_string();
+        composite.components = Some(HashMap::from([
+            (
+                "1".to_string(),
+                ComponentDefinition {
+                    name: "Family Name".to_string(),
+                    data_type: "FN".to_string(),
+                    required: false,
+                    max_length: None,
+                    table_id: None,
+                },
+            ),
+            (
+                "01".to_string(),
+                ComponentDefinition {
+                    name: "Family Name Alias".to_string(),
+                    data_type: "FN".to_string(),
+                    required: false,
+                    max_length: None,
+                    table_id: None,
+                },
+            ),
+        ]));
+        let def = SegmentDefinition {
+            name: "Patient Identification".to_string(),
+            required: true,
+            repeating: false,
+            fields: HashMap::from([(5, composite)]),
+        };
+
+        let source = generate_segment("PID", &def);
+        assert_eq!(
+            source.matches("#[hl7(field = 5, component = 1)]").count(),
+            1,
+            "{source}"
+        );
+    }
+
+    #[test]
+    fn scheduling_segments_follow_hl7_siu_order() {
+        // SIU S12 (schemas/v2_5/SIU_S12.json): RGS comes after the
+        // PID/PV1/PV2 group and the AIS/AIG/AIL/AIP service groups
+        // come after RGS — never SCH,RGS,PID.
+        let mut ids = [
+            "AIP", "AIS", "RGS", "PID", "PV2", "PV1", "MSH", "SCH", "AIL", "AIG",
+        ];
+        ids.sort_by(|a, b| segment_rank(a).cmp(&segment_rank(b)));
+        assert_eq!(
+            ids,
+            [
+                "MSH", "SCH", "PID", "PV1", "PV2", "RGS", "AIS", "AIG", "AIL", "AIP"
+            ]
+        );
+    }
+
+    #[test]
+    fn siu_s12_module_orders_rgs_after_pv2() {
+        let source = generate_for(Version::V2_5, "SIU", "S12").unwrap();
+        let pos = |marker: &str| source.find(marker).unwrap_or(usize::MAX);
+        let msh = pos("pub struct Msh {");
+        let sch = pos("pub struct Sch {");
+        let pid = pos("pub struct Pid {");
+        let pv1 = pos("pub struct Pv1 {");
+        let pv2 = pos("pub struct Pv2 {");
+        let rgs = pos("pub struct Rgs {");
+        let ais = pos("pub struct Ais {");
+        let aig = pos("pub struct Aig {");
+        let ail = pos("pub struct Ail {");
+        let aip = pos("pub struct Aip {");
+        assert!(msh < sch && sch < pid, "{source}");
+        assert!(pid < pv1 && pv1 < pv2 && pv2 < rgs, "{source}");
+        assert!(rgs < ais && ais < aig && aig < ail && ail < aip, "{source}");
     }
 
     #[test]

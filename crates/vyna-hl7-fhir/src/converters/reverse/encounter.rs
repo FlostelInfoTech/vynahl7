@@ -2,6 +2,7 @@
 //!
 //! Converts FHIR Encounter resources back to HL7 v2.x PV1 segments.
 
+use super::split_trailing_zone;
 use crate::error::ConversionResult;
 use crate::resources::common::*;
 use crate::resources::encounter::Encounter;
@@ -226,12 +227,15 @@ impl EncounterReverseConverter {
     /// Convert FHIR datetime to HL7 v2 datetime.
     ///
     /// A trailing `Z` becomes `+0000`: a bare `Z` is not valid HL7 DTM.
+    /// A trailing numeric zone is split off before separators are
+    /// stripped so a negative offset keeps its sign.
     fn convert_datetime_to_hl7(datetime: &str) -> String {
         let zoned = match datetime.strip_suffix('Z') {
             Some(stem) => format!("{stem}+0000"),
             None => datetime.to_string(),
         };
-        zoned.replace(['-', ':', 'T'], "")
+        let (stem, zone) = split_trailing_zone(&zoned);
+        format!("{}{}", stem.replace(['-', ':', 'T'], ""), zone)
     }
 }
 
@@ -550,6 +554,16 @@ mod tests {
         let pv1 = EncounterReverseConverter::convert(&encounter).unwrap();
         assert_eq!(pv1.get_field_value(44), Some("20240115100000+0000"));
         assert_eq!(pv1.get_field_value(45), Some("20240120143000+0000"));
+        // A negative offset keeps its sign: the '-' is a zone sign,
+        // not a date separator.
+        let mut encounter = Encounter::new("finished".to_string());
+        encounter.period = Some(Period {
+            start: Some("2024-01-15T10:00:00-05:00".to_string()),
+            end: Some("2024-01-20T14:30:00-05:00".to_string()),
+        });
+        let pv1 = EncounterReverseConverter::convert(&encounter).unwrap();
+        assert_eq!(pv1.get_field_value(44), Some("20240115100000-0500"));
+        assert_eq!(pv1.get_field_value(45), Some("20240120143000-0500"));
     }
 
     #[test]

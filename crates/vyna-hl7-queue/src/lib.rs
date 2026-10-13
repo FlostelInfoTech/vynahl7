@@ -767,18 +767,31 @@ impl MessageQueue for FileQueue {
         let _guard = queue_lock();
         let mut dead = Vec::new();
         for id in list_ids(&self.dead)? {
-            let (Some(meta), Some(body)) =
-                (read_meta(&self.dead, &id)?, read_body(&self.dead, &id)?)
-            else {
-                continue;
-            };
-            dead.push(DeadLetter {
-                id: meta.id,
-                body,
-                headers: meta.headers,
-                attempts: meta.attempts,
-                last_error: meta.last_error,
-            });
+            let meta = read_meta(&self.dead, &id)?;
+            let body = read_body(&self.dead, &id)?;
+            match (meta, body) {
+                (Some(meta), Some(body)) => dead.push(DeadLetter {
+                    id: meta.id,
+                    body,
+                    headers: meta.headers,
+                    attempts: meta.attempts,
+                    last_error: meta.last_error,
+                }),
+                // Quarantined entries (corrupt meta and/or missing body)
+                // count in stats(), so they must surface here too rather
+                // than staying invisible: synthesize from what survived.
+                (meta, body) => dead.push(DeadLetter {
+                    id: id.clone(),
+                    body: body.unwrap_or_default(),
+                    headers: meta.as_ref().map(|m| m.headers.clone()).unwrap_or_default(),
+                    attempts: meta.as_ref().map(|m| m.attempts).unwrap_or(0),
+                    last_error: Some(
+                        meta.as_ref()
+                            .and_then(|m| m.last_error.clone())
+                            .unwrap_or_else(|| "corrupt metadata quarantined at open".to_string()),
+                    ),
+                }),
+            }
         }
         dead.sort_by(|a, b| a.id.cmp(&b.id));
         Ok(dead)
@@ -1430,6 +1443,59 @@ mod tests {
         assert_eq!(report.skipped.len(), 1);
         assert_eq!(report.pending, 0);
         assert_eq!(queue.stats().unwrap().dead, 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn file_quarantined_corrupt_meta_visible_in_dead_letters() {
+        let dir = scratch_dir();
+        let id = {
+            let (mut queue, _) = FileQueue::open(&dir).unwrap();
+            queue.enqueue(b"MSH-quarantined", HashMap::new()).unwrap()
+        };
+        // Corrupt the pending metadata in place, then reopen.
+        let meta = dir.join("pending").join(format!("{id}.meta.json"));
+        std::fs::write(&meta, b"{not valid json").unwrap();
+
+        let (queue, _) = FileQueue::open(&dir).unwrap();
+        assert_eq!(queue.stats().unwrap().dead, 1);
+        // The quarantined entry must be inspectable, not just counted.
+        let dead = queue.dead_letters().unwrap();
+        assert_eq!(dead.len(), 1);
+        assert_eq!(dead[0].id, id);
+        assert_eq!(dead[0].body, b"MSH-quarantined");
+        assert_eq!(
+            dead[0].last_error.as_deref(),
+            Some("corrupt metadata quarantined at open")
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn file_dead_entry_with_deleted_body_visible_in_dead_letters() {
+        let dir = scratch_dir();
+        let policy = RetryPolicy {
+            max_attempts: 1,
+            ..test_policy()
+        };
+        let id = {
+            let (mut queue, _) = FileQueue::open_with_policy(&dir, policy).unwrap();
+            let id = queue.enqueue(b"MSH-doomed", HashMap::new()).unwrap();
+            queue.dequeue().unwrap().unwrap();
+            queue.nack(&id, Some("boom")).unwrap();
+            id
+        };
+        // The body file goes missing after dead-lettering (disk fault,
+        // operator error): the entry must still surface, with its error.
+        std::fs::remove_file(dir.join("dead").join(format!("{id}.body"))).unwrap();
+
+        let (queue, _) = FileQueue::open(&dir).unwrap();
+        assert_eq!(queue.stats().unwrap().dead, 1);
+        let dead = queue.dead_letters().unwrap();
+        assert_eq!(dead.len(), 1);
+        assert_eq!(dead[0].id, id);
+        assert!(dead[0].body.is_empty());
+        assert_eq!(dead[0].last_error.as_deref(), Some("boom"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

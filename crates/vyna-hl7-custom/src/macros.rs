@@ -89,12 +89,13 @@ macro_rules! z_segment {
         },
         validate = $validate_fn:expr
     ) => {
-        // Reject non-Z ids and field 0 at expansion: get_field(0) is
-        // always None and set_field(0) always fails, so field 0 would
-        // silently never serialize.
+        // Reject malformed ids and field 0 at expansion: get_field(0)
+        // is always None and set_field(0) always fails, so field 0
+        // would silently never serialize; a non-3-char id would fail
+        // Segment::validate_id downstream of to_segment.
         const _: () = assert!(
             $crate::macros::__is_z_segment_id($id),
-            "z_segment! id must start with 'Z'"
+            "z_segment! id must be 'Z' followed by 2 ASCII alphanumerics"
         );
         $(
             const _: () = assert!(
@@ -203,11 +204,16 @@ macro_rules! z_segment {
     };
 }
 
-/// Check that a `z_segment!` id names a Z-segment (const so the
-/// macro can reject bad ids at expansion with a clear error).
+/// Check that a `z_segment!` id names a Z-segment: 'Z' plus 2 ASCII
+/// alphanumerics, matching `Segment::validate_id` (const so the macro
+/// can reject bad ids at expansion with a clear error).
 #[doc(hidden)]
 pub const fn __is_z_segment_id(id: &str) -> bool {
-    !id.is_empty() && id.as_bytes()[0] == b'Z'
+    let bytes = id.as_bytes();
+    bytes.len() == 3
+        && bytes[0] == b'Z'
+        && bytes[1].is_ascii_alphanumeric()
+        && bytes[2].is_ascii_alphanumeric()
 }
 
 /// Report whether a `z_segment!` field-number list holds a duplicate
@@ -345,9 +351,13 @@ mod tests {
 
     #[test]
     fn test_is_z_segment_id() {
-        // Predicate behind the z_segment! expansion-time checks.
+        // Predicate behind the z_segment! expansion-time checks:
+        // 'Z' + 2 ASCII alphanumerics, matching Segment::validate_id.
         assert!(__is_z_segment_id("ZPV"));
-        assert!(__is_z_segment_id("Z"));
+        assert!(__is_z_segment_id("Z12"));
+        assert!(!__is_z_segment_id("Z"));
+        assert!(!__is_z_segment_id("ZPVX"));
+        assert!(!__is_z_segment_id("Z!"));
         assert!(!__is_z_segment_id("PID"));
         assert!(!__is_z_segment_id(""));
         assert!(!__is_z_segment_id("zpv"));

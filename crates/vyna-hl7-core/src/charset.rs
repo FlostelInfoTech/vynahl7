@@ -236,7 +236,8 @@ impl CharacterSet {
         }
         Self::from_msh18(unquoted).map_err(|_| {
             Error::Decoding(format!(
-                "unsupported IANA character set '{value}' ({SUPPORTED_SETS})"
+                "unsupported IANA character set '{}' ({SUPPORTED_SETS})",
+                truncate_declaration(value)
             ))
         })
     }
@@ -651,6 +652,20 @@ mod tests {
         ] {
             assert_eq!(CharacterSet::from_iana(&set.iana_name()).unwrap(), set);
         }
+    }
+
+    #[test]
+    fn test_from_iana_truncates_long_declaration_in_error() {
+        // Same 32-char cap as the from_msh18 error sites: a 5000-char
+        // input must not echo back 5000 chars.
+        let long = "X".repeat(5000);
+        let err = CharacterSet::from_iana(&long).unwrap_err().to_string();
+        assert!(!err.contains(&long), "must not echo full value: {err}");
+        assert!(err.contains("5000 chars total"), "{err}");
+        assert!(err.contains(&"X".repeat(32)), "{err}");
+        // Short declarations stay verbatim.
+        let err = CharacterSet::from_iana("FOO-99").unwrap_err().to_string();
+        assert!(err.contains("FOO-99"), "{err}");
     }
 
     #[test]

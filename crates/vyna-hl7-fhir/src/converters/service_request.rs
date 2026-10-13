@@ -150,15 +150,17 @@ impl ServiceRequestConverter {
         }
 
         // ORC-12: Ordering Provider -> requester. Empty is absent:
-        // it must not become a `Practitioner/` reference.
-        if let Ok(Some(provider_id)) = terser.get(&orc_path("12"))
+        // it must not become a `Practitioner/` reference. The display
+        // joins the XCN name parts, like the encounter participant.
+        let orc12 = orc_path("12");
+        if let Ok(Some(provider_id)) = terser.get(&orc12)
             && !provider_id.is_empty()
         {
             service_request.requester = Some(Reference {
                 reference: Some(format!("Practitioner/{}", provider_id)),
                 type_: Some("Practitioner".to_string()),
                 identifier: None,
-                display: None,
+                display: Self::xcn_display(&terser, &orc12),
             });
         }
 
@@ -333,6 +335,24 @@ impl ServiceRequestConverter {
                 .filter(|s| s.id == segment)
                 .count(),
         )
+    }
+
+    /// Build an XCN display name: prefix (6), given (3), middle
+    /// (4), family (2), joined with spaces; `None` when all are empty.
+    fn xcn_display(terser: &Terser, base_path: &str) -> Option<String> {
+        let mut parts = Vec::new();
+        for component in [6, 3, 4, 2] {
+            if let Ok(Some(part)) = terser.get(&format!("{base_path}-{component}"))
+                && !part.is_empty()
+            {
+                parts.push(part.to_string());
+            }
+        }
+        if parts.is_empty() {
+            None
+        } else {
+            Some(parts.join(" "))
+        }
     }
 
     /// Convert HL7 v2 ORC-5 order status to FHIR ServiceRequest status
@@ -697,6 +717,39 @@ mod tests {
             .unwrap()[0];
         assert_eq!(coding.code.as_deref(), Some("R1"));
         assert_eq!(coding.display, None);
+    }
+
+    #[test]
+    fn test_requester_display_built_from_xcn_name() {
+        // ORC-12 DOC001^SMITH^JANE: display joins prefix/given/middle/family.
+        for (orc12, expected_ref, expected) in [
+            ("DOC001^SMITH^JANE", "Practitioner/DOC001", "JANE SMITH"),
+            (
+                "DOC002^SMITH^JANE^M^^DR",
+                "Practitioner/DOC002",
+                "DR JANE M SMITH",
+            ),
+        ] {
+            let mut orc = vec![String::new(); 12];
+            orc[0] = "NW".to_string();
+            orc[1] = "ORD123".to_string();
+            orc[4] = "A".to_string();
+            orc[11] = orc12.to_string();
+            let hl7 = format!(
+                "MSH|^~\\&|CPOE|Hospital|LAB|Hospital|20240315||ORM^O01|MSG123|P|2.5\r\
+                 PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rORC|{}",
+                orc.join("|")
+            );
+            let message = parse_message(&hl7).unwrap();
+            let requests = ServiceRequestConverter::convert_all(&message).unwrap();
+            let requester = requests[0].requester.as_ref().unwrap();
+            assert_eq!(requester.reference.as_deref(), Some(expected_ref));
+            assert_eq!(
+                requester.display.as_deref(),
+                Some(expected),
+                "ORC-12 {orc12}"
+            );
+        }
     }
 
     #[test]

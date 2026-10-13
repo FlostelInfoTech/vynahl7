@@ -72,7 +72,13 @@ impl MessageRouter {
     /// # }
     /// ```
     pub fn add_route(&mut self, message_type: &str, trigger_event: &str, handler: RouteHandler) {
-        let key = format!("{}^{}", message_type, trigger_event);
+        // Keys are uppercased (like the MLLP router) so registration and
+        // lookup match case-insensitively.
+        let key = format!(
+            "{}^{}",
+            message_type.to_uppercase(),
+            trigger_event.to_uppercase()
+        );
         self.routes.insert(key, handler);
     }
 
@@ -99,7 +105,7 @@ impl MessageRouter {
     /// # }
     /// ```
     pub fn add_type_route(&mut self, message_type: &str, handler: RouteHandler) {
-        let key = format!("{}^*", message_type);
+        let key = format!("{}^*", message_type.to_uppercase());
         self.routes.insert(key, handler);
     }
 
@@ -167,6 +173,9 @@ impl MessageRouter {
             .flatten()
             .unwrap_or("UNKNOWN");
 
+        let message_type = message_type.to_uppercase();
+        let trigger_event = trigger_event.to_uppercase();
+
         // Try exact match first (e.g., "ADT^A01")
         let exact_key = format!("{}^{}", message_type, trigger_event);
         if let Some(handler) = self.routes.get(&exact_key) {
@@ -198,8 +207,12 @@ impl MessageRouter {
     /// * `message_type` - The message type
     /// * `trigger_event` - The trigger event
     pub fn has_route(&self, message_type: &str, trigger_event: &str) -> bool {
-        let exact_key = format!("{}^{}", message_type, trigger_event);
-        let type_key = format!("{}^*", message_type);
+        let exact_key = format!(
+            "{}^{}",
+            message_type.to_uppercase(),
+            trigger_event.to_uppercase()
+        );
+        let type_key = format!("{}^*", message_type.to_uppercase());
 
         self.routes.contains_key(&exact_key)
             || self.routes.contains_key(&type_key)
@@ -344,5 +357,31 @@ mod tests {
         assert_eq!(keys.len(), 2);
         assert!(keys.contains(&"ADT^A01".to_string()));
         assert!(keys.contains(&"ORU^R01".to_string()));
+    }
+
+    #[test]
+    fn test_routes_match_case_insensitively() {
+        use vyna_hl7_parser::parse_message;
+
+        let adt_a01 = "MSH|^~\\&|S|A|R|F|20240101||ADT^A01|1|P|2.5\r";
+        // Lowercase registration must match an uppercase message (and the
+        // MLLP router already normalizes both sides this way).
+        let mut router = MessageRouter::new();
+        router.add_route("adt", "a01", Arc::new(Ok));
+        let msg = parse_message(adt_a01).unwrap();
+        assert!(router.route(msg).is_ok());
+        assert!(router.has_route("ADT", "A01"));
+        assert!(router.has_route("adt", "a01"));
+
+        // Uppercase registration must match a lowercase message.
+        let lower = adt_a01.replace("ADT^A01", "adt^a01");
+        let mut router = MessageRouter::new();
+        router.add_route("ADT", "A01", Arc::new(Ok));
+        router.add_type_route("oru", Arc::new(Ok));
+        let msg = parse_message(&lower).unwrap();
+        assert!(router.route(msg).is_ok());
+        let oru = parse_message("MSH|^~\\&|S|A|R|F|20240101||oru^r01|2|P|2.5\r").unwrap();
+        assert!(router.route(oru).is_ok());
+        assert!(router.has_route("ORU", "R01"));
     }
 }

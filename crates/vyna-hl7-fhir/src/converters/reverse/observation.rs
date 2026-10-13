@@ -2,6 +2,7 @@
 //!
 //! Converts FHIR Observation resources back to HL7 v2.x OBX segments.
 
+use super::split_trailing_zone;
 use crate::error::ConversionResult;
 use crate::resources::common::*;
 use crate::resources::observation::{Observation, ObservationReferenceRange};
@@ -79,7 +80,7 @@ impl ObservationReverseConverter {
 
     /// Determine the HL7 v2 value type from the observation
     fn determine_value_type(observation: &Observation) -> String {
-        if observation.value_quantity.is_some() {
+        if observation.value_quantity.is_some() || observation.value_integer.is_some() {
             "NM".to_string() // Numeric
         } else if observation.value_string.is_some() {
             "ST".to_string() // String
@@ -141,6 +142,8 @@ impl ObservationReverseConverter {
             if let Some(value) = quantity.value {
                 let _ = obx.set_field_value(5, value.to_string());
             }
+        } else if let Some(integer) = observation.value_integer {
+            let _ = obx.set_field_value(5, integer.to_string());
         } else if let Some(ref string_value) = observation.value_string {
             let _ = obx.set_field_value(5, string_value);
         } else if let Some(ref concept) = observation.value_codeable_concept {
@@ -162,12 +165,15 @@ impl ObservationReverseConverter {
     /// Convert FHIR datetime to HL7 v2 datetime.
     ///
     /// A trailing `Z` becomes `+0000`: a bare `Z` is not valid HL7 DTM.
+    /// A trailing numeric zone is split off before separators are
+    /// stripped so a negative offset keeps its sign.
     fn convert_datetime_to_hl7(datetime: &str) -> String {
         let zoned = match datetime.strip_suffix('Z') {
             Some(stem) => format!("{stem}+0000"),
             None => datetime.to_string(),
         };
-        zoned.replace(['-', ':', 'T'], "")
+        let (stem, zone) = split_trailing_zone(&zoned);
+        format!("{}{}", stem.replace(['-', ':', 'T'], ""), zone)
     }
 
     /// Format a reference range as an HL7 string
@@ -236,6 +242,12 @@ impl ObservationReverseConverter {
             "RXNORM".to_string()
         } else if system.contains("ucum") {
             "UCUM".to_string()
+        } else if system.contains("sid/cvx") {
+            "CVX".to_string()
+        } else if system.contains("sid/ndc") {
+            "NDC".to_string()
+        } else if system.contains("sid/mvx") {
+            "MVX".to_string()
         } else {
             // Strip the urn:oid: prefix the forward converter adds
             // before the last-segment fallback; otherwise the whole
@@ -436,6 +448,14 @@ mod tests {
         let obx = ObservationReverseConverter::convert(&observation, 1).unwrap();
         assert_eq!(obx.get_field_value(14), Some("20240315100000+0000"));
         assert_eq!(obx.get_field_value(5), Some("20240315100000+0000"));
+        // A negative offset keeps its sign: the '-' is a zone sign,
+        // not a date separator.
+        let mut observation = Observation::new("final".to_string(), create_code());
+        observation.effective_date_time = Some("2024-03-15T10:00:00-05:00".to_string());
+        observation.value_date_time = Some("2024-03-15T10:00:00-05:00".to_string());
+        let obx = ObservationReverseConverter::convert(&observation, 1).unwrap();
+        assert_eq!(obx.get_field_value(14), Some("20240315100000-0500"));
+        assert_eq!(obx.get_field_value(5), Some("20240315100000-0500"));
     }
 
     #[test]
@@ -564,6 +584,63 @@ mod tests {
             .as_ref()
             .unwrap();
         assert_eq!(coding[0].system.as_deref(), Some("urn:oid:LOCAL"));
+    }
+
+    #[test]
+    fn test_cvx_ndc_mvx_systems_round_trip() {
+        use crate::converters::observation::ObservationConverter;
+        use vyna_hl7_parser::parse_message;
+
+        for (uri, table) in [
+            ("http://hl7.org/fhir/sid/cvx", "CVX"),
+            ("http://hl7.org/fhir/sid/ndc", "NDC"),
+            ("http://hl7.org/fhir/sid/mvx", "MVX"),
+        ] {
+            assert_eq!(
+                ObservationReverseConverter::extract_coding_system_name(uri),
+                table,
+                "{uri}"
+            );
+            // Forward -> reverse -> forward preserves the URI.
+            let hl7 = format!(
+                "MSH|^~\\&|A|B|C|D|20240315||ORU^R01|1|P|2.5\r\
+                 PID|1||1||A^B||19800101|M\r\
+                 OBX|1|ST|C1^Disp^{table}||x||||||F"
+            );
+            let message = parse_message(&hl7).unwrap();
+            let forward = ObservationConverter::convert_all(&message).unwrap();
+            assert_eq!(forward.len(), 1);
+            let system = forward[0].code.coding.as_ref().unwrap()[0]
+                .system
+                .as_deref();
+            assert_eq!(system, Some(uri), "forward {table}");
+            let obx = ObservationReverseConverter::convert(&forward[0], 1).unwrap();
+            let back_system = obx
+                .get_field(3)
+                .and_then(|f| f.repetitions.first())
+                .and_then(|r| r.components.get(2))
+                .and_then(|c| c.value());
+            assert_eq!(back_system, Some(table), "reverse {uri}");
+            let back = round_trip(&obx);
+            let coding = back.code.coding.as_ref().unwrap();
+            assert_eq!(coding[0].system.as_deref(), Some(uri), "re-forward");
+        }
+    }
+
+    #[test]
+    fn test_value_integer_writes_nm_type_and_value() {
+        let mut observation = Observation::new("final".to_string(), create_code());
+        observation.value_integer = Some(5);
+        let obx = ObservationReverseConverter::convert(&observation, 1).unwrap();
+        assert_eq!(obx.get_field_value(2), Some("NM"));
+        assert_eq!(obx.get_field_value(5), Some("5"));
+        // Re-forward lands in valueQuantity: the forward converter
+        // has no integer arm, but the numeric value is preserved.
+        let back = round_trip(&obx);
+        assert_eq!(
+            back.value_quantity.as_ref().and_then(|q| q.value),
+            Some(5.0)
+        );
     }
 
     #[test]

@@ -18,8 +18,9 @@ pub struct XmlDecoderConfig {
     ///
     /// When false, unknown element names, field elements outside their
     /// own segment, component/subcomponent numbers that disagree with
-    /// the enclosing element, truncated input, stray text, extra root
-    /// elements, and mixed content are errors instead of being skipped.
+    /// the enclosing element, 3/4-part prefixes naming another segment,
+    /// truncated input, stray text, extra root elements, and mixed
+    /// content are errors instead of being skipped.
     pub lenient: bool,
 
     /// Strip whitespace from text content
@@ -274,7 +275,11 @@ impl XmlDecoder {
 
         // A component element: SEG.F.C or the datatype shorthand TYPE.C.
         if let Some(parent_field) = Self::parent_field_number(stack)
-            && let Some((field_num, comp_num)) = self.parse_component_name(name, Some(parent_field))
+            && let Some((field_num, comp_num)) = self.parse_component_name(
+                name,
+                Some(parent_field),
+                current_segment.map(|segment| segment.id.as_str()),
+            )
         {
             if comp_num == 0 {
                 return self.misplaced(format!("component element <{name}> has number 0"));
@@ -294,7 +299,8 @@ impl XmlDecoder {
 
         // A subcomponent element: SEG.F.C.S.
         if let Some((parent_field, parent_comp)) = Self::parent_component_numbers(stack)
-            && let Some((field_num, comp_num, sub_num)) = self.parse_subcomponent_name(name)
+            && let Some((field_num, comp_num, sub_num)) = self
+                .parse_subcomponent_name(name, current_segment.map(|segment| segment.id.as_str()))
         {
             if sub_num == 0 {
                 return self.misplaced(format!("subcomponent element <{name}> has number 0"));
@@ -574,13 +580,23 @@ impl XmlDecoder {
     }
 
     /// Parse a component element name
-    fn parse_component_name(&self, name: &str, field_num: Option<usize>) -> Option<(usize, usize)> {
+    fn parse_component_name(
+        &self,
+        name: &str,
+        field_num: Option<usize>,
+        enclosing: Option<&str>,
+    ) -> Option<(usize, usize)> {
         let parts: Vec<&str> = name.split('.').collect();
 
-        // Format: SEG.FIELD.COMPONENT (e.g., PID.5.1)
+        // Format: SEG.FIELD.COMPONENT (e.g., PID.5.1). The prefix must
+        // name the enclosing segment: a foreign prefix is a strict
+        // error (fall through to `misplaced`), leniently accepted.
         if parts.len() == 3
             && let (Ok(f), Ok(c)) = (parts[1].parse::<usize>(), parts[2].parse::<usize>())
         {
+            if Some(parts[0]) != enclosing && !self.config.lenient {
+                return None;
+            }
             return Some((f, c));
         }
 
@@ -596,7 +612,15 @@ impl XmlDecoder {
     }
 
     /// Parse a subcomponent element name (SEG.FIELD.COMPONENT.SUBCOMPONENT)
-    fn parse_subcomponent_name(&self, name: &str) -> Option<(usize, usize, usize)> {
+    ///
+    /// Like [`parse_component_name`](Self::parse_component_name), the
+    /// prefix must name the enclosing segment: a foreign prefix is a
+    /// strict error (fall through to `misplaced`), leniently accepted.
+    fn parse_subcomponent_name(
+        &self,
+        name: &str,
+        enclosing: Option<&str>,
+    ) -> Option<(usize, usize, usize)> {
         let parts: Vec<&str> = name.split('.').collect();
         if parts.len() == 4
             && let (Ok(f), Ok(c), Ok(s)) = (
@@ -605,6 +629,9 @@ impl XmlDecoder {
                 parts[3].parse::<usize>(),
             )
         {
+            if Some(parts[0]) != enclosing && !self.config.lenient {
+                return None;
+            }
             return Some((f, c, s));
         }
         None
@@ -1019,5 +1046,34 @@ mod tests {
         assert_eq!(message.segments.len(), 1);
         assert_eq!(message.segments[0].id, "Z12");
         assert_eq!(message.segments[0].get_field_value(1), Some("hello"));
+    }
+
+    #[test]
+    fn test_strict_rejects_foreign_segment_prefix() {
+        // 3-part/4-part names pin their segment: MSH.5.1 / OBX.5.1.1
+        // nested in PID must error in strict mode.
+        for xml in [
+            "<PID><PID.5><MSH.5.1>x</MSH.5.1></PID.5></PID>",
+            "<PID><PID.5><PID.5.1><OBX.5.1.1>x</OBX.5.1.1></PID.5.1></PID.5></PID>",
+        ] {
+            let err = strict_decoder().decode(xml).unwrap_err();
+            assert!(
+                matches!(err, XmlError::InvalidStructure(_)),
+                "expected InvalidStructure for {xml:?}, got {err:?}"
+            );
+            // Lenient keeps the historical accept.
+            assert!(XmlDecoder::new().decode(xml).is_ok());
+        }
+        // The 2-part datatype shorthand stays unchecked in both modes.
+        let shorthand = "<PID><PID.5><XPN.1>Smith</XPN.1></PID.5></PID>";
+        assert_eq!(
+            strict_decoder().decode(shorthand).unwrap().segments[0]
+                .get_field(5)
+                .unwrap()
+                .repetitions[0]
+                .components[0]
+                .value(),
+            Some("Smith")
+        );
     }
 }

@@ -226,6 +226,11 @@ impl FilesystemTransport {
     }
 
     fn rename_sync(&self, from: &str, to: &str) -> Result<(), BatchError> {
+        // Like MemTransport: an empty cleaned destination is Invalid, not
+        // a rename onto the root directory.
+        if clean_relative_parts(to)?.is_empty() {
+            return Err(BatchError::Invalid("empty path".to_string()));
+        }
         let from = self.resolve(from)?;
         let to = self.resolve(to)?;
         if let Some(parent) = to.parent() {
@@ -414,6 +419,30 @@ mod tests {
         let entries = t.list("inbox").await.unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].path, "inbox/a.hl7");
+
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn rename_rejects_empty_destination() {
+        let dir = scratch_dir();
+        let mut t = FilesystemTransport::open(&dir).unwrap();
+        t.put("inbox/a.hl7", b"MSH").await.unwrap();
+
+        // Like MemTransport, an empty cleaned destination is Invalid,
+        // not an attempt to rename onto the root directory.
+        for dest in ["", "."] {
+            match t.rename("inbox/a.hl7", dest).await {
+                Err(BatchError::Invalid(msg)) => assert_eq!(msg, "empty path"),
+                other => panic!("rename to {dest:?} gave {other:?}"),
+            }
+        }
+        assert!(matches!(
+            t.rename("inbox/a.hl7", "/").await,
+            Err(BatchError::Invalid(_))
+        ));
+        // The source is untouched by the rejected renames.
+        assert_eq!(t.get("inbox/a.hl7").await.unwrap(), b"MSH");
 
         tokio::fs::remove_dir_all(&dir).await.unwrap();
     }

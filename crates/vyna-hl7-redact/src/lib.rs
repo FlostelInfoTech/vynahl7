@@ -48,7 +48,7 @@ use chrono::{Duration, NaiveDate};
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use thiserror::Error;
-use vyna_hl7_core::{Field, Message, Repetition, Segment};
+use vyna_hl7_core::{Delimiters, Field, Message, Repetition, Segment};
 
 /// Redaction failure.
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -71,6 +71,10 @@ pub enum Strategy {
     /// Replace with a fixed string.
     Fixed(String),
     /// Replace with 12 hex chars of HMAC-SHA256 (requires a key).
+    ///
+    /// The hashed input is the value's wire-faithful ER7 encoding
+    /// (subcomponents and escapes intact), so distinct identities
+    /// never share a digest. Deterministic: same input, same digest.
     Hash,
     /// Shift the date part by the configured days, keeping time-of-day.
     DateShift,
@@ -264,6 +268,8 @@ impl Redactor {
             }
         }
         let mut report = Vec::new();
+        // Copied up front: the loop below mutably borrows segments.
+        let delimiters = message.delimiters;
         // Occurrence counter per segment ID for stable audit paths.
         let mut occurrences: std::collections::HashMap<String, usize> =
             std::collections::HashMap::new();
@@ -278,7 +284,7 @@ impl Redactor {
                 }
                 match rule.component {
                     None => {
-                        if self.redact_field(segment, rule)? {
+                        if self.redact_field(segment, rule, &delimiters)? {
                             report.push(Redaction {
                                 path: format!("{}[{here}]-{}", segment.id, rule.field),
                                 strategy: rule.strategy.name(),
@@ -286,7 +292,13 @@ impl Redactor {
                         }
                     }
                     Some(component) => {
-                        if self.redact_component(segment, rule.field, component, &rule.strategy)? {
+                        if self.redact_component(
+                            segment,
+                            rule.field,
+                            component,
+                            &rule.strategy,
+                            &delimiters,
+                        )? {
                             report.push(Redaction {
                                 path: format!("{}[{here}]-{}-{component}", segment.id, rule.field),
                                 strategy: rule.strategy.name(),
@@ -323,13 +335,39 @@ impl Redactor {
     }
 
     /// Rewrite each repetition's whole value; true when anything changed.
-    fn redact_field(&self, segment: &mut Segment, rule: &Rule) -> Result<bool, RedactError> {
+    fn redact_field(
+        &self,
+        segment: &mut Segment,
+        rule: &Rule,
+        delimiters: &Delimiters,
+    ) -> Result<bool, RedactError> {
         let Some(field) = segment.get_field(rule.field) else {
             return Ok(false);
         };
-        let values: Vec<Option<String>> =
-            field.repetitions.iter().map(|r| r.full_value()).collect();
-        if values.iter().all(|v| v.as_deref().unwrap_or("").is_empty()) {
+        // Hash input is the wire-faithful encoding (subcomponents and
+        // escapes intact): the display join drops subcomponent content
+        // and merges distinct identities. Other strategies keep the
+        // display value so their output is unchanged.
+        let values: Vec<String> = if rule.strategy == Strategy::Hash {
+            field
+                .repetitions
+                .iter()
+                .map(|r| {
+                    if r.is_empty() {
+                        String::new()
+                    } else {
+                        r.encode(delimiters)
+                    }
+                })
+                .collect()
+        } else {
+            field
+                .repetitions
+                .iter()
+                .map(|r| r.full_value().unwrap_or_default())
+                .collect()
+        };
+        if values.iter().all(|v| v.is_empty()) {
             return Ok(false);
         }
         if rule.strategy == Strategy::Remove {
@@ -338,7 +376,7 @@ impl Redactor {
         }
         let mut rebuilt = Field::new();
         for value in &values {
-            let text = value.as_deref().unwrap_or("");
+            let text = value.as_str();
             if text.is_empty() {
                 rebuilt.add_repetition(Repetition::new());
             } else {
@@ -361,6 +399,7 @@ impl Redactor {
         field_index: usize,
         component: usize,
         strategy: &Strategy,
+        delimiters: &Delimiters,
     ) -> Result<bool, RedactError> {
         if component == 0 {
             return Ok(false);
@@ -372,12 +411,22 @@ impl Redactor {
         let mut targets: Vec<(usize, String)> = Vec::new();
         for (rep_index, repetition) in field.repetitions.iter().enumerate() {
             if let Some(comp) = repetition.components.get(component - 1) {
-                let text: String = comp
-                    .subcomponents
-                    .iter()
-                    .map(|s| s.value.as_str())
-                    .collect::<Vec<_>>()
-                    .join("&");
+                // Hash input is the wire-faithful encoding: the naive
+                // "&"-join cannot tell structured subcomponents from
+                // literal "&" text. Other strategies keep the join.
+                let text: String = if *strategy == Strategy::Hash {
+                    if comp.is_empty() {
+                        String::new()
+                    } else {
+                        comp.encode(delimiters)
+                    }
+                } else {
+                    comp.subcomponents
+                        .iter()
+                        .map(|s| s.value.as_str())
+                        .collect::<Vec<_>>()
+                        .join("&")
+                };
                 if !text.is_empty() {
                     targets.push((rep_index, text));
                 }
@@ -574,6 +623,7 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("GT1", 46),
         ("GT1", 56),
         ("IN1", 6),
+        ("IN1", 7),
         ("IN1", 16),
         ("IN1", 30),
         ("IN1", 52),
@@ -2190,5 +2240,87 @@ mod tests {
         }
         assert_eq!(full_value_of(prd, 4), "ER^R1^B2^FAC");
         assert_eq!(full_value_of(prd, 12), "MAIN^WING^FAC");
+    }
+
+    #[test]
+    fn whole_field_hash_distinguishes_subcomponent_content() {
+        // "AAA&X" and "AAA&Y" share a first subcomponent but are
+        // distinct identities: wire-faithful hashing must not merge
+        // them (the old first-subcomponent join hashed both as "AAA").
+        let digest = |value: &str| {
+            let mut message = parse_message(&format!(
+                "MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1||{value}\r"
+            ))
+            .unwrap();
+            Redactor::new()
+                .with_hmac_key(b"k")
+                .with_rule(Rule::field("PID", 3, Strategy::Hash))
+                .redact(&mut message)
+                .unwrap();
+            message
+                .get_segment_by_id("PID")
+                .unwrap()
+                .get_field(3)
+                .unwrap()
+                .repetitions[0]
+                .full_value()
+                .unwrap()
+        };
+        assert_ne!(digest("AAA&X"), digest("AAA&Y"));
+        // Deterministic: same input, same digest.
+        assert_eq!(digest("AAA&X"), digest("AAA&X"));
+        assert_eq!(digest("AAA&X"), hash_of(b"k", "AAA&X"));
+    }
+
+    #[test]
+    fn component_hash_distinguishes_structure_from_literal_text() {
+        // Two subcomponents ("A","B") vs one literal "A&B": the naive
+        // "&"-join collides ("A&B" both); wire-faithful encoding
+        // ("A&B" vs "A\T\B") must not.
+        use vyna_hl7_core::{Component, SubComponent};
+        let digest = |component: Component| {
+            let mut message = Message::new();
+            let mut pid = Segment::new("PID");
+            let mut field = Field::new();
+            let mut repetition = Repetition::new();
+            repetition.add_component(component);
+            field.add_repetition(repetition);
+            pid.set_field(5, field).unwrap();
+            message.add_segment(pid);
+            Redactor::new()
+                .with_hmac_key(b"k")
+                .with_rule(Rule::component("PID", 5, 1, Strategy::Hash))
+                .redact(&mut message)
+                .unwrap();
+            message
+                .get_segment_by_id("PID")
+                .unwrap()
+                .get_field(5)
+                .unwrap()
+                .repetitions[0]
+                .components[0]
+                .value()
+                .unwrap()
+                .to_string()
+        };
+        let mut structured = Component::new();
+        structured.add_subcomponent(SubComponent::new("A"));
+        structured.add_subcomponent(SubComponent::new("B"));
+        let literal = Component::from_value("A&B");
+        assert_ne!(digest(structured), digest(literal));
+    }
+
+    #[test]
+    fn safe_harbor_removes_in1_insurance_phone() {
+        // IN1-7 Insurance Co Phone Number (XTN) must go like its
+        // sibling telecom fields (IN1-16, IN2-58, ORC-23).
+        let message = redact_segments(&[seg(
+            "IN1",
+            &[(7, "555-9999"), (16, "Insured^Ivy"), (30, "VER1^Vera")],
+        )]);
+        let in1 = message.get_segment_by_id("IN1").unwrap();
+        assert!(in1.get_field_value(7).is_none(), "IN1-7 phone survives");
+        assert!(in1.get_field_value(16).is_none());
+        assert!(in1.get_field_value(30).is_none());
     }
 }

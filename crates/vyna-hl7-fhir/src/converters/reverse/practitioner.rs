@@ -76,38 +76,44 @@ impl PractitionerReverseConverter {
                 components[1] = family.clone();
             }
 
-            // Component 3: Given Name
+            // Component 3: Given Name. Overflow joins into
+            // component 4 with a space so no token is dropped.
             if let Some(ref given) = first_name.given {
                 if let Some(first_given) = given.first() {
                     components[2] = first_given.clone();
                 }
                 // Component 4: Second Name (Middle)
                 if given.len() > 1 {
-                    components[3] = given[1].clone();
+                    components[3] = given[1..].join(" ");
                 }
             }
 
-            // Component 5: Suffix
+            // Component 5: Suffix. XCN has a single suffix slot,
+            // so every suffix joins with a space.
             if let Some(ref suffix) = first_name.suffix
-                && let Some(first_suffix) = suffix.first()
+                && !suffix.is_empty()
             {
-                components[4] = first_suffix.clone();
+                components[4] = suffix.join(" ");
             }
 
-            // Component 6: Prefix
+            // Component 6: Prefix. XCN has a single prefix slot,
+            // so every prefix joins with a space.
             if let Some(ref prefix) = first_name.prefix
-                && let Some(first_prefix) = prefix.first()
+                && !prefix.is_empty()
             {
-                components[5] = first_prefix.clone();
+                components[5] = prefix.join(" ");
             }
 
-            // Component 10: Name Type Code
+            // Component 10: Name Type Code. usual/unknown map to
+            // "U" (HL7 table 0200 Unspecified): "L" would re-forward
+            // as official and corrupt the round-trip.
             if let Some(ref use_) = first_name.use_ {
                 components[9] = match use_.as_str() {
                     "official" => "L".to_string(),
                     "maiden" => "M".to_string(),
                     "nickname" => "N".to_string(),
                     "temp" => "T".to_string(),
+                    "usual" | "unknown" => "U".to_string(),
                     _ => "L".to_string(),
                 };
             }
@@ -177,38 +183,44 @@ impl PractitionerReverseConverter {
                 components.push((1, family.clone()));
             }
 
-            // Component 3: Given Name (0-indexed: 2)
+            // Component 3: Given Name (0-indexed: 2).
+            // Overflow joins into component 4 with a space.
             if let Some(ref given) = first_name.given {
                 if let Some(first_given) = given.first() {
                     components.push((2, first_given.clone()));
                 }
                 // Component 4: Second Name (0-indexed: 3)
                 if given.len() > 1 {
-                    components.push((3, given[1].clone()));
+                    components.push((3, given[1..].join(" ")));
                 }
             }
 
-            // Component 5: Suffix (0-indexed: 4)
+            // Component 5: Suffix (0-indexed: 4). XCN has a single
+            // suffix slot, so every suffix joins with a space.
             if let Some(ref suffix) = first_name.suffix
-                && let Some(first_suffix) = suffix.first()
+                && !suffix.is_empty()
             {
-                components.push((4, first_suffix.clone()));
+                components.push((4, suffix.join(" ")));
             }
 
-            // Component 6: Prefix (0-indexed: 5)
+            // Component 6: Prefix (0-indexed: 5). XCN has a single
+            // prefix slot, so every prefix joins with a space.
             if let Some(ref prefix) = first_name.prefix
-                && let Some(first_prefix) = prefix.first()
+                && !prefix.is_empty()
             {
-                components.push((5, first_prefix.clone()));
+                components.push((5, prefix.join(" ")));
             }
 
-            // Component 10: Name Type Code (0-indexed: 9)
+            // Component 10: Name Type Code (0-indexed: 9).
+            // usual/unknown map to "U" (HL7 table 0200
+            // Unspecified): "L" would re-forward as official.
             if let Some(ref use_) = first_name.use_ {
                 let type_code = match use_.as_str() {
                     "official" => "L",
                     "maiden" => "M",
                     "nickname" => "N",
                     "temp" => "T",
+                    "usual" | "unknown" => "U",
                     _ => "L",
                 };
                 components.push((9, type_code.to_string()));
@@ -336,6 +348,77 @@ mod tests {
                 "components {use_}"
             );
         }
+    }
+
+    #[test]
+    fn test_usual_and_unknown_map_to_unspecified() {
+        use crate::converters::practitioner::PractitionerConverter;
+        use vyna_hl7_parser::parse_message;
+
+        for use_ in ["usual", "unknown"] {
+            let mut practitioner = Practitioner::new();
+            practitioner.name = Some(vec![HumanName {
+                use_: Some(use_.to_string()),
+                text: None,
+                family: Some("Smith".to_string()),
+                given: Some(vec!["John".to_string()]),
+                prefix: None,
+                suffix: None,
+            }]);
+            // HL7 table 0200 "U" (Unspecified), not "L" (official).
+            let xcn = PractitionerReverseConverter::convert_to_xcn(&practitioner).unwrap();
+            assert_eq!(xcn.split('^').nth(9), Some("U"), "xcn {use_}");
+            let components =
+                PractitionerReverseConverter::convert_to_components(&practitioner).unwrap();
+            assert!(
+                components.contains(&(9, "U".to_string())),
+                "components {use_}"
+            );
+            // Re-forwarding stays "usual": the forward converter
+            // maps every non-L/M/N/T code (including U) to usual.
+            let hl7 = format!(
+                "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                 PID|1||MRN123|||DOE^JOHN||19800101|M\r\
+                 PV1|1|I|ER^101^1||||{xcn}"
+            );
+            let message = parse_message(&hl7).unwrap();
+            let back = PractitionerConverter::convert_attending_doctor(&message).unwrap();
+            assert_eq!(
+                back.name.as_ref().unwrap()[0].use_.as_deref(),
+                Some("usual"),
+                "round-trip {use_}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_given_prefix_suffix_overflow_joins_into_last_slot() {
+        let mut practitioner = Practitioner::new();
+        practitioner.name = Some(vec![HumanName {
+            use_: Some("official".to_string()),
+            text: None,
+            family: Some("Smith".to_string()),
+            given: Some(vec![
+                "John".to_string(),
+                "Michael".to_string(),
+                "David".to_string(),
+            ]),
+            prefix: Some(vec!["Mr".to_string(), "Dr".to_string()]),
+            suffix: Some(vec!["Jr".to_string(), "Sr".to_string(), "III".to_string()]),
+        }]);
+        // Overflow joins with a space instead of being dropped.
+        let xcn = PractitionerReverseConverter::convert_to_xcn(&practitioner).unwrap();
+        let parts: Vec<&str> = xcn.split('^').collect();
+        assert_eq!(parts[2], "John");
+        assert_eq!(parts[3], "Michael David");
+        assert_eq!(parts[4], "Jr Sr III");
+        assert_eq!(parts[5], "Mr Dr");
+        let components =
+            PractitionerReverseConverter::convert_to_components(&practitioner).unwrap();
+        assert!(components.contains(&(2, "John".to_string())));
+        assert!(components.contains(&(3, "Michael David".to_string())));
+        assert!(components.contains(&(4, "Jr Sr III".to_string())));
+        assert!(components.contains(&(5, "Mr Dr".to_string())));
     }
 
     #[test]

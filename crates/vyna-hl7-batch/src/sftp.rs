@@ -536,6 +536,11 @@ impl FileTransport for SftpTransport {
     }
 
     async fn rename(&mut self, from: &str, to: &str) -> Result<(), BatchError> {
+        // Like MemTransport: an empty cleaned destination is Invalid, not
+        // a rename onto the login dir / configured root.
+        if crate::transport::clean_relative_parts(to)?.is_empty() {
+            return Err(BatchError::Invalid("empty path".to_string()));
+        }
         let from_remote = self.remote(from)?;
         let to_remote = self.remote(to)?;
         if let Some((parent, _)) = to_remote.rsplit_once('/') {
@@ -714,6 +719,18 @@ mod tests {
             transport.put("", b"x").await,
             Err(BatchError::Invalid(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn rename_rejects_empty_destination() {
+        // No connection: the empty-path check must fire before any I/O,
+        // mirroring MemTransport's Invalid("empty path").
+        let config = SftpConfig::new("host:22", "u", SftpAuth::Password("p".into()));
+        let mut transport = unconnected(config);
+        match transport.rename("inbox/a.hl7", "").await {
+            Err(BatchError::Invalid(msg)) => assert_eq!(msg, "empty path"),
+            other => panic!("rename to empty path gave {other:?}"),
+        }
     }
 
     #[test]

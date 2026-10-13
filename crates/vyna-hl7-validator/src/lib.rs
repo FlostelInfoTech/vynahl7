@@ -633,7 +633,7 @@ impl Validator {
                     let field_length = if field_def.repeating {
                         decoded_field_text(f, delimiters).chars().count()
                     } else {
-                        f.value().map(|v| v.trim().chars().count()).unwrap_or(0)
+                        f.value().map(|v| v.chars().count()).unwrap_or(0)
                     };
 
                     if field_length > max_len {
@@ -2267,6 +2267,77 @@ mod tests {
             version: "2.5".to_string(),
             segments,
         }
+    }
+
+    fn schema_with_msh3(field_def: FieldDefinition) -> MessageSchema {
+        let mut fields = HashMap::new();
+        fields.insert(3, field_def);
+        let mut segments = HashMap::new();
+        segments.insert(
+            "MSH".to_string(),
+            SegmentDefinition {
+                name: "Message Header".to_string(),
+                required: false,
+                repeating: false,
+                fields,
+            },
+        );
+        MessageSchema {
+            message_type: "ADT".to_string(),
+            trigger_event: "A01".to_string(),
+            version: "2.5".to_string(),
+            segments,
+        }
+    }
+
+    #[test]
+    fn test_field_length_counts_untrimmed_characters() {
+        // "ABCD " is 5 chars: field-level and component-level checks
+        // must agree that it exceeds max_length 4. (The field-level
+        // check used to trim first, passing what the component
+        // check failed.)
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|ABCD |F|R|D|20240101||ADT^A01|M1|P|2.5\rPID|1\r",
+        )
+        .unwrap();
+        let mut components = HashMap::new();
+        components.insert(
+            "1".to_string(),
+            ComponentDefinition {
+                name: "Sending Application".to_string(),
+                data_type: "ST".to_string(),
+                required: false,
+                max_length: Some(4),
+                table_id: None,
+            },
+        );
+        let field_def = FieldDefinition {
+            name: "Sending Application".to_string(),
+            data_type: "ST".to_string(),
+            required: false,
+            repeating: false,
+            max_length: Some(4),
+            table_id: None,
+            components: Some(components),
+        };
+        let result =
+            Validator::with_schema(Version::V2_5, schema_with_msh3(field_def)).validate(&message);
+        let locations: Vec<&str> = result
+            .errors
+            .iter()
+            .filter(|e| e.error_type == ValidationErrorType::InvalidLength)
+            .map(|e| e.location.as_str())
+            .collect();
+        assert!(
+            locations.contains(&"MSH[0]-3"),
+            "field-level error missing: {:?}",
+            result.errors
+        );
+        assert!(
+            locations.contains(&"MSH[0]-3-1"),
+            "component-level error missing: {:?}",
+            result.errors
+        );
     }
 
     #[test]

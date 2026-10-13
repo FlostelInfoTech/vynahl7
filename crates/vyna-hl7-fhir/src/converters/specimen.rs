@@ -427,15 +427,28 @@ impl SpecimenConverter {
         terser: &Terser,
         base_path: &str,
     ) -> ConversionResult<CodeableConcept> {
-        // Empty is missing: it must not become a type with an empty code.
-        let code = terser
+        // Empty is missing: it must not become a type with an empty
+        // code. A text-only SPM-4 keeps its text, like the allergy
+        // converter; only a fully-empty field errors.
+        let Some(code) = terser
             .get(base_path)
             .ok()
             .flatten()
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| {
-                ConversionError::MissingField(base_path.to_string(), "SPM".to_string())
-            })?;
+        else {
+            if let Ok(Some(text)) = terser.get(&format!("{base_path}-2"))
+                && !text.is_empty()
+            {
+                return Ok(CodeableConcept {
+                    coding: None,
+                    text: Some(text.to_string()),
+                });
+            }
+            return Err(ConversionError::MissingField(
+                base_path.to_string(),
+                "SPM".to_string(),
+            ));
+        };
 
         let mut coding = Coding {
             system: Some("http://terminology.hl7.org/CodeSystem/v2-0487".to_string()),
@@ -866,6 +879,19 @@ mod tests {
             Some("2024-01-01")
         );
         assert_eq!(collection.collected_period, None);
+    }
+
+    #[test]
+    fn test_text_only_spm4_preserved_as_text() {
+        // Empty code with valued text keeps the specimen type as
+        // text (fully-empty still errors, see above).
+        let hl7 = "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||OML^O21|M|P|2.5\r\
+                   PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+                   SPM|1|S||^Blood free text";
+        let message = parse_message(hl7).unwrap();
+        let spec = &SpecimenConverter::convert_all(&message).unwrap()[0];
+        assert_eq!(spec.type_.coding, None);
+        assert_eq!(spec.type_.text.as_deref(), Some("Blood free text"));
     }
 
     #[test]

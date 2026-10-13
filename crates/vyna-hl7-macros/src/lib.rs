@@ -767,7 +767,7 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
                     .map(|f| {
                         let __to_str = #rep_to_str;
                         f.repetitions.iter()
-                            .filter_map(|r| __to_str(r))
+                            .map(|r| __to_str(r).unwrap_or_default())
                             .collect::<Vec<String>>()
                     })
                     .unwrap_or_default()
@@ -843,8 +843,18 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
                 segment.get_field(#field_num)
                     .and_then(|f| {
                         let __to_str = #rep_to_str;
+                        // Component-less repetitions read as "" so
+                        // positions are kept ("~SMITH", not "SMITH").
+                        // Spelled as a match rather than
+                        // unwrap_or_default: identical semantics, and
+                        // the scalar expansion keeps its
+                        // no-top-level-default token contract (an
+                        // absent field still fails via `?` below).
                         let __parts: Vec<String> = f.repetitions.iter()
-                            .filter_map(|r| __to_str(r))
+                            .map(|r| match __to_str(r) {
+                                Some(__s) => __s,
+                                None => String::new(),
+                            })
                             .collect();
                         if __parts.is_empty() {
                             None
@@ -2427,5 +2437,40 @@ mod tests {
         )
         .unwrap_err();
         assert!(err_message(err).contains("required"));
+    }
+
+    #[test]
+    fn segment_repetition_reads_keep_component_less_positions() {
+        // Component-less repetitions must read as "" (positions kept),
+        // not be dropped: filtering them shifts Vec positions (PID-5
+        // with reps ["", "SMITH"] read back as ["SMITH"]).
+        let vec_tokens = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct P { #[hl7(field = 5)] n: Vec<String> }",
+        ))
+        .expect("valid segment must expand")
+        .to_string();
+        assert!(
+            vec_tokens.contains("unwrap_or_default"),
+            "Vec read must default empty reps: {vec_tokens}"
+        );
+        assert!(
+            !vec_tokens.contains("filter_map"),
+            "Vec read must not drop reps: {vec_tokens}"
+        );
+        let scalar_tokens = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct P { #[hl7(field = 5)] n: String }",
+        ))
+        .expect("valid segment must expand")
+        .to_string();
+        assert!(
+            !scalar_tokens.contains("filter_map"),
+            "scalar read must not drop reps: {scalar_tokens}"
+        );
+        assert!(
+            scalar_tokens
+                .replace(' ', "")
+                .contains("None=>String::new()"),
+            "scalar read must keep empty reps: {scalar_tokens}"
+        );
     }
 }

@@ -218,9 +218,26 @@ impl ImmunizationConverter {
         }
 
         // RXA-10: Administering Provider -> performer
-        if let Ok(Some(performer_id)) = terser.get(&path("10"))
+        let performer_path = path("10");
+        if let Ok(Some(performer_id)) = terser.get(&performer_path)
             && !performer_id.is_empty()
         {
+            // XCN name parts for display, like the encounter
+            // participant: prefix (6), given (3) + middle (4),
+            // family (2).
+            let mut display_parts = Vec::new();
+            for component in ["6", "3", "4", "2"] {
+                if let Ok(Some(part)) = terser.get(&format!("{performer_path}-{component}"))
+                    && !part.is_empty()
+                {
+                    display_parts.push(part);
+                }
+            }
+            let display = if display_parts.is_empty() {
+                None
+            } else {
+                Some(display_parts.join(" "))
+            };
             immunization.performer = Some(vec![ImmunizationPerformer {
                 function: Some(CodeableConcept {
                     coding: Some(vec![Coding {
@@ -235,7 +252,7 @@ impl ImmunizationConverter {
                     reference: Some(format!("Practitioner/{}", performer_id)),
                     type_: Some("Practitioner".to_string()),
                     identifier: None,
-                    display: None,
+                    display,
                 },
             }]);
         }
@@ -427,14 +444,27 @@ impl ImmunizationConverter {
     /// Extract vaccine code from RXA-5 field
     fn extract_vaccine_code(terser: &Terser, base_path: &str) -> ConversionResult<CodeableConcept> {
         // Empty is missing: it must not become an empty vaccine code.
-        let code = terser
+        // A text-only RXA-5 keeps its text, like the allergy
+        // converter; only a fully-empty field errors.
+        let Some(code) = terser
             .get(base_path)
             .ok()
             .flatten()
             .filter(|code| !code.is_empty())
-            .ok_or_else(|| {
-                ConversionError::MissingField(base_path.to_string(), "RXA".to_string())
-            })?;
+        else {
+            if let Ok(Some(text)) = terser.get(&format!("{base_path}-2"))
+                && !text.is_empty()
+            {
+                return Ok(CodeableConcept {
+                    coding: None,
+                    text: Some(text.to_string()),
+                });
+            }
+            return Err(ConversionError::MissingField(
+                base_path.to_string(),
+                "RXA".to_string(),
+            ));
+        };
 
         // RXA-5-3 selects the system; only an absent one defaults to CVX.
         let system = terser
@@ -924,6 +954,50 @@ mod tests {
             ImmunizationConverter::convert_datetime("2024").unwrap(),
             "2024"
         );
+    }
+
+    #[test]
+    fn test_text_only_rxa5_preserved_as_text() {
+        // Empty code with valued text keeps the vaccine code as
+        // text (fully-empty still errors, see above).
+        let mut fields = vec![String::new(); 20];
+        fields[0] = "0".to_string();
+        fields[1] = "1".to_string();
+        fields[2] = "20240315100000".to_string();
+        fields[4] = "^HepB free text".to_string();
+        fields[19] = "CP".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|M|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rRXA|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let imm = &ImmunizationConverter::convert_all(&message).unwrap()[0];
+        assert_eq!(imm.vaccine_code.coding, None);
+        assert_eq!(imm.vaccine_code.text.as_deref(), Some("HepB free text"));
+    }
+
+    #[test]
+    fn test_rxa10_performer_display_builds_full_name() {
+        // RXA-10 is XCN: display is prefix/given/middle/family,
+        // like the encounter participant display.
+        let mut fields = vec![String::new(); 20];
+        fields[0] = "0".to_string();
+        fields[1] = "1".to_string();
+        fields[2] = "20240315100000".to_string();
+        fields[4] = "08^HepB adult^CVX".to_string();
+        fields[9] = "DOC123^SMITH^JANE".to_string();
+        fields[19] = "CP".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|M|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rRXA|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let imm = &ImmunizationConverter::convert_all(&message).unwrap()[0];
+        let actor = &imm.performer.as_ref().unwrap()[0].actor;
+        assert_eq!(actor.reference.as_deref(), Some("Practitioner/DOC123"));
+        assert_eq!(actor.display.as_deref(), Some("JANE SMITH"));
     }
 
     #[test]

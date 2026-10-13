@@ -224,10 +224,9 @@ pub fn convert_with_schemas(
             if !def.required {
                 continue;
             }
-            let present = segment
-                .get_field(*number)
-                .and_then(|f| f.value())
-                .is_some_and(|v| !v.is_empty());
+            // Whole-field emptiness: a field valued only past
+            // component 1 (e.g. PID-5 "^John") is still present.
+            let present = segment.get_field(*number).is_some_and(|f| !f.is_empty());
             if !present {
                 report
                     .missing_required
@@ -590,6 +589,29 @@ mod tests {
             .unwrap();
         let values: Vec<&str> = field.repetitions.iter().filter_map(|r| r.value()).collect();
         assert_eq!(values, vec!["OwnValue", "Bobby"]);
+    }
+
+    #[test]
+    fn required_field_valued_past_component_one_is_present() {
+        // PID-5 "^John" values only component 2: whole-field emptiness
+        // must see it, or the field is wrongly reported missing.
+        let from = schema(&[(1, "Set ID", false), (5, "Patient Name", false)]);
+        let to = schema(&[(1, "Set ID", false), (5, "Patient Name", true)]);
+        let message =
+            parse_message("MSH|^~\\&|A|B|C|D|20240101||TST^T01|1|P|2.5\rPID|1||||^John\r").unwrap();
+
+        let (_converted, report) = convert_with_schemas(&message, &from, &to, Version::V2_5);
+
+        assert!(
+            report.missing_required.is_empty(),
+            "unexpected missing: {:?}",
+            report.missing_required
+        );
+
+        // A genuinely absent required field is still reported.
+        let empty = parse_message("MSH|^~\\&|A|B|C|D|20240101||TST^T01|1|P|2.5\rPID|1\r").unwrap();
+        let (_converted, report) = convert_with_schemas(&empty, &from, &to, Version::V2_5);
+        assert_eq!(report.missing_required, vec!["PID[0]-5"]);
     }
 
     #[test]

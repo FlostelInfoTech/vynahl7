@@ -2,6 +2,7 @@
 //!
 //! Converts FHIR Patient resources back to HL7 v2.x PID segments.
 
+use super::split_trailing_zone;
 use crate::error::ConversionResult;
 use crate::resources::common::*;
 use crate::resources::patient::Patient;
@@ -128,14 +129,17 @@ impl PatientReverseConverter {
                 let _ = pid.set_component(5, rep, 0, family);
             }
 
-            // Given names - component 2 (0-indexed: 1)
+            // Given names - component 2 (0-indexed: 1).
+            // Overflow joins into component 3 with a space: the
+            // forward converter reads XPN-2/XPN-3 back into `given`,
+            // so no token is lost.
             if let Some(ref given) = name.given {
                 if let Some(first_given) = given.first() {
                     let _ = pid.set_component(5, rep, 1, first_given);
                 }
                 // Middle name - component 3 (0-indexed: 2)
                 if given.len() > 1 {
-                    let _ = pid.set_component(5, rep, 2, &given[1]);
+                    let _ = pid.set_component(5, rep, 2, given[1..].join(" "));
                 }
             }
 
@@ -148,18 +152,19 @@ impl PatientReverseConverter {
 
             // Degree - component 6 (0-indexed: 5). The forward
             // converter appends XPN-6 after XPN-4 in `suffix`, so
-            // the second entry round-trips here.
+            // the remaining entries round-trip here, space-joined.
             if let Some(ref suffix) = name.suffix
                 && suffix.len() > 1
             {
-                let _ = pid.set_component(5, rep, 5, &suffix[1]);
+                let _ = pid.set_component(5, rep, 5, suffix[1..].join(" "));
             }
 
-            // Prefix - component 5 (0-indexed: 4)
+            // Prefix - component 5 (0-indexed: 4). Every prefix
+            // joins with a space so none is silently dropped.
             if let Some(ref prefix) = name.prefix
-                && let Some(first_prefix) = prefix.first()
+                && !prefix.is_empty()
             {
-                let _ = pid.set_component(5, rep, 4, first_prefix);
+                let _ = pid.set_component(5, rep, 4, prefix.join(" "));
             }
 
             // Name type - component 7 (0-indexed: 6). Only mapped
@@ -186,14 +191,17 @@ impl PatientReverseConverter {
         for (rep, address) in addresses.iter().enumerate() {
             // XAD structure: 1=Street, 2=Other, 3=City, 4=State, 5=ZIP, 6=Country, 7=Type
 
-            // Street address - component 1 (0-indexed: 0)
+            // Street address - component 1 (0-indexed: 0).
+            // Overflow joins into component 2 with a space: the
+            // forward converter reads XAD-1/XAD-2 back into `line`,
+            // so no token is lost.
             if let Some(ref lines) = address.line {
                 if let Some(first_line) = lines.first() {
                     let _ = pid.set_component(11, rep, 0, first_line);
                 }
                 // Other designation - component 2 (0-indexed: 1)
                 if lines.len() > 1 {
-                    let _ = pid.set_component(11, rep, 1, &lines[1]);
+                    let _ = pid.set_component(11, rep, 1, lines[1..].join(" "));
                 }
             }
 
@@ -285,13 +293,17 @@ impl PatientReverseConverter {
     /// Convert FHIR datetime to HL7 v2 datetime
     ///
     /// A trailing `Z` becomes `+0000`: a bare `Z` is not valid HL7 DTM.
+    /// A trailing numeric zone (`[+-]HH:MM` or `[+-]HHMM`) is split off
+    /// before separators are stripped so a negative offset keeps its
+    /// sign: `2024-03-15T10:00:00-05:00` -> `20240315100000-0500`.
     fn convert_datetime_to_hl7(datetime: &str) -> ConversionResult<String> {
         let zoned = match datetime.strip_suffix('Z') {
             Some(stem) => format!("{stem}+0000"),
             None => datetime.to_string(),
         };
-        // Remove dashes, colons, and T separator
-        Ok(zoned.replace(['-', ':', 'T'], ""))
+        let (stem, zone) = split_trailing_zone(&zoned);
+        // Remove dashes, colons, and T separator from the stem only.
+        Ok(format!("{}{}", stem.replace(['-', ':', 'T'], ""), zone))
     }
 }
 
@@ -595,11 +607,24 @@ mod tests {
             PatientReverseConverter::convert_datetime_to_hl7("2024-03-15T10:00:00").unwrap(),
             "20240315100000"
         );
+        // A negative offset keeps its sign: the '-' is a zone sign,
+        // not a date separator.
+        assert_eq!(
+            PatientReverseConverter::convert_datetime_to_hl7("2024-03-15T10:00:00-05:00").unwrap(),
+            "20240315100000-0500"
+        );
+        assert_eq!(
+            PatientReverseConverter::convert_datetime_to_hl7("2024-03-15T10:00:00+05:00").unwrap(),
+            "20240315100000+0500"
+        );
         // End to end through PID-29.
         let mut patient = Patient::new();
         patient.deceased_date_time = Some("2024-03-15T10:00:00Z".to_string());
         let pid = PatientReverseConverter::convert(&patient).unwrap();
         assert_eq!(pid.get_field_value(29), Some("20240315100000+0000"));
+        patient.deceased_date_time = Some("2024-03-15T10:00:00-05:00".to_string());
+        let pid = PatientReverseConverter::convert(&patient).unwrap();
+        assert_eq!(pid.get_field_value(29), Some("20240315100000-0500"));
     }
 
     #[test]
@@ -625,6 +650,93 @@ mod tests {
         let pid = PatientReverseConverter::convert(&patient).unwrap();
         assert_eq!(pid.get_field_value(24), Some("Y"));
         assert_eq!(pid.get_field_value(25), Some("2"));
+    }
+
+    fn round_trip_pid(pid: &Segment) -> Patient {
+        use crate::converters::patient::PatientConverter;
+        use vyna_hl7_core::delimiters::Delimiters;
+        use vyna_hl7_parser::parse_message;
+
+        let hl7 = format!(
+            "MSH|^~\\&|A|B|C|D|20240315||ADT^A01|1|P|2.5\r{}",
+            pid.encode(&Delimiters::default())
+        );
+        PatientConverter::convert(&parse_message(&hl7).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn test_name_and_address_overflow_joins_into_last_slot() {
+        let mut patient = Patient::new();
+        patient.name = Some(vec![HumanName {
+            use_: Some("official".to_string()),
+            text: None,
+            family: Some("Smith".to_string()),
+            given: Some(vec![
+                "John".to_string(),
+                "Michael".to_string(),
+                "David".to_string(),
+            ]),
+            prefix: Some(vec!["Mr".to_string(), "Dr".to_string()]),
+            suffix: Some(vec!["Jr".to_string(), "Sr".to_string(), "III".to_string()]),
+        }]);
+        patient.address = Some(vec![Address {
+            use_: Some("home".to_string()),
+            type_: None,
+            text: None,
+            line: Some(vec![
+                "123 Main St".to_string(),
+                "Apt 4".to_string(),
+                "Floor 2".to_string(),
+            ]),
+            city: None,
+            state: None,
+            postal_code: None,
+            country: None,
+        }]);
+        let pid = PatientReverseConverter::convert(&patient).unwrap();
+        // Overflow joins with a space into the last slot instead of
+        // being silently dropped.
+        assert_eq!(rep_component(&pid, 5, 0, 1).as_deref(), Some("John"));
+        assert_eq!(
+            rep_component(&pid, 5, 0, 2).as_deref(),
+            Some("Michael David")
+        );
+        assert_eq!(rep_component(&pid, 5, 0, 4).as_deref(), Some("Mr Dr"));
+        assert_eq!(rep_component(&pid, 5, 0, 3).as_deref(), Some("Jr"));
+        assert_eq!(rep_component(&pid, 5, 0, 5).as_deref(), Some("Sr III"));
+        assert_eq!(
+            rep_component(&pid, 11, 0, 0).as_deref(),
+            Some("123 Main St")
+        );
+        assert_eq!(
+            rep_component(&pid, 11, 0, 1).as_deref(),
+            Some("Apt 4 Floor 2")
+        );
+
+        // Re-forwarding loses no token: every original value still
+        // appears in the joined round-tripped lists.
+        let back = round_trip_pid(&pid);
+        let name = &back.name.as_ref().unwrap()[0];
+        let given = name.given.as_ref().unwrap().join(" ");
+        for token in ["John", "Michael", "David"] {
+            assert!(given.contains(token), "given {given} lost {token}");
+        }
+        let prefix = name.prefix.as_ref().unwrap().join(" ");
+        for token in ["Mr", "Dr"] {
+            assert!(prefix.contains(token), "prefix {prefix} lost {token}");
+        }
+        let suffix = name.suffix.as_ref().unwrap().join(" ");
+        for token in ["Jr", "Sr", "III"] {
+            assert!(suffix.contains(token), "suffix {suffix} lost {token}");
+        }
+        let lines = back.address.as_ref().unwrap()[0]
+            .line
+            .as_ref()
+            .unwrap()
+            .join(" ");
+        for token in ["123 Main St", "Apt 4", "Floor 2"] {
+            assert!(lines.contains(token), "lines {lines} lost {token}");
+        }
     }
 
     #[test]
