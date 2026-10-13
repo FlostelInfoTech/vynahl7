@@ -2,7 +2,7 @@
 //!
 //! Based on HL7 v2-to-FHIR mapping: <https://build.fhir.org/ig/HL7/v2-to-fhir/ConceptMap-segment-pv1-to-encounter.html>
 
-use super::patient::{valid_hl7_date, valid_hl7_time};
+use super::patient::{split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time};
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
 use crate::resources::encounter::*;
@@ -84,25 +84,28 @@ impl EncounterConverter {
             }]);
         }
 
-        // PV1-3: Assigned Patient Location -> Encounter.location
-        if let Ok(Some(location)) = terser.get("PV1-3")
-            && !location.is_empty()
+        // PV1-3: Assigned Patient Location (PL) -> Encounter.location.
+        // PL components: 1 = point of care, 2 = room, 3 = bed, 4 = facility.
+        // A whole-field read returns component 1, so the detail parts
+        // must be read as explicit components 2-4.
+        if let Ok(Some(point_of_care)) = terser.get("PV1-3")
+            && !point_of_care.is_empty()
         {
-            let mut location_display = location.to_string();
-
-            // Try to get more detailed location info
-            if let Ok(Some(room)) = terser.get("PV1-3-1")
-                && !room.is_empty()
-            {
-                location_display = room.to_string();
+            let mut parts = vec![point_of_care.to_string()];
+            for index in 2..=4 {
+                if let Ok(Some(part)) = terser.get(&format!("PV1-3-{index}"))
+                    && !part.is_empty()
+                {
+                    parts.push(part.to_string());
+                }
             }
 
             encounter.location = Some(vec![EncounterLocation {
                 location: Reference {
-                    reference: Some(format!("Location/{}", location)),
+                    reference: Some(format!("Location/{}", point_of_care)),
                     type_: Some("Location".to_string()),
                     identifier: None,
-                    display: Some(location_display),
+                    display: Some(parts.join(", ")),
                 },
                 status: Some("active".to_string()),
                 period: None,
@@ -364,33 +367,48 @@ impl EncounterConverter {
     }
 
     /// Convert HL7 v2 datetime format to FHIR datetime format
+    ///
+    /// `YYYYMMDDHHMM` keeps its minutes (`YYYY-MM-DDTHH:MM`) and a
+    /// trailing HL7 zone (`±HHMM`) is preserved as `±HH:MM`.
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
+        let (stem, offset) = split_hl7_offset(datetime);
+        let zone = offset.as_deref().unwrap_or("");
         // Byte-slice checks on `[u8]` never split a char boundary, and an
         // all-ASCII-digit prefix makes the `&str` slices below safe.
-        let bytes = datetime.as_bytes();
+        let bytes = stem.as_bytes();
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
-            if valid_hl7_date(&datetime[0..8]) && valid_hl7_time(&datetime[8..14]) {
+            if valid_hl7_date(&stem[0..8]) && valid_hl7_time(&stem[8..14]) {
                 Ok(format!(
-                    "{}-{}-{}T{}:{}:{}",
-                    &datetime[0..4],
-                    &datetime[4..6],
-                    &datetime[6..8],
-                    &datetime[8..10],
-                    &datetime[10..12],
-                    &datetime[12..14]
+                    "{}-{}-{}T{}:{}:{}{}",
+                    &stem[0..4],
+                    &stem[4..6],
+                    &stem[6..8],
+                    &stem[8..10],
+                    &stem[10..12],
+                    &stem[12..14],
+                    zone
+                ))
+            } else {
+                Err(Self::invalid_datetime(datetime))
+            }
+        } else if bytes.len() >= 12 && bytes[..12].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_date(&stem[0..8]) && valid_hl7_hour_min(&stem[8..12]) {
+                Ok(format!(
+                    "{}-{}-{}T{}:{}{}",
+                    &stem[0..4],
+                    &stem[4..6],
+                    &stem[6..8],
+                    &stem[8..10],
+                    &stem[10..12],
+                    zone
                 ))
             } else {
                 Err(Self::invalid_datetime(datetime))
             }
         } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
             // Date only; still requires a real calendar date.
-            if valid_hl7_date(&datetime[0..8]) {
-                Ok(format!(
-                    "{}-{}-{}",
-                    &datetime[0..4],
-                    &datetime[4..6],
-                    &datetime[6..8]
-                ))
+            if valid_hl7_date(&stem[0..8]) {
+                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
             } else {
                 Err(Self::invalid_datetime(datetime))
             }
@@ -522,5 +540,29 @@ mod tests {
                 .unwrap()
                 .contains("Practitioner/")
         );
+    }
+
+    #[test]
+    fn test_datetime_preserves_minutes_and_zone() {
+        assert_eq!(
+            EncounterConverter::convert_datetime("202403151000").unwrap(),
+            "2024-03-15T10:00"
+        );
+        assert_eq!(
+            EncounterConverter::convert_datetime("20240315100000+0500").unwrap(),
+            "2024-03-15T10:00:00+05:00"
+        );
+    }
+
+    #[test]
+    fn test_location_uses_pl_room_bed_facility() {
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||ADT^A01|1|P|2.5\r\
+                   PID|1||MRN123^^^MRN||DOE^JOHN||19800101|M\r\
+                   PV1|1|I|4N^401^01^HOSP";
+        let message = parse_message(hl7).unwrap();
+        let encounter = EncounterConverter::convert(&message).unwrap();
+        let location = &encounter.location.unwrap()[0].location;
+        assert_eq!(location.reference, Some("Location/4N".to_string()));
+        assert_eq!(location.display, Some("4N, 401, 01, HOSP".to_string()));
     }
 }

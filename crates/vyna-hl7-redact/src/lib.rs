@@ -483,6 +483,7 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("PID", 5),
         ("PID", 6),
         ("PID", 9),
+        ("PID", 12),
         ("PID", 13),
         ("PID", 14),
         ("PID", 19),
@@ -513,7 +514,12 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("OBR", 16),
         ("OBR", 17),
         ("OBR", 28),
+        ("OBR", 32),
+        ("OBR", 33),
+        ("OBR", 34),
+        ("OBR", 35),
         ("OBX", 16),
+        ("OBX", 25),
         ("RXA", 10),
         ("RXO", 14),
         ("RXO", 15),
@@ -532,14 +538,23 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("GT1", 45),
         ("GT1", 46),
         ("GT1", 56),
+        ("IN1", 6),
         ("IN1", 16),
         ("IN1", 30),
         ("IN1", 52),
         ("IN2", 2),
+        ("IN2", 3),
+        ("IN2", 7),
+        ("IN2", 9),
+        ("IN2", 22),
+        ("IN2", 40),
+        ("IN2", 49),
+        ("IN2", 52),
         ("SCH", 12),
         ("SCH", 13),
         ("SCH", 16),
         ("SCH", 17),
+        ("SCH", 20),
         ("ROL", 4),
         ("ROL", 12),
         ("PR1", 8),
@@ -1496,6 +1511,68 @@ mod tests {
         let acc = message.get_segment_by_id("ACC").unwrap();
         assert!(acc.get_field_value(7).is_none());
         assert_address_generalized(acc, 11, "752");
+    }
+
+    #[test]
+    fn safe_harbor_redacts_oru_provider_fields_and_county() {
+        let message = redact_segments(&[
+            seg("PID", &[(5, "Smith^John"), (12, "06001")]),
+            seg(
+                "OBR",
+                &[
+                    (32, "PRI^Principal^Pete"),
+                    (33, "AST^Assistant^Amy"),
+                    (34, "TEC^Tech^Tina"),
+                    (35, "TRN^Trans^Trent"),
+                ],
+            ),
+            seg("OBX", &[(25, "DIR^Director^Dan")]),
+        ]);
+
+        // OBR-32..35 (NDL interpreters/tech/transcriptionist) and OBX-25
+        // (XCN medical director) hold person names; PID-12 is a county
+        // code, a Safe Harbor geographic identifier. None may survive.
+        let pid = message.get_segment_by_id("PID").unwrap();
+        assert!(pid.get_field_value(5).is_none());
+        assert!(pid.get_field_value(12).is_none(), "PID-12 county survives");
+        let obr = message.get_segment_by_id("OBR").unwrap();
+        for field in [32, 33, 34, 35] {
+            assert!(obr.get_field_value(field).is_none(), "OBR-{field} survives");
+        }
+        let obx = message.get_segment_by_id("OBX").unwrap();
+        assert!(obx.get_field_value(25).is_none(), "OBX-25 survives");
+    }
+
+    #[test]
+    fn safe_harbor_redacts_audited_person_name_fields() {
+        // XCN/XPN audit over the 34 covered segments: every person-name
+        // field the profile missed (field numbers cross-checked against
+        // crates/vyna-hl7-validator/schemas).
+        let message = redact_segments(&[
+            seg("IN1", &[(6, "Contact^Casey")]),
+            seg(
+                "IN2",
+                &[
+                    (3, "EMP1^Employer^Ed"),
+                    (7, "Case^Medicaid"),
+                    (9, "Sponsor^Sam"),
+                    (22, "Approver^Amy"),
+                    (40, "Maiden^Mary"),
+                    (49, "Contact^Carl"),
+                    (52, "Kin^Kate"),
+                ],
+            ),
+            seg("SCH", &[(20, "ENT1^Entered^Eve")]),
+        ]);
+
+        let in1 = message.get_segment_by_id("IN1").unwrap();
+        assert!(in1.get_field_value(6).is_none());
+        let in2 = message.get_segment_by_id("IN2").unwrap();
+        for field in [3, 7, 9, 22, 40, 49, 52] {
+            assert!(in2.get_field_value(field).is_none(), "IN2-{field} survives");
+        }
+        let sch = message.get_segment_by_id("SCH").unwrap();
+        assert!(sch.get_field_value(20).is_none());
     }
 
     #[test]

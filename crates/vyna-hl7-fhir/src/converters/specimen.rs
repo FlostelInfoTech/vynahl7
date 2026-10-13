@@ -59,8 +59,11 @@ impl SpecimenConverter {
 
         let mut specimen = Specimen::new(specimen_type, subject);
 
-        // SPM-2: Specimen ID -> identifier
-        if let Ok(Some(specimen_id)) = terser.get(&spm_path("2")) {
+        // SPM-2: Specimen ID -> identifier. Empty is absent: it
+        // must not become an identifier with an empty value.
+        if let Ok(Some(specimen_id)) = terser.get(&spm_path("2"))
+            && !specimen_id.is_empty()
+        {
             specimen.identifier = Some(vec![Identifier {
                 system: Some("http://hospital.example.org/specimen-id".to_string()),
                 value: Some(specimen_id.to_string()),
@@ -169,7 +172,8 @@ impl SpecimenConverter {
                 ConversionError::InvalidDataType(
                     "SPM-12".to_string(),
                     "numeric".to_string(),
-                    amount_str.to_string(),
+                    // Redacted: never embed the source value (may be PHI).
+                    "unparseable numeric value".to_string(),
                 )
             })?;
             let mut quantity = Quantity {
@@ -353,10 +357,12 @@ impl SpecimenConverter {
 
     /// Extract patient reference from PID segment
     fn extract_patient_reference(terser: &Terser) -> ConversionResult<Reference> {
+        // Empty is missing: it must not become a `Patient/` reference.
         let patient_id = terser
             .get("PID-3")
             .ok()
             .flatten()
+            .filter(|s| !s.is_empty())
             .ok_or_else(|| ConversionError::MissingSegment("PID".to_string()))?;
 
         Ok(Reference {
@@ -552,6 +558,41 @@ mod tests {
             collection.collected_date_time.as_deref(),
             Some("2024-03-15T10:00:00+05:00")
         );
+    }
+
+    #[test]
+    fn test_empty_pid3_returns_missing_segment() {
+        // PID-3 present but its first component empty: no patient id.
+        let hl7 = "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||OML^O21|MSG123|P|2.5\r\
+                   PID|1||^^^MRN||DOE^JOHN||19800101|M\r\
+                   SPM|1|SPEC123||BLD^Blood^HL70487";
+        let message = parse_message(hl7).unwrap();
+        let result = SpecimenConverter::convert_all(&message);
+        assert!(matches!(result, Err(ConversionError::MissingSegment(_))));
+    }
+
+    #[test]
+    fn test_empty_spm2_leaves_identifier_unset() {
+        // SPM-2 present-but-empty; SPM-4 forces its presence.
+        let hl7 = "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||OML^O21|MSG123|P|2.5\r\
+                   PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+                   SPM|1|||BLD^Blood^HL70487";
+        let message = parse_message(hl7).unwrap();
+        let specimens = SpecimenConverter::convert_all(&message).unwrap();
+        assert_eq!(specimens[0].identifier, None);
+    }
+
+    #[test]
+    fn test_unparseable_amount_error_redacts_source_value() {
+        let hl7 = "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||OML^O21|MSG123|P|2.5\r\
+                   PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+                   SPM|1|SPEC123||BLD^Blood^HL70487|||ANP^Venipuncture^HL70488\
+                   |LA^Left Arm^HL70163||||SECRET-DOSE^mL|||||20240315100000";
+        let message = parse_message(hl7).unwrap();
+        let err = SpecimenConverter::convert_all(&message).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("SPM-12"), "keeps field location: {msg}");
+        assert!(!msg.contains("SECRET-DOSE"), "error leaks source: {msg}");
     }
 
     #[test]

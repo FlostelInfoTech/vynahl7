@@ -263,6 +263,52 @@ fn unwrap_received(buffer: &[u8], charset_override: Option<CharacterSet>) -> Res
     }
 }
 
+/// Extract the first complete MLLP frame from `buf`, if one is present.
+///
+/// Leading bytes before the first `VT` are discarded as line noise; any
+/// bytes after the frame's closing `FS CR` stay in `buf` for the next
+/// call, so pipelined frames that arrive in a single TCP read are all
+/// delivered instead of only the first. Decoding mirrors
+/// [`codec::MllpCodec`]: the frame ends at the first `FS CR` pair and
+/// frames (markers included) larger than `max_message_size` are rejected.
+fn take_complete_frame(buf: &mut Vec<u8>, max_message_size: usize) -> Result<Option<Vec<u8>>> {
+    let start = match buf.iter().position(|b| *b == START_OF_BLOCK) {
+        Some(pos) => pos,
+        None => {
+            buf.clear();
+            return Ok(None);
+        }
+    };
+    if start > 0 {
+        buf.drain(..start);
+    }
+
+    let mut idx = 1;
+    while idx + 1 < buf.len() {
+        if buf[idx] == END_OF_BLOCK && buf[idx + 1] == CARRIAGE_RETURN {
+            let frame_len = idx + 2;
+            if frame_len > max_message_size {
+                return Err(Error::Mllp(format!(
+                    "Message exceeds maximum size of {} bytes",
+                    max_message_size
+                )));
+            }
+            return Ok(Some(buf.drain(..frame_len).collect()));
+        }
+        idx += 1;
+    }
+
+    if buf.len() > max_message_size {
+        return Err(Error::Mllp(format!(
+            "Message exceeds maximum size of {} bytes",
+            max_message_size
+        )));
+    }
+    // Avoid re-scanning a huge partial frame one byte at a time.
+    buf.reserve(8192);
+    Ok(None)
+}
+
 /// MLLP client for sending messages
 pub struct MllpClient {
     stream: MllpStream,
@@ -270,6 +316,8 @@ pub struct MllpClient {
     read_timeout: Duration,
     write_timeout: Duration,
     charset_override: Option<CharacterSet>,
+    /// Bytes already read past the last delivered frame's `FS CR`.
+    pending: Vec<u8>,
 }
 
 impl MllpClient {
@@ -301,6 +349,7 @@ impl MllpClient {
             read_timeout: config.read_timeout,
             write_timeout: config.write_timeout,
             charset_override: config.charset_override,
+            pending: Vec::new(),
         })
     }
 
@@ -417,6 +466,7 @@ impl MllpClient {
             read_timeout: config.read_timeout,
             write_timeout: config.write_timeout,
             charset_override: config.charset_override,
+            pending: Vec::new(),
         })
     }
 
@@ -474,12 +524,18 @@ impl MllpClient {
     }
 
     /// Internal method to receive a message with buffer size protection
+    ///
+    /// Bytes left over from a previous read (pipelined frames sharing one
+    /// TCP read) are drained from `pending` before touching the socket.
     async fn receive_message_internal(&mut self) -> Result<Message> {
-        let mut buffer = Vec::with_capacity(8192); // Pre-allocate reasonable size
         let mut chunk = [0u8; 4096]; // Read in larger chunks for efficiency
-        let mut found_start = false;
 
         loop {
+            if let Some(frame) = take_complete_frame(&mut self.pending, self.max_message_size)? {
+                let hl7_text = unwrap_received(&frame, self.charset_override)?;
+                return parse_message(&hl7_text);
+            }
+
             let n = self
                 .stream
                 .read(&mut chunk)
@@ -490,36 +546,7 @@ impl MllpClient {
                 return Err(Error::Network("Connection closed".to_string()));
             }
 
-            for &byte in &chunk[..n] {
-                if !found_start {
-                    if byte == START_OF_BLOCK {
-                        found_start = true;
-                        buffer.push(byte);
-                    }
-                    continue;
-                }
-
-                // Check buffer size limit
-                if buffer.len() >= self.max_message_size {
-                    return Err(Error::Mllp(format!(
-                        "Message exceeds maximum size of {} bytes",
-                        self.max_message_size
-                    )));
-                }
-
-                buffer.push(byte);
-
-                // Check for end sequence (FS CR)
-                if buffer.len() >= 3 {
-                    let len = buffer.len();
-                    if buffer[len - 2] == END_OF_BLOCK && buffer[len - 1] == CARRIAGE_RETURN {
-                        // Unwrap frame
-                        let hl7_text = unwrap_received(&buffer, self.charset_override)?;
-                        // Parse message
-                        return parse_message(&hl7_text);
-                    }
-                }
-            }
+            self.pending.extend_from_slice(&chunk[..n]);
         }
     }
 
@@ -680,6 +707,7 @@ impl MllpServer {
             read_timeout: self.config.read_timeout,
             write_timeout: self.config.write_timeout,
             charset_override: self.config.charset_override,
+            pending: Vec::new(),
         })
     }
 
@@ -698,6 +726,8 @@ pub struct MllpConnection {
     read_timeout: Duration,
     write_timeout: Duration,
     charset_override: Option<CharacterSet>,
+    /// Bytes already read past the last delivered frame's `FS CR`.
+    pending: Vec<u8>,
 }
 
 impl MllpConnection {
@@ -709,12 +739,18 @@ impl MllpConnection {
     }
 
     /// Internal method to receive a message with buffer size protection
+    ///
+    /// Bytes left over from a previous read (pipelined frames sharing one
+    /// TCP read) are drained from `pending` before touching the socket.
     async fn receive_message_internal(&mut self) -> Result<Message> {
-        let mut buffer = Vec::with_capacity(8192); // Pre-allocate reasonable size
         let mut chunk = [0u8; 4096]; // Read in larger chunks for efficiency
-        let mut found_start = false;
 
         loop {
+            if let Some(frame) = take_complete_frame(&mut self.pending, self.max_message_size)? {
+                let hl7_text = unwrap_received(&frame, self.charset_override)?;
+                return parse_message(&hl7_text);
+            }
+
             let n = self
                 .stream
                 .read(&mut chunk)
@@ -725,36 +761,7 @@ impl MllpConnection {
                 return Err(Error::Network("Connection closed".to_string()));
             }
 
-            for &byte in &chunk[..n] {
-                if !found_start {
-                    if byte == START_OF_BLOCK {
-                        found_start = true;
-                        buffer.push(byte);
-                    }
-                    continue;
-                }
-
-                // Check buffer size limit
-                if buffer.len() >= self.max_message_size {
-                    return Err(Error::Mllp(format!(
-                        "Message exceeds maximum size of {} bytes",
-                        self.max_message_size
-                    )));
-                }
-
-                buffer.push(byte);
-
-                // Check for end sequence (FS CR)
-                if buffer.len() >= 3 {
-                    let len = buffer.len();
-                    if buffer[len - 2] == END_OF_BLOCK && buffer[len - 1] == CARRIAGE_RETURN {
-                        // Unwrap frame
-                        let hl7_text = unwrap_received(&buffer, self.charset_override)?;
-                        // Parse message
-                        return parse_message(&hl7_text);
-                    }
-                }
-            }
+            self.pending.extend_from_slice(&chunk[..n]);
         }
     }
 
@@ -881,6 +888,61 @@ mod tests {
         let name = pid.get_field(5).unwrap().get_repetition(0).unwrap();
         assert_eq!(name.get_component(0).unwrap().value(), Some("Müller"));
         assert_eq!(name.get_component(1).unwrap().value(), Some("Jörg"));
+    }
+
+    const PIPELINED_MSG1: &str = "MSH|^~\\&|SND|FAC|RCV|RFAC|20240115120000||ADT^A01|PIPE1|P|2.5\r";
+    const PIPELINED_MSG2: &str = "MSH|^~\\&|SND|FAC|RCV|RFAC|20240115120000||ADT^A01|PIPE2|P|2.5\r";
+
+    /// Two frames in one TCP read: the server must deliver both, not drop
+    /// the bytes past the first frame's `FS CR`.
+    #[tokio::test]
+    async fn test_connection_delivers_pipelined_frames() {
+        let config = MllpConfig::new().with_read_timeout(Duration::from_secs(5));
+        let server = MllpServer::bind_with_config("127.0.0.1:0", config)
+            .await
+            .unwrap();
+        let addr = server.local_addr().unwrap();
+
+        let server_task = tokio::spawn(async move {
+            let mut conn = server.accept().await.unwrap();
+            let first = conn.receive_message().await.unwrap();
+            let second = conn.receive_message().await.unwrap();
+            assert_eq!(first.get_control_id(), Some("PIPE1"));
+            assert_eq!(second.get_control_id(), Some("PIPE2"));
+        });
+
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        let mut both = MllpFrame::wrap(PIPELINED_MSG1);
+        both.extend_from_slice(&MllpFrame::wrap(PIPELINED_MSG2));
+        stream.write_all(&both).await.unwrap();
+
+        server_task.await.unwrap();
+    }
+
+    /// Two frames in one TCP read: the client must deliver both, not drop
+    /// the bytes past the first frame's `FS CR`.
+    #[tokio::test]
+    async fn test_client_delivers_pipelined_frames() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server_task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut both = MllpFrame::wrap(PIPELINED_MSG1);
+            both.extend_from_slice(&MllpFrame::wrap(PIPELINED_MSG2));
+            socket.write_all(&both).await.unwrap();
+        });
+
+        let config = MllpConfig::new().with_read_timeout(Duration::from_secs(5));
+        let mut client = MllpClient::connect_with_config(&addr.to_string(), config)
+            .await
+            .unwrap();
+        let first = client.receive_message().await.unwrap();
+        let second = client.receive_message().await.unwrap();
+        assert_eq!(first.get_control_id(), Some("PIPE1"));
+        assert_eq!(second.get_control_id(), Some("PIPE2"));
+
+        server_task.await.unwrap();
     }
 
     #[test]

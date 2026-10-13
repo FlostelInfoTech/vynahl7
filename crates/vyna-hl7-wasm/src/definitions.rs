@@ -16,8 +16,10 @@ const SUPPORTED_VERSIONS: &[&str] = &[
     "2.8.2",
 ];
 
-/// Convert a version string like "2.5" to the vyna_hl7_core::Version enum
-fn parse_version(version: &str) -> Result<Version, JsValue> {
+/// Validate a version string without building a `JsValue`, so native
+/// tests and non-wasm callers (e.g. `create_message`) can share the
+/// supported-version check. Returns the parsed [`Version`].
+pub(crate) fn validate_version_string(version: &str) -> Result<Version, String> {
     match version {
         "2.1" => Ok(Version::V2_1),
         "2.2" => Ok(Version::V2_2),
@@ -32,12 +34,17 @@ fn parse_version(version: &str) -> Result<Version, JsValue> {
         "2.8" => Ok(Version::V2_8),
         "2.8.1" => Ok(Version::V2_8_1),
         "2.8.2" => Ok(Version::V2_8_2),
-        _ => Err(JsValue::from_str(&format!(
+        _ => Err(format!(
             "Unsupported HL7 version: '{}'. Supported versions: {}",
             version,
             SUPPORTED_VERSIONS.join(", ")
-        ))),
+        )),
     }
+}
+
+/// Convert a version string like "2.5" to the vyna_hl7_core::Version enum
+fn parse_version(version: &str) -> Result<Version, JsValue> {
+    validate_version_string(version).map_err(|e| JsValue::from_str(&e))
 }
 
 /// Get the human-readable description for a message type and trigger event.
@@ -302,38 +309,68 @@ pub fn get_message_definition(
 /// // { name: "Patient Identification", required: true, repeating: false,
 /// //   fields: { 1: { name: "Set ID", dataType: "SI", ... }, ... } }
 /// ```
+/// Message schemas searched first by [`get_segment_definition`], in
+/// priority order. Well-known schemas likely to hold the segment with
+/// the most complete field definitions come first.
+const SEARCH_SCHEMAS: &[(&str, &str)] = &[
+    ("ADT", "A01"), // Most comprehensive - has MSH, EVN, PID, PV1, NK1, etc.
+    ("ORU", "R01"), // Has OBR, OBX, NTE, etc.
+    ("ORM", "O01"), // Has ORC, OBR, etc.
+    ("SIU", "S12"), // Has SCH, AIS, AIG, AIL, AIP
+    ("DFT", "P03"), // Has FT1, DG1, PR1
+    ("BAR", "P01"), // Has GT1, IN1, IN2, ACC
+    ("RDE", "O11"), // Has RXE, RXR, RXC
+    ("RAS", "O17"), // Has RXA
+    ("MFN", "M01"), // Has MFI, MFE
+    ("MDM", "T02"), // Has TXA
+    ("ACK", ""),    // Has MSA, ERR
+    ("RDS", "O13"), // Has RXD
+    ("RGV", "O15"), // Has RXG
+    ("OUL", "R21"), // Has SPM
+    ("OML", "O21"), // Has SPM, SAC
+    ("QRY", "A19"), // Has QRD, QRF
+    ("ADT", "A40"), // Has MRG (patient identifier merges)
+    ("PPR", "PC1"), // Has PRB, GOL, PTH, VAR (problem/goal/pathway)
+];
+
+/// Find a segment definition across message schemas (pure helper).
+///
+/// Searches [`SEARCH_SCHEMAS`] first, then every remaining schema for
+/// the version, returning the first match. Returns `None` when no
+/// schema for the version contains the segment.
+fn find_segment_definition(version: Version, segment_id: &str) -> Option<SegmentDefinition> {
+    for (msg_type, trigger) in SEARCH_SCHEMAS {
+        if let Ok(schema) = load_schema(version, msg_type, trigger)
+            && let Some(seg_def) = schema.segments.get(segment_id)
+        {
+            return Some(seg_def.clone());
+        }
+    }
+    // Fallback: any other schema for the version, so segments added
+    // to schemas outside the curated list stay reachable.
+    for schema_name in list_available_schemas(version) {
+        let (msg_type, trigger) = match schema_name.split_once('^') {
+            Some((t, e)) => (t, e),
+            None => (schema_name.as_str(), ""),
+        };
+        if SEARCH_SCHEMAS.contains(&(msg_type, trigger)) {
+            continue;
+        }
+        if let Ok(schema) = load_schema(version, msg_type, trigger)
+            && let Some(seg_def) = schema.segments.get(segment_id)
+        {
+            return Some(seg_def.clone());
+        }
+    }
+    None
+}
+
 #[wasm_bindgen(js_name = getSegmentDefinition)]
 pub fn get_segment_definition(version: &str, segment_id: &str) -> Result<JsValue, JsValue> {
     let v = parse_version(version)?;
 
-    // Strategy: search through known message schemas to find this segment.
-    // We use well-known schemas that are likely to contain the segment with
-    // the most complete field definitions.
-    let search_schemas: &[(&str, &str)] = &[
-        ("ADT", "A01"), // Most comprehensive - has MSH, EVN, PID, PV1, NK1, etc.
-        ("ORU", "R01"), // Has OBR, OBX, NTE, etc.
-        ("ORM", "O01"), // Has ORC, OBR, etc.
-        ("SIU", "S12"), // Has SCH, AIS, AIG, AIL, AIP
-        ("DFT", "P03"), // Has FT1, DG1, PR1
-        ("BAR", "P01"), // Has GT1, IN1, IN2, ACC
-        ("RDE", "O11"), // Has RXE, RXR, RXC
-        ("RAS", "O17"), // Has RXA
-        ("MFN", "M01"), // Has MFI, MFE
-        ("MDM", "T02"), // Has TXA
-        ("ACK", ""),    // Has MSA, ERR
-        ("RDS", "O13"), // Has RXD
-        ("RGV", "O15"), // Has RXG
-        ("OUL", "R21"), // Has SPM
-        ("OML", "O21"), // Has SPM, SAC
-        ("QRY", "A19"), // Has QRD, QRF
-    ];
-
-    for (msg_type, trigger) in search_schemas {
-        if let Ok(schema) = load_schema(v, msg_type, trigger)
-            && let Some(seg_def) = schema.segments.get(segment_id)
-        {
-            return serialize_segment_definition(segment_id, seg_def);
-        }
+    if let Some(seg_def) = find_segment_definition(v, segment_id) {
+        return serialize_segment_definition(segment_id, &seg_def);
     }
 
     Err(JsValue::from_str(&format!(
@@ -628,6 +665,14 @@ mod tests {
     }
 
     #[test]
+    fn validate_version_string_rejects_unknown() {
+        let err = validate_version_string("9.9").unwrap_err();
+        assert!(err.contains("Unsupported HL7 version: '9.9'"), "{err}");
+        assert!(err.contains("2.5"), "{err}");
+        assert_eq!(validate_version_string("2.5").unwrap(), Version::V2_5);
+    }
+
+    #[test]
     fn parse_version_accepts_point_releases() {
         // The Ok path builds no JsValue, so it runs on native targets.
         assert_eq!(parse_version("2.3.1").unwrap(), Version::V2_3_1);
@@ -636,6 +681,28 @@ mod tests {
         assert_eq!(parse_version("2.8.1").unwrap(), Version::V2_8_1);
         assert_eq!(parse_version("2.8.2").unwrap(), Version::V2_8_2);
         assert_eq!(parse_version("2.5").unwrap(), Version::V2_5);
+    }
+
+    #[test]
+    fn segment_search_finds_merge_and_problem_segments() {
+        for seg_id in ["MRG", "PRB", "GOL", "PTH", "VAR"] {
+            assert!(
+                find_segment_definition(Version::V2_5, seg_id).is_some(),
+                "{seg_id} must resolve from its schema"
+            );
+        }
+    }
+
+    #[test]
+    fn segment_search_keeps_curated_hits_and_misses_unknown() {
+        // Previously covered segments still resolve first-match.
+        for seg_id in ["MSH", "PID", "OBX", "RXA", "QRD"] {
+            assert!(
+                find_segment_definition(Version::V2_5, seg_id).is_some(),
+                "{seg_id} must keep resolving"
+            );
+        }
+        assert!(find_segment_definition(Version::V2_5, "ZZZ").is_none());
     }
 
     #[test]

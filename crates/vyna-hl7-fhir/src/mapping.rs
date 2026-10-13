@@ -144,8 +144,7 @@ const MAX_ARRAY_INDEX: usize = 1000;
 /// Maximum target-path depth (dot-separated steps) accepted.
 ///
 /// Assignment recurses per step, so an uncapped target could exhaust
-/// the stack. Mirrors the predicate parser's recursion cap; real FHIR
-/// paths stay far below this.
+/// the stack; real FHIR paths stay far below this.
 const MAX_TARGET_DEPTH: usize = 64;
 
 impl Mapping {
@@ -401,22 +400,37 @@ impl MappingEngine {
             (None, None) => return Ok(None),
         };
 
-        if let Some(map) = &rule.map
-            && let Value::String(text) = &value
-        {
-            match map.get(text) {
-                Some(mapped) => value = Value::String(mapped.clone()),
-                None => {
-                    if let Some(default) = &rule.default {
-                        value = Value::String(default.clone());
-                    }
+        if let Some(map) = &rule.map {
+            let mapped = match &value {
+                Value::String(text) => match map.get(text) {
+                    Some(mapped) => Some(mapped.clone()),
+                    // A default without `{value}` is used verbatim; with
+                    // it, the unmapped value is interpolated (e.g.
+                    // `urn:oid:{value}`), mirroring the code converters.
+                    None => rule
+                        .default
+                        .as_ref()
+                        .map(|default| default.replace("{value}", text)),
+                },
+                _ => {
+                    return Err(ConversionError::Mapping(format!(
+                        "field '{}': map requires a string value",
+                        rule.target
+                    )));
                 }
+            };
+            if let Some(mapped) = mapped {
+                value = Value::String(mapped);
             }
         }
 
-        if let Some(format) = rule.format
-            && let Value::String(text) = &value
-        {
+        if let Some(format) = rule.format {
+            let Value::String(text) = &value else {
+                return Err(ConversionError::Mapping(format!(
+                    "field '{}': format requires a string value",
+                    rule.target
+                )));
+            };
             let formatted = match format {
                 ValueFormat::Date => format_date(text),
                 ValueFormat::DateTime => format_datetime(text),
@@ -733,6 +747,35 @@ fields:
     }
 
     #[test]
+    fn test_format_and_map_on_non_string_constants_error() {
+        // A numeric constant with `format` must error, not pass through.
+        let mapping = Mapping::from_yaml(
+            "resourceType: X\nfields:\n  - target: dob\n    constant: 123\n    format: date\n",
+        )
+        .unwrap();
+        let err = MappingEngine::apply(&mapping, &message()).unwrap_err();
+        assert!(err.to_string().contains("dob"), "{err}");
+
+        // Same for `map` on a non-string constant.
+        let mapping = Mapping::from_yaml(
+            "resourceType: X\nfields:\n  - target: a\n    constant: 123\n    map: {M: male}\n",
+        )
+        .unwrap();
+        assert!(MappingEngine::apply(&mapping, &message()).is_err());
+
+        // String constants still accept map/format.
+        let mapping = Mapping::from_yaml(concat!(
+            "resourceType: X\nfields:\n",
+            "  - target: a\n    constant: M\n    map: {M: male}\n",
+            "  - target: b\n    constant: \"19800101\"\n    format: date\n",
+        ))
+        .unwrap();
+        let out = MappingEngine::apply(&mapping, &message()).unwrap();
+        assert_eq!(out[0]["a"], "male");
+        assert_eq!(out[0]["b"], "1980-01-01");
+    }
+
+    #[test]
     fn engine_map_falls_back_to_default_then_passthrough() {
         let yaml = r#"
 resourceType: X
@@ -874,6 +917,42 @@ fields:
     fn shipped_condition_mapping_matches_code_converter() {
         let message = parse_message(
             "MSH|^~\\&|A|B|C|D|20240101||PPR^PC1|1|P|2.5\rPID|1||7\rPRB|AD|20240101|38341003^HTN^SCT|P1",
+        )
+        .unwrap();
+
+        let mapping = Mapping::from_yaml(mappings::CONDITION).unwrap();
+        let declarative = MappingEngine::apply(&mapping, &message).unwrap();
+        let coded = ConditionConverter::convert_all(&message).unwrap();
+
+        assert_eq!(declarative.len(), 1);
+        assert_eq!(declarative[0], serde_json::to_value(&coded[0]).unwrap());
+    }
+
+    #[test]
+    fn map_default_interpolates_unmapped_value() {
+        // A default with `{value}` interpolates the unmapped source
+        // value; without it the default is used verbatim.
+        let mapping = Mapping::from_yaml(concat!(
+            "resourceType: X\nfields:\n",
+            "  - target: a\n    constant: XYZ\n",
+            "    map: {SCT: http://snomed.info/sct}\n",
+            "    default: \"urn:oid:{value}\"\n",
+            "  - target: b\n    constant: XYZ\n",
+            "    map: {SCT: http://snomed.info/sct}\n",
+            "    default: unknown\n",
+        ))
+        .unwrap();
+        let out = MappingEngine::apply(&mapping, &message()).unwrap();
+        assert_eq!(out[0]["a"], "urn:oid:XYZ");
+        assert_eq!(out[0]["b"], "unknown");
+    }
+
+    #[test]
+    fn shipped_condition_mapping_matches_unknown_system() {
+        // Unmapped coding systems fall back to `urn:oid:{value}` on
+        // both sides of the converter/mapping parity.
+        let message = parse_message(
+            "MSH|^~\\&|A|B|C|D|20240101||PPR^PC1|1|P|2.5\rPID|1||7\rPRB|AD|20240101|X1^Xtext^XYZ|P1",
         )
         .unwrap();
 

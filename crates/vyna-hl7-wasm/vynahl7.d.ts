@@ -113,6 +113,7 @@ export function encodeMessage(message: WasmMessage): string;
  * @param message - The parsed message
  * @param path - The Terser path (e.g., "PID-5-1")
  * @returns The field value if found, or undefined
+ * @throws Error if the path is malformed
  *
  * @example
  * ```typescript
@@ -129,6 +130,7 @@ export function getTerserValue(message: WasmMessage, path: string): string | und
  * @param message - The message to modify
  * @param path - The Terser path (e.g., "PID-5-1")
  * @param value - The value to set
+ * @throws Error if the path is malformed
  *
  * @example
  * ```typescript
@@ -144,6 +146,7 @@ export function setTerserValue(message: WasmMessage, path: string, value: string
  * @param message - The message to query
  * @param paths - Array of Terser paths
  * @returns Object mapping paths to values
+ * @throws Error if any path is malformed
  *
  * @example
  * ```typescript
@@ -183,6 +186,8 @@ export function validateMessage(message: WasmMessage): WasmValidationResult;
  * @param sendingApp - Sending application
  * @param sendingFac - Sending facility
  * @returns A new message with MSH segment
+ * @throws Error if an argument is empty, holds HL7 structural
+ * characters, or the version is unsupported
  *
  * @example
  * ```typescript
@@ -201,6 +206,7 @@ export function createMessage(
  *
  * @param message - The message (typically ADT)
  * @returns Patient demographics object
+ * @throws Error if result serialization fails
  *
  * @example
  * ```typescript
@@ -215,6 +221,7 @@ export function extractPatientDemographics(message: WasmMessage): PatientDemogra
  *
  * @param message - The ORU message
  * @returns Array of observation objects
+ * @throws Error if result serialization fails
  *
  * @example
  * ```typescript
@@ -238,6 +245,7 @@ export function listHL7Versions(): string[];
  *
  * @param version - HL7 version string (e.g., "2.5")
  * @returns Array of message type descriptors, sorted by type then trigger
+ * @throws Error if the version is unsupported
  */
 export function listMessageTypes(version: string): MessageTypeInfo[];
 
@@ -248,6 +256,8 @@ export function listMessageTypes(version: string): MessageTypeInfo[];
  * @param messageType - Message type (e.g., "ADT")
  * @param triggerEvent - Trigger event (e.g., "A01"), or "" for types like "ACK"
  * @returns The message schema with all segments and field definitions
+ * @throws Error if the version is unsupported or no schema exists
+ * for the message type
  */
 export function getMessageDefinition(
   version: string,
@@ -261,6 +271,7 @@ export function getMessageDefinition(
  * @param version - HL7 version string (e.g., "2.5")
  * @param segmentId - Segment identifier (e.g., "PID")
  * @returns The segment definition with all field metadata
+ * @throws Error if the version is unsupported or the segment is unknown
  */
 export function getSegmentDefinition(version: string, segmentId: string): SegmentResult;
 
@@ -269,6 +280,7 @@ export function getSegmentDefinition(version: string, segmentId: string): Segmen
  *
  * @param tableId - The HL7 table ID (e.g., "0001")
  * @returns The table with code values and descriptions
+ * @throws Error if the table ID is unknown
  */
 export function getVocabularyTable(tableId: string): VocabularyTable;
 
@@ -278,6 +290,7 @@ export function getVocabularyTable(tableId: string): VocabularyTable;
  * @param version - HL7 version string (e.g., "2.5")
  * @param query - Search query; must not be empty
  * @returns Matching segments and fields with match context
+ * @throws Error if the version is unsupported or the query is empty
  */
 export function searchDefinitions(version: string, query: string): SearchResult[];
 

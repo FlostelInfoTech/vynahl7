@@ -228,6 +228,7 @@ pub fn create_message(
     sending_fac: &str,
 ) -> Result<WasmMessage, JsValue> {
     validate_msh_value("version", version, false).map_err(|e| JsValue::from_str(&e))?;
+    crate::definitions::validate_version_string(version).map_err(|e| JsValue::from_str(&e))?;
     validate_msh_value("message_type", message_type, true).map_err(|e| JsValue::from_str(&e))?;
     validate_msh_value("sending_app", sending_app, false).map_err(|e| JsValue::from_str(&e))?;
     validate_msh_value("sending_fac", sending_fac, false).map_err(|e| JsValue::from_str(&e))?;
@@ -341,6 +342,22 @@ mod tests {
         assert!(validate_msh_value("message_type", "ADT^A01", true).is_ok());
         assert!(validate_msh_value("sending_app", "SendApp", false).is_ok());
         assert!(validate_msh_value("version", "2.5", false).is_ok());
+    }
+
+    #[test]
+    fn create_message_rejects_unknown_version() {
+        // The `create_message` error path builds a `JsValue`, which
+        // cannot run natively, so the shared guard is tested directly;
+        // `create_message` maps its error like `parse_version` does.
+        let err = crate::definitions::validate_version_string("9.9").unwrap_err();
+        assert!(err.contains("Unsupported HL7 version: '9.9'"), "{err}");
+        assert!(crate::definitions::validate_version_string("2.5").is_ok());
+    }
+
+    #[wasm_bindgen_test]
+    fn test_create_message_rejects_unknown_version() {
+        assert!(create_message("9.9", "ADT^A01", "App", "Fac").is_err());
+        assert!(create_message("2.5", "ADT^A01", "App", "Fac").is_ok());
     }
 
     #[test]

@@ -155,13 +155,13 @@ impl EncounterReverseConverter {
         // PV1-44: Admit Date/Time
         if let Some(ref period) = encounter.period {
             if let Some(ref start) = period.start {
-                let hl7_datetime = start.replace(['-', ':', 'T'], "");
+                let hl7_datetime = Self::convert_datetime_to_hl7(start);
                 let _ = pv1.set_field_value(44, &hl7_datetime);
             }
 
             // PV1-45: Discharge Date/Time
             if let Some(ref end) = period.end {
-                let hl7_datetime = end.replace(['-', ':', 'T'], "");
+                let hl7_datetime = Self::convert_datetime_to_hl7(end);
                 let _ = pv1.set_field_value(45, &hl7_datetime);
             }
         }
@@ -185,6 +185,17 @@ impl EncounterReverseConverter {
         } else {
             "O".to_string()
         }
+    }
+
+    /// Convert FHIR datetime to HL7 v2 datetime.
+    ///
+    /// A trailing `Z` becomes `+0000`: a bare `Z` is not valid HL7 DTM.
+    fn convert_datetime_to_hl7(datetime: &str) -> String {
+        let zoned = match datetime.strip_suffix('Z') {
+            Some(stem) => format!("{stem}+0000"),
+            None => datetime.to_string(),
+        };
+        zoned.replace(['-', ':', 'T'], "")
     }
 }
 
@@ -424,6 +435,18 @@ mod tests {
         let pv1 = EncounterReverseConverter::convert(&encounter).unwrap();
 
         assert_eq!(pv1.get_field_value(19), Some("V12345"));
+    }
+
+    #[test]
+    fn test_period_datetimes_map_trailing_z_to_offset() {
+        let mut encounter = Encounter::new("finished".to_string());
+        encounter.period = Some(Period {
+            start: Some("2024-01-15T10:00:00Z".to_string()),
+            end: Some("2024-01-20T14:30:00Z".to_string()),
+        });
+        let pv1 = EncounterReverseConverter::convert(&encounter).unwrap();
+        assert_eq!(pv1.get_field_value(44), Some("20240115100000+0000"));
+        assert_eq!(pv1.get_field_value(45), Some("20240120143000+0000"));
     }
 
     #[test]

@@ -238,6 +238,25 @@ fn extract_delimiters_with_config(input: &str, config: &ParserConfig) -> Result<
         )));
     }
 
+    // Lenient mode tolerates short MSH-2 runs: missing trailing
+    // positions fall back to the standard defaults. A wholly absent
+    // MSH-2 still errors.
+    if config.allow_non_standard_encoding_chars
+        && !encoding_chars.is_empty()
+        && encoding_chars.chars().count() < 4
+    {
+        let defaults: Vec<char> = Delimiters::default()
+            .encoding_characters()
+            .chars()
+            .collect();
+        let mut padded: Vec<char> = encoding_chars.chars().collect();
+        while padded.len() < 4 {
+            padded.push(defaults[padded.len()]);
+        }
+        let padded: String = padded.into_iter().collect();
+        return Delimiters::from_encoding_characters(field_sep, &padded);
+    }
+
     Delimiters::from_encoding_characters(field_sep, encoding_chars)
 }
 
@@ -352,6 +371,15 @@ fn parse_segment_with_config(
         Some(rest) => rest,
         None => {
             if config.continue_on_error {
+                warnings.push(ParseWarning {
+                    location: 0,
+                    message: format!(
+                        "Skipped segment content: expected field separator \
+                         after segment ID, got '{}'",
+                        next_char.unwrap_or(' ')
+                    ),
+                    code: WarningCode::SkippedSegment,
+                });
                 return Ok((segment, warnings));
             }
             return Err(Error::parse(format!(
@@ -1368,7 +1396,10 @@ BTS|1";
     #[test]
     fn test_lenient_short_input_returns_error_without_panic() {
         let lenient = ParserConfig::lenient();
-        for input in ["", "M", "MS", "MSH", "MSH|", "MSH|^~"] {
+        // "MSH|^~" is absent here on purpose: short but usable MSH-2
+        // runs are padded under allow_non_standard_encoding_chars (see
+        // test_lenient_short_encoding_chars_are_padded).
+        for input in ["", "M", "MS", "MSH", "MSH|"] {
             let result = parse_message_with_config(input, &lenient);
             assert!(result.is_err(), "input {input:?} should fail, not panic");
         }
@@ -1578,6 +1609,49 @@ BTS|1";
                 .warnings
                 .iter()
                 .any(|w| w.code == WarningCode::RepetitionsTruncated)
+        );
+    }
+
+    #[test]
+    fn test_lenient_short_encoding_chars_are_padded() {
+        // allow_non_standard_encoding_chars tolerates short MSH-2 runs:
+        // missing positions fall back to the standard defaults.
+        let config = ParserConfig::lenient();
+        for msh in ["MSH|^~", "MSH|^~\\"] {
+            let result = parse_message_with_config(msh, &config);
+            assert!(result.is_ok(), "{msh}: {:?}", result.err());
+        }
+        let result = parse_message_with_config("MSH|^~", &config).unwrap();
+        assert_eq!(result.value.delimiters, Delimiters::default());
+    }
+
+    #[test]
+    fn test_strict_short_encoding_chars_still_rejected() {
+        let config = ParserConfig::strict();
+        assert!(parse_message_with_config("MSH|^~", &config).is_err());
+    }
+
+    #[test]
+    fn test_bad_separator_with_continue_on_error_warns_skipped_segment() {
+        // A bad separator after the segment ID keeps the (empty) segment
+        // under continue_on_error but must warn like other skips.
+        let config = ParserConfig::strict().continue_on_error(true);
+        let msg = "MSH|^~\\&|S|F|R|RF|20240315||ADT^A01|1|P|2.5\rPID |1|DOE";
+        let result = parse_message_with_config(msg, &config).unwrap();
+        let pid = result
+            .value
+            .segments
+            .iter()
+            .find(|s| s.id == "PID")
+            .unwrap();
+        assert!(pid.fields.is_empty());
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.code == WarningCode::SkippedSegment),
+            "warnings: {:?}",
+            result.warnings
         );
     }
 

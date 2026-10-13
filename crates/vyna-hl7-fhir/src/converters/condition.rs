@@ -49,26 +49,47 @@ impl ConditionConverter {
         let terser = Terser::new(message);
         let mut condition = Condition::new();
 
-        // PRB-3: Problem ID
+        // PRB-3: Problem ID (CWE: code^text^coding system)
         let code_path = if prb_index == 0 {
             "PRB-3".to_string()
         } else {
             format!("PRB({})-3", prb_index + 1)
         };
-        if let Ok(Some(code)) = terser.get(&code_path) {
+        // Empty is absent: no code concept for a blank Problem ID.
+        if let Ok(Some(code)) = terser.get(&code_path)
+            && !code.is_empty()
+        {
+            let mut coding = Coding {
+                system: None,
+                version: None,
+                code: Some(code.to_string()),
+                display: None,
+            };
+
+            // Component 2: Text (1-based indexing)
+            if let Ok(Some(text)) = terser.get(&format!("{}-2", code_path))
+                && !text.is_empty()
+            {
+                coding.display = Some(text.to_string());
+            }
+
+            // Component 3: Coding System (1-based indexing)
+            if let Ok(Some(system)) = terser.get(&format!("{}-3", code_path))
+                && !system.is_empty()
+            {
+                coding.system = Some(Self::convert_coding_system(system));
+            }
+
             condition.code = Some(CodeableConcept {
-                coding: Some(vec![Coding {
-                    system: None,
-                    version: None,
-                    code: Some(code.to_string()),
-                    display: None,
-                }]),
+                coding: Some(vec![coding]),
                 text: None,
             });
         }
 
         // Link to patient
-        if let Ok(Some(patient_id)) = terser.get("PID-3") {
+        if let Ok(Some(patient_id)) = terser.get("PID-3")
+            && !patient_id.is_empty()
+        {
             condition.subject = Some(Reference {
                 reference: Some(format!("Patient/{}", patient_id)),
                 type_: Some("Patient".to_string()),
@@ -102,7 +123,10 @@ impl ConditionConverter {
         } else {
             format!("DG1({})-3", dg1_index + 1)
         };
-        if let Ok(Some(code)) = terser.get(&code_path) {
+        // Empty is absent: no code concept for a blank Diagnosis Code.
+        if let Ok(Some(code)) = terser.get(&code_path)
+            && !code.is_empty()
+        {
             let mut coding = Coding {
                 system: None,
                 version: None,
@@ -110,7 +134,9 @@ impl ConditionConverter {
                 display: None,
             };
 
-            if let Ok(Some(text)) = terser.get(&format!("{}-2", code_path)) {
+            if let Ok(Some(text)) = terser.get(&format!("{}-2", code_path))
+                && !text.is_empty()
+            {
                 coding.display = Some(text.to_string());
             }
 
@@ -121,7 +147,9 @@ impl ConditionConverter {
         }
 
         // Link to patient
-        if let Ok(Some(patient_id)) = terser.get("PID-3") {
+        if let Ok(Some(patient_id)) = terser.get("PID-3")
+            && !patient_id.is_empty()
+        {
             condition.subject = Some(Reference {
                 reference: Some(format!("Patient/{}", patient_id)),
                 type_: Some("Patient".to_string()),
@@ -131,6 +159,18 @@ impl ConditionConverter {
         }
 
         Ok(condition)
+    }
+
+    /// Convert HL7 v2 coding system to FHIR system URI
+    fn convert_coding_system(system: &str) -> String {
+        match system {
+            "LN" | "LNC" => "http://loinc.org".to_string(),
+            "SNM" | "SCT" => "http://snomed.info/sct".to_string(),
+            "ICD9" => "http://hl7.org/fhir/sid/icd-9-cm".to_string(),
+            "ICD10" => "http://hl7.org/fhir/sid/icd-10".to_string(),
+            "CPT" => "http://www.ama-assn.org/go/cpt".to_string(),
+            _ => format!("urn:oid:{}", system),
+        }
     }
 }
 
@@ -194,5 +234,53 @@ mod tests {
         };
         assert_eq!(code(&conditions[0]).as_deref(), Some("38341003"));
         assert_eq!(code(&conditions[1]).as_deref(), Some("44054006"));
+    }
+
+    #[test]
+    fn test_prb_reads_display_and_mapped_system() {
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||PPR^PC1|1|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   PRB|AD|20240315|38341003^HTN^SCT|P1";
+        let message = parse_message(hl7).unwrap();
+        let conditions = ConditionConverter::convert_all(&message).unwrap();
+        let coding = &conditions[0]
+            .code
+            .as_ref()
+            .unwrap()
+            .coding
+            .as_ref()
+            .unwrap()[0];
+        assert_eq!(coding.code.as_deref(), Some("38341003"));
+        assert_eq!(coding.display.as_deref(), Some("HTN"));
+        assert_eq!(coding.system.as_deref(), Some("http://snomed.info/sct"));
+    }
+
+    #[test]
+    fn test_empty_prb3_and_pid3_omitted() {
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||PPR^PC1|1|P|2.5\r\
+                   PID|1||||DOE^JOHN||19800101|M\r\
+                   PRB|AD|20240315||P1";
+        let message = parse_message(hl7).unwrap();
+        let conditions = ConditionConverter::convert_all(&message).unwrap();
+        assert!(conditions[0].code.is_none());
+        assert!(conditions[0].subject.is_none());
+    }
+
+    #[test]
+    fn test_dg1_empty_display_omitted() {
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||ADT^A01|1|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   DG1|1||I10^^ICD10";
+        let message = parse_message(hl7).unwrap();
+        let conditions = ConditionConverter::convert_all(&message).unwrap();
+        let coding = &conditions[0]
+            .code
+            .as_ref()
+            .unwrap()
+            .coding
+            .as_ref()
+            .unwrap()[0];
+        assert_eq!(coding.code.as_deref(), Some("I10"));
+        assert!(coding.display.is_none());
     }
 }

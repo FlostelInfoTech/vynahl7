@@ -1,8 +1,31 @@
 //! Terser utilities for WebAssembly
 
 use wasm_bindgen::prelude::*;
+use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
 use crate::WasmMessage;
+
+/// Read one field's full encoded value (all components).
+///
+/// A whole-field `Terser::get` returns only the first component, which
+/// truncates composite values (PID-11 addresses, PID-13 phones, CWE
+/// OBX-5 results); encoding the field preserves every component.
+/// Returns `None` when the segment, field, or first repetition is
+/// absent, matching `Terser::get`.
+fn full_field_value(
+    message: &Message,
+    segment_id: &str,
+    segment_index: usize,
+    field_index: usize,
+) -> Option<String> {
+    let segment = message
+        .get_segments_by_id(segment_id)
+        .get(segment_index)
+        .copied()?;
+    let field = segment.get_field(field_index)?;
+    field.get_repetition(0)?;
+    Some(field.encode(&message.delimiters))
+}
 
 /// Get multiple values at once using Terser paths
 ///
@@ -66,8 +89,8 @@ pub fn extract_patient_demographics(message: &WasmMessage) -> Result<JsValue, Js
         given_name: terser.get("PID-5-2").ok().flatten().map(|s| s.to_string()),
         date_of_birth: terser.get("PID-7").ok().flatten().map(|s| s.to_string()),
         gender: terser.get("PID-8").ok().flatten().map(|s| s.to_string()),
-        address: terser.get("PID-11").ok().flatten().map(|s| s.to_string()),
-        phone: terser.get("PID-13").ok().flatten().map(|s| s.to_string()),
+        address: full_field_value(message.inner(), "PID", 0, 11),
+        phone: full_field_value(message.inner(), "PID", 0, 13),
     };
 
     serde_wasm_bindgen::to_value(&demographics)
@@ -121,7 +144,7 @@ pub fn extract_observations(message: &WasmMessage) -> Result<JsValue, JsValue> {
             value_type: terser.get(&format!("{}-2", prefix)).ok().flatten().map(|s| s.to_string()),
             identifier: terser.get(&format!("{}-3", prefix)).ok().flatten().map(|s| s.to_string()),
             test_name: terser.get(&format!("{}-3-2", prefix)).ok().flatten().map(|s| s.to_string()),
-            value: terser.get(&format!("{}-5", prefix)).ok().flatten().map(|s| s.to_string()),
+            value: full_field_value(message.inner(), "OBX", i, 5),
             units: terser.get(&format!("{}-6", prefix)).ok().flatten().map(|s| s.to_string()),
             reference_range: terser.get(&format!("{}-7", prefix)).ok().flatten().map(|s| s.to_string()),
             abnormal_flags: terser.get(&format!("{}-8", prefix)).ok().flatten().map(|s| s.to_string()),
@@ -159,6 +182,83 @@ mod tests {
         assert_eq!(demographics["family_name"], "DOE");
         assert_eq!(demographics["given_name"], "JOHN");
         assert_eq!(demographics["mrn"], "MRN123");
+    }
+
+    #[test]
+    fn full_field_value_keeps_all_components() {
+        let msg = parse_wasm(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\r\
+             PID|1||7||DOE^JOHN||19800101|M|||123 Main St^^Boston^MA^02101||\
+             ^PRN^PH^^1^617^5551234",
+        )
+        .unwrap();
+        // A whole-field Terser::get returns only the first component
+        // ("123 Main St", ""); the demographics extract must keep all.
+        assert_eq!(
+            full_field_value(msg.inner(), "PID", 0, 11).as_deref(),
+            Some("123 Main St^^Boston^MA^02101")
+        );
+        assert_eq!(
+            full_field_value(msg.inner(), "PID", 0, 13).as_deref(),
+            Some("^PRN^PH^^1^617^5551234")
+        );
+        assert_eq!(
+            full_field_value(msg.inner(), "PID", 0, 12).as_deref(),
+            Some(""),
+            "empty field must match Terser::get"
+        );
+        assert_eq!(
+            full_field_value(msg.inner(), "PID", 0, 30),
+            None,
+            "absent field must stay None like Terser::get"
+        );
+        assert_eq!(
+            full_field_value(msg.inner(), "NK1", 0, 2),
+            None,
+            "absent segment must stay None like Terser::get"
+        );
+    }
+
+    #[test]
+    fn full_field_value_keeps_obx5_display_text() {
+        let msg = parse_wasm(
+            "MSH|^~\\&|S|F|R|D|20240101||ORU^R01|M1|P|2.5\r\
+             PID|1||7\rOBX|1|CWE|T^Test^L||POS^Positive^LN||||||F",
+        )
+        .unwrap();
+        assert_eq!(
+            full_field_value(msg.inner(), "OBX", 0, 5).as_deref(),
+            Some("POS^Positive^LN")
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn test_demographics_keep_full_address_and_phone() {
+        let msg = parse_wasm(
+            "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+             PID|1||MRN123||DOE^JOHN||19800101|M|||123 Main St^^Boston^MA^02101||\
+             ^PRN^PH^^1^617^5551234",
+        )
+        .unwrap();
+
+        let demographics = from_js(extract_patient_demographics(&msg).unwrap());
+
+        assert_eq!(demographics["address"], "123 Main St^^Boston^MA^02101");
+        assert_eq!(demographics["phone"], "^PRN^PH^^1^617^5551234");
+    }
+
+    #[wasm_bindgen_test]
+    fn test_observations_keep_full_cwe_value() {
+        let msg = parse_wasm(
+            "MSH|^~\\&|App|Fac|RecApp|RecFac|20240315||ORU^R01|12345|P|2.5\r\
+             PID|1||MRN123||DOE^JOHN||19800101|M\r\
+             OBX|1|CWE|T^Test^L||POS^Positive^LN||||||F",
+        )
+        .unwrap();
+
+        let observations = from_js(extract_observations(&msg).unwrap());
+
+        assert_eq!(observations[0]["value"], "POS^Positive^LN");
     }
 
     #[wasm_bindgen_test]

@@ -111,8 +111,11 @@ impl ServiceRequestConverter {
             });
         }
 
-        // PV1-19: Visit Number -> encounter reference
-        if let Ok(Some(visit_num)) = terser.get("PV1-19") {
+        // PV1-19: Visit Number -> encounter reference. Empty is
+        // absent: it must not become an `Encounter/` reference.
+        if let Ok(Some(visit_num)) = terser.get("PV1-19")
+            && !visit_num.is_empty()
+        {
             service_request.encounter = Some(Reference {
                 reference: Some(format!("Encounter/{}", visit_num)),
                 type_: Some("Encounter".to_string()),
@@ -142,8 +145,11 @@ impl ServiceRequestConverter {
             service_request.authored_on = Some(authored);
         }
 
-        // ORC-12: Ordering Provider -> requester
-        if let Ok(Some(provider_id)) = terser.get(&orc_path("12")) {
+        // ORC-12: Ordering Provider -> requester. Empty is absent:
+        // it must not become a `Practitioner/` reference.
+        if let Ok(Some(provider_id)) = terser.get(&orc_path("12"))
+            && !provider_id.is_empty()
+        {
             service_request.requester = Some(Reference {
                 reference: Some(format!("Practitioner/{}", provider_id)),
                 type_: Some("Practitioner".to_string()),
@@ -162,8 +168,11 @@ impl ServiceRequestConverter {
             }
         };
 
-        // OBR-4: Universal Service Identifier -> code
-        if let Ok(Some(service_code)) = terser.get(&obr_path("4")) {
+        // OBR-4: Universal Service Identifier -> code. Empty is
+        // absent: it must not become a coding with an empty code.
+        if let Ok(Some(service_code)) = terser.get(&obr_path("4"))
+            && !service_code.is_empty()
+        {
             let mut coding = Coding {
                 system: None,
                 code: Some(service_code.to_string()),
@@ -209,8 +218,11 @@ impl ServiceRequestConverter {
             }
         }
 
-        // OBR-13: Relevant Clinical Information -> note
-        if let Ok(Some(note_text)) = terser.get(&obr_path("13")) {
+        // OBR-13: Relevant Clinical Information -> note. Empty is
+        // absent: it must not become a note with empty text.
+        if let Ok(Some(note_text)) = terser.get(&obr_path("13"))
+            && !note_text.is_empty()
+        {
             service_request.note = Some(vec![Annotation {
                 author_string: None,
                 author_reference: None,
@@ -219,8 +231,11 @@ impl ServiceRequestConverter {
             }]);
         }
 
-        // OBR-15: Specimen Source -> specimen
-        if let Ok(Some(specimen_id)) = terser.get(&obr_path("15")) {
+        // OBR-15: Specimen Source -> specimen. Empty is absent:
+        // it must not become a `Specimen/` reference.
+        if let Ok(Some(specimen_id)) = terser.get(&obr_path("15"))
+            && !specimen_id.is_empty()
+        {
             service_request.specimen = Some(vec![Reference {
                 reference: Some(format!("Specimen/{}", specimen_id)),
                 type_: Some("Specimen".to_string()),
@@ -229,8 +244,11 @@ impl ServiceRequestConverter {
             }]);
         }
 
-        // OBR-31: Reason for Study -> reasonCode
-        if let Ok(Some(reason_code)) = terser.get(&obr_path("31")) {
+        // OBR-31: Reason for Study -> reasonCode. Empty is
+        // absent: it must not become a coding with an empty code.
+        if let Ok(Some(reason_code)) = terser.get(&obr_path("31"))
+            && !reason_code.is_empty()
+        {
             let mut coding = Coding {
                 system: Some("http://terminology.hl7.org/CodeSystem/v2-0340".to_string()),
                 code: Some(reason_code.to_string()),
@@ -354,10 +372,12 @@ impl ServiceRequestConverter {
 
     /// Extract patient reference from PID segment
     fn extract_patient_reference(terser: &Terser) -> ConversionResult<Reference> {
+        // Empty is missing: it must not become a `Patient/` reference.
         let patient_id = terser
             .get("PID-3")
             .ok()
             .flatten()
+            .filter(|s| !s.is_empty())
             .ok_or_else(|| ConversionError::MissingSegment("PID".to_string()))?;
 
         Ok(Reference {
@@ -493,6 +513,77 @@ mod tests {
             let coding = requests[0].code.as_ref().unwrap().coding.as_ref().unwrap();
             assert_eq!(coding[0].system.as_deref(), Some(expected), "OBR-4 {obr4}");
         }
+    }
+
+    #[test]
+    fn test_empty_pid3_returns_missing_segment() {
+        // PID-3 present but its first component empty: no patient id.
+        let hl7 = "MSH|^~\\&|CPOE|Hospital|LAB|Hospital|20240315||ORM^O01|MSG123|P|2.5\r\
+                   PID|1||^^^MRN||DOE^JOHN||19800101|M\r\
+                   ORC|NW|ORD123456||GRP789|A";
+        let message = parse_message(hl7).unwrap();
+        let result = ServiceRequestConverter::convert_all(&message);
+        assert!(matches!(result, Err(ConversionError::MissingSegment(_))));
+    }
+
+    #[test]
+    fn test_empty_orc12_obr13_obr15_treated_as_absent() {
+        // ORC-12 present-but-empty; ORC-15 forces its presence.
+        let mut orc = vec![String::new(); 15];
+        orc[0] = "NW".to_string();
+        orc[1] = "ORD123".to_string();
+        orc[4] = "A".to_string();
+        orc[14] = "20240315100000".to_string();
+        // OBR-13/OBR-15 present-but-empty; OBR-16 forces presence.
+        let mut obr = vec![String::new(); 16];
+        obr[0] = "1".to_string();
+        obr[1] = "ORD123".to_string();
+        obr[3] = "CBC^Complete Blood Count^LN".to_string();
+        obr[4] = "R".to_string();
+        obr[15] = "X".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|CPOE|Hospital|LAB|Hospital|20240315||ORM^O01|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rORC|{}\rOBR|{}",
+            orc.join("|"),
+            obr.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let requests = ServiceRequestConverter::convert_all(&message).unwrap();
+        assert_eq!(requests[0].requester, None);
+        assert_eq!(requests[0].note, None);
+        assert_eq!(requests[0].specimen, None);
+        // Valued siblings still convert.
+        assert!(requests[0].code.is_some());
+        assert_eq!(
+            requests[0].authored_on.as_deref(),
+            Some("2024-03-15T10:00:00")
+        );
+    }
+
+    #[test]
+    fn test_empty_obr4_obr31_pv19_treated_as_absent() {
+        // OBR-4/OBR-31 present-but-empty; OBR-5/OBR-32 force presence.
+        let mut obr = vec![String::new(); 32];
+        obr[0] = "1".to_string();
+        obr[1] = "ORD123".to_string();
+        obr[4] = "R".to_string();
+        obr[31] = "X".to_string();
+        // PV1-19 present-but-empty; PV1-20 forces presence.
+        let mut pv1 = vec![String::new(); 20];
+        pv1[0] = "1".to_string();
+        pv1[19] = "X".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|CPOE|Hospital|LAB|Hospital|20240315||ORM^O01|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rPV1|{}\rORC|NW|ORD123|||A\rOBR|{}",
+            pv1.join("|"),
+            obr.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let requests = ServiceRequestConverter::convert_all(&message).unwrap();
+        assert_eq!(requests[0].code, None);
+        assert_eq!(requests[0].reason_code, None);
+        assert_eq!(requests[0].encounter, None);
+        assert_eq!(requests[0].priority.as_deref(), Some("routine"));
     }
 
     #[test]

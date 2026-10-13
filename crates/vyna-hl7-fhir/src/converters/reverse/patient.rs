@@ -148,16 +148,20 @@ impl PatientReverseConverter {
                 let _ = pid.set_component(5, rep, 4, first_prefix);
             }
 
-            // Name type - component 7 (0-indexed: 6)
+            // Name type - component 7 (0-indexed: 6). Only mapped
+            // uses write a code: usual/unknown must not re-forward to
+            // L (official), which would corrupt the round-trip.
             if let Some(ref use_) = name.use_ {
                 let type_code = match use_.as_str() {
-                    "official" => "L",
-                    "maiden" => "M",
-                    "nickname" => "N",
-                    "temp" => "T",
-                    _ => "L",
+                    "official" => Some("L"),
+                    "maiden" => Some("M"),
+                    "nickname" => Some("N"),
+                    "temp" => Some("T"),
+                    _ => None,
                 };
-                let _ = pid.set_component(5, rep, 6, type_code);
+                if let Some(type_code) = type_code {
+                    let _ = pid.set_component(5, rep, 6, type_code);
+                }
             }
         }
         Ok(())
@@ -213,28 +217,35 @@ impl PatientReverseConverter {
         Ok(())
     }
 
-    /// Set telecoms in PID-13 (home) and PID-14 (work), one repetition
-    /// per telecom of that use (a whole-field write would overwrite all
-    /// but the last).
+    /// Set telecoms in PID-13 (home and every other use) and
+    /// PID-14 (work), one repetition per telecom (a whole-field write
+    /// would overwrite all but the last). Email values go to XTN-4;
+    /// anything else goes to XTN-1.
     fn set_telecoms(pid: &mut Segment, telecoms: &[ContactPoint]) -> ConversionResult<()> {
         let mut home_rep = 0usize;
         let mut work_rep = 0usize;
         for telecom in telecoms {
-            if let Some(ref value) = telecom.value
-                && let Some(ref use_) = telecom.use_
-            {
-                match use_.as_str() {
-                    "home" => {
-                        let _ = pid.set_component(13, home_rep, 0, value);
-                        home_rep += 1;
-                    }
-                    "work" => {
-                        let _ = pid.set_component(14, work_rep, 0, value);
-                        work_rep += 1;
-                    }
-                    _ => {}
-                }
-            }
+            let Some(ref value) = telecom.value else {
+                continue;
+            };
+            // Only work use lands on PID-14; every other use (home,
+            // mobile, temp, old, or none) lands on PID-13 so no
+            // telecom is silently dropped.
+            let (field, rep) = if telecom.use_.as_deref() == Some("work") {
+                let rep = work_rep;
+                work_rep += 1;
+                (14, rep)
+            } else {
+                let rep = home_rep;
+                home_rep += 1;
+                (13, rep)
+            };
+            let comp = if telecom.system.as_deref() == Some("email") {
+                3 // XTN-4: email address
+            } else {
+                0 // XTN-1: telephone number
+            };
+            let _ = pid.set_component(field, rep, comp, value);
         }
         Ok(())
     }
@@ -258,9 +269,15 @@ impl PatientReverseConverter {
     }
 
     /// Convert FHIR datetime to HL7 v2 datetime
+    ///
+    /// A trailing `Z` becomes `+0000`: a bare `Z` is not valid HL7 DTM.
     fn convert_datetime_to_hl7(datetime: &str) -> ConversionResult<String> {
+        let zoned = match datetime.strip_suffix('Z') {
+            Some(stem) => format!("{stem}+0000"),
+            None => datetime.to_string(),
+        };
         // Remove dashes, colons, and T separator
-        Ok(datetime.replace(['-', ':', 'T'], ""))
+        Ok(zoned.replace(['-', ':', 'T'], ""))
     }
 }
 
@@ -518,5 +535,75 @@ mod tests {
         assert_eq!(rep_component(&pid, 13, 1, 0).as_deref(), Some("222"));
         assert_eq!(pid.get_field(14).unwrap().repetitions.len(), 1);
         assert_eq!(rep_component(&pid, 14, 0, 0).as_deref(), Some("333"));
+    }
+
+    #[test]
+    fn test_telecoms_mobile_none_use_and_email_preserved() {
+        let mut patient = Patient::new();
+        patient.telecom = Some(vec![
+            ContactPoint {
+                system: Some("phone".to_string()),
+                value: Some("555-9999".to_string()),
+                use_: Some("mobile".to_string()),
+            },
+            ContactPoint {
+                system: Some("phone".to_string()),
+                value: Some("555-0000".to_string()),
+                use_: None,
+            },
+            ContactPoint {
+                system: Some("email".to_string()),
+                value: Some("a@example.com".to_string()),
+                use_: Some("home".to_string()),
+            },
+        ]);
+        let pid = PatientReverseConverter::convert(&patient).unwrap();
+        // Non-home/work uses land on PID-13 as extra repetitions.
+        assert_eq!(pid.get_field(13).unwrap().repetitions.len(), 3);
+        assert_eq!(rep_component(&pid, 13, 0, 0).as_deref(), Some("555-9999"));
+        assert_eq!(rep_component(&pid, 13, 1, 0).as_deref(), Some("555-0000"));
+        // Email values land in XTN-4, not XTN-1.
+        assert_eq!(rep_component(&pid, 13, 2, 0), None);
+        assert_eq!(
+            rep_component(&pid, 13, 2, 3).as_deref(),
+            Some("a@example.com")
+        );
+    }
+
+    #[test]
+    fn test_convert_datetime_maps_trailing_z_to_offset() {
+        assert_eq!(
+            PatientReverseConverter::convert_datetime_to_hl7("2024-03-15T10:00:00Z").unwrap(),
+            "20240315100000+0000"
+        );
+        // No zone: unchanged.
+        assert_eq!(
+            PatientReverseConverter::convert_datetime_to_hl7("2024-03-15T10:00:00").unwrap(),
+            "20240315100000"
+        );
+        // End to end through PID-29.
+        let mut patient = Patient::new();
+        patient.deceased_date_time = Some("2024-03-15T10:00:00Z".to_string());
+        let pid = PatientReverseConverter::convert(&patient).unwrap();
+        assert_eq!(pid.get_field_value(29), Some("20240315100000+0000"));
+    }
+
+    #[test]
+    fn test_usual_name_use_omits_type_code() {
+        let named = |use_: &str| HumanName {
+            use_: Some(use_.to_string()),
+            text: None,
+            family: Some("Smith".to_string()),
+            given: Some(vec!["John".to_string()]),
+            prefix: None,
+            suffix: None,
+        };
+        let mut patient = Patient::new();
+        patient.name = Some(vec![named("usual"), named("unknown"), named("official")]);
+        let pid = PatientReverseConverter::convert(&patient).unwrap();
+        // usual/unknown must not re-forward to official (L).
+        assert_eq!(rep_component(&pid, 5, 0, 6), None);
+        assert_eq!(rep_component(&pid, 5, 1, 6), None);
+        assert_eq!(rep_component(&pid, 5, 2, 6).as_deref(), Some("L"));
     }
 }

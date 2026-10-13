@@ -81,13 +81,19 @@ impl Message {
 
     /// Get the message type from MSH-9
     ///
-    /// MSH-9 format: MessageType^TriggerEvent (e.g., "ADT^A01")
+    /// MSH-9 format: MessageType^TriggerEvent (e.g., "ADT^A01"). A bare
+    /// MSH-9 with no trigger component (e.g. `"ACK"`) reports an empty
+    /// trigger, agreeing with [`Message::is_acknowledgment`].
     pub fn get_message_type(&self) -> Option<(String, String)> {
         self.get_msh().and_then(|msh| {
             msh.get_field(9).and_then(|field| {
                 let rep = field.get_repetition(0)?;
                 let msg_type = rep.get_component(0)?.value()?.to_string();
-                let trigger = rep.get_component(1)?.value()?.to_string();
+                let trigger = rep
+                    .get_component(1)
+                    .and_then(|c| c.value())
+                    .unwrap_or("")
+                    .to_string();
                 Some((msg_type, trigger))
             })
         })
@@ -514,6 +520,18 @@ mod tests {
     fn test_is_acknowledgment_false_for_non_ack() {
         let msg = create_message_with_type(Field::from_delimited("ADT^A01"));
         assert!(!msg.is_acknowledgment());
+    }
+
+    #[test]
+    fn test_get_message_type_with_bare_msh9() {
+        // A bare MSH-9 ("ACK") reports an empty trigger so this agrees
+        // with is_acknowledgment() instead of returning None.
+        let msg = create_message_with_type(Field::from_value("ACK"));
+        assert!(msg.is_acknowledgment());
+        assert_eq!(
+            msg.get_message_type(),
+            Some(("ACK".to_string(), "".to_string()))
+        );
     }
 
     #[test]

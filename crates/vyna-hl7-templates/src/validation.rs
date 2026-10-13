@@ -246,19 +246,28 @@ impl TemplateValidator {
             }
 
             // Check field length if specified (in characters, not
-            // bytes: multibyte text must not warn under the limit).
+            // bytes: multibyte text must not warn under the limit). The
+            // whole field value is measured: `value()` sees only the
+            // first component and would miss long trailing components.
             if let Some(max_length) = field_template.length
-                && let Some(value) = field.value()
-                && value.chars().count() > max_length
+                && !is_empty
             {
-                result.add_warning(
-                    ValidationWarning::new(format!(
-                        "Field length {} exceeds maximum {}",
-                        value.chars().count(),
-                        max_length
-                    ))
-                    .with_location(&location),
-                );
+                let text = field
+                    .repetitions
+                    .iter()
+                    .map(|r| r.full_value().unwrap_or_default())
+                    .collect::<Vec<_>>()
+                    .join("~");
+                if text.chars().count() > max_length {
+                    result.add_warning(
+                        ValidationWarning::new(format!(
+                            "Field length {} exceeds maximum {}",
+                            text.chars().count(),
+                            max_length
+                        ))
+                        .with_location(&location),
+                    );
+                }
             }
 
             // Check required components against component templates.
@@ -620,6 +629,34 @@ mod tests {
         assert!(result.has_warnings());
         assert!(
             result.warnings.iter().any(|w| w.message.contains("200")),
+            "unexpected warnings: {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn test_field_length_measures_whole_composite_value() {
+        // PID-5 "DOE^JOHNATHONEXCEEDINGLYLONG" is 27 chars: the limit
+        // applies to the whole composite value, not just "DOE".
+        let mut message = create_test_message();
+        message.segments[1].fields.push(Field::new()); // PID-4
+        message.segments[1]
+            .fields
+            .push(Field::from_delimited("DOE^JOHNATHONEXCEEDINGLYLONG")); // PID-5
+
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut pid_segment = SegmentTemplate::new("PID");
+        pid_segment.add_field(5, FieldTemplate::new().with_length(10));
+        template.add_segment(pid_segment);
+
+        let result = TemplateValidator::validate(&message, &template);
+        assert!(result.valid);
+        assert!(result.has_warnings());
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.location == Some("PID-5".to_string())),
             "unexpected warnings: {:?}",
             result.warnings
         );

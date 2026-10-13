@@ -6,11 +6,12 @@ use axum::{
     body::Bytes,
     extract::{DefaultBodyLimit, State},
     http::{HeaderMap, StatusCode},
+    response::IntoResponse,
     routing::post,
 };
 use std::sync::Arc;
-#[cfg(feature = "tls")]
 use std::time::Duration;
+use tower::{Layer, Service};
 use tower_http::trace::TraceLayer;
 use vyna_hl7_core::Message;
 use vyna_hl7_parser::parse_message;
@@ -22,8 +23,6 @@ use tower_http::compression::CompressionLayer;
 use crate::tls::TlsServerConfig;
 #[cfg(feature = "tls")]
 use tokio_rustls::TlsAcceptor;
-#[cfg(feature = "tls")]
-use tower::Service;
 
 /// Message handler function type
 ///
@@ -45,6 +44,10 @@ pub const DEFAULT_TLS_CONNECTION_TIMEOUT: Duration = Duration::from_secs(300);
 ///
 /// Matches axum's implicit 2 MB default, now explicit and configurable.
 pub const DEFAULT_MAX_BODY_SIZE: usize = 2 * 1024 * 1024;
+
+/// Default bound on one HTTP request (see
+/// [`HttpServer::with_request_timeout`]).
+pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// HTTP server for receiving HL7 v2.x messages
 ///
@@ -77,6 +80,8 @@ pub struct HttpServer {
     auth: Option<(String, String)>,
     /// Cap on a single request body in bytes (default: 2 MB).
     max_body_size: usize,
+    /// Bound on one request's headers, body, and handler (default: 300 s).
+    request_timeout: Duration,
     #[cfg(feature = "tls")]
     tls_config: Option<TlsServerConfig>,
     /// Bound on `TlsAcceptor::accept` per connection (default: 10 s).
@@ -98,6 +103,7 @@ impl HttpServer {
             handler: Arc::new(Ok),
             auth: None,
             max_body_size: DEFAULT_MAX_BODY_SIZE,
+            request_timeout: DEFAULT_REQUEST_TIMEOUT,
             #[cfg(feature = "tls")]
             tls_config: None,
             #[cfg(feature = "tls")]
@@ -226,14 +232,27 @@ impl HttpServer {
         self
     }
 
+    /// Bound how long one request may take (default: 300 s).
+    ///
+    /// Covers receiving the headers and body plus running the handler;
+    /// requests that exceed the bound fail with `408 Request Timeout` and
+    /// the connection is closed, so stalled partial requests (e.g.
+    /// slowloris-style stalls) cannot pin a connection forever. This is
+    /// the plain-HTTP counterpart of `with_tls_connection_timeout`.
+    pub fn with_request_timeout(mut self, timeout: Duration) -> Self {
+        self.request_timeout = timeout;
+        self
+    }
+
     /// Build the axum router: routes plus tracing, the body-size limit,
-    /// optional compression, and this server as state.
+    /// the request timeout, optional compression, and this server as state.
     fn build_router(self) -> Router {
         let app = Router::new()
             .route("/", post(handle_message))
             .route("/{*path}", post(handle_message))
             .layer(TraceLayer::new_for_http())
-            .layer(DefaultBodyLimit::max(self.max_body_size));
+            .layer(DefaultBodyLimit::max(self.max_body_size))
+            .layer(RequestTimeoutLayer::new(self.request_timeout));
 
         // Add compression layer if enabled
         #[cfg(feature = "compression")]
@@ -426,6 +445,78 @@ impl Default for HttpServer {
     }
 }
 
+/// Tower [`Layer`] bounding each request's total service time.
+///
+/// The inner service (routing, body collection, handler) gets `timeout`
+/// to produce a response; slower requests fail with `408 Request Timeout`
+/// and the connection is closed, so stalled partial requests cannot
+/// accumulate without bound.
+#[derive(Debug, Clone, Copy)]
+struct RequestTimeoutLayer {
+    timeout: Duration,
+}
+
+impl RequestTimeoutLayer {
+    fn new(timeout: Duration) -> Self {
+        Self { timeout }
+    }
+}
+
+impl<S> Layer<S> for RequestTimeoutLayer {
+    type Service = RequestTimeoutService<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        RequestTimeoutService {
+            inner,
+            timeout: self.timeout,
+        }
+    }
+}
+
+/// Service produced by [`RequestTimeoutLayer`].
+#[derive(Debug, Clone)]
+struct RequestTimeoutService<S> {
+    inner: S,
+    timeout: Duration,
+}
+
+impl<S> Service<axum::extract::Request> for RequestTimeoutService<S>
+where
+    S: Service<
+            axum::extract::Request,
+            Response = axum::response::Response,
+            Error = std::convert::Infallible,
+        > + Clone
+        + Send
+        + 'static,
+    S::Future: Send,
+{
+    type Response = axum::response::Response;
+    type Error = std::convert::Infallible;
+    type Future = std::pin::Pin<
+        Box<dyn Future<Output = std::result::Result<Self::Response, Self::Error>> + Send>,
+    >;
+
+    fn poll_ready(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::result::Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, request: axum::extract::Request) -> Self::Future {
+        let mut inner = self.inner.clone();
+        std::mem::swap(&mut self.inner, &mut inner);
+        let timeout = self.timeout;
+        Box::pin(async move {
+            match tokio::time::timeout(timeout, inner.call(request)).await {
+                Ok(response) => response,
+                Err(_) => Ok((StatusCode::REQUEST_TIMEOUT, "request timed out").into_response()),
+            }
+        })
+    }
+}
+
 /// True when `content_type` names an HL7 v2 media type.
 ///
 /// Compares the media type (before any `;` parameters) case-insensitively
@@ -602,6 +693,50 @@ mod tests {
             .build_router();
         let status = post_status(raised, big).await;
         assert_eq!(status, reqwest::StatusCode::OK);
+    }
+
+    #[test]
+    fn test_request_timeout_default_and_override() {
+        use std::time::Duration;
+
+        assert_eq!(HttpServer::new().request_timeout, Duration::from_secs(300));
+        let server = HttpServer::new().with_request_timeout(Duration::from_secs(7));
+        assert_eq!(server.request_timeout, Duration::from_secs(7));
+    }
+
+    /// A client that sends complete headers but stalls the body must be
+    /// answered with 408 and disconnected once the request bound elapses,
+    /// instead of pinning the connection forever.
+    #[tokio::test]
+    async fn test_request_timeout_closes_stalled_partial_body() {
+        use std::time::Duration;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let app = HttpServer::new()
+            .with_request_timeout(Duration::from_millis(300))
+            .build_router();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        // Complete headers promising 100 body bytes, then only 7 bytes.
+        let partial = concat!(
+            "POST / HTTP/1.1\r\nHost: x\r\n",
+            "Content-Type: x-application/hl7-v2+er7\r\n",
+            "Content-Length: 100\r\n\r\n1234567"
+        );
+        let mut tcp = tokio::net::TcpStream::connect(addr).await.unwrap();
+        tcp.write_all(partial.as_bytes()).await.unwrap();
+
+        let mut buf = [0u8; 1024];
+        let read = tokio::time::timeout(Duration::from_secs(5), tcp.read(&mut buf)).await;
+        let n = read
+            .expect("stalled partial body was never closed (slowloris-style DoS)")
+            .expect("reading stalled connection failed");
+        if n > 0 {
+            let head = String::from_utf8_lossy(&buf[..n]);
+            assert!(head.contains("408"), "expected 408, got: {head}");
+        }
     }
 
     #[test]

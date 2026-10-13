@@ -1,6 +1,6 @@
 //! Medication converter - RXA segment to FHIR MedicationAdministration resource
 
-use super::patient::{valid_hl7_date, valid_hl7_time};
+use super::patient::{split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time};
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
 use crate::resources::medication::*;
@@ -107,10 +107,11 @@ impl MedicationConverter {
             // A present-but-unparseable amount is an error, not a
             // silent omission of the dosage.
             let value = amount.parse::<f64>().map_err(|_| {
+                // Redacted: never embed the source value (may be PHI).
                 ConversionError::InvalidDataType(
                     "RXA-6".to_string(),
                     "numeric".to_string(),
-                    amount.to_string(),
+                    "non-numeric value".to_string(),
                 )
             })?;
             let mut dose = Quantity {
@@ -126,7 +127,9 @@ impl MedicationConverter {
             } else {
                 format!("RXA({})-7", rxa_index + 1)
             };
-            if let Ok(Some(units)) = terser.get(&units_path) {
+            if let Ok(Some(units)) = terser.get(&units_path)
+                && !units.is_empty()
+            {
                 dose.unit = Some(units.to_string());
             }
 
@@ -137,7 +140,9 @@ impl MedicationConverter {
         }
 
         // Link to patient
-        if let Ok(Some(patient_id)) = terser.get("PID-3") {
+        if let Ok(Some(patient_id)) = terser.get("PID-3")
+            && !patient_id.is_empty()
+        {
             admin.subject = Some(Reference {
                 reference: Some(format!("Patient/{}", patient_id)),
                 type_: Some("Patient".to_string()),
@@ -196,33 +201,47 @@ impl MedicationConverter {
         }
     }
 
+    /// `YYYYMMDDHHMM` keeps its minutes (`YYYY-MM-DDTHH:MM`) and a
+    /// trailing HL7 zone (`±HHMM`) is preserved as `±HH:MM`.
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
+        let (stem, offset) = split_hl7_offset(datetime);
+        let zone = offset.as_deref().unwrap_or("");
         // Byte-slice checks on `[u8]` never split a char boundary, and an
         // all-ASCII-digit prefix makes the `&str` slices below safe.
-        let bytes = datetime.as_bytes();
+        let bytes = stem.as_bytes();
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
-            if valid_hl7_date(&datetime[0..8]) && valid_hl7_time(&datetime[8..14]) {
+            if valid_hl7_date(&stem[0..8]) && valid_hl7_time(&stem[8..14]) {
                 Ok(format!(
-                    "{}-{}-{}T{}:{}:{}",
-                    &datetime[0..4],
-                    &datetime[4..6],
-                    &datetime[6..8],
-                    &datetime[8..10],
-                    &datetime[10..12],
-                    &datetime[12..14]
+                    "{}-{}-{}T{}:{}:{}{}",
+                    &stem[0..4],
+                    &stem[4..6],
+                    &stem[6..8],
+                    &stem[8..10],
+                    &stem[10..12],
+                    &stem[12..14],
+                    zone
+                ))
+            } else {
+                Err(Self::invalid_datetime(datetime))
+            }
+        } else if bytes.len() >= 12 && bytes[..12].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_date(&stem[0..8]) && valid_hl7_hour_min(&stem[8..12]) {
+                Ok(format!(
+                    "{}-{}-{}T{}:{}{}",
+                    &stem[0..4],
+                    &stem[4..6],
+                    &stem[6..8],
+                    &stem[8..10],
+                    &stem[10..12],
+                    zone
                 ))
             } else {
                 Err(Self::invalid_datetime(datetime))
             }
         } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
             // Date only; still requires a real calendar date.
-            if valid_hl7_date(&datetime[0..8]) {
-                Ok(format!(
-                    "{}-{}-{}",
-                    &datetime[0..4],
-                    &datetime[4..6],
-                    &datetime[6..8]
-                ))
+            if valid_hl7_date(&stem[0..8]) {
+                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
             } else {
                 Err(Self::invalid_datetime(datetime))
             }
@@ -370,5 +389,41 @@ mod tests {
 
         assert_eq!(coding.code.as_deref(), Some("1191"));
         assert_eq!(coding.display.as_deref(), Some("ASPIRIN"));
+    }
+
+    #[test]
+    fn test_datetime_preserves_minutes_and_zone() {
+        assert_eq!(
+            MedicationConverter::convert_datetime("202403151000").unwrap(),
+            "2024-03-15T10:00"
+        );
+        assert_eq!(
+            MedicationConverter::convert_datetime("20240315100000+0500").unwrap(),
+            "2024-03-15T10:00:00+05:00"
+        );
+    }
+
+    #[test]
+    fn test_empty_pid3_and_rxa7_omitted() {
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||RAS^O17|1|P|2.5\r\
+                   PID|1||||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000||1191^ASPIRIN^NDC|100|||||||||||||CP";
+        let message = parse_message(hl7).unwrap();
+        let admin = &MedicationConverter::convert_all(&message).unwrap()[0];
+        assert!(admin.subject.is_none());
+        let dose = admin.dosage.as_ref().unwrap().dose.as_ref().unwrap();
+        assert_eq!(dose.value, Some(100.0));
+        assert!(dose.unit.is_none());
+    }
+
+    #[test]
+    fn test_dose_error_redacts_source_value() {
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||RAS^O17|1|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000||1191^ASPIRIN^NDC|SECRET-DOSE|MG";
+        let message = parse_message(hl7).unwrap();
+        let err = MedicationConverter::convert_all(&message).unwrap_err();
+        let msg = err.to_string();
+        assert!(!msg.contains("SECRET-DOSE"), "error leaks source: {msg}");
     }
 }

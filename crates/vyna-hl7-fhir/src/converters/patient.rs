@@ -219,6 +219,8 @@ impl PatientConverter {
             let suffix = comp(4);
             // PID-5-5: Prefix (component 5, 1-based indexing)
             let prefix = comp(5);
+            // PID-5-6: Degree (component 6, 1-based indexing)
+            let degree = comp(6);
             // PID-5-7: Name Type Code (component 7, 1-based indexing).
             // Kept as an Option to preserve the match below, which maps
             // any unrecognized code to "usual".
@@ -232,6 +234,7 @@ impl PatientConverter {
                 && middle.is_empty()
                 && suffix.is_empty()
                 && prefix.is_empty()
+                && degree.is_empty()
                 && name_type.unwrap_or("").is_empty()
             {
                 continue;
@@ -258,8 +261,17 @@ impl PatientConverter {
                 name.given = Some(given_names);
             }
 
+            // Suffix and degree share HumanName.suffix so XPN-6
+            // is preserved instead of dropped.
+            let mut suffixes = Vec::new();
             if !suffix.is_empty() {
-                name.suffix = Some(vec![suffix.to_string()]);
+                suffixes.push(suffix.to_string());
+            }
+            if !degree.is_empty() {
+                suffixes.push(degree.to_string());
+            }
+            if !suffixes.is_empty() {
+                name.suffix = Some(suffixes);
             }
 
             if !prefix.is_empty() {
@@ -697,6 +709,20 @@ mod tests {
         assert_eq!(
             names[0].given,
             Some(vec!["JOHN".to_string(), "A".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_convert_names_preserves_degree_in_suffix() {
+        // XPN-6 (degree) must survive alongside XPN-4 (suffix).
+        let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                   PID|1||67890^^^MRN||DOE^JOHN^A^JR^MR^MD^L||19800101|M";
+        let message = parse_message(hl7).unwrap();
+        let patient = PatientConverter::convert(&message).unwrap();
+        let names = patient.name.as_ref().unwrap();
+        assert_eq!(
+            names[0].suffix,
+            Some(vec!["JR".to_string(), "MD".to_string()])
         );
     }
 

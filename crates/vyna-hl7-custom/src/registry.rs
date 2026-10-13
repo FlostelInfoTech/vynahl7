@@ -77,11 +77,12 @@ impl<T: CustomSegment + 'static> CustomSegmentFactory for CustomSegmentFactoryIm
 /// ```rust,ignore
 /// use vyna_hl7_custom::{CustomSegment, CustomSegmentRegistry};
 ///
-/// // Register custom segments at startup
-/// fn init() {
-///     CustomSegmentRegistry::global()
-///         .register::<ZPV>()
-///         .register::<ZCU>();
+/// // Register custom segments at startup (`register` returns a
+/// // `Result`, so each call handles its own error).
+/// fn init() -> vyna_hl7_custom::error::Result<()> {
+///     CustomSegmentRegistry::global().register::<ZPV>()?;
+///     CustomSegmentRegistry::global().register::<ZCU>()?;
+///     Ok(())
 /// }
 ///
 /// // Later, check if a segment is custom
@@ -138,7 +139,7 @@ impl CustomSegmentRegistry {
     ///
     /// # Returns
     ///
-    /// A mutable reference to the registry for method chaining
+    /// A shared reference to the registry for method chaining on success
     ///
     /// # Errors
     ///
@@ -149,9 +150,8 @@ impl CustomSegmentRegistry {
     /// # Example
     ///
     /// ```rust,ignore
-    /// CustomSegmentRegistry::global()
-    ///     .register::<ZPV>()
-    ///     .register::<ZCU>();
+    /// CustomSegmentRegistry::global().register::<ZPV>()?;
+    /// CustomSegmentRegistry::global().register::<ZCU>()?;
     /// ```
     pub fn register<T: CustomSegment + 'static>(&self) -> Result<&Self> {
         let segment_id = T::segment_id();
@@ -529,5 +529,42 @@ mod tests {
         let result = registry.create("ZXX", &segment);
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
+    }
+
+    struct TestZCU {
+        balance: String,
+    }
+
+    impl CustomSegment for TestZCU {
+        fn segment_id() -> &'static str {
+            "ZCU"
+        }
+
+        fn from_segment(segment: &Segment) -> Result<Self> {
+            let balance = segment
+                .get_field_value(1)
+                .map(|s| s.to_string())
+                .ok_or_else(|| CustomSegmentError::missing_field("ZCU-1", "ZCU"))?;
+
+            Ok(TestZCU { balance })
+        }
+
+        fn to_segment(&self) -> Segment {
+            let mut segment = Segment::new("ZCU");
+            let _ = segment.set_field_value(1, &self.balance);
+            segment
+        }
+    }
+
+    #[test]
+    fn test_register_chains_through_unwrapped_shared_reference() {
+        // `register` takes `&self` and returns `Result<&Self>`: chaining
+        // goes through the unwrapped shared reference, and the return
+        // type pins the shared (not mutable) borrow.
+        let registry = CustomSegmentRegistry::new();
+        let shared: &CustomSegmentRegistry = registry.register::<TestZPV>().unwrap();
+        shared.register::<TestZCU>().unwrap();
+        assert!(registry.is_registered("ZPV"));
+        assert!(registry.is_registered("ZCU"));
     }
 }

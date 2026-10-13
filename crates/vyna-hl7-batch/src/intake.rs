@@ -28,6 +28,8 @@ pub struct IntakeBatch {
     pub control_id: Option<String>,
     /// BTS-1 when a batch trailer was present.
     pub declared_message_count: Option<usize>,
+    /// A batch trailer was present but BTS-1 was not a number.
+    pub message_count_invalid: bool,
     /// Messages in encounter order.
     pub messages: Vec<IntakeMessage>,
 }
@@ -39,6 +41,8 @@ pub struct Intake {
     pub file_control_id: Option<String>,
     /// FTS-1 when a file trailer was present.
     pub declared_batch_count: Option<usize>,
+    /// A file trailer was present but FTS-1 was not a number.
+    pub batch_count_invalid: bool,
     /// Batch groups in encounter order. Bare message sequences yield one
     /// group with no control id.
     pub batches: Vec<IntakeBatch>,
@@ -63,6 +67,7 @@ impl Intake {
         let mut intake = Intake {
             file_control_id: None,
             declared_batch_count: None,
+            batch_count_invalid: false,
             batches: Vec::new(),
         };
         let mut index = 0usize;
@@ -73,7 +78,9 @@ impl Intake {
                 _ => (&lines[1..], None),
             };
             intake.file_control_id = header_control_id(lines[0]);
-            intake.declared_batch_count = trailer.and_then(trailer_count);
+            let (count, invalid) = trailer_declared(trailer);
+            intake.declared_batch_count = count;
+            intake.batch_count_invalid = invalid;
             split_groups(body, &mut intake.batches, &mut index);
         } else if lines[0].starts_with("BHS") {
             let (body, trailer) = match lines.last() {
@@ -82,9 +89,11 @@ impl Intake {
                 }
                 _ => (&lines[1..], None),
             };
+            let (count, invalid) = trailer_declared(trailer);
             let mut batch = IntakeBatch {
                 control_id: header_control_id(lines[0]),
-                declared_message_count: trailer.and_then(trailer_count),
+                declared_message_count: count,
+                message_count_invalid: invalid,
                 messages: Vec::new(),
             };
             split_messages(body, &mut batch.messages, &mut index);
@@ -93,6 +102,7 @@ impl Intake {
             let mut batch = IntakeBatch {
                 control_id: None,
                 declared_message_count: None,
+                message_count_invalid: false,
                 messages: Vec::new(),
             };
             split_messages(&lines, &mut batch.messages, &mut index);
@@ -156,8 +166,13 @@ impl Intake {
     }
 
     /// Check declared trailer counts against actual content. Missing trailers
-    /// are skipped, not errors.
+    /// are skipped, not errors; present-but-garbled counts are errors.
     pub fn verify_counts(&self) -> Result<(), BatchError> {
+        if self.batch_count_invalid {
+            return Err(BatchError::Invalid(
+                "FTS declares an unparseable batch count".to_string(),
+            ));
+        }
         if let Some(declared) = self.declared_batch_count {
             let actual = self.batches.len();
             if declared != actual {
@@ -169,6 +184,11 @@ impl Intake {
             }
         }
         for batch in &self.batches {
+            if batch.message_count_invalid {
+                return Err(BatchError::Invalid(
+                    "BTS declares an unparseable message count".to_string(),
+                ));
+            }
             if let Some(declared) = batch.declared_message_count {
                 let actual = batch.messages.len();
                 if declared != actual {
@@ -230,6 +250,7 @@ fn split_groups(lines: &[&str], batches: &mut Vec<IntakeBatch>, index: &mut usiz
             let mut batch = IntakeBatch {
                 control_id: None,
                 declared_message_count: None,
+                message_count_invalid: false,
                 messages: Vec::new(),
             };
             split_messages(pending, &mut batch.messages, index);
@@ -244,11 +265,14 @@ fn split_groups(lines: &[&str], batches: &mut Vec<IntakeBatch>, index: &mut usiz
             current = Some(IntakeBatch {
                 control_id: header_control_id(line),
                 declared_message_count: None,
+                message_count_invalid: false,
                 messages: Vec::new(),
             });
         } else if line.starts_with("BTS") {
             if let Some(batch) = current.as_mut() {
-                batch.declared_message_count = trailer_count(line);
+                let (count, invalid) = trailer_declared(Some(line));
+                batch.declared_message_count = count;
+                batch.message_count_invalid = invalid;
             }
             flush(&mut current, &mut pending);
         } else {
@@ -359,10 +383,41 @@ fn header_control_id(line: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// A parsed BTS-1 / FTS-1 trailer count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TrailerCount {
+    /// No usable field (short line, non-ASCII separator) or empty: nothing
+    /// declared, so verification skips it.
+    Missing,
+    /// Declared count.
+    Count(usize),
+    /// Field present but not a number: verification must fail, never treat
+    /// the garbled trailer as missing.
+    Malformed,
+}
+
 /// BTS-1 / FTS-1 from a trailer line.
-fn trailer_count(line: &str) -> Option<usize> {
-    let (sep, rest) = fields_after_tag(line)?;
-    rest.split(sep).next()?.parse().ok()
+fn trailer_count(line: &str) -> TrailerCount {
+    let Some((sep, rest)) = fields_after_tag(line) else {
+        return TrailerCount::Missing;
+    };
+    let raw = rest.split(sep).next().unwrap_or("");
+    if raw.is_empty() {
+        return TrailerCount::Missing;
+    }
+    match raw.parse() {
+        Ok(count) => TrailerCount::Count(count),
+        Err(_) => TrailerCount::Malformed,
+    }
+}
+
+/// An optional trailer line as (declared count, malformed).
+fn trailer_declared(trailer: Option<&str>) -> (Option<usize>, bool) {
+    match trailer.map(trailer_count) {
+        Some(TrailerCount::Count(count)) => (Some(count), false),
+        Some(TrailerCount::Malformed) => (None, true),
+        _ => (None, false),
+    }
 }
 
 /// MSH-10 from an MSH line. MSH-1 is the separator itself, so MSH-10 is the
@@ -435,6 +490,30 @@ mod tests {
         assert_eq!(batch.declared_message_count, Some(2));
         assert_eq!(intake.ok_count(), 2);
         assert!(intake.verify_counts().is_ok());
+    }
+
+    #[test]
+    fn garbled_trailer_counts_are_errors_not_missing() {
+        // BTS-1 present but unparseable: must not masquerade as missing.
+        let text = batch_text().replace("BTS|2", "BTS|ZZZ");
+        let intake = Intake::parse(&text).unwrap();
+        assert_eq!(intake.batches[0].declared_message_count, None);
+        assert!(
+            !intake.verify_counts().is_ok(),
+            "garbled BTS count disables the count check"
+        );
+
+        // Same for FTS-1 at the file level.
+        let text = format!(
+            "FHS|^~\\&|S|F|R|D|20240101||||F001\r{}\rFTS|ZZZ",
+            batch_text()
+        );
+        let intake = Intake::parse(&text).unwrap();
+        assert_eq!(intake.declared_batch_count, None);
+        assert!(
+            !intake.verify_counts().is_ok(),
+            "garbled FTS count disables the count check"
+        );
     }
 
     #[test]
@@ -536,13 +615,17 @@ mod tests {
         // `line[4..]` slicing panicked here.
         assert_eq!(msh_control_id("MSHé"), None);
         assert_eq!(header_control_id("BHSé"), None);
-        assert_eq!(trailer_count("BTSé"), None);
+        assert_eq!(trailer_count("BTSé"), TrailerCount::Missing);
         // Non-ASCII separator byte is rejected instead of mis-split.
         assert_eq!(msh_control_id("MSHé|x"), None);
         assert_eq!(header_control_id("BHSé|x"), None);
-        // Short lines still return None.
+        // Short lines still count as missing.
         assert_eq!(msh_control_id("MSH"), None);
-        assert_eq!(trailer_count("BTS"), None);
+        assert_eq!(trailer_count("BTS"), TrailerCount::Missing);
+        // Present-but-garbled counts are malformed, never missing.
+        assert_eq!(trailer_count("BTS|ZZZ"), TrailerCount::Malformed);
+        assert_eq!(trailer_count("BTS|2"), TrailerCount::Count(2));
+        assert_eq!(trailer_count("BTS|"), TrailerCount::Missing);
         // Whole-input parse honors the never-fails contract on garbage.
         let intake = Intake::parse("MSHé\rBHSé|x\rBTSé\r").unwrap();
         assert!(intake.error_count() >= 1);

@@ -397,7 +397,10 @@ impl ConformanceValidator {
                 }
             }
             ConditionalUsage::RequiredIfKnown => {
-                if occurrence_count == 0 {
+                // Present-but-empty is the same "not known" state as
+                // absent (parsed empty fields still carry one empty
+                // repetition), so RE tests content like R and X do.
+                if !has_content {
                     let field_name = field_profile
                         .name
                         .clone()
@@ -546,13 +549,21 @@ impl ConformanceValidator {
         if let Some(max_length) = field_profile.length {
             // Check each repetition
             for (rep_index, repetition) in field.repetitions.iter().enumerate() {
-                // Get the encoded value of this repetition
-                // Use default delimiters for length calculation.
-                // Length is counted in characters, not bytes, so
-                // multibyte text is not falsely over the limit.
-                let delimiters = vyna_hl7_core::Delimiters::default();
-                let value = repetition.encode(&delimiters);
-                let actual_length = value.chars().count();
+                // MSH-1/2 store the raw delimiter characters, which
+                // encode() escape-expands ("|" to 3 chars, "^~\\&" to
+                // 12); measure the decoded length instead.
+                let actual_length =
+                    if segment_id == "MSH" && (field_position == 1 || field_position == 2) {
+                        decoded_length(repetition)
+                    } else {
+                        // Get the encoded value of this repetition
+                        // Use default delimiters for length calculation.
+                        // Length is counted in characters, not bytes, so
+                        // multibyte text is not falsely over the limit.
+                        let delimiters = vyna_hl7_core::Delimiters::default();
+                        let value = repetition.encode(&delimiters);
+                        value.chars().count()
+                    };
 
                 if actual_length > max_length {
                     let location = if segment_index > 0 {
@@ -592,6 +603,24 @@ impl ConformanceValidator {
             }
         }
     }
+}
+
+/// Decoded character length of a repetition: subcomponent values joined
+/// by single separator characters, without escape expansion.
+fn decoded_length(repetition: &vyna_hl7_core::Repetition) -> usize {
+    let mut len = 0;
+    for (comp_idx, component) in repetition.components.iter().enumerate() {
+        if comp_idx > 0 {
+            len += 1;
+        }
+        for (sub_idx, subcomponent) in component.subcomponents.iter().enumerate() {
+            if sub_idx > 0 {
+                len += 1;
+            }
+            len += subcomponent.value.chars().count();
+        }
+    }
+    len
 }
 
 #[cfg(test)]
@@ -860,6 +889,65 @@ mod tests {
         pid.add_field(name);
         message.add_segment(pid);
         ConformanceProfile::new(metadata, message)
+    }
+
+    /// Profile limiting MSH-1 to 1 char and MSH-2 to 4 chars.
+    fn msh_delimiter_length_profile() -> ConformanceProfile {
+        let metadata =
+            ProfileMetadata::new("MshDelims".to_string(), "1.0".to_string(), Version::V2_5);
+        let mut message = MessageProfile::new("ADT".to_string(), "A01".to_string());
+        let mut msh = SegmentProfile::new("MSH".to_string(), Usage::Required, Cardinality::one());
+        let mut f1 = FieldProfile::new(1, Usage::Required, Cardinality::one());
+        f1.length = Some(1);
+        msh.add_field(f1);
+        let mut f2 = FieldProfile::new(2, Usage::Required, Cardinality::one());
+        f2.length = Some(4);
+        msh.add_field(f2);
+        message.add_segment(msh);
+        ConformanceProfile::new(metadata, message)
+    }
+
+    #[test]
+    fn test_msh_delimiter_fields_pass_length_check() {
+        // MSH-1 ("|") is 1 char and MSH-2 ("^~\\&") is 4 chars; the
+        // escape-expanded encoding must not inflate the measured length.
+        let validator = ConformanceValidator::new(msh_delimiter_length_profile());
+        let message =
+            parse_message("MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1||PATID1234").unwrap();
+        let result = validator.validate(&message);
+        assert!(
+            result.is_valid(),
+            "expected valid, got: {:?}",
+            result.errors
+        );
+    }
+
+    /// Profile with PID-3 marked required-if-known (RE).
+    fn re_usage_profile() -> ConformanceProfile {
+        let metadata =
+            ProfileMetadata::new("REUsage".to_string(), "1.0".to_string(), Version::V2_5);
+        let mut message = MessageProfile::new("ADT".to_string(), "A01".to_string());
+        let mut pid = SegmentProfile::new("PID".to_string(), Usage::Required, Cardinality::one());
+        pid.add_field(FieldProfile::new(
+            3,
+            Usage::RequiredIfKnown,
+            Cardinality::zero_or_one(),
+        ));
+        message.add_segment(pid);
+        ConformanceProfile::new(metadata, message)
+    }
+
+    #[test]
+    fn test_re_usage_warns_identically_for_absent_and_empty() {
+        // Present-but-empty is the same "not known" state as absent.
+        let validator = ConformanceValidator::new(re_usage_profile());
+        let absent = validator.validate(&conditional_message("PID|1"));
+        let empty = validator.validate(&conditional_message("PID|1||"));
+        for (label, result) in [("absent", absent), ("empty", empty)] {
+            assert!(result.is_valid(), "{label}: {:?}", result.errors);
+            assert_eq!(result.warnings.len(), 1, "{label}: {:?}", result.warnings);
+            assert_eq!(result.warnings[0].rule.as_deref(), Some("PID-3 usage=RE"));
+        }
     }
 
     #[test]

@@ -224,6 +224,19 @@ pub trait MessageQueue {
 /// the same id, so the counter cannot live per handle.
 static NEXT_ID_SEQ: AtomicU64 = AtomicU64::new(0);
 
+/// `now + delay` in epoch milliseconds, saturating: extreme backoffs or
+/// leases pin to `u64::MAX` instead of overflowing (a debug panic) or
+/// wrapping (a release lie that contradicts the reported `visible_in`).
+fn saturating_add_delay(now: u64, delay: Duration) -> u64 {
+    now.saturating_add(u64::try_from(delay.as_millis()).unwrap_or(u64::MAX))
+}
+
+/// Serializes [`FileQueue::dequeue`] across same-process handles so two
+/// handles can never lease one message. Sharing a directory between
+/// processes is unsupported (see [`FileQueue`]), so a process-wide mutex
+/// around the check-then-claim window is sufficient — no lock files.
+static DEQUEUE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Next queue id: hex nanos, pid, and a process-wide sequence
 /// (filename-safe). Unique across same-process handles even when the clock
 /// does not advance between enqueues.
@@ -365,7 +378,7 @@ impl MessageQueue for MemoryQueue {
         let entry = self.entries.get_mut(&id).expect("order and map agree");
         entry.attempts += 1;
         entry.state = EntryState::Inflight {
-            leased_until_ms: now + self.policy.lease.as_millis() as u64,
+            leased_until_ms: saturating_add_delay(now, self.policy.lease),
         };
         Ok(Some(Leased {
             id: entry.id.clone(),
@@ -405,7 +418,7 @@ impl MessageQueue for MemoryQueue {
         } else {
             let delay = self.policy.backoff(entry.attempts);
             entry.state = EntryState::Pending {
-                visible_at_ms: now + delay.as_millis() as u64,
+                visible_at_ms: saturating_add_delay(now, delay),
             };
             Ok(NackOutcome::Requeued { visible_in: delay })
         }
@@ -535,6 +548,7 @@ impl FileQueue {
         // never delete a temp file another live handle is still writing.
         for dir in [&queue.pending, &queue.inflight, &queue.dead] {
             reap_temp_files(dir)?;
+            reap_orphan_bodies(dir)?;
         }
         let report = queue.recover()?;
         Ok((queue, report))
@@ -658,13 +672,19 @@ impl MessageQueue for FileQueue {
     }
 
     fn dequeue(&mut self) -> Result<Option<Leased>, QueueError> {
+        // One lease per message across same-process handles: the lock makes
+        // the recover/scan/claim window atomic (a poisoned lock still
+        // serializes; the state on disk stays consistent either way).
+        let _guard = DEQUEUE_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         // Opportunistic recovery keeps leases honest without reopening.
         self.recover()?;
         let Some((mut meta, body)) = self.next_visible()? else {
             return Ok(None);
         };
         meta.attempts += 1;
-        meta.leased_until_ms = self.clock.now_ms() + self.policy.lease.as_millis() as u64;
+        meta.leased_until_ms = saturating_add_delay(self.clock.now_ms(), self.policy.lease);
         meta.visible_at_ms = 0;
         move_entry(&self.pending, &self.inflight, &meta.id, Some(&meta))?;
         Ok(Some(Leased {
@@ -696,7 +716,7 @@ impl MessageQueue for FileQueue {
             Ok(NackOutcome::DeadLettered)
         } else {
             let delay = self.policy.backoff(meta.attempts);
-            meta.visible_at_ms = self.clock.now_ms() + delay.as_millis() as u64;
+            meta.visible_at_ms = saturating_add_delay(self.clock.now_ms(), delay);
             meta.leased_until_ms = 0;
             move_entry(&self.inflight, &self.pending, id, Some(&meta))?;
             Ok(NackOutcome::Requeued { visible_in: delay })
@@ -765,6 +785,29 @@ fn reap_temp_files(dir: &Path) -> Result<(), QueueError> {
             continue;
         }
         if !entry.file_type()?.is_file() {
+            continue;
+        }
+        match std::fs::remove_file(entry.path()) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(QueueError::Io(e)),
+        }
+    }
+    Ok(())
+}
+
+/// Delete `*.body` files with no `*.meta.json` sibling (e.g. a crash
+/// between the two deletes of [`remove_entry`]). Nothing can ever deliver
+/// them — listing, stats, and dequeue all key off metadata — so without
+/// reaping they linger forever, invisible.
+fn reap_orphan_bodies(dir: &Path) -> Result<(), QueueError> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(base) = name.to_str().and_then(|n| n.strip_suffix(".body")) else {
+            continue;
+        };
+        if meta_path(dir, base).exists() {
             continue;
         }
         match std::fs::remove_file(entry.path()) {
@@ -974,6 +1017,104 @@ mod tests {
                 dead: 1
             }
         );
+    }
+
+    #[test]
+    fn memory_max_delays_saturate_instead_of_overflowing() {
+        // nack site: base_delay = MAX must not panic, and the message
+        // must stay hidden consistently with visible_in = MAX.
+        let clock = Arc::new(ManualClock::new(1_000));
+        let policy = RetryPolicy {
+            max_attempts: 5,
+            base_delay: Duration::MAX,
+            max_delay: Duration::MAX,
+            lease: Duration::from_secs(5),
+        };
+        let mut queue = MemoryQueue::with_policy_and_clock(policy, clock.clone());
+        let id = queue.enqueue(b"MSH", HashMap::new()).unwrap();
+        queue.dequeue().unwrap().unwrap();
+        let outcome = queue.nack(&id, Some("e")).unwrap();
+        assert_eq!(
+            outcome,
+            NackOutcome::Requeued {
+                visible_in: Duration::MAX
+            }
+        );
+        clock.advance(Duration::from_secs(60));
+        assert!(
+            queue.dequeue().unwrap().is_none(),
+            "nacked message visible despite visible_in = MAX"
+        );
+
+        // dequeue site: lease = MAX must not panic, and the lease must
+        // hold (no immediate redelivery).
+        let clock = Arc::new(ManualClock::new(2_000));
+        let policy = RetryPolicy {
+            max_attempts: 5,
+            base_delay: Duration::from_secs(1),
+            max_delay: Duration::from_secs(10),
+            lease: Duration::MAX,
+        };
+        let mut queue = MemoryQueue::with_policy_and_clock(policy, clock.clone());
+        queue.enqueue(b"MSH", HashMap::new()).unwrap();
+        queue.dequeue().unwrap().unwrap();
+        clock.advance(Duration::from_secs(60));
+        assert!(
+            queue.dequeue().unwrap().is_none(),
+            "leased message redelivered despite lease = MAX"
+        );
+    }
+
+    #[test]
+    fn file_max_delays_saturate_instead_of_overflowing() {
+        // nack site.
+        let dir = scratch_dir();
+        let clock = Arc::new(ManualClock::new(1_000));
+        let policy = RetryPolicy {
+            max_attempts: 5,
+            base_delay: Duration::MAX,
+            max_delay: Duration::MAX,
+            lease: Duration::from_secs(5),
+        };
+        let (mut queue, _) =
+            FileQueue::open_with_policy_and_clock(&dir, policy, clock.clone()).unwrap();
+        let id = queue.enqueue(b"MSH", HashMap::new()).unwrap();
+        queue.dequeue().unwrap().unwrap();
+        let outcome = queue.nack(&id, Some("e")).unwrap();
+        assert_eq!(
+            outcome,
+            NackOutcome::Requeued {
+                visible_in: Duration::MAX
+            }
+        );
+        clock.advance(Duration::from_secs(60));
+        assert!(
+            queue.dequeue().unwrap().is_none(),
+            "nacked message visible despite visible_in = MAX"
+        );
+        drop(queue);
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        // dequeue site.
+        let dir = scratch_dir();
+        let clock = Arc::new(ManualClock::new(2_000));
+        let policy = RetryPolicy {
+            max_attempts: 5,
+            base_delay: Duration::from_secs(1),
+            max_delay: Duration::from_secs(10),
+            lease: Duration::MAX,
+        };
+        let (mut queue, _) =
+            FileQueue::open_with_policy_and_clock(&dir, policy, clock.clone()).unwrap();
+        queue.enqueue(b"MSH", HashMap::new()).unwrap();
+        queue.dequeue().unwrap().unwrap();
+        clock.advance(Duration::from_secs(60));
+        assert!(
+            queue.dequeue().unwrap().is_none(),
+            "leased message redelivered despite lease = MAX"
+        );
+        drop(queue);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -1356,6 +1497,74 @@ mod tests {
         let leased = queue.dequeue().unwrap().unwrap();
         assert_eq!(leased.id, id);
         queue.ack(&id).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn concurrent_handles_never_lease_the_same_message() {
+        use std::sync::Barrier;
+
+        let dir = scratch_dir();
+        let (mut seeder, _) = FileQueue::open(&dir).unwrap();
+        // Barrier-synced dequeues from two same-process handles: without
+        // an atomic claim both routinely win the next_visible/move_entry
+        // race and lease the same id (the window spans dozens of syscalls,
+        // so even a few rounds collide without the lock).
+        for _ in 0..25 {
+            let id = seeder.enqueue(b"MSH", HashMap::new()).unwrap();
+            let barrier = Barrier::new(2);
+            let (a, b) = std::thread::scope(|s| {
+                let first = s.spawn(|| {
+                    let (mut queue, _) = FileQueue::open(&dir).unwrap();
+                    barrier.wait();
+                    queue.dequeue().unwrap().map(|leased| leased.id)
+                });
+                let second = s.spawn(|| {
+                    let (mut queue, _) = FileQueue::open(&dir).unwrap();
+                    barrier.wait();
+                    queue.dequeue().unwrap().map(|leased| leased.id)
+                });
+                (first.join().unwrap(), second.join().unwrap())
+            });
+            assert!(
+                !(a.is_some() && a == b),
+                "both handles leased {id}: {a:?} vs {b:?}"
+            );
+            assert!(a.is_some() || b.is_some(), "message {id} leased by none");
+            // Settle the single outstanding lease for the next round.
+            let (mut queue, _) = FileQueue::open(&dir).unwrap();
+            if queue.ack(&id).is_err() {
+                let leased = queue.dequeue().unwrap().expect("lease visible");
+                queue.ack(&leased.id).unwrap();
+            }
+        }
+        drop(seeder);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn file_open_reaps_orphan_bodies() {
+        let dir = scratch_dir();
+        let (queue, _) = FileQueue::open(&dir).unwrap();
+        drop(queue);
+        // Crash leftover: a body file with no metadata sibling.
+        std::fs::write(dir.join("pending").join("stray.body"), b"orphan").unwrap();
+
+        let (mut queue, _) = FileQueue::open(&dir).unwrap();
+        assert!(
+            !dir.join("pending").join("stray.body").exists(),
+            "orphan body persists across open"
+        );
+        assert!(queue.dequeue().unwrap().is_none());
+        assert_eq!(
+            queue.stats().unwrap(),
+            QueueStats {
+                pending: 0,
+                inflight: 0,
+                dead: 0
+            }
+        );
+        drop(queue);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

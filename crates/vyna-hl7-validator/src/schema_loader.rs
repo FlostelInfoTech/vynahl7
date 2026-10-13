@@ -29,8 +29,10 @@ pub fn load_schema(
         Version::V2_8 | Version::V2_8_1 | Version::V2_8_2 => "v2_8",
     };
 
-    // Construct the schema key
-    let schema_key = if trigger_event.is_empty() {
+    // Construct the schema key. ACK schemas are keyed triggerless even
+    // though AckBuilder echoes the trigger (MSH-9 "ACK^A01"), so any
+    // ACK trigger normalizes to the "ACK" key.
+    let schema_key = if trigger_event.is_empty() || message_type == "ACK" {
         message_type.to_string()
     } else {
         format!("{}_{}", message_type, trigger_event)
@@ -935,6 +937,16 @@ mod tests {
         let orm2 = load_schema(Version::V2_2, "ORM", "O01").unwrap();
         assert!(!orm2.segments.contains_key("ORO"));
         assert!(orm2.segments.contains_key("RXO"));
+    }
+
+    #[test]
+    fn test_load_ack_schema_ignores_trigger_event() {
+        // AckBuilder echoes the trigger (MSH-9 "ACK^A01") but every ACK
+        // schema is keyed triggerless, so any trigger resolves to it.
+        let schema = load_schema(Version::V2_5, "ACK", "A01").unwrap();
+        assert_eq!(schema.message_type, "ACK");
+        assert!(schema.trigger_event.is_empty());
+        assert!(load_schema(Version::V2_5, "ACK", "").is_ok());
     }
 
     #[test]

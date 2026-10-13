@@ -33,7 +33,7 @@ jobs:
         run: cargo build -p vyna-hl7-wasm --target wasm32-unknown-unknown
 
   # Optional features the default build never exercises: targeted combos
-  # only (cli fhir/tls, http compression/oauth/websocket), not a powerset.
+  # only (one row per shipped feature plus combined rows), not a powerset.
   feature-combos:
     runs-on: ubuntu-latest
     strategy:
@@ -54,6 +54,40 @@ jobs:
             features: websocket
           - package: vyna-hl7-http
             features: compression,oauth,websocket
+          - package: vyna-hl7-http
+            features: retry
+          - package: vyna-hl7-http
+            features: logging
+          - package: vyna-hl7-http
+            features: metrics
+          - package: vyna-hl7-http
+            features: ratelimit
+          - package: vyna-hl7-http
+            features: queue
+          - package: vyna-hl7-http
+            features: batch
+          - package: vyna-hl7-http
+            features: routing
+          - package: vyna-hl7-http
+            features: webhooks
+          - package: vyna-hl7-http
+            features: full
+          - package: vyna-hl7-batch
+            features: ftp,sftp,testing
+          - package: vyna-hl7-core
+            features: serde
+          - package: vyna-hl7-transform
+            features: serde
+          - package: vyna-hl7-xml
+            features: convert
+          - package: vyna-hl7-wasm
+            features: console_error_panic_hook
+          - package: vyna-hl7
+            features: tls
+          - package: vyna-hl7
+            features: testing
+          - package: vyna-hl7
+            features: tls,testing
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

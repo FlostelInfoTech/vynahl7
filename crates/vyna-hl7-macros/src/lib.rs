@@ -65,6 +65,7 @@ struct FieldAttr {
     subcomponent: Option<usize>,
     repetition: Option<usize>,
     optional: bool,
+    required: bool,
 }
 
 /// Parsed segment attributes
@@ -86,6 +87,7 @@ struct MessageFieldAttr {
     segment: bool,
     optional: bool,
     repeating: bool,
+    required: bool,
 }
 
 /// Parse a `key = N` value where `N` is a 1-based HL7 position.
@@ -150,11 +152,14 @@ fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttr> {
             } else if meta.path.is_ident("optional") {
                 require_bare_flag(meta.input, "optional")?;
                 result.optional = true;
+            } else if meta.path.is_ident("required") {
+                require_bare_flag(meta.input, "required")?;
+                result.required = true;
             } else {
                 return Err(syn::Error::new_spanned(
                     &meta.path,
                     "unknown hl7 field attribute; expected one of: field, \
-                     component, subcomponent, repetition, optional",
+                     component, subcomponent, repetition, optional, required",
                 ));
             }
             Ok(())
@@ -264,11 +269,14 @@ fn parse_message_field_attrs(attrs: &[Attribute]) -> syn::Result<MessageFieldAtt
             } else if meta.path.is_ident("repeating") {
                 require_bare_flag(meta.input, "repeating")?;
                 result.repeating = true;
+            } else if meta.path.is_ident("required") {
+                require_bare_flag(meta.input, "required")?;
+                result.required = true;
             } else {
                 return Err(syn::Error::new_spanned(
                     &meta.path,
                     "unknown hl7 message-field marker; expected one of: \
-                     segment, optional, repeating",
+                     segment, optional, repeating, required",
                 ));
             }
             Ok(())
@@ -396,6 +404,9 @@ fn inner_generic_type(ty: &Type) -> Option<&Type> {
 /// - `#[hl7(component = N)]` - Specifies which component within the field (1-based).
 /// - `#[hl7(optional)]` - Marks the field as optional; requires `Option<T>`
 ///   (a bare `Option<T>` is optional without the marker).
+/// - `#[hl7(required)]` - On a `Vec<T>` field only: total absence fails
+///   the conversion instead of yielding an empty `Vec` (scalars are
+///   required by default, so `required` on them is an error).
 ///
 /// `subcomponent =` and `repetition =` are not supported and are rejected:
 /// map the whole field or a single component instead. Unknown keys and
@@ -406,7 +417,8 @@ fn inner_generic_type(ty: &Type) -> Option<&Type> {
 /// - `String` - Required whole field; a missing field fails the conversion.
 /// - `Option<String>` - Optional whole field (`None` when the field is absent).
 /// - `Vec<String>` - Repeating field: one element per repetition. Cannot be
-///   combined with `component=`.
+///   combined with `component=`. Add `required` to fail the conversion
+///   when no repetition is present.
 ///
 /// Whole-field values are composite text: repetitions joined by `~`,
 /// components by `^`, subcomponents by `&`. Literal separator characters
@@ -455,14 +467,6 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
     let name = &input.ident;
 
     let segment_attrs = parse_segment_attrs(&input.attrs)?;
-    let segment_id = segment_attrs.id.unwrap_or_else(|| {
-        // Default to struct name's first 3 chars uppercase
-        name.to_string()
-            .chars()
-            .take(3)
-            .collect::<String>()
-            .to_uppercase()
-    });
 
     let fields = match &input.data {
         Data::Struct(data) => match &data.fields {
@@ -480,6 +484,13 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
                 "Segment derive only supports structs",
             ));
         }
+    };
+
+    let Some(segment_id) = segment_attrs.id else {
+        return Err(syn::Error::new_spanned(
+            name,
+            "Segment derive requires `#[hl7(id = \"XXX\")]` naming the segment",
+        ));
     };
 
     // Generate field extraction code for from_segment
@@ -518,6 +529,27 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
                 format!(
                     "field `{field_name}` is marked `optional` but is not \
                      Option<T>",
+                ),
+            ));
+        }
+
+        if attrs.required && !is_repeating {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "field `{field_name}` is marked `required` but is not \
+                     Vec<T>; `required` only applies to Vec<T> (scalars \
+                     are required by default)",
+                ),
+            ));
+        }
+
+        if attrs.required && is_optional {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "field `{field_name}` cannot combine `required` and \
+                     `optional`",
                 ),
             ));
         }
@@ -610,8 +642,8 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
             // the escape-aware composite value (see
             // repetition_to_escaped_tokens).
             let rep_to_str = repetition_to_escaped_tokens();
-            from_segment_fields.push(quote! {
-                #field_name: segment.get_field(#field_num)
+            let collect = quote! {
+                segment.get_field(#field_num)
                     .map(|f| {
                         let __to_str = #rep_to_str;
                         f.repetitions.iter()
@@ -619,7 +651,22 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
                             .collect::<Vec<String>>()
                     })
                     .unwrap_or_default()
-            });
+            };
+            if attrs.required {
+                // Required repeating field: total absence fails the
+                // conversion like a missing required scalar, instead of
+                // yielding an empty Vec.
+                from_segment_fields.push(quote! {
+                    #field_name: match #collect {
+                        __vals if __vals.is_empty() => return None,
+                        __vals => __vals,
+                    }
+                });
+            } else {
+                from_segment_fields.push(quote! {
+                    #field_name: #collect
+                });
+            }
 
             let append = append_reps_tokens(&quote! { __val });
             to_segment_fields.push(quote! {
@@ -774,7 +821,9 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
 /// - `#[hl7(segment, optional)]` - Marks a field as an optional segment;
 ///   requires `Option<T>`.
 /// - `#[hl7(segment, repeating)]` - Marks a field as a repeating segment;
-///   requires `Vec<T>`.
+///   requires `Vec<T>`. Add `required` to fail the conversion when no
+///   segment is present (scalar segments are required by default, so
+///   `required` without `repeating` is an error).
 ///
 /// The markers must match the field type: an `Option<T>` field without
 /// `optional`, a `Vec<T>` field without `repeating`, or any field without
@@ -785,8 +834,11 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
 /// `from_message` matches segments by ID using each field type's `SEGMENT_ID`:
 /// required fields take the first match (a missing one fails the conversion),
 /// `Option<T>` fields take the first match if present, and `Vec<T>` fields
-/// collect every match in order. Segments sharing one ID across different
-/// groups are not distinguished positionally.
+/// collect every match in order (a `required` one fails the conversion when
+/// empty). A present segment that fails conversion
+/// fails the whole conversion: invalid-present is never reported as absent
+/// (optional) or silently dropped (repeating). Segments sharing one ID
+/// across different groups are not distinguished positionally.
 ///
 /// Before matching segments, `from_message` compares a present MSH-9
 /// against the declared `message_type`/`trigger_event`: when either
@@ -918,6 +970,25 @@ fn derive_message_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
                 ),
             ));
         }
+        if markers.required && !markers.repeating {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "message field `{field_name}` is marked `required` \
+                     without `repeating`; `required` only applies to \
+                     `Vec<T>` (scalar segments are required by default)",
+                ),
+            ));
+        }
+        if markers.required && !is_vec {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "message field `{field_name}` is marked `required` but \
+                     is not Vec<T>",
+                ),
+            ));
+        }
 
         if is_vec {
             // Repeating segment: every segment with the inner type's ID, in order.
@@ -930,12 +1001,27 @@ fn derive_message_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
                     ),
                 )
             })?;
-            from_message_fields.push(quote! {
-                #field_name: message.get_segments_by_id(<#inner>::SEGMENT_ID)
+            let collect = quote! {
+                message.get_segments_by_id(<#inner>::SEGMENT_ID)
                     .into_iter()
-                    .filter_map(<#inner>::from_segment)
-                    .collect()
-            });
+                    .map(<#inner>::from_segment)
+                    .collect::<Option<Vec<_>>>()?
+            };
+            if markers.required {
+                // Required repeating segment: total absence fails the
+                // conversion like a missing required scalar, instead of
+                // yielding an empty Vec.
+                from_message_fields.push(quote! {
+                    #field_name: match #collect {
+                        __vals if __vals.is_empty() => return None,
+                        __vals => __vals,
+                    }
+                });
+            } else {
+                from_message_fields.push(quote! {
+                    #field_name: #collect
+                });
+            }
 
             to_message_fields.push(quote! {
                 for item in &self.#field_name {
@@ -954,8 +1040,10 @@ fn derive_message_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
                 )
             })?;
             from_message_fields.push(quote! {
-                #field_name: message.get_segment_by_id(<#inner>::SEGMENT_ID)
-                    .and_then(<#inner>::from_segment)
+                #field_name: match message.get_segment_by_id(<#inner>::SEGMENT_ID) {
+                    None => None,
+                    Some(__seg) => Some(<#inner>::from_segment(__seg)?),
+                }
             });
 
             to_message_fields.push(quote! {
@@ -1002,8 +1090,9 @@ fn derive_message_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
             /// Segments are matched by ID: required segments use the first
             /// match, optional segments use the first match if present, and
             /// repeating segments collect every match in order. Returns `None`
-            /// when a required segment is missing, or when a present MSH-9
-            /// disagrees with the declared message type or trigger event.
+            /// when a required segment is missing, when any present segment
+            /// fails conversion, or when a present MSH-9 disagrees with the
+            /// declared message type or trigger event.
             pub fn from_message(message: &vyna_hl7_core::message::Message) -> Option<Self> {
                 // A present MSH-9 must agree with the declared type and
                 // trigger; each declared value that is empty is not checked.
@@ -1749,6 +1838,151 @@ mod tests {
         assert!(
             compact.contains("TryFrom"),
             "borrowed conversion must be fallible: {rendered}"
+        );
+    }
+
+    #[test]
+    fn segment_impl_requires_id_attribute() {
+        // `id` is documented as Required: omitting it must fail the
+        // derive instead of silently defaulting to the struct name.
+        let err = derive_segment_impl(parse_input(
+            "struct Pid { #[hl7(field = 1)] x: Option<String> }",
+        ))
+        .unwrap_err();
+        assert!(err_message(err).contains("id"));
+    }
+
+    #[test]
+    fn message_impl_repeating_propagates_segment_failure() {
+        // A failing repetition must fail the whole conversion (?),
+        // never be silently dropped by filter_map.
+        let tokens = derive_message_impl(parse_input(
+            "#[hl7(message_type = \"ORU\", trigger_event = \"R01\")] struct M { \
+             #[hl7(segment)] pid: Pid, \
+             #[hl7(segment, repeating)] obx: Vec<Obx> }",
+        ))
+        .expect("valid struct must expand");
+        let rendered = tokens.to_string();
+        assert!(
+            !rendered.contains("filter_map"),
+            "repeating segments must not be dropped: {rendered}"
+        );
+        assert!(
+            rendered
+                .replace(' ', "")
+                .contains("collect::<Option<Vec<_>>>()?"),
+            "repeating segments must propagate failure: {rendered}"
+        );
+    }
+
+    #[test]
+    fn message_impl_optional_propagates_present_failure() {
+        // A present-but-invalid optional segment must fail the whole
+        // conversion (?), never be swallowed into None by and_then.
+        let tokens = derive_message_impl(parse_input(
+            "#[hl7(message_type = \"ADT\", trigger_event = \"A01\")] struct M { \
+             #[hl7(segment, optional)] pv1: Option<Pv1> }",
+        ))
+        .expect("valid struct must expand");
+        let rendered = tokens.to_string();
+        let compact = rendered.replace(' ', "");
+        assert!(
+            !compact.contains("and_then(<Pv1>::from_segment)"),
+            "present failure must not become absent: {rendered}"
+        );
+        assert!(
+            compact.contains("Some(<Pv1>::from_segment(__seg)?)"),
+            "present failure must propagate: {rendered}"
+        );
+    }
+
+    #[test]
+    fn segment_impl_required_vec_fails_when_empty() {
+        // A required repeating field must fail the conversion when no
+        // repetition is present, instead of yielding an empty Vec.
+        let tokens = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { \
+             #[hl7(field = 3, required)] ids: Vec<String> }",
+        ))
+        .expect("valid struct must expand");
+        let compact = tokens.to_string().replace(' ', "");
+        assert!(
+            compact.contains("is_empty()=>returnNone"),
+            "required Vec must fail when empty: {compact}"
+        );
+
+        // Without `required` the empty Vec stands: no fail-on-empty
+        // guard is emitted.
+        let tokens = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { \
+             #[hl7(field = 3)] ids: Vec<String> }",
+        ))
+        .expect("valid struct must expand");
+        let compact = tokens.to_string().replace(' ', "");
+        assert!(
+            !compact.contains("if__vals.is_empty"),
+            "plain repeating Vec must stay total: {compact}"
+        );
+    }
+
+    #[test]
+    fn segment_impl_required_rejects_scalar_and_optional() {
+        // Scalars are required by default; `required` on them is an error.
+        let err = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { \
+             #[hl7(field = 3, required)] id: String }",
+        ))
+        .unwrap_err();
+        assert!(err_message(err).contains("required"));
+
+        // `required` contradicts `Option`: a required field cannot be
+        // optional.
+        let err = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { \
+             #[hl7(field = 5, required)] x: Option<String> }",
+        ))
+        .unwrap_err();
+        assert!(err_message(err).contains("required"));
+    }
+
+    #[test]
+    fn message_impl_required_repeating_fails_when_empty() {
+        // A required repeating segment must fail the conversion when no
+        // segment is present, instead of yielding an empty Vec.
+        let tokens = derive_message_impl(parse_input(
+            "#[hl7(message_type = \"ORU\", trigger_event = \"R01\")] struct M { \
+             #[hl7(segment)] pid: Pid, \
+             #[hl7(segment, repeating, required)] obx: Vec<Obx> }",
+        ))
+        .expect("valid struct must expand");
+        let compact = tokens.to_string().replace(' ', "");
+        assert!(
+            compact.contains("is_empty()=>returnNone"),
+            "required repeating must fail when empty: {compact}"
+        );
+    }
+
+    #[test]
+    fn message_impl_required_rejects_scalar_and_optional() {
+        // `required` without `repeating` is an error: scalar segments
+        // are required by default.
+        let err = derive_message_impl(parse_input(
+            "#[hl7(message_type = \"ADT\", trigger_event = \"A01\")] struct M { \
+             #[hl7(segment, required)] pid: Pid }",
+        ))
+        .unwrap_err();
+        assert!(err_message(err).contains("required"));
+
+        // `required` contradicts `optional`.
+        let err = derive_message_impl(parse_input(
+            "#[hl7(message_type = \"ADT\", trigger_event = \"A01\")] struct M { \
+             #[hl7(segment, optional, repeating, required)] pv1: Vec<Pv1> }",
+        ))
+        .unwrap_err();
+        let msg = err_message(err);
+        assert!(
+            msg.contains("optional") || msg.contains("required"),
+            "{msg}"
         );
     }
 }

@@ -929,6 +929,32 @@ async fn send_command(
     Ok(())
 }
 
+/// Derive the MLLP TLS server name (SNI) from `--server-name`,
+/// falling back to the host part of the `host:port` address.
+/// Bracketed literals (`[::1]:2575`) yield the inner host; an
+/// unbracketed multi-colon address is ambiguous (host vs. port) and
+/// must pass `--server-name` explicitly.
+#[cfg(any(test, feature = "tls"))]
+fn tls_server_name(addr: &str, server_name: Option<&str>) -> Result<String> {
+    if let Some(name) = server_name {
+        return Ok(name.to_string());
+    }
+    if let Some(rest) = addr.strip_prefix('[') {
+        let end = rest
+            .find(']')
+            .context("malformed bracketed address; pass --server-name")?;
+        return Ok(rest[..end].to_string());
+    }
+    let host = addr
+        .rsplit_once(':')
+        .map(|(host, _)| host)
+        .context("cannot determine TLS server name; pass --server-name")?;
+    if host.is_empty() || host.contains(':') {
+        bail!("cannot determine TLS server name for '{addr}'; pass --server-name");
+    }
+    Ok(host.to_string())
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn send_mllp(
     message: &vyna_hl7_core::Message,
@@ -971,10 +997,7 @@ async fn send_mllp(
             (None, None) => TlsClientConfig::with_ca_cert(ca)?,
             _ => bail!("mutual TLS needs both --client-cert and --client-key"),
         };
-        let name = server_name
-            .map(str::to_string)
-            .or_else(|| addr.rsplit(':').nth(1).map(str::to_string))
-            .context("cannot determine TLS server name; pass --server-name")?;
+        let name = tls_server_name(addr, server_name)?;
         let mut client =
             tokio::time::timeout(timeout, MllpClient::connect_tls(addr, &name, tls_config))
                 .await
@@ -1144,6 +1167,28 @@ mod tests {
         let json = convert_message_to_json(&message);
         // MSH-9 keeps its component separator intact.
         assert_eq!(json["segments"][0]["fields"][8], "ADT^A01");
+    }
+
+    #[test]
+    fn tls_server_name_parses_hosts_and_bracketed_ipv6() {
+        assert_eq!(tls_server_name("host:2575", None).unwrap(), "host");
+        assert_eq!(
+            tls_server_name("127.0.0.1:2575", None).unwrap(),
+            "127.0.0.1"
+        );
+        assert_eq!(tls_server_name("[::1]:2575", None).unwrap(), "::1");
+        assert_eq!(tls_server_name("[::1]", None).unwrap(), "::1");
+        assert_eq!(
+            tls_server_name("[::1]:2575", Some("example.com")).unwrap(),
+            "example.com"
+        );
+    }
+
+    #[test]
+    fn tls_server_name_rejects_ambiguous_addresses() {
+        assert!(tls_server_name("2001:db8::1:2575", None).is_err());
+        assert!(tls_server_name("host", None).is_err());
+        assert!(tls_server_name("[::1", None).is_err());
     }
 
     #[test]

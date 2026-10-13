@@ -19,7 +19,8 @@
 //! - One struct per segment (`PID` -> `Pid`), one struct per message
 //!   (`ADT` + `A01` -> `AdtA01`), using the `Segment` / `Message` derives.
 //! - Required fields become `String`, optional fields `Option<String>`,
-//!   repeating fields `Vec<String>`.
+//!   repeating fields `Vec<String>`; required repeating fields and
+//!   segments carry `required` so absence fails the conversion.
 //! - Composite fields whose schema defines components map one struct field
 //!   per component; repeating composite fields fall back to whole-field
 //!   `Vec<String>` because `Vec` cannot combine with `component=`.
@@ -324,7 +325,13 @@ fn render_whole_field(
         "    /// {segment_id}-{field_number} {} ({flags})\n",
         sanitize_comment_text(&field.name)
     ));
-    body.push_str(&format!("    #[hl7(field = {field_number})]\n"));
+    if field.required && field.repeating {
+        // Required repeating fields fail conversion when absent, like
+        // required scalars, instead of yielding an empty Vec.
+        body.push_str(&format!("    #[hl7(field = {field_number}, required)]\n"));
+    } else {
+        body.push_str(&format!("    #[hl7(field = {field_number})]\n"));
+    }
     render_field_decl(body, &ident, ty);
 }
 
@@ -365,8 +372,15 @@ pub fn generate_module(schema: &MessageSchema) -> String {
         let def = &schema.segments[id.as_str()];
         let ident = sanitize_ident(id, &format!("segment_{}", id.to_lowercase()), &mut used);
         let target = segment_struct_name(id);
+        // Required repeating segments fail conversion when absent,
+        // like required scalars, instead of yielding an empty Vec.
         let (attr, ty) = if def.repeating {
-            ("repeating", format!("Vec<{target}>"))
+            let marker = if def.required {
+                "repeating, required"
+            } else {
+                "repeating"
+            };
+            (marker, format!("Vec<{target}>"))
         } else if def.required {
             ("", target)
         } else {
@@ -490,6 +504,70 @@ mod tests {
         let name_pos = source.find("patient_name").unwrap();
         let sex_pos = source.find("pub sex").unwrap();
         assert!(id_pos < name_pos && name_pos < sex_pos);
+    }
+
+    #[test]
+    fn required_repeating_field_carries_required_marker() {
+        let def = SegmentDefinition {
+            name: "Patient Identification".to_string(),
+            required: true,
+            repeating: false,
+            fields: HashMap::from([
+                (3, field("Patient Identifier List", true, true)),
+                (5, field("Patient Name", false, true)),
+            ]),
+        };
+
+        let source = generate_segment("PID", &def);
+        assert!(source.contains("#[hl7(field = 3, required)]"), "{source}");
+        assert!(
+            source.contains("pub patient_identifier_list: Vec<String>,"),
+            "{source}"
+        );
+        // Optional repeating fields keep the plain marker.
+        assert!(source.contains("#[hl7(field = 5)]"), "{source}");
+    }
+
+    #[test]
+    fn required_repeating_segment_carries_required_marker() {
+        let pid = SegmentDefinition {
+            name: "Patient Identification".to_string(),
+            required: true,
+            repeating: false,
+            fields: HashMap::new(),
+        };
+        let obx = SegmentDefinition {
+            name: "Observation".to_string(),
+            required: true,
+            repeating: true,
+            fields: HashMap::new(),
+        };
+        let rol = SegmentDefinition {
+            name: "Role".to_string(),
+            required: false,
+            repeating: true,
+            fields: HashMap::new(),
+        };
+        let schema = MessageSchema {
+            message_type: "ORU".to_string(),
+            trigger_event: "R01".to_string(),
+            version: "2.5".to_string(),
+            segments: HashMap::from([
+                ("PID".to_string(), pid),
+                ("OBX".to_string(), obx),
+                ("ROL".to_string(), rol),
+            ]),
+        };
+
+        let source = generate_module(&schema);
+        assert!(
+            source.contains("#[hl7(segment, repeating, required)]"),
+            "{source}"
+        );
+        assert!(source.contains("pub obx: Vec<Obx>,"), "{source}");
+        // Optional repeating segments keep the plain marker.
+        assert!(source.contains("#[hl7(segment, repeating)]"), "{source}");
+        assert!(source.contains("pub rol: Vec<Rol>,"), "{source}");
     }
 
     #[test]

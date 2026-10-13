@@ -379,7 +379,7 @@ impl BatchTrailer {
                 .map(|t| t.to_string())
                 .collect::<Vec<_>>()
                 .join("~");
-            bts.add_field(Field::from_value(&totals_str));
+            bts.add_field(Field::from_delimited(&totals_str));
         }
 
         bts
@@ -453,9 +453,16 @@ impl Batch {
     }
 
     /// Encode the batch to HL7 format with the specified separator
+    ///
+    /// The header and trailer use the separators stored on the header,
+    /// falling back to the defaults when they are invalid.
     pub fn encode_with_separator(&self, separator: &str) -> String {
         let mut result = Vec::new();
-        let delimiters = crate::Delimiters::default();
+        let delimiters = crate::Delimiters::from_encoding_characters(
+            self.header.field_separator,
+            &self.header.encoding_characters,
+        )
+        .unwrap_or_default();
 
         // Add BHS
         result.push(self.header.to_segment().encode(&delimiters));
@@ -559,9 +566,16 @@ impl File {
     }
 
     /// Encode the file to HL7 format with the specified separator
+    ///
+    /// The header and trailer use the separators stored on the header,
+    /// falling back to the defaults when they are invalid.
     pub fn encode_with_separator(&self, separator: &str) -> String {
         let mut result = Vec::new();
-        let delimiters = crate::Delimiters::default();
+        let delimiters = crate::Delimiters::from_encoding_characters(
+            self.header.field_separator,
+            &self.header.encoding_characters,
+        )
+        .unwrap_or_default();
 
         // Add FHS
         result.push(self.header.to_segment().encode(&delimiters));
@@ -700,6 +714,35 @@ mod tests {
         assert!(encoded.contains("MSH|"));
         assert!(encoded.contains("BTS|1"));
         assert!(encoded.contains("FTS|1"));
+    }
+
+    #[test]
+    fn test_batch_encode_uses_header_separators() {
+        let mut batch = Batch::new();
+        batch.header.field_separator = '#';
+        let encoded = batch.encode_with_separator("\n");
+        let mut lines = encoded.lines();
+        let head = lines.next().unwrap();
+        let tail = lines.last().unwrap();
+        assert!(head.starts_with("BHS#"), "head: {head}");
+        assert!(tail.starts_with("BTS#"), "tail: {tail}");
+    }
+
+    #[test]
+    fn test_file_encode_uses_header_separators() {
+        let mut file = File::new();
+        file.header.field_separator = '#';
+        let encoded = file.encode_with_separator("\n");
+        let head = encoded.lines().next().unwrap();
+        assert!(head.starts_with("FHS#"), "head: {head}");
+    }
+
+    #[test]
+    fn test_batch_trailer_totals_encode_as_repetitions() {
+        let mut trailer = BatchTrailer::with_count(0);
+        trailer.totals = vec![1.0, 2.0];
+        let encoded = trailer.to_segment().encode(&crate::Delimiters::default());
+        assert_eq!(encoded, "BTS|0||1~2");
     }
 
     #[test]

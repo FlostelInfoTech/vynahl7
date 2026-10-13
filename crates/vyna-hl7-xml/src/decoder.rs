@@ -445,8 +445,19 @@ impl XmlDecoder {
                 }
                 let component = Self::build_component(subcomponents, &text);
                 match stack.last_mut() {
-                    Some(Frame::Field { components, .. }) => {
-                        components.insert(number, component);
+                    Some(Frame::Field {
+                        number: field,
+                        components,
+                        ..
+                    }) => {
+                        // A repeated number silently drops the first child
+                        // via map overwrite; strict rejects it, lenient keeps
+                        // last-wins (historical).
+                        if components.insert(number, component).is_some() {
+                            self.check_context(format!(
+                                "duplicate component {number} in field {field}"
+                            ))?;
+                        }
                     }
                     _ => {
                         return Err(XmlError::InvalidStructure(format!(
@@ -457,7 +468,9 @@ impl XmlDecoder {
             }
             Frame::Subcomponent { number, text } => match stack.last_mut() {
                 Some(Frame::Component { subcomponents, .. }) => {
-                    subcomponents.insert(number, text);
+                    if subcomponents.insert(number, text).is_some() {
+                        self.check_context(format!("duplicate subcomponent {number}"))?;
+                    }
                 }
                 _ => {
                     return Err(XmlError::InvalidStructure(format!(
@@ -926,6 +939,34 @@ mod tests {
         assert!(matches!(err, XmlError::Unescape(_)));
         let source: &dyn std::error::Error = &err;
         assert!(source.source().is_some());
+    }
+
+    #[test]
+    fn test_strict_rejects_duplicate_numbered_children() {
+        // Two PID.5.1 children: strict must reject instead of silently
+        // dropping the first via map overwrite.
+        let xml = "<PID><PID.5><PID.5.1>first</PID.5.1><PID.5.1>second</PID.5.1></PID.5></PID>";
+        let err = strict_decoder().decode(xml).unwrap_err();
+        assert!(
+            matches!(err, XmlError::InvalidStructure(_)),
+            "duplicate components silently merged: {err:?}"
+        );
+        // Same for subcomponents.
+        let xml = "<PID><PID.5><PID.5.1><PID.5.1.1>a</PID.5.1.1>\
+                   <PID.5.1.1>b</PID.5.1.1></PID.5.1></PID.5></PID>";
+        let err = strict_decoder().decode(xml).unwrap_err();
+        assert!(matches!(err, XmlError::InvalidStructure(_)));
+
+        // Lenient keeps last-wins historical behavior.
+        let message = XmlDecoder::new()
+            .decode(
+                "<PID><PID.5><PID.5.1>first</PID.5.1>\
+                     <PID.5.1>second</PID.5.1></PID.5></PID>",
+            )
+            .unwrap();
+        let rep = &message.segments[0].get_field(5).unwrap().repetitions[0];
+        assert_eq!(rep.components.len(), 1);
+        assert_eq!(rep.components[0].value(), Some("second"));
     }
 
     #[test]

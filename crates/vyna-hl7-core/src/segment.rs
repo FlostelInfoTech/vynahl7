@@ -32,6 +32,13 @@ impl Segment {
     }
 
     /// Add a field to the segment
+    ///
+    /// For `MSH`, `FHS`, and `BHS` the first two pushed fields must be
+    /// the delimiter placeholders (field 1: the field separator, field 2:
+    /// the encoding characters); [`Segment::encode`] skips them and takes
+    /// the separators from the [`Delimiters`] argument instead. Pushing
+    /// content as the first or second field of these segments silently
+    /// drops it on encode, so always push both placeholders first.
     pub fn add_field(&mut self, field: Field) {
         self.fields.push(field);
     }
@@ -138,6 +145,11 @@ impl Segment {
     }
 
     /// Encode the segment to HL7 format
+    ///
+    /// For `MSH`, `FHS`, and `BHS` the first two stored fields are the
+    /// delimiter placeholders (see [`Segment::add_field`]) and are skipped:
+    /// the separators are written from `delimiters` instead, and content
+    /// encoding starts at the third stored field.
     pub fn encode(&self, delimiters: &Delimiters) -> String {
         let mut result = self.id.clone();
 
@@ -291,6 +303,18 @@ mod tests {
 
         let encoded = segment.encode(&delims);
         assert!(encoded.starts_with("MSH|^~\\&|"));
+    }
+
+    #[test]
+    fn test_msh_encode_uses_two_placeholder_fields() {
+        // MSH/FHS/BHS carry two placeholders (separator, encodings)
+        // that encode() skips; content starts at the third field.
+        let delims = Delimiters::default();
+        let mut segment = Segment::new("MSH");
+        segment.add_field(Field::from_value("|"));
+        segment.add_field(Field::from_value("^~\\&"));
+        segment.add_field(Field::from_value("SendingApp"));
+        assert_eq!(segment.encode(&delims), "MSH|^~\\&|SendingApp");
     }
 
     #[test]

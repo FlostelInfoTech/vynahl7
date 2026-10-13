@@ -305,8 +305,8 @@ wasm-pack test --headless --firefox
 VynaHL7-WASM benefits from Rust's performance and WebAssembly's near-native speed:
 
 - **Parsing**: ~16.5 µs for small messages (3 segments, measured natively; see [docs/performance.md](../../docs/performance.md) — WASM runs at best near-native speed)
-- **Parsing**: ~8-12 µs for medium messages (8 segments)
-- **Terser access**: ~500-800 ns per field access
+- **Parsing**: ~51.8 µs for medium messages (13 segments, 1,086 bytes, native)
+- **Terser access**: ~60-80 ns per field access (cached ~60 ns, native)
 - **Bundle size**: ~200-300 KB (minified + gzip)
 
 ## Examples

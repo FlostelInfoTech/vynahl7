@@ -64,32 +64,47 @@ impl AllergyIntoleranceConverter {
         } else {
             format!("AL1({})-3", al1_index + 1)
         };
-        // Empty is absent (same rule as the allergen type above).
-        if let Ok(Some(code)) = terser.get(&code_path)
-            && !code.is_empty()
-        {
-            // AL1-3-2: description text, AL1-3-3: coding system (1-based indexing)
-            let text = terser
-                .get(&format!("{code_path}-2"))
-                .ok()
-                .flatten()
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string());
-            let system = terser
-                .get(&format!("{code_path}-3"))
-                .ok()
-                .flatten()
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string());
-            allergy.code = Some(CodeableConcept {
-                coding: Some(vec![Coding {
-                    system,
-                    version: None,
-                    code: Some(code.to_string()),
-                    display: text.clone(),
-                }]),
-                text: text.or_else(|| Some(code.to_string())),
-            });
+        // Empty is absent (same rule as the allergen type above),
+        // but a text-only CWE (empty component 1, valued component 2)
+        // keeps its text instead of dropping the code entirely.
+        let code = terser
+            .get(&code_path)
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+        // AL1-3-2: description text, AL1-3-3: coding system (1-based indexing)
+        let text = terser
+            .get(&format!("{code_path}-2"))
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+        let system = terser
+            .get(&format!("{code_path}-3"))
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+        match (code, text) {
+            (Some(code), text) => {
+                allergy.code = Some(CodeableConcept {
+                    coding: Some(vec![Coding {
+                        system,
+                        version: None,
+                        code: Some(code.clone()),
+                        display: text.clone(),
+                    }]),
+                    text: text.or(Some(code)),
+                });
+            }
+            (None, Some(text)) => {
+                allergy.code = Some(CodeableConcept {
+                    coding: None,
+                    text: Some(text),
+                });
+            }
+            (None, None) => {}
         }
 
         // AL1-4: Allergy Severity Code
@@ -233,6 +248,19 @@ mod tests {
         assert_eq!(allergies[0].category, Some(vec!["medication".to_string()]));
         assert_eq!(allergies[0].code, None);
         assert_eq!(allergies[0].criticality, None);
+    }
+
+    #[test]
+    fn test_text_only_allergen_code_preserved() {
+        // AL1-3 with empty component 1 but valued text: keep the text.
+        let hl7 = "MSH|^~\\&|System|Hospital|EMR|Hospital|20240315||ADT^A01|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   AL1|1|DA|^ASPIRIN|SV";
+        let message = parse_message(hl7).unwrap();
+        let allergies = AllergyIntoleranceConverter::convert_all(&message).unwrap();
+        let concept = allergies[0].code.as_ref().unwrap();
+        assert_eq!(concept.coding, None);
+        assert_eq!(concept.text.as_deref(), Some("ASPIRIN"));
     }
 
     #[test]

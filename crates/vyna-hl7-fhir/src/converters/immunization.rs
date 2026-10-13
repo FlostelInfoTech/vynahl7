@@ -144,8 +144,11 @@ impl ImmunizationConverter {
             });
         }
 
-        // RXA-15: Substance Lot Number -> lotNumber
-        if let Ok(Some(lot)) = terser.get(&path("15")) {
+        // RXA-15: Substance Lot Number -> lotNumber. Empty is
+        // absent: it must not become an empty lot number.
+        if let Ok(Some(lot)) = terser.get(&path("15"))
+            && !lot.is_empty()
+        {
             immunization.lot_number = Some(lot.to_string());
         }
 
@@ -181,7 +184,8 @@ impl ImmunizationConverter {
                 ConversionError::InvalidDataType(
                     "RXA-6".to_string(),
                     "numeric".to_string(),
-                    amount_str.to_string(),
+                    // Redacted: never embed the source value (may be PHI).
+                    "unparseable numeric value".to_string(),
                 )
             })?;
             let mut dose = Quantity {
@@ -358,14 +362,33 @@ impl ImmunizationConverter {
         )
     }
 
+    /// Convert an RXA-5-3 coding system to a FHIR system URI.
+    fn convert_coding_system(system: &str) -> String {
+        match system {
+            "CVX" => "http://hl7.org/fhir/sid/cvx".to_string(),
+            "NDC" => "http://hl7.org/fhir/sid/ndc".to_string(),
+            "MVX" => "http://hl7.org/fhir/sid/mvx".to_string(),
+            _ => format!("urn:oid:{system}"),
+        }
+    }
+
     /// Extract vaccine code from RXA-5 field
     fn extract_vaccine_code(terser: &Terser, base_path: &str) -> ConversionResult<CodeableConcept> {
         let code = terser.get(base_path).ok().flatten().ok_or_else(|| {
             ConversionError::MissingField(base_path.to_string(), "RXA".to_string())
         })?;
 
+        // RXA-5-3 selects the system; only an absent one defaults to CVX.
+        let system = terser
+            .get(&format!("{}-3", base_path))
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty())
+            .map(Self::convert_coding_system)
+            .unwrap_or_else(|| "http://hl7.org/fhir/sid/cvx".to_string());
+
         let mut coding = Coding {
-            system: Some("http://hl7.org/fhir/sid/cvx".to_string()), // CVX vaccine codes
+            system: Some(system),
             code: Some(code.to_string()),
             display: None,
             version: None,
@@ -384,10 +407,12 @@ impl ImmunizationConverter {
 
     /// Extract patient reference from PID segment
     fn extract_patient_reference(terser: &Terser) -> ConversionResult<Reference> {
+        // Empty is missing: it must not become a `Patient/` reference.
         let patient_id = terser
             .get("PID-3")
             .ok()
             .flatten()
+            .filter(|s| !s.is_empty())
             .ok_or_else(|| ConversionError::MissingSegment("PID".to_string()))?;
 
         Ok(Reference {
@@ -537,6 +562,82 @@ mod tests {
             immunizations[0].occurrence_date_time,
             "2024-03-15T10:00:00+05:00"
         );
+    }
+
+    #[test]
+    fn test_vaccine_code_system_mapped_from_rxa5_3() {
+        let message_for = |rxa5: &str| {
+            let hl7 = format!(
+                "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|MSG123|P|2.5\r\
+                 PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+                 RXA|0|1|20240315100000||{rxa5}|1.0|mL||||||||||||CP"
+            );
+            parse_message(&hl7).unwrap()
+        };
+
+        // RXA-5-3 selects the system: NDC must not be labeled CVX.
+        let message = message_for("1191^ASPIRIN^NDC");
+        let imm = &ImmunizationConverter::convert_all(&message).unwrap()[0];
+        let coding = imm.vaccine_code.coding.as_ref().unwrap();
+        assert_eq!(coding[0].code.as_deref(), Some("1191"));
+        assert_eq!(coding[0].display.as_deref(), Some("ASPIRIN"));
+        assert_eq!(
+            coding[0].system.as_deref(),
+            Some("http://hl7.org/fhir/sid/ndc")
+        );
+
+        // Absent RXA-5-3 still defaults to CVX.
+        let message = message_for("08^HepB adult");
+        let imm = &ImmunizationConverter::convert_all(&message).unwrap()[0];
+        let coding = imm.vaccine_code.coding.as_ref().unwrap();
+        assert_eq!(
+            coding[0].system.as_deref(),
+            Some("http://hl7.org/fhir/sid/cvx")
+        );
+    }
+
+    #[test]
+    fn test_empty_pid3_returns_missing_segment() {
+        // PID-3 present but its first component empty: no patient id.
+        let hl7 = "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|MSG123|P|2.5\r\
+                   PID|1||^^^MRN||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000||08^HepB adult^CVX|1.0|mL||||||||||||CP";
+        let message = parse_message(hl7).unwrap();
+        let result = ImmunizationConverter::convert_all(&message);
+        assert!(matches!(result, Err(ConversionError::MissingSegment(_))));
+    }
+
+    #[test]
+    fn test_empty_rxa15_leaves_lot_number_unset() {
+        // RXA-15 present-but-empty (RXA-20 forces its presence).
+        let mut fields = vec![String::new(); 20];
+        fields[0] = "0".to_string();
+        fields[1] = "1".to_string();
+        fields[2] = "20240315100000".to_string();
+        fields[4] = "08^HepB adult^CVX".to_string();
+        fields[5] = "1.0".to_string();
+        fields[6] = "mL".to_string();
+        fields[19] = "CP".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rRXA|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let immunizations = ImmunizationConverter::convert_all(&message).unwrap();
+        assert_eq!(immunizations[0].lot_number, None);
+    }
+
+    #[test]
+    fn test_unparseable_amount_error_redacts_source_value() {
+        let hl7 = "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|MSG123|P|2.5\r\
+                   PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000||08^HepB adult^CVX|SECRET-DOSE|mL||||||||||||CP";
+        let message = parse_message(hl7).unwrap();
+        let err = ImmunizationConverter::convert_all(&message).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("RXA-6"), "keeps field location: {msg}");
+        assert!(!msg.contains("SECRET-DOSE"), "error leaks source: {msg}");
     }
 
     #[test]

@@ -70,7 +70,7 @@ impl ObservationReverseConverter {
 
         // OBX-14: Date/Time of Observation
         if let Some(ref effective_dt) = observation.effective_date_time {
-            let hl7_datetime = effective_dt.replace(['-', ':', 'T'], "");
+            let hl7_datetime = Self::convert_datetime_to_hl7(effective_dt);
             let _ = obx.set_field_value(14, &hl7_datetime);
         }
 
@@ -87,6 +87,8 @@ impl ObservationReverseConverter {
             "CE".to_string() // Coded Element
         } else if observation.value_boolean.is_some() {
             "ST".to_string() // Boolean as string
+        } else if observation.value_time.is_some() {
+            "TM".to_string() // Time
         } else if observation.value_date_time.is_some() {
             // DTM, not DT: the forward converter reads DT as date-only
             // and would drop the time on re-forward.
@@ -139,11 +141,25 @@ impl ObservationReverseConverter {
             Self::set_coded_element(obx, 5, concept)?;
         } else if let Some(boolean_value) = observation.value_boolean {
             let _ = obx.set_field_value(5, if boolean_value { "Y" } else { "N" });
+        } else if let Some(ref time) = observation.value_time {
+            // FHIR `time` carries colons; HL7 TM does not.
+            let _ = obx.set_field_value(5, &time.replace(':', ""));
         } else if let Some(ref datetime) = observation.value_date_time {
-            let hl7_datetime = datetime.replace(['-', ':', 'T'], "");
+            let hl7_datetime = Self::convert_datetime_to_hl7(datetime);
             let _ = obx.set_field_value(5, &hl7_datetime);
         }
         Ok(())
+    }
+
+    /// Convert FHIR datetime to HL7 v2 datetime.
+    ///
+    /// A trailing `Z` becomes `+0000`: a bare `Z` is not valid HL7 DTM.
+    fn convert_datetime_to_hl7(datetime: &str) -> String {
+        let zoned = match datetime.strip_suffix('Z') {
+            Some(stem) => format!("{stem}+0000"),
+            None => datetime.to_string(),
+        };
+        zoned.replace(['-', ':', 'T'], "")
     }
 
     /// Format a reference range as an HL7 string
@@ -384,6 +400,28 @@ mod tests {
         assert_eq!(obx.get_field_value(2), Some("DTM"));
         let back = round_trip(&obx);
         assert_eq!(back.value_date_time.as_deref(), Some("2024-03-15T10:00:00"));
+    }
+
+    #[test]
+    fn test_value_time_writes_tm_type_and_value() {
+        let mut observation = Observation::new("final".to_string(), create_code());
+        observation.value_time = Some("10:00:00".to_string());
+        let obx = ObservationReverseConverter::convert(&observation, 1).unwrap();
+        assert_eq!(obx.get_field_value(2), Some("TM"));
+        // FHIR colons are stripped: HL7 TM is HHMMSS.
+        assert_eq!(obx.get_field_value(5), Some("100000"));
+        let back = round_trip(&obx);
+        assert_eq!(back.value_time.as_deref(), Some("100000"));
+    }
+
+    #[test]
+    fn test_datetimes_map_trailing_z_to_offset() {
+        let mut observation = Observation::new("final".to_string(), create_code());
+        observation.effective_date_time = Some("2024-03-15T10:00:00Z".to_string());
+        observation.value_date_time = Some("2024-03-15T10:00:00Z".to_string());
+        let obx = ObservationReverseConverter::convert(&observation, 1).unwrap();
+        assert_eq!(obx.get_field_value(14), Some("20240315100000+0000"));
+        assert_eq!(obx.get_field_value(5), Some("20240315100000+0000"));
     }
 
     #[test]

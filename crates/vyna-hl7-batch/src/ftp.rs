@@ -4,6 +4,7 @@
 //! type. For encrypted transfer use the SFTP transport; explicit FTPS is not
 //! yet supported.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use suppaftp::tokio::AsyncFtpStream;
@@ -90,8 +91,11 @@ impl FtpConfig {
 pub struct FtpTransport {
     config: FtpConfig,
     stream: Option<AsyncFtpStream>,
-    temp_counter: u64,
 }
+
+/// Disambiguates staging names across same-process transports sharing one
+/// clock tick (per-instance counters all restart at 0 and collide).
+static STAGING_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 impl FtpTransport {
     /// Log in and select binary transfer type.
@@ -99,7 +103,6 @@ impl FtpTransport {
         let mut transport = Self {
             config,
             stream: None,
-            temp_counter: 0,
         };
         transport.reconnect().await?;
         Ok(transport)
@@ -239,17 +242,24 @@ fn clean_remote(path: &str) -> Result<String, BatchError> {
 
 /// Staging name for an upload: a sibling of `path` carrying the `.tmp-`
 /// prefix, so pollers skip it via [`is_staged_upload`] (the same skip
-/// convention the filesystem transport uses).
-fn staging_temp_name(path: &str, counter: u64) -> String {
+/// convention the filesystem transport uses). The pid, clock nanos, and a
+/// process-wide counter keep names unique across concurrent puts from any
+/// same-process transport, so two uploads never interleave into one file.
+fn staging_temp_name(path: &str) -> String {
     let (parent, base) = match path.rsplit_once('/') {
         Some((parent, base)) => (parent, base),
         None => ("", path),
     };
     let pid = std::process::id();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let counter = STAGING_COUNTER.fetch_add(1, Ordering::SeqCst);
     if parent.is_empty() {
-        format!(".tmp-{pid}-{counter}-{base}")
+        format!(".tmp-{pid}-{nanos}-{counter}-{base}")
     } else {
-        format!("{parent}/.tmp-{pid}-{counter}-{base}")
+        format!("{parent}/.tmp-{pid}-{nanos}-{counter}-{base}")
     }
 }
 
@@ -398,9 +408,8 @@ impl FileTransport for FtpTransport {
             let parent = parts[..parts.len() - 1].join("/");
             self.mkdir_p(&parent).await?;
         }
-        self.temp_counter += 1;
         let remote = parts.join("/");
-        let temp = staging_temp_name(&remote, self.temp_counter);
+        let temp = staging_temp_name(&remote);
         let mut cursor = std::io::Cursor::new(data);
         let timeout = self.config.command_timeout;
         if let Err(e) = crate::timed(timeout, self.stream()?.put_file(&temp, &mut cursor)).await {
@@ -559,7 +568,7 @@ mod tests {
 
     #[test]
     fn staged_upload_names_are_detected() {
-        // Current staging names: `.tmp-{pid}-{counter}-{file}`.
+        // Current staging names: `.tmp-{pid}-{nanos}-{counter}-{file}`.
         assert!(is_staged_upload("inbox/.tmp-123-1-a.hl7"));
         assert!(is_staged_upload(".tmp-123-1-a.hl7"));
         // Filesystem-style leftovers share the prefix.
@@ -576,16 +585,26 @@ mod tests {
     }
 
     #[test]
+    fn two_instances_must_not_share_staging_names() {
+        // Two same-process instances staging concurrent puts must never
+        // pick the same temp name, or their bytes interleave into one
+        // file while both puts report Ok.
+        let names: Vec<_> = (0..64).map(|_| staging_temp_name("inbox/a.hl7")).collect();
+        let unique: std::collections::HashSet<_> = names.iter().collect();
+        assert_eq!(unique.len(), names.len(), "staging names collided");
+    }
+
+    #[test]
     fn staging_temp_name_is_a_hidden_sibling() {
         let pid = std::process::id();
-        assert_eq!(
-            staging_temp_name("inbox/a.hl7", 7),
-            format!("inbox/.tmp-{pid}-7-a.hl7")
-        );
-        assert_eq!(staging_temp_name("a.hl7", 7), format!(".tmp-{pid}-7-a.hl7"));
-        // Everything `put` stages must be invisible to `list`.
-        assert!(is_staged_upload(&staging_temp_name("inbox/a.hl7", 7)));
-        assert!(is_staged_upload(&staging_temp_name("a.hl7", 7)));
+        for temp in [staging_temp_name("inbox/a.hl7"), staging_temp_name("a.hl7")] {
+            let base = temp.rsplit('/').next().unwrap();
+            assert!(base.starts_with(&format!(".tmp-{pid}-")), "{temp}");
+            assert!(base.ends_with("-a.hl7"), "{temp}");
+            // Everything `put` stages must be invisible to `list`.
+            assert!(is_staged_upload(&temp));
+        }
+        assert!(staging_temp_name("inbox/a.hl7").starts_with("inbox/"));
     }
 
     #[tokio::test]
@@ -654,7 +673,6 @@ mod tests {
         FtpTransport {
             config: FtpConfig::new("127.0.0.1:1", "u", "p"),
             stream: None,
-            temp_counter: 0,
         }
     }
 

@@ -190,6 +190,58 @@ async fn test_mtls_with_client_cert() {
 }
 
 #[tokio::test]
+async fn test_mtls_rejects_client_without_certificate() {
+    // Generate test certificates (CA + server cert; no client cert)
+    let certs = test_certs::generate_test_certs().await;
+
+    // Create mTLS server config (requires client certificate)
+    let server_config = TlsServerConfig::with_mtls(
+        &certs.server_cert_path,
+        &certs.server_key_path,
+        &certs.ca_cert_path,
+    )
+    .expect("Failed to create mTLS server config");
+
+    // Start mock server with mTLS
+    let server = MockMllpServer::new()
+        .with_tls(server_config)
+        .start()
+        .await
+        .expect("Failed to start mTLS server");
+
+    let addr = server.url();
+
+    // Cert-less client: trusts the CA but presents no client certificate
+    let client_config = TlsClientConfig::with_ca_cert(&certs.ca_cert_path)
+        .expect("Failed to create TLS client config");
+
+    // TLS 1.3 postpones client authentication, so connect_tls may succeed;
+    // the server must reject at connect time or, at the latest, on the
+    // first message exchange.
+    match MllpClient::connect_tls(&addr, "localhost", client_config).await {
+        Err(_) => {} // Rejected during the handshake.
+        Ok(mut client) => {
+            let mut msg = Message::default();
+            let mut msh = Segment::new("MSH");
+            msh.fields.push(Field::from_value("|"));
+            msh.fields.push(Field::from_value("^~\\&"));
+            msg.segments.push(msh);
+
+            let result = client.send_message(&msg).await;
+            assert!(
+                result.is_err(),
+                "mTLS server accepted a client without a certificate"
+            );
+            let _ = client.close().await;
+        }
+    }
+
+    // Cleanup
+    server.shutdown().await.expect("Failed to shutdown server");
+    certs.cleanup();
+}
+
+#[tokio::test]
 async fn test_tls_multiple_messages() {
     // Generate test certificates
     let certs = test_certs::generate_test_certs().await;

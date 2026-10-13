@@ -1,4 +1,5 @@
-//! End-to-end CLI tests: `diff`, `send`, `validate`, and `extract`.
+//! End-to-end CLI tests: `diff`, `send`, `validate`, `extract`,
+//! `parse`, `convert`, and `info`.
 
 use std::io::Write;
 use std::process::Command;
@@ -449,6 +450,95 @@ fn extract_absent_value_still_exits_zero() {
     assert!(output.status.success());
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json["PID-999"], "");
+    std::fs::remove_file(file).unwrap();
+}
+
+#[test]
+fn parse_json_reports_documented_keys() {
+    // README contract: parse --format json reports version,
+    // message_type, control_id, segment_count, and segments.
+    let file = write_temp("parse.hl7", ADT_A);
+    let output = vynahl7()
+        .args(["parse", file.to_str().unwrap(), "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("valid JSON output");
+    assert_eq!(json["message_type"], "ADT^A01");
+    assert_eq!(json["control_id"], "M1");
+    assert_eq!(json["segment_count"], 2);
+    assert_eq!(json["segments"][0]["id"], "MSH");
+    assert_eq!(json["segments"][1]["id"], "PID");
+    assert!(json["segments"][0]["field_count"].as_u64().unwrap() > 0);
+    std::fs::remove_file(file).unwrap();
+}
+
+#[test]
+fn parse_text_reports_summary() {
+    let file = write_temp("parse.hl7", ADT_A);
+    let output = vynahl7()
+        .args(["parse", file.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("HL7 Message Parsed Successfully"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("Message Type: ADT^A01"), "{stdout}");
+    assert!(stdout.contains("Segments: 2"), "{stdout}");
+    std::fs::remove_file(file).unwrap();
+}
+
+#[test]
+fn convert_json_reports_documented_keys() {
+    // README contract: convert --to json reports version,
+    // message_type, control_id, sending_application, and segments.
+    let file = write_temp("convert.hl7", ADT_A);
+    let output = vynahl7()
+        .args([
+            "convert",
+            file.to_str().unwrap(),
+            "--to",
+            "json",
+            "--pretty",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("valid JSON output");
+    assert_eq!(json["message_type"], "ADT^A01");
+    assert_eq!(json["control_id"], "M1");
+    assert_eq!(json["sending_application"], "S");
+    assert_eq!(json["segments"][0]["id"], "MSH");
+    assert_eq!(json["segments"][0]["fields"][0], "|");
+    std::fs::remove_file(file).unwrap();
+}
+
+#[test]
+fn info_reports_documented_layout() {
+    // README contract: info prints header/structure/size sections.
+    let file = write_temp("info.hl7", ADT_A);
+    let output = vynahl7()
+        .args(["info", file.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for section in [
+        "HL7 Message Information",
+        "Header Information:",
+        "Message Structure:",
+        "Total Segments:",
+        "Segment Breakdown:",
+        "Size Information:",
+        "Encoded Size:",
+    ] {
+        assert!(stdout.contains(section), "missing {section}:\n{stdout}");
+    }
     std::fs::remove_file(file).unwrap();
 }
 

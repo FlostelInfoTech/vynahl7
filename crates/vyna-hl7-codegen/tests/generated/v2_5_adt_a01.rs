@@ -261,13 +261,13 @@ pub struct Pid {
     #[hl7(field = 2, component = 10)]
     pub patient_id_assigning_agency_or_department: Option<String>,
     /// PID-3 Patient Identifier List (CX, repeating)
-    #[hl7(field = 3)]
+    #[hl7(field = 3, required)]
     pub patient_identifier_list: Vec<String>,
     /// PID-4 Alternate Patient ID - PID (CX, repeating)
     #[hl7(field = 4)]
     pub alternate_patient_id_pid: Vec<String>,
     /// PID-5 Patient Name (XPN, repeating)
-    #[hl7(field = 5)]
+    #[hl7(field = 5, required)]
     pub patient_name: Vec<String>,
     /// PID-6 Mother's Maiden Name (XPN, repeating)
     #[hl7(field = 6)]
@@ -663,7 +663,7 @@ pub struct Rol {
     #[hl7(field = 3, component = 6)]
     pub role_rol_name_of_alternate_coding_system: Option<String>,
     /// ROL-4 Role Person (XCN, repeating)
-    #[hl7(field = 4)]
+    #[hl7(field = 4, required)]
     pub role_person: Vec<String>,
     /// ROL-5.1 Role Begin Date/Time / Time Of An Event (DTM)
     #[hl7(field = 5, component = 1)]
@@ -2335,7 +2335,7 @@ pub struct Gt1 {
     #[hl7(field = 2)]
     pub guarantor_number: Vec<String>,
     /// GT1-3 Guarantor Name (XPN, repeating)
-    #[hl7(field = 3)]
+    #[hl7(field = 3, required)]
     pub guarantor_name: Vec<String>,
     /// GT1-4 Guarantor Spouse Name (XPN, repeating)
     #[hl7(field = 4)]
@@ -2692,7 +2692,7 @@ pub struct In1 {
     #[hl7(field = 2, component = 6)]
     pub insurance_plan_id_name_of_alternate_coding_system: Option<String>,
     /// IN1-3 Insurance Company ID (CX, repeating)
-    #[hl7(field = 3)]
+    #[hl7(field = 3, required)]
     pub insurance_company_id: Vec<String>,
     /// IN1-4 Insurance Company Name (XON, repeating)
     #[hl7(field = 4)]

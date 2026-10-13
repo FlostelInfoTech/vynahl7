@@ -2,7 +2,9 @@
 //!
 //! Based on HL7 v2-to-FHIR mapping: <https://build.fhir.org/ig/HL7/v2-to-fhir/ConceptMap-segment-obx-to-observation.html>
 
-use super::patient::{valid_hl7_date, valid_hl7_time};
+use super::patient::{
+    split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time, valid_hl7_year_month,
+};
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
 use crate::resources::observation::*;
@@ -68,7 +70,9 @@ impl ObservationConverter {
         } else {
             format!("OBX({})-3", obx_index + 1)
         };
-        let code = if let Ok(Some(code_id)) = terser.get(&code_path) {
+        let code = if let Ok(Some(code_id)) = terser.get(&code_path)
+            && !code_id.is_empty()
+        {
             let mut coding = Coding {
                 system: None,
                 version: None,
@@ -254,10 +258,11 @@ impl ObservationConverter {
                 // Numeric: a present-but-unparseable value is an error,
                 // not a silent omission of value[x].
                 let numeric_value = value.parse::<f64>().map_err(|_| {
+                    // Redacted: never embed the source value (may be PHI).
                     ConversionError::InvalidDataType(
                         "OBX-5".to_string(),
                         "NM numeric".to_string(),
-                        value.to_string(),
+                        "non-numeric value".to_string(),
                     )
                 })?;
                 observation.value_quantity = Some(Quantity {
@@ -304,8 +309,13 @@ impl ObservationConverter {
                 observation.value_date_time = Some(Self::convert_date(value)?);
             }
             "TM" => {
-                // Time
-                observation.value_time = Some(value.to_string());
+                // Time: a present-but-malformed value is an error,
+                // not a silent pass-through into valueTime.
+                if Self::valid_tm_value(value) {
+                    observation.value_time = Some(value.to_string());
+                } else {
+                    return Err(Self::invalid_time());
+                }
             }
             "TS" | "DTM" => {
                 // Timestamp, DateTime
@@ -349,43 +359,82 @@ impl ObservationConverter {
     }
 
     /// Convert HL7 v2 date format (YYYYMMDD) to FHIR date format (YYYY-MM-DD)
+    ///
+    /// `YYYYMM` month precision is preserved as `YYYY-MM`.
     fn convert_date(date: &str) -> ConversionResult<String> {
+        // A zone suffix cannot apply to a date (FHIR dates carry no
+        // zone), so convert the stem alone.
+        let (stem, _) = split_hl7_offset(date);
         // Byte-slice checks on `[u8]` never split a char boundary, and an
         // all-ASCII-digit prefix makes the `&str` slices below safe.
-        let bytes = date.as_bytes();
+        let bytes = stem.as_bytes();
         if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
             // Full-date precision requires a real calendar date.
-            if valid_hl7_date(&date[0..8]) {
-                Ok(format!("{}-{}-{}", &date[0..4], &date[4..6], &date[6..8]))
+            if valid_hl7_date(&stem[0..8]) {
+                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
+            } else {
+                Err(Self::invalid_date(date))
+            }
+        } else if bytes.len() >= 6 && bytes[..6].iter().all(|b| b.is_ascii_digit()) {
+            // Month precision, with the same impossible-date policy.
+            if valid_hl7_year_month(&stem[0..6]) {
+                Ok(format!("{}-{}", &stem[0..4], &stem[4..6]))
             } else {
                 Err(Self::invalid_date(date))
             }
         } else if bytes.len() >= 4 && bytes[..4].iter().all(|b| b.is_ascii_digit()) {
-            Ok(date[0..4].to_string())
+            Ok(stem[0..4].to_string())
         } else {
             Err(Self::invalid_date(date))
         }
     }
 
     /// Convert HL7 v2 datetime format to FHIR datetime format
+    ///
+    /// `YYYYMMDDHHMM` keeps its minutes (`YYYY-MM-DDTHH:MM`) and a
+    /// trailing HL7 zone (`±HHMM`) is preserved as `±HH:MM`.
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
-        let bytes = datetime.as_bytes();
+        let (stem, offset) = split_hl7_offset(datetime);
+        let zone = offset.as_deref().unwrap_or("");
+        // Byte-slice checks on `[u8]` never split a char boundary, and an
+        // all-ASCII-digit prefix makes the `&str` slices below safe.
+        let bytes = stem.as_bytes();
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
-            if valid_hl7_date(&datetime[0..8]) && valid_hl7_time(&datetime[8..14]) {
+            if valid_hl7_date(&stem[0..8]) && valid_hl7_time(&stem[8..14]) {
                 Ok(format!(
-                    "{}-{}-{}T{}:{}:{}",
-                    &datetime[0..4],
-                    &datetime[4..6],
-                    &datetime[6..8],
-                    &datetime[8..10],
-                    &datetime[10..12],
-                    &datetime[12..14]
+                    "{}-{}-{}T{}:{}:{}{}",
+                    &stem[0..4],
+                    &stem[4..6],
+                    &stem[6..8],
+                    &stem[8..10],
+                    &stem[10..12],
+                    &stem[12..14],
+                    zone
                 ))
             } else {
                 Err(Self::invalid_datetime(datetime))
             }
-        } else if bytes.len() >= 8 {
-            Self::convert_date(datetime)
+        } else if bytes.len() >= 12 && bytes[..12].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_date(&stem[0..8]) && valid_hl7_hour_min(&stem[8..12]) {
+                Ok(format!(
+                    "{}-{}-{}T{}:{}{}",
+                    &stem[0..4],
+                    &stem[4..6],
+                    &stem[6..8],
+                    &stem[8..10],
+                    &stem[10..12],
+                    zone
+                ))
+            } else {
+                Err(Self::invalid_datetime(datetime))
+            }
+        } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
+            // Date only; still requires a real calendar date.
+            if valid_hl7_date(&stem[0..8]) {
+                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
+            } else {
+                Err(Self::invalid_datetime(datetime))
+            }
         } else {
             Err(Self::invalid_datetime(datetime))
         }
@@ -396,7 +445,24 @@ impl ObservationConverter {
         ConversionError::InvalidFormat(
             "date".to_string(),
             "OBX".to_string(),
-            "expected YYYYMMDD calendar date or YYYY year".to_string(),
+            "expected YYYYMMDD calendar date, YYYYMM month, or YYYY year".to_string(),
+        )
+    }
+
+    /// An HL7 TM value must at least carry an HHMMSS clock value.
+    fn valid_tm_value(value: &str) -> bool {
+        let bytes = value.as_bytes();
+        bytes.len() >= 6
+            && bytes[..6].iter().all(|b| b.is_ascii_digit())
+            && valid_hl7_time(&value[0..6])
+    }
+
+    /// Redacted bad-time error: field location + reason only, never the value.
+    fn invalid_time() -> ConversionError {
+        ConversionError::InvalidFormat(
+            "OBX-5".to_string(),
+            "OBX".to_string(),
+            "expected HHMMSS time".to_string(),
         )
     }
 
@@ -528,5 +594,61 @@ mod tests {
         assert_eq!(coding[0].code, Some("A+".to_string()));
         assert_eq!(coding[0].display, Some("A Positive".to_string()));
         assert_eq!(coding[0].system, Some("http://loinc.org".to_string()));
+    }
+
+    #[test]
+    fn test_datetime_preserves_minutes_and_zone() {
+        assert_eq!(
+            ObservationConverter::convert_datetime("202403151000").unwrap(),
+            "2024-03-15T10:00"
+        );
+        assert_eq!(
+            ObservationConverter::convert_datetime("20240315100000+0500").unwrap(),
+            "2024-03-15T10:00:00+05:00"
+        );
+    }
+
+    #[test]
+    fn test_date_preserves_year_month() {
+        assert_eq!(
+            ObservationConverter::convert_date("198001").unwrap(),
+            "1980-01"
+        );
+        assert!(ObservationConverter::convert_date("198013").is_err());
+    }
+
+    #[test]
+    fn test_empty_obx3_returns_missing_field() {
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||ORU^R01|1|P|2.5\rOBX|1|NM|||7.5";
+        let message = parse_message(hl7).unwrap();
+        let result = ObservationConverter::convert_single(&message, 0);
+        assert!(matches!(result, Err(ConversionError::MissingField(_, _))));
+    }
+
+    #[test]
+    fn test_tm_garbage_returns_invalid_format() {
+        let base = "MSH|^~\\&|A|B|C|D|20240315||ORU^R01|1|P|2.5\rOBX|1|TM|T^Time^LN||";
+        let bad = format!("{base}not-a-time|||||||F");
+        let message = parse_message(&bad).unwrap();
+        let result = ObservationConverter::convert_all(&message);
+        assert!(matches!(
+            result,
+            Err(ConversionError::InvalidFormat(_, _, _))
+        ));
+
+        let good = format!("{base}103000|||||||F");
+        let message = parse_message(&good).unwrap();
+        let obs = &ObservationConverter::convert_all(&message).unwrap()[0];
+        assert_eq!(obs.value_time, Some("103000".to_string()));
+    }
+
+    #[test]
+    fn test_nm_error_redacts_source_value() {
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||ORU^R01|1|P|2.5\r\
+                   OBX|1|NM|WBC^White Blood Count^LN||SECRET-DOSE||||||F";
+        let message = parse_message(hl7).unwrap();
+        let err = ObservationConverter::convert_all(&message).unwrap_err();
+        let msg = err.to_string();
+        assert!(!msg.contains("SECRET-DOSE"), "error leaks source: {msg}");
     }
 }

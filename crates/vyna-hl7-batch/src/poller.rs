@@ -157,7 +157,9 @@ impl<T: FileTransport> Poller<T> {
     }
 
     /// Move consumed files under this directory (preserving their path
-    /// relative to the inbox) instead of deleting them.
+    /// relative to the inbox) instead of deleting them. When the destination
+    /// already holds a file, the newcomer is versioned (`name.1`, ...) so a
+    /// redrop never destroys a prior archive.
     pub fn with_archive_dir(mut self, dir: &str) -> Self {
         self.archive_dir = Some(dir.to_string());
         self
@@ -236,11 +238,40 @@ impl<T: FileTransport> Poller<T> {
         &mut self.transport
     }
 
+    /// Settle destination that never destroys a prior file: when `dest`
+    /// already exists, suffix `.1`, `.2`, ... until free. A redrop at an
+    /// inbox path must not silently wipe the earlier archive (or the
+    /// earlier quarantine) holding the same name.
+    async fn free_dest(&mut self, dest: &str) -> Result<String, BatchError> {
+        let parent = dest.rsplit_once('/').map(|(p, _)| p).unwrap_or("");
+        let listed = self.transport.list(parent).await?;
+        if !listed.iter().any(|entry| entry.path == dest) {
+            return Ok(dest.to_string());
+        }
+        for n in 1.. {
+            let candidate = format!("{dest}.{n}");
+            if !listed.iter().any(|entry| entry.path == candidate) {
+                return Ok(candidate);
+            }
+        }
+        unreachable!("version suffixes are unbounded")
+    }
+
     /// Move a poison file to the error dir (when configured) and record it
     /// as skipped. A file that failed quarantine stays unsettled for retry.
     async fn quarantine(&mut self, entry: &FileEntry, report: &mut PollReport, reason: String) {
         if let Some(dir) = &self.error_dir {
             let dest = join_dir(dir, &relative_to(&self.inbox, &entry.path));
+            let dest = match self.free_dest(&dest).await {
+                Ok(free) => free,
+                Err(e) => {
+                    report.errors.push(PollFileError {
+                        path: entry.path.clone(),
+                        reason: format!("quarantine failed: {e}"),
+                    });
+                    return;
+                }
+            };
             if let Err(e) = self.transport.rename(&entry.path, &dest).await {
                 report.errors.push(PollFileError {
                     path: entry.path.clone(),
@@ -401,8 +432,17 @@ impl<T: FileTransport> Poller<T> {
             // discard it. The file stays unsettled for at-least-once retry.
             let settled = if let Some(dir) = &self.archive_dir {
                 let dest = join_dir(dir, &relative_to(&self.inbox, &entry.path));
-                match self.transport.rename(&entry.path, &dest).await {
-                    Ok(()) => true,
+                match self.free_dest(&dest).await {
+                    Ok(free) => match self.transport.rename(&entry.path, &free).await {
+                        Ok(()) => true,
+                        Err(e) => {
+                            report.errors.push(PollFileError {
+                                path: entry.path.clone(),
+                                reason: format!("archive failed: {e}"),
+                            });
+                            false
+                        }
+                    },
                     Err(e) => {
                         report.errors.push(PollFileError {
                             path: entry.path.clone(),
@@ -678,6 +718,42 @@ mod tests {
             intake.verify_counts(),
             Err(BatchError::CountMismatch { .. })
         ));
+    }
+
+    #[tokio::test]
+    async fn archive_collision_preserves_prior_archive() {
+        let dir = scratch_dir();
+        let mut t = FilesystemTransport::open(&dir).unwrap();
+        t.put("archive/feed.hl7", b"OLD-ARCHIVE-BYTES")
+            .await
+            .unwrap();
+        t.put("inbox/feed.hl7", MSH.as_bytes()).await.unwrap();
+
+        let mut poller = Poller::new(t)
+            .with_inbox("inbox")
+            .with_archive_dir("archive")
+            .with_require_stable(false);
+        let report = poller.poll_once().await.unwrap();
+        assert_eq!(report.files.len(), 1);
+
+        // The prior archive must survive; the new bytes land versioned
+        // alongside instead of destroying it.
+        let t = poller.transport_mut();
+        assert_eq!(
+            t.get("archive/feed.hl7").await.unwrap(),
+            b"OLD-ARCHIVE-BYTES"
+        );
+        let archived: Vec<_> = t
+            .list("archive")
+            .await
+            .unwrap()
+            .iter()
+            .map(|e| e.path.clone())
+            .collect();
+        assert_eq!(archived.len(), 2, "new bytes lost: {archived:?}");
+        assert!(t.list("inbox").await.unwrap().is_empty());
+
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
     }
 
     #[tokio::test]

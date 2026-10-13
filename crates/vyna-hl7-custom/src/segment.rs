@@ -1744,7 +1744,9 @@ impl ParseSegmentField for (String, String) {
                 .unwrap_or("")
                 .to_string();
 
-            if !c0.is_empty() && !c1.is_empty() {
+            // Any present component satisfies the required field;
+            // missing ones default to "" so partial composites round-trip.
+            if !c0.is_empty() || !c1.is_empty() {
                 return Ok((c0, c1));
             }
         }
@@ -1822,7 +1824,9 @@ impl ParseSegmentField for (String, String, String) {
                 .unwrap_or("")
                 .to_string();
 
-            if !c0.is_empty() && !c1.is_empty() && !c2.is_empty() {
+            // Any present component satisfies the required field;
+            // missing ones default to "" so partial composites round-trip.
+            if !c0.is_empty() || !c1.is_empty() || !c2.is_empty() {
                 return Ok((c0, c1, c2));
             }
         }
@@ -1911,7 +1915,9 @@ impl ParseSegmentField for (String, String, String, String) {
                 .unwrap_or("")
                 .to_string();
 
-            if !c0.is_empty() && !c1.is_empty() && !c2.is_empty() && !c3.is_empty() {
+            // Any present component satisfies the required field;
+            // missing ones default to "" so partial composites round-trip.
+            if !c0.is_empty() || !c1.is_empty() || !c2.is_empty() || !c3.is_empty() {
                 return Ok((c0, c1, c2, c3));
             }
         }
@@ -2013,11 +2019,13 @@ impl ParseSegmentField for (String, String, String, String, String) {
                 .unwrap_or("")
                 .to_string();
 
+            // Any present component satisfies the required field;
+            // missing ones default to "" so partial composites round-trip.
             if !c0.is_empty()
-                && !c1.is_empty()
-                && !c2.is_empty()
-                && !c3.is_empty()
-                && !c4.is_empty()
+                || !c1.is_empty()
+                || !c2.is_empty()
+                || !c3.is_empty()
+                || !c4.is_empty()
             {
                 return Ok((c0, c1, c2, c3, c4));
             }
@@ -5022,5 +5030,72 @@ mod tests {
         let mut out = Segment::new("TEST");
         dt.set_field(&mut out, 1).unwrap();
         assert_eq!(out.get_field_value(1), Some("20250101120000.789"));
+    }
+
+    #[test]
+    fn test_required_tuple_preserves_partial_components() {
+        // "Smith^": the present component satisfies the required field
+        // and the missing one defaults to "" (mirroring Option-tuples),
+        // so partial composites round-trip instead of failing as missing.
+        let mut segment = Segment::new("TEST");
+        segment.set_component(1, 0, 0, "Smith").unwrap();
+        let result = <(String, String)>::parse_field(&segment, 1, "TEST").unwrap();
+        assert_eq!(result, ("Smith".to_string(), String::new()));
+
+        // Second-component-only partial is preserved too.
+        let mut segment = Segment::new("TEST");
+        segment.set_component(1, 0, 1, "x").unwrap();
+        let result = <(String, String)>::parse_field(&segment, 1, "TEST").unwrap();
+        assert_eq!(result, (String::new(), "x".to_string()));
+
+        // A fully absent field still fails: the tuple is required.
+        let segment = Segment::new("TEST");
+        let err = <(String, String)>::parse_field(&segment, 1, "TEST").unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::CustomSegmentError::MissingField { .. }
+        ));
+    }
+
+    #[test]
+    fn test_required_tuple_partial_roundtrip() {
+        // A partial tuple must survive serialize -> parse unchanged.
+        let mut segment = Segment::new("ZPN");
+        let value = ("Smith".to_string(), String::new());
+        value.set_field(&mut segment, 1).unwrap();
+        let back = <(String, String)>::parse_field(&segment, 1, "ZPN").unwrap();
+        assert_eq!(back, value);
+    }
+
+    #[test]
+    fn test_required_tuple345_preserve_partial_components() {
+        let mut segment = Segment::new("TEST");
+        segment.set_component(1, 0, 0, "a").unwrap();
+        segment.set_component(1, 0, 2, "c").unwrap();
+        let result = <(String, String, String)>::parse_field(&segment, 1, "TEST").unwrap();
+        assert_eq!(result, ("a".to_string(), String::new(), "c".to_string()));
+
+        let mut segment = Segment::new("TEST");
+        segment.set_component(1, 0, 1, "b").unwrap();
+        let result = <(String, String, String, String)>::parse_field(&segment, 1, "TEST").unwrap();
+        assert_eq!(
+            result,
+            (String::new(), "b".to_string(), String::new(), String::new())
+        );
+
+        let mut segment = Segment::new("TEST");
+        segment.set_component(1, 0, 4, "e").unwrap();
+        let result =
+            <(String, String, String, String, String)>::parse_field(&segment, 1, "TEST").unwrap();
+        assert_eq!(
+            result,
+            (
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                "e".to_string()
+            )
+        );
     }
 }

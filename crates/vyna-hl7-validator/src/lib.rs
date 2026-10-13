@@ -425,6 +425,22 @@ impl Validator {
             }
         }
 
+        // An MSH-12 that names no known version is not "no drift" but
+        // an unparsable value, and fails strict validation. An absent or
+        // empty MSH-12 stays silent here (schemas own required-ness).
+        if let Some(msh) = message.get_msh()
+            && let Some(raw) = msh.get_field_value(12)
+            && !raw.is_empty()
+            && message.get_version().is_none()
+        {
+            self.emit(
+                result,
+                "MSH-12".to_string(),
+                format!("Message version '{raw}' is not a supported HL7 version"),
+                ValidationErrorType::InvalidValue,
+            );
+        }
+
         // Check version matches
         if let Some(msg_version) = message.get_version()
             && msg_version != self.version
@@ -574,12 +590,13 @@ impl Validator {
                 // For repeating fields, check the encoded length (with all repetitions)
                 // For non-repeating fields, check the trimmed value length
                 if let Some(max_len) = field_def.max_length {
+                    // HL7 lengths are characters, not bytes.
                     let field_length = if field_def.repeating {
                         // For repeating fields, encode to get full length including separators
-                        f.encode(delimiters).len()
+                        f.encode(delimiters).chars().count()
                     } else {
                         // For non-repeating fields, use the first repetition value (trimmed)
-                        f.value().map(|v| v.trim().len()).unwrap_or(0)
+                        f.value().map(|v| v.trim().chars().count()).unwrap_or(0)
                     };
 
                     if field_length > max_len {
@@ -595,8 +612,16 @@ impl Validator {
                     }
                 }
 
-                // Validate data type format
-                if let Some(value) = f.value() {
+                // Validate data type format and vocabulary on every
+                // repetition: first-repetition-only checks miss bad later
+                // repetitions (e.g. MSH-18 "ASCII~!!!").
+                for (rep_idx, repetition) in f.repetitions.iter().enumerate() {
+                    if repetition.is_empty() {
+                        continue;
+                    }
+                    let Some(value) = repetition.value() else {
+                        continue;
+                    };
                     if let Some(data_type) = DataType::from_str(&field_def.data_type) {
                         let validation = datatype::validate_data_type(value, data_type);
                         if !validation.is_valid() {
@@ -615,7 +640,7 @@ impl Validator {
 
                     // Validate vocabulary/code set
                     if let Some(table_id) = &field_def.table_id
-                        && let Some(code) = field_table_code(f, field_def, delimiters)
+                        && let Some(code) = field_table_code(f, rep_idx, field_def, delimiters)
                     {
                         let vocab_validation = self.table_registry.validate(table_id, code);
                         if !vocab_validation.is_valid()
@@ -690,19 +715,17 @@ impl Validator {
 
                     let comp_value = comp.value().unwrap_or("");
 
-                    // Validate component max length
+                    // Validate component max length (characters, not bytes)
+                    let comp_len = comp_value.chars().count();
                     if let Some(max_len) = comp_def.max_length
-                        && comp_value.len() > max_len
+                        && comp_len > max_len
                     {
                         self.emit(
                             result,
                             comp_location.clone(),
                             format!(
                                 "Component {} ({}) exceeds maximum length ({} > {})",
-                                comp_idx,
-                                comp_def.name,
-                                comp_value.len(),
-                                max_len
+                                comp_idx, comp_def.name, comp_len, max_len
                             ),
                             ValidationErrorType::InvalidLength,
                         );
@@ -755,16 +778,18 @@ impl Validator {
     ) {
         let rules_result = rules_engine.validate(message);
 
-        // Convert rule violations to validation errors/warnings
+        // Convert rule violations to validation errors/warnings.
+        // Rule violations keep their declared severity regardless of
+        // the context (see ValidationContext docs): a rule Error is
+        // always an error, even under a lenient context.
         for violation in rules_result.violations {
             match violation.severity {
                 RuleSeverity::Error => {
-                    self.emit(
-                        result,
+                    result.add_error(ValidationError::new(
                         violation.location.unwrap_or_else(|| "Message".to_string()),
                         violation.message,
                         ValidationErrorType::InvalidValue,
-                    );
+                    ));
                 }
                 RuleSeverity::Warning | RuleSeverity::Info => {
                     result.add_warning(ValidationWarning::new(
@@ -791,12 +816,16 @@ impl Validator {
 ///
 /// Exception: on CQ quantity/units fields a field-level table constrains the
 /// units (component 2), never the numeric quantity in component 1.
+///
+/// `rep_index` selects which repetition the code is read from, so
+/// field-level table checks cover every repetition.
 fn field_table_code<'a>(
     field: &'a vyna_hl7_core::field::Field,
+    rep_index: usize,
     field_def: &FieldDefinition,
     delimiters: &vyna_hl7_core::delimiters::Delimiters,
 ) -> Option<&'a str> {
-    let value = field.value()?;
+    let value = field.get_repetition(rep_index)?.value()?;
     if field_def.components.is_some() || is_composite_datatype(&field_def.data_type) {
         if let Some(table_id) = &field_def.table_id
             && let Some(components) = &field_def.components
@@ -808,7 +837,7 @@ fn field_table_code<'a>(
             return None;
         }
         if field_def.data_type == "CQ" {
-            if let Some(units) = field.get_component(0, 1).and_then(|c| c.value()) {
+            if let Some(units) = field.get_component(rep_index, 1).and_then(|c| c.value()) {
                 return Some(units);
             }
             return value.split(delimiters.component_separator).nth(1);
@@ -2078,6 +2107,203 @@ mod tests {
                 .errors
                 .iter()
                 .any(|e| e.location == "PID[1]-5-7" && e.message.contains("0200")),
+            "errors: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_unparsable_msh12_is_invalid_value() {
+        // MSH-12 "9.9" names no known version: not "no drift" but an
+        // unparsable value, failing strict validation.
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|9.9\rPID|1||7\r",
+        )
+        .unwrap();
+        let result = Validator::new(Version::V2_5).validate(&message);
+        assert!(!result.is_valid(), "unparsable MSH-12 must fail");
+        assert!(
+            result.errors.iter().any(
+                |e| e.location == "MSH-12" && e.error_type == ValidationErrorType::InvalidValue
+            ),
+            "errors: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_empty_msh12_stays_valid_without_schema() {
+        let message =
+            vyna_hl7_parser::parse_message("MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|\rPID|1||7\r")
+                .unwrap();
+        let result = Validator::new(Version::V2_5).validate(&message);
+        assert!(result.is_valid(), "errors: {:?}", result.errors);
+    }
+
+    /// Schema covering MSH (no fields) plus PID-5 with `field_def`.
+    fn schema_with_pid5(field_def: FieldDefinition) -> MessageSchema {
+        let mut segments = HashMap::new();
+        segments.insert(
+            "MSH".to_string(),
+            SegmentDefinition {
+                name: "Message Header".to_string(),
+                required: false,
+                repeating: false,
+                fields: HashMap::new(),
+            },
+        );
+        let mut fields = HashMap::new();
+        fields.insert(5, field_def);
+        segments.insert(
+            "PID".to_string(),
+            SegmentDefinition {
+                name: "Patient Identification".to_string(),
+                required: false,
+                repeating: false,
+                fields,
+            },
+        );
+        MessageSchema {
+            message_type: "ADT".to_string(),
+            trigger_event: "A01".to_string(),
+            version: "2.5".to_string(),
+            segments,
+        }
+    }
+
+    #[test]
+    fn test_field_length_counts_characters_not_bytes() {
+        // "Müller": 6 chars but 7 bytes; HL7 lengths are characters.
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\rPID|1||7||Müller\r",
+        )
+        .unwrap();
+        let field_def = FieldDefinition {
+            name: "Patient Name".to_string(),
+            data_type: "ST".to_string(),
+            required: false,
+            repeating: false,
+            max_length: Some(6),
+            table_id: None,
+            components: None,
+        };
+        let result =
+            Validator::with_schema(Version::V2_5, schema_with_pid5(field_def)).validate(&message);
+        assert!(result.is_valid(), "errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn test_component_length_counts_characters_not_bytes() {
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\rPID|1||7||Müller\r",
+        )
+        .unwrap();
+        let mut components = HashMap::new();
+        components.insert(
+            "1".to_string(),
+            ComponentDefinition {
+                name: "Family Name".to_string(),
+                data_type: "FN".to_string(),
+                required: false,
+                max_length: Some(6),
+                table_id: None,
+            },
+        );
+        let field_def = FieldDefinition {
+            name: "Patient Name".to_string(),
+            data_type: "XPN".to_string(),
+            required: false,
+            repeating: false,
+            max_length: None,
+            table_id: None,
+            components: Some(components),
+        };
+        let result =
+            Validator::with_schema(Version::V2_5, schema_with_pid5(field_def)).validate(&message);
+        assert!(result.is_valid(), "errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn test_lenient_context_keeps_rule_error_severity() {
+        // Rule-engine violations keep their declared severity: a rule
+        // Error fails even under a lenient context.
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\rPID|1||7||DOE^JOHN\r",
+        )
+        .unwrap();
+        let rule =
+            ValidationRule::new("always_fail", "Rule that always fails", RuleSeverity::Error)
+                .with_condition(|_msg| false);
+        let mut validator =
+            Validator::new(Version::V2_5).with_context(ValidationContext::lenient());
+        validator.add_rule(rule);
+        let result = validator.validate(&message);
+        assert!(!result.is_valid(), "rule Error must fail even when lenient");
+        assert_eq!(result.errors.len(), 1);
+        assert!(
+            result.warnings.is_empty(),
+            "warnings: {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn test_field_checks_cover_all_repetitions() {
+        // MSH-18 "ASCII~!!!": the bad second repetition must be
+        // flagged even though the first repetition is clean.
+        let mut msg = Message::new();
+        let mut msh = Segment::new("MSH");
+        msh.set_field(1, Field::from_value("|")).unwrap();
+        msh.set_field(2, Field::from_value("^~\\&")).unwrap();
+        msh.set_field(9, Field::from_delimited("ADT^A01")).unwrap();
+        msh.set_field(12, Field::from_value("2.5")).unwrap();
+        msh.set_field(18, Field::from_delimited("ASCII~!!!"))
+            .unwrap();
+        msg.add_segment(msh);
+
+        let mut fields = HashMap::new();
+        fields.insert(
+            18,
+            FieldDefinition {
+                name: "Character Set".to_string(),
+                data_type: "ID".to_string(),
+                required: false,
+                repeating: true,
+                max_length: Some(16),
+                table_id: Some("0211".to_string()),
+                components: None,
+            },
+        );
+        let mut segments = HashMap::new();
+        segments.insert(
+            "MSH".to_string(),
+            SegmentDefinition {
+                name: "Message Header".to_string(),
+                required: false,
+                repeating: false,
+                fields,
+            },
+        );
+        let schema = MessageSchema {
+            message_type: "ADT".to_string(),
+            trigger_event: "A01".to_string(),
+            version: "2.5".to_string(),
+            segments,
+        };
+        let result = Validator::with_schema(Version::V2_5, schema).validate(&msg);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.error_type == ValidationErrorType::InvalidDataType),
+            "errors: {:?}",
+            result.errors
+        );
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.error_type == ValidationErrorType::InvalidValue),
             "errors: {:?}",
             result.errors
         );

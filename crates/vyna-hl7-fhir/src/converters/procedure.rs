@@ -1,6 +1,6 @@
 //! Procedure converter - PR1 segment to FHIR Procedure resource
 
-use super::patient::{valid_hl7_date, valid_hl7_time};
+use super::patient::{split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time};
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
 use crate::resources::procedure::*;
@@ -85,7 +85,9 @@ impl ProcedureConverter {
         }
 
         // Link to patient
-        if let Ok(Some(patient_id)) = terser.get("PID-3") {
+        if let Ok(Some(patient_id)) = terser.get("PID-3")
+            && !patient_id.is_empty()
+        {
             procedure.subject = Some(Reference {
                 reference: Some(format!("Patient/{}", patient_id)),
                 type_: Some("Patient".to_string()),
@@ -106,33 +108,47 @@ impl ProcedureConverter {
         }
     }
 
+    /// `YYYYMMDDHHMM` keeps its minutes (`YYYY-MM-DDTHH:MM`) and a
+    /// trailing HL7 zone (`±HHMM`) is preserved as `±HH:MM`.
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
+        let (stem, offset) = split_hl7_offset(datetime);
+        let zone = offset.as_deref().unwrap_or("");
         // Byte-slice checks on `[u8]` never split a char boundary, and an
         // all-ASCII-digit prefix makes the `&str` slices below safe.
-        let bytes = datetime.as_bytes();
+        let bytes = stem.as_bytes();
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
-            if valid_hl7_date(&datetime[0..8]) && valid_hl7_time(&datetime[8..14]) {
+            if valid_hl7_date(&stem[0..8]) && valid_hl7_time(&stem[8..14]) {
                 Ok(format!(
-                    "{}-{}-{}T{}:{}:{}",
-                    &datetime[0..4],
-                    &datetime[4..6],
-                    &datetime[6..8],
-                    &datetime[8..10],
-                    &datetime[10..12],
-                    &datetime[12..14]
+                    "{}-{}-{}T{}:{}:{}{}",
+                    &stem[0..4],
+                    &stem[4..6],
+                    &stem[6..8],
+                    &stem[8..10],
+                    &stem[10..12],
+                    &stem[12..14],
+                    zone
+                ))
+            } else {
+                Err(Self::invalid_datetime(datetime))
+            }
+        } else if bytes.len() >= 12 && bytes[..12].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_date(&stem[0..8]) && valid_hl7_hour_min(&stem[8..12]) {
+                Ok(format!(
+                    "{}-{}-{}T{}:{}{}",
+                    &stem[0..4],
+                    &stem[4..6],
+                    &stem[6..8],
+                    &stem[8..10],
+                    &stem[10..12],
+                    zone
                 ))
             } else {
                 Err(Self::invalid_datetime(datetime))
             }
         } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
             // Date only; still requires a real calendar date.
-            if valid_hl7_date(&datetime[0..8]) {
-                Ok(format!(
-                    "{}-{}-{}",
-                    &datetime[0..4],
-                    &datetime[4..6],
-                    &datetime[6..8]
-                ))
+            if valid_hl7_date(&stem[0..8]) {
+                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
             } else {
                 Err(Self::invalid_datetime(datetime))
             }
@@ -227,5 +243,27 @@ mod tests {
         let second = coding(&procedures[1]);
         assert_eq!(second.code.as_deref(), Some("0017"));
         assert_eq!(second.display.as_deref(), Some("Cholecystectomy"));
+    }
+
+    #[test]
+    fn test_datetime_preserves_minutes_and_zone() {
+        assert_eq!(
+            ProcedureConverter::convert_datetime("202403151000").unwrap(),
+            "2024-03-15T10:00"
+        );
+        assert_eq!(
+            ProcedureConverter::convert_datetime("20240315100000+0500").unwrap(),
+            "2024-03-15T10:00:00+05:00"
+        );
+    }
+
+    #[test]
+    fn test_empty_pid3_omits_subject() {
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||ADT^A01|1|P|2.5\r\
+                   PID|1||||DOE^JOHN||19800101|M\r\
+                   PR1|1||0016^Appendectomy^I9C||20240315100000";
+        let message = parse_message(hl7).unwrap();
+        let procedure = &ProcedureConverter::convert_all(&message).unwrap()[0];
+        assert!(procedure.subject.is_none());
     }
 }

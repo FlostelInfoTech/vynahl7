@@ -291,11 +291,18 @@ impl<'a> StreamingParser<'a> {
             }
         };
 
-        // Skip leading field separator
+        // After a separator-terminated field the position is already at
+        // the next field, so only the first remaining field (MSH-3)
+        // strips a leading separator; stripping again would swallow
+        // empty fields and shift later fields left.
         let sep_len = delims.field_separator.len_utf8();
-        let remaining = if let Some(rest) = remaining.strip_prefix(delims.field_separator) {
-            self.field_position += sep_len;
-            rest
+        let remaining = if self.current_field_index == 3 {
+            if let Some(rest) = remaining.strip_prefix(delims.field_separator) {
+                self.field_position += sep_len;
+                rest
+            } else {
+                remaining
+            }
         } else {
             remaining
         };
@@ -438,12 +445,20 @@ impl<'a> StreamingParser<'a> {
             }
         };
 
-        // Skip leading field separator
-        let remaining = if let Some(rest) = remaining.strip_prefix(delims.field_separator) {
-            self.field_position += delims.field_separator.len_utf8();
-            self.current_field_index += 1;
-            rest
+        // After a separator-terminated field the position is already at
+        // the next field, so only the first field strips a leading
+        // separator; stripping again would swallow empty fields and
+        // shift later fields left.
+        let remaining = if self.current_field_index == 0 {
+            if let Some(rest) = remaining.strip_prefix(delims.field_separator) {
+                self.field_position += delims.field_separator.len_utf8();
+                self.current_field_index += 1;
+                rest
+            } else {
+                remaining
+            }
         } else {
+            self.current_field_index += 1;
             remaining
         };
 
@@ -1032,6 +1047,28 @@ mod tests {
         process_with_handler(hl7, &mut handler).unwrap();
         assert!(handler.fields.iter().any(|f| f == "Test|Value"));
         assert!(!handler.fields.iter().any(|f| f.contains("\\F\\")));
+    }
+
+    #[test]
+    fn test_streaming_preserves_empty_fields_like_strict() {
+        // Empty wire positions must not shift later fields left.
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|MSG001|P|2.5\r\
+                   PID|1||PAT001||DOE^JOHN\r";
+        let streaming = parse_streaming(hl7).unwrap();
+        let regular = crate::parse_message(hl7).unwrap();
+
+        let msh = &streaming.segments[0];
+        assert_eq!(msh.get_field_value(9), Some("ADT"));
+        assert_eq!(
+            streaming.get_message_type(),
+            Some(("ADT".to_string(), "A01".to_string()))
+        );
+        let pid = &streaming.segments[1];
+        assert_eq!(pid.get_field_value(3), Some("PAT001"));
+        assert_eq!(pid.get_field_value(5), Some("DOE"));
+
+        assert_eq!(msh.fields.len(), regular.segments[0].fields.len());
+        assert_eq!(pid.fields.len(), regular.segments[1].fields.len());
     }
 
     #[test]

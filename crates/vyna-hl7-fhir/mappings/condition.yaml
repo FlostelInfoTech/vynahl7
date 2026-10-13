@@ -1,10 +1,24 @@
 # PRB problem list entry -> FHIR Condition.
 # Mirrors ConditionConverter for PRB segments: exact JSON parity is asserted
-# in mapping.rs tests.
+# in mapping.rs tests. The system map matches the converter's coding-system
+# table; unmapped systems fall back to `urn:oid:{value}` like the converter.
 resourceType: Condition
 fields:
   - target: code.coding[0].code
     source: PRB-3
+  - target: code.coding[0].display
+    source: PRB-3-2
+  - target: code.coding[0].system
+    source: PRB-3-3
+    map:
+      LN: http://loinc.org
+      LNC: http://loinc.org
+      SNM: http://snomed.info/sct
+      SCT: http://snomed.info/sct
+      ICD9: http://hl7.org/fhir/sid/icd-9-cm
+      ICD10: http://hl7.org/fhir/sid/icd-10
+      CPT: http://www.ama-assn.org/go/cpt
+    default: "urn:oid:{value}"
   - target: subject.reference
     source: PID-3
     template: "Patient/{value}"

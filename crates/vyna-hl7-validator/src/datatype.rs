@@ -220,11 +220,11 @@ fn validate_identifier(value: &str) -> DataTypeValidation {
         return DataTypeValidation::Valid;
     }
 
-    // IDs should be alphanumeric, may include underscore, hyphen, dot
+    // IDs are ASCII alphanumeric, may include underscore, hyphen, dot
     // (dotted values are legitimate: HL7 table 0104 holds "2.1".."2.8.2").
     if value
         .chars()
-        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
     {
         DataTypeValidation::Valid
     } else {
@@ -583,6 +583,14 @@ mod tests {
         assert!(validate_date("").is_valid());
         assert!(validate_time("").is_valid());
         assert!(validate_numeric("").is_valid());
+    }
+
+    #[test]
+    fn test_identifier_rejects_non_ascii_alphanumeric() {
+        // HL7 ID values are ASCII: Unicode alphanumerics are invalid.
+        assert!(!validate_data_type("caf\u{e9}", DataType::ID).is_valid());
+        assert!(!validate_identifier("\u{e9}").is_valid());
+        assert!(validate_data_type("ABC_123-2.5", DataType::ID).is_valid());
     }
 
     #[test]
