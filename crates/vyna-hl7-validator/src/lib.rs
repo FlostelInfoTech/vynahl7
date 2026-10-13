@@ -32,6 +32,20 @@
 //! - Table 0103: Processing ID
 //! - Table 0085: Observation Result Status
 //! - And many more standard HL7 tables
+//!
+//! ## Strict by default
+//!
+//! All constructors return a strict validator: every finding class is an
+//! error, including MSH-12 version drift, so a clean result means the message
+//! complies with the HL7 specification for the validated version. Parsing is
+//! unaffected — the parser never validates, and validation never blocks
+//! parsing: other tools (parse, extract, convert) run without validation.
+//!
+//! Strictness has two documented escape hatches, both explicit:
+//! - [`ValidationContext`]: downgrade finding classes (e.g. `standard()` lets
+//!   version drift warn, `lenient()` warns on everything but structure).
+//! - [`Validator::table_registry_mut`]: extend the standard code tables with
+//!   site-local codes (e.g. NDC drug codes alongside CVX in table 0292).
 
 pub mod context;
 pub mod datatype;
@@ -139,7 +153,7 @@ impl ValidationWarning {
     }
 }
 
-/// HL7 message validator
+/// HL7 message validator, strict by default (see crate docs)
 pub struct Validator {
     version: Version,
     schema: Option<MessageSchema>,
@@ -156,7 +170,7 @@ impl Validator {
             schema: None,
             table_registry: TableRegistry::new(),
             rules_engine: None,
-            context: ValidationContext::standard(),
+            context: ValidationContext::strict(),
         }
     }
 
@@ -167,7 +181,7 @@ impl Validator {
             schema: Some(schema),
             table_registry: TableRegistry::new(),
             rules_engine: None,
-            context: ValidationContext::standard(),
+            context: ValidationContext::strict(),
         }
     }
 
@@ -179,7 +193,7 @@ impl Validator {
             schema: Some(schema),
             table_registry: TableRegistry::new(),
             rules_engine: None,
-            context: ValidationContext::standard(),
+            context: ValidationContext::strict(),
         })
     }
 
@@ -205,6 +219,37 @@ impl Validator {
     }
 
     /// Get a mutable reference to the table registry (for adding custom tables)
+    ///
+    /// Strict validation enforces the standard code tables, which real-world
+    /// feeds sometimes extend: HL7 v2.5 tables RXE-2/RXA-5 to 0292 (CVX
+    /// vaccines), while pharmacy systems routinely send NDC drug codes. Extend
+    /// the standard table with site-local codes instead of weakening the
+    /// validator — standard values keep validating, and the extension is
+    /// explicit at the call site:
+    ///
+    /// ```rust
+    /// use vyna_hl7_core::Version;
+    /// use vyna_hl7_validator::Validator;
+    ///
+    /// let mut validator = Validator::for_message_type(Version::V2_5, "RDE", "O11")?;
+    /// validator
+    ///     .table_registry_mut()
+    ///     .get_table_mut("0292")
+    ///     .unwrap()
+    ///     .add_value("00093-0058", "Lorazepam 1mg tablet (site NDC)", false);
+    ///
+    /// // Standard CVX codes still validate alongside the site code.
+    /// use vyna_hl7_validator::VocabularyValidation;
+    /// assert!(matches!(
+    ///     validator.table_registry().validate("0292", "08"),
+    ///     VocabularyValidation::Valid
+    /// ));
+    /// assert!(matches!(
+    ///     validator.table_registry().validate("0292", "00093-0058"),
+    ///     VocabularyValidation::Valid
+    /// ));
+    /// # Ok::<(), vyna_hl7_core::Error>(())
+    /// ```
     pub fn table_registry_mut(&mut self) -> &mut TableRegistry {
         &mut self.table_registry
     }
@@ -1369,7 +1414,9 @@ mod tests {
         )
         .unwrap();
 
-        let standard = Validator::for_message_type(Version::V2_5, "ADT", "A01").unwrap();
+        let standard = Validator::for_message_type(Version::V2_5, "ADT", "A01")
+            .unwrap()
+            .with_context(ValidationContext::standard());
         let result = standard.validate(&message);
         assert!(result.errors.iter().all(|e| e.location != "MSH-12"));
         assert!(result.warnings.iter().any(|w| w.location == "MSH-12"));

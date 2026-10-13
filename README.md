@@ -95,16 +95,16 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-vyna-hl7-core = "0.5.1"
-vyna-hl7-parser = "0.5.1"
-vyna-hl7-terser = "0.5.1"
-vyna-hl7-validator = "0.5.1"
-vyna-hl7-conformance = "0.5.1"   # Optional: for conformance profile validation
-vyna-hl7-orchestration = "0.5.1" # Optional: for routing, filtering, and workflows
-vyna-hl7-custom = "0.5.1"        # Optional: for custom Z-segment support
-vyna-hl7-mllp = "0.5.1"          # Optional: for MLLP network support with TLS/mTLS (intra-organization)
-vyna-hl7-http = "0.5.1"          # Optional: for HTTP transport with TLS/mTLS (inter-organization)
-vyna-hl7-fhir = "0.5.1"          # Optional: for FHIR conversion (12 converters)
+vyna-hl7-core = "0.6.0"
+vyna-hl7-parser = "0.6.0"
+vyna-hl7-terser = "0.6.0"
+vyna-hl7-validator = "0.6.0"
+vyna-hl7-conformance = "0.6.0"   # Optional: for conformance profile validation
+vyna-hl7-orchestration = "0.6.0" # Optional: for routing, filtering, and workflows
+vyna-hl7-custom = "0.6.0"        # Optional: for custom Z-segment support
+vyna-hl7-mllp = "0.6.0"          # Optional: for MLLP network support with TLS/mTLS (intra-organization)
+vyna-hl7-http = "0.6.0"          # Optional: for HTTP transport with TLS/mTLS (inter-organization)
+vyna-hl7-fhir = "0.6.0"          # Optional: for FHIR conversion (12 converters)
 ```
 
 ### Parsing a Message
@@ -179,15 +179,20 @@ let hl7_string = message.encode();
 
 ### Validation
 
+Validation is strict by default: every finding class is an error, including
+MSH-12 version drift, so a clean result means the message complies with the
+HL7 specification for the validated version. Parsing is unaffected —
+validation never blocks parsing, and parse/extract/convert run without it.
+
 ```rust
 use vyna_hl7_validator::Validator;
 use vyna_hl7_core::Version;
 
-// Basic validation
+// Basic validation (strict)
 let validator = Validator::new(Version::V2_5);
 let result = validator.validate(&message);
 
-// Schema-based validation with data type checking
+// Schema-based validation with data type checking (strict)
 let validator = Validator::for_message_type(Version::V2_5, "ADT", "A01")?;
 let result = validator.validate(&message);
 
@@ -216,6 +221,15 @@ let vocab_result = registry.validate("0001", "M"); // Table 0001: Administrative
 if vocab_result.is_valid() {
     println!("Valid gender code!");
 }
+
+// Site-local codes: extend a standard table instead of weakening the
+// validator (here: NDC drug codes alongside CVX in table 0292)
+let mut validator = Validator::for_message_type(Version::V2_5, "RDE", "O11")?;
+validator
+    .table_registry_mut()
+    .get_table_mut("0292")
+    .unwrap()
+    .add_value("00093-0058", "Lorazepam 1mg tablet (site NDC)", false);
 
 // Conformance profile validation
 use vyna_hl7_conformance::{ProfileParser, ConformanceValidator};
@@ -807,7 +821,7 @@ cargo install --path crates/vyna-hl7-cli
 # Parse and display message structure
 vynahl7 parse message.hl7 --format pretty
 
-# Validate against HL7 standards
+# Validate against HL7 standards (strict by default; --lenient relaxes)
 vynahl7 validate message.hl7
 
 # Extract specific fields using Terser paths

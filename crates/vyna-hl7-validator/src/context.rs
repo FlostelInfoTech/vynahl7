@@ -4,11 +4,12 @@
 //! report it as an error (failing validation), downgrade it to a warning,
 //! or ignore it. Three presets cover the common cases:
 //!
-//! - [`ValidationContext::strict`]: everything is an error, including the
-//!   version mismatch that is a warning by default.
-//! - [`ValidationContext::standard`]: the default. Schema, datatype, length,
-//!   cardinality, and vocabulary problems are errors; a message whose MSH-12
-//!   differs from the validator version is a warning.
+//! - [`ValidationContext::strict`]: the default, for HL7 specification
+//!   compliance. Everything is an error, including an MSH-12 version that
+//!   differs from the validated version.
+//! - [`ValidationContext::standard`]: strict except the version mismatch,
+//!   which is a warning. For feeds validated against a pinned version where
+//!   the sender's MSH-12 may legitimately differ.
 //! - [`ValidationContext::lenient`]: only structural problems (empty message,
 //!   missing MSH, unparseable segments) fail. Everything else becomes a
 //!   warning, for feeds that are known-messy but must still flow.
@@ -59,7 +60,8 @@ pub struct ValidationContext {
 }
 
 impl ValidationContext {
-    /// Current default behavior: findings are errors, version drift warns.
+    /// Strict except version drift warns (see [`ValidationContext::strict`],
+    /// the constructor default, for spec compliance).
     pub fn standard() -> Self {
         Self {
             missing_required: Severity::Error,
@@ -72,7 +74,8 @@ impl ValidationContext {
         }
     }
 
-    /// Everything fails, including version drift.
+    /// Spec compliance: everything fails, including version drift. This is
+    /// what [`Validator`](crate::Validator) constructors use by default.
     pub fn strict() -> Self {
         Self {
             missing_required: Severity::Error,

@@ -223,7 +223,8 @@ async fn send_http_with_auth_returns_ack() {
 
 #[test]
 fn validate_profiles_change_severity() {
-    // MSH-12 2.3 validated against 2.5: drift warns by default, fails strict.
+    // MSH-12 2.3 validated against 2.5: strict (the default) fails on drift,
+    // --strict restates it, --lenient passes.
     let drift = write_temp(
         "drift.hl7",
         "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.3\rEVN||20240101\rPID|1||7||DOE^JOHN\rPV1||I\r",
@@ -237,16 +238,7 @@ fn validate_profiles_change_severity() {
     };
 
     let json = run(&[]);
-    assert_eq!(json["valid"], true);
-    assert!(
-        json["warnings"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|w| w["location"] == "MSH-12")
-    );
-
-    let json = run(&["--strict"]);
+    assert_eq!(json["mode"], "strict");
     assert_eq!(json["valid"], false);
     assert!(
         json["errors"]
@@ -256,7 +248,23 @@ fn validate_profiles_change_severity() {
             .any(|e| e["location"] == "MSH-12")
     );
 
+    let json = run(&["--strict"]);
+    assert_eq!(json["mode"], "strict");
+    assert_eq!(json["valid"], false);
+
+    let json = run(&["--standard"]);
+    assert_eq!(json["mode"], "standard");
+    assert_eq!(json["valid"], true);
+    assert!(
+        json["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w["location"] == "MSH-12")
+    );
+
     let json = run(&["--lenient"]);
+    assert_eq!(json["mode"], "lenient");
     assert_eq!(json["valid"], true);
 
     std::fs::remove_file(drift).unwrap();

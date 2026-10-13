@@ -4,7 +4,7 @@ use egui::{self, RichText, Color32};
 use egui_extras::{StripBuilder, Size};
 use vyna_hl7_parser::parse_message;
 use vyna_hl7_core::{Message, Version};
-use vyna_hl7_validator::Validator;
+use vyna_hl7_validator::{ValidationContext, Validator};
 use crate::samples;
 use crate::utils::{format_message_tree, TreeNode};
 
@@ -212,6 +212,7 @@ impl ValidatorTab {
                             ui.set_width(ui.available_width());
 
                             ui.heading("Validation Results");
+                            ui.label("Strict validation (HL7 specification compliance).");
 
                             // Summary
                             if let Some(is_valid) = self.is_valid {
@@ -334,6 +335,8 @@ impl ValidatorTab {
                         validator = schema_validator;
                         schema_applied = true;
                     }
+                    // Strict spec compliance, stated explicitly in the UI.
+                    validator.set_context(ValidationContext::strict());
                     if !schema_applied {
                         self.validation_results.push(ValidationItem {
                             severity: Severity::Warning,

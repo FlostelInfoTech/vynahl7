@@ -285,7 +285,17 @@ impl TableRegistry {
         self.tables.get(table_id)
     }
 
-    /// Add a custom table
+    /// Get a mutable table by ID, for adding site-local codes to a standard
+    /// table without replacing it (see [`Validator::table_registry_mut`](crate::Validator::table_registry_mut))
+    pub fn get_table_mut(&mut self, table_id: &str) -> Option<&mut Hl7Table> {
+        self.tables.get_mut(table_id)
+    }
+
+    /// Add a custom table, replacing any table with the same ID
+    ///
+    /// Prefer [`TableRegistry::get_table_mut`] plus [`Hl7Table::add_value`]
+    /// when you only need extra site-local codes: replacing a standard table
+    /// drops its standard values.
     pub fn add_table(&mut self, table: Hl7Table) {
         self.tables.insert(table.table_id.clone(), table);
     }

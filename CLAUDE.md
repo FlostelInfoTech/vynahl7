@@ -71,8 +71,10 @@ cargo install --path crates/vyna-hl7-cli
 # CLI commands
 vynahl7 parse message.hl7 --format pretty
 vynahl7 validate message.hl7
-vynahl7 validate message.hl7 --strict   # version drift and soft issues fail
-vynahl7 validate message.hl7 --lenient  # warnings suppressed
+vynahl7 validate message.hl7            # strict: HL7 specification compliance (default)
+vynahl7 validate message.hl7 --strict   # restates the default explicitly
+vynahl7 validate message.hl7 --standard # strict except version drift warns
+vynahl7 validate message.hl7 --lenient  # only structural problems fail, rest warns
 vynahl7 extract message.hl7 PID-5 PID-7 PID-8
 vynahl7 convert message.hl7 --to json --pretty
 vynahl7 info message.hl7

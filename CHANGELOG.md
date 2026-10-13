@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-13
+
+### Changed
+
+- Strict validation is now the default spec-compliance posture: all `Validator` constructors use `ValidationContext::strict()`, so MSH-12 version drift fails instead of warning. `standard()` (drift warns) and `lenient()` remain explicit opt-outs
+- `vynahl7 validate` defaults to strict; `--strict` restates it, new `--standard` flag covers the middle ground, `--lenient` unchanged. JSON output gains a `mode` field and text output prints the validation mode
+- Testpanel Validator tab validates strict with an explicit compliance label
+
+### Added
+
+- `TableRegistry::get_table_mut` for extending standard code tables with site-local codes (e.g. NDC alongside CVX in 0292) without replacing them; documented with a worked example plus `tests/site_tables.rs` proving strict rejects unregistered codes and accepts extended ones
+
 ## [0.5.1] - 2026-10-13
 
 ### Fixed

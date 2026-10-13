@@ -82,7 +82,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.5.1"
+version = "0.6.0"
 edition = "2024"
 authors = ["Alex SHAO Fan <alex.shaofan@flostel.com>"]
 license = "LicenseRef-Proprietary"
@@ -138,24 +138,24 @@ once_cell = "1.21"
 paste = "1.0"
 
 # Internal crates
-vyna-hl7-core = { version = "0.5.1", path = "crates/vyna-hl7-core" }
-vyna-hl7-parser = { version = "0.5.1", path = "crates/vyna-hl7-parser" }
-vyna-hl7-validator = { version = "0.5.1", path = "crates/vyna-hl7-validator" }
-vyna-hl7-terser = { version = "0.5.1", path = "crates/vyna-hl7-terser" }
-vyna-hl7-transform = { version = "0.5.1", path = "crates/vyna-hl7-transform" }
-vyna-hl7-templates = { version = "0.5.1", path = "crates/vyna-hl7-templates" }
-vyna-hl7-mllp = { version = "0.5.1", path = "crates/vyna-hl7-mllp" }
-vyna-hl7-http = { version = "0.5.1", path = "crates/vyna-hl7-http" }
-vyna-hl7-fhir = { version = "0.5.1", path = "crates/vyna-hl7-fhir" }
-vyna-hl7-custom = { version = "0.5.1", path = "crates/vyna-hl7-custom" }
-vyna-hl7-conformance = { version = "0.5.1", path = "crates/vyna-hl7-conformance" }
-vyna-hl7-macros = { version = "0.5.1", path = "crates/vyna-hl7-macros" }
-vyna-hl7-codegen = { version = "0.5.1", path = "crates/vyna-hl7-codegen" }
-vyna-hl7-redact = { version = "0.5.1", path = "crates/vyna-hl7-redact" }
-vyna-hl7-convert = { version = "0.5.1", path = "crates/vyna-hl7-convert" }
-vyna-hl7-queue = { version = "0.5.1", path = "crates/vyna-hl7-queue" }
-vyna-hl7-batch = { version = "0.5.1", path = "crates/vyna-hl7-batch" }
-vyna-hl7-xml = { version = "0.5.1", path = "crates/vyna-hl7-xml" }
+vyna-hl7-core = { version = "0.6.0", path = "crates/vyna-hl7-core" }
+vyna-hl7-parser = { version = "0.6.0", path = "crates/vyna-hl7-parser" }
+vyna-hl7-validator = { version = "0.6.0", path = "crates/vyna-hl7-validator" }
+vyna-hl7-terser = { version = "0.6.0", path = "crates/vyna-hl7-terser" }
+vyna-hl7-transform = { version = "0.6.0", path = "crates/vyna-hl7-transform" }
+vyna-hl7-templates = { version = "0.6.0", path = "crates/vyna-hl7-templates" }
+vyna-hl7-mllp = { version = "0.6.0", path = "crates/vyna-hl7-mllp" }
+vyna-hl7-http = { version = "0.6.0", path = "crates/vyna-hl7-http" }
+vyna-hl7-fhir = { version = "0.6.0", path = "crates/vyna-hl7-fhir" }
+vyna-hl7-custom = { version = "0.6.0", path = "crates/vyna-hl7-custom" }
+vyna-hl7-conformance = { version = "0.6.0", path = "crates/vyna-hl7-conformance" }
+vyna-hl7-macros = { version = "0.6.0", path = "crates/vyna-hl7-macros" }
+vyna-hl7-codegen = { version = "0.6.0", path = "crates/vyna-hl7-codegen" }
+vyna-hl7-redact = { version = "0.6.0", path = "crates/vyna-hl7-redact" }
+vyna-hl7-convert = { version = "0.6.0", path = "crates/vyna-hl7-convert" }
+vyna-hl7-queue = { version = "0.6.0", path = "crates/vyna-hl7-queue" }
+vyna-hl7-batch = { version = "0.6.0", path = "crates/vyna-hl7-batch" }
+vyna-hl7-xml = { version = "0.6.0", path = "crates/vyna-hl7-xml" }
 
 # XML
 quick-xml = "0.42"

@@ -55,12 +55,18 @@ enum Commands {
         #[arg(short, long, default_value = "text")]
         format: String,
 
-        /// Strict profile: version drift and all findings fail
-        #[arg(long, conflicts_with = "lenient")]
+        /// Strict validation against the HL7 specification (default):
+        /// all findings fail, including version drift
+        #[arg(long, conflicts_with_all = ["standard", "lenient"])]
         strict: bool,
 
+        /// Standard profile: strict except version drift warns (for feeds
+        /// validated against a pinned version)
+        #[arg(long, conflicts_with_all = ["strict", "lenient"])]
+        standard: bool,
+
         /// Lenient profile: only structural problems fail, rest warns
-        #[arg(long, conflicts_with = "strict")]
+        #[arg(long, conflicts_with_all = ["strict", "standard"])]
         lenient: bool,
     },
 
@@ -185,12 +191,14 @@ async fn main() -> Result<()> {
             hl7_version,
             format,
             strict,
+            standard,
             lenient,
         } => validate_command(
             &input,
             hl7_version.as_deref(),
             &format,
             strict,
+            standard,
             lenient,
             charset,
         )?,
@@ -472,6 +480,7 @@ fn validate_command(
     version: Option<&str>,
     format: &str,
     strict: bool,
+    standard: bool,
     lenient: bool,
     charset: Option<CharacterSet>,
 ) -> Result<()> {
@@ -500,12 +509,23 @@ fn validate_command(
         message.get_version().unwrap_or(Version::V2_5)
     };
 
-    let context = if strict {
-        vyna_hl7_validator::ValidationContext::strict()
-    } else if lenient {
-        vyna_hl7_validator::ValidationContext::lenient()
+    // Strict is the default spec-compliance posture (--strict restates it);
+    // --standard forgives version drift, --lenient forgives everything but
+    // structure.
+    let _ = strict;
+    let mode = if lenient {
+        "lenient"
+    } else if standard {
+        "standard"
     } else {
+        "strict"
+    };
+    let context = if lenient {
+        vyna_hl7_validator::ValidationContext::lenient()
+    } else if standard {
         vyna_hl7_validator::ValidationContext::standard()
+    } else {
+        vyna_hl7_validator::ValidationContext::strict()
     };
     // Select the message schema from MSH-9 so validation checks structure,
     // not just the envelope. ACK carries no trigger event; types without a
@@ -555,6 +575,7 @@ fn validate_command(
 
             let json = json!({
                 "valid": result.is_valid(),
+                "mode": mode,
                 "error_count": result.errors.len(),
                 "warning_count": result.warnings.len(),
                 "schema_applied": schema_applied,
@@ -568,6 +589,13 @@ fn validate_command(
                 println!("{}", "✓ Message is valid".green().bold());
             } else {
                 println!("{}", "✗ Message validation failed".red().bold());
+            }
+            if mode == "strict" {
+                println!("Validation mode: strict (HL7 specification compliance)");
+            } else if mode == "standard" {
+                println!("Validation mode: standard (strict except version drift warns)");
+            } else {
+                println!("Validation mode: lenient (only structural problems fail)");
             }
 
             if !result.errors.is_empty() {
