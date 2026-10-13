@@ -1,5 +1,6 @@
 //! Medication converter - RXA segment to FHIR MedicationAdministration resource
 
+use super::coding_systems::convert_coding_system;
 use super::patient::{split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time};
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
@@ -73,8 +74,17 @@ impl MedicationConverter {
             };
 
             // Component 2: Text (1-based indexing)
-            if let Ok(Some(text)) = terser.get(&format!("{}-2", code_path)) {
+            if let Ok(Some(text)) = terser.get(&format!("{}-2", code_path))
+                && !text.is_empty()
+            {
                 coding.display = Some(text.to_string());
+            }
+
+            // Component 3: Coding system (1-based indexing)
+            if let Ok(Some(system)) = terser.get(&format!("{}-3", code_path))
+                && !system.is_empty()
+            {
+                coding.system = Some(convert_coding_system(system));
             }
 
             admin.medication_codeable_concept = Some(CodeableConcept {
@@ -181,6 +191,13 @@ impl MedicationConverter {
             && !text.is_empty()
         {
             coding.display = Some(text.to_string());
+        }
+
+        // Component 3: Coding system (1-based indexing)
+        if let Ok(Some(system)) = terser.get(&format!("{}-3", code_path))
+            && !system.is_empty()
+        {
+            coding.system = Some(convert_coding_system(system));
         }
 
         let mut medication = Medication::new();
@@ -425,5 +442,56 @@ mod tests {
         let err = MedicationConverter::convert_all(&message).unwrap_err();
         let msg = err.to_string();
         assert!(!msg.contains("SECRET-DOSE"), "error leaks source: {msg}");
+    }
+
+    #[test]
+    fn test_rxa5_system_mapped_from_component_3() {
+        // RXA-5-3 selects the system in both converters.
+        let hl7 = "MSH|^~\\&|Pharmacy|Hospital|EMR|Hospital|20240315||RAS^O17|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000||1191^ASPIRIN^NDC|100|MG||||||||||||CP";
+
+        let message = parse_message(hl7).unwrap();
+        let admin = &MedicationConverter::convert_all(&message).unwrap()[0];
+        let coding = &admin
+            .medication_codeable_concept
+            .as_ref()
+            .unwrap()
+            .coding
+            .as_ref()
+            .unwrap()[0];
+        assert_eq!(coding.code.as_deref(), Some("1191"));
+        assert_eq!(
+            coding.system.as_deref(),
+            Some("http://hl7.org/fhir/sid/ndc")
+        );
+
+        let medication = MedicationConverter::convert_medication(&message, 0).unwrap();
+        let coding = &medication.code.unwrap().coding.unwrap()[0];
+        assert_eq!(coding.code.as_deref(), Some("1191"));
+        assert_eq!(
+            coding.system.as_deref(),
+            Some("http://hl7.org/fhir/sid/ndc")
+        );
+    }
+
+    #[test]
+    fn test_empty_display_omitted_in_convert_single() {
+        // RXA-5 with empty text leaves the display unset.
+        let hl7 = "MSH|^~\\&|Pharmacy|Hospital|EMR|Hospital|20240315||RAS^O17|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000||1191^^NDC|100|MG||||||||||||CP";
+
+        let message = parse_message(hl7).unwrap();
+        let admin = &MedicationConverter::convert_all(&message).unwrap()[0];
+        let coding = &admin
+            .medication_codeable_concept
+            .as_ref()
+            .unwrap()
+            .coding
+            .as_ref()
+            .unwrap()[0];
+        assert_eq!(coding.code.as_deref(), Some("1191"));
+        assert!(coding.display.is_none());
     }
 }

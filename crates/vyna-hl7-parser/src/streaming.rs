@@ -171,8 +171,9 @@ impl<'a> StreamingParser<'a> {
             )));
         }
 
-        // Extract delimiters from MSH-1 and MSH-2
-        if line.len() < 9 {
+        // Extract delimiters from MSH-1 and MSH-2. Eight bytes
+        // ("MSH|^~\\&") is a complete bare header, like strict.
+        if line.len() < 8 {
             return Some(Err(Error::parse_at(
                 "MSH segment too short for delimiters",
                 ErrorLocation::new().line(self.current_line),
@@ -274,6 +275,20 @@ impl<'a> StreamingParser<'a> {
 
         // Remaining MSH fields
         if self.field_position >= line.len() {
+            // Trailing separator yields one more empty field,
+            // matching strict split on content-bearing lines.
+            if self.field_position == line.len()
+                && self.current_field_index >= 3
+                && line.trim_end().ends_with(delims.field_separator)
+            {
+                self.current_field_index += 1;
+                let field_index = self.current_field_index;
+                self.field_position = line.len() + 1;
+                return Some(Ok(SegmentEvent::Field {
+                    index: field_index,
+                    value: "",
+                }));
+            }
             // End of MSH segment
             self.state = ParserState::BetweenSegments;
             self.line_index += 1;
@@ -410,6 +425,21 @@ impl<'a> StreamingParser<'a> {
             )));
         }
 
+        if segment_id == "MSH" {
+            // Non-first MSH keeps MSH-1/2 handling: MSH-1/2 come
+            // from the message delimiters and content starts
+            // after the encoding characters.
+            let sep_len = delims.field_separator.len_utf8();
+            self.current_segment_id = Some(segment_id);
+            self.current_field_index = 1;
+            self.field_position = id_end + sep_len + 4;
+            self.state = ParserState::InMsh;
+            return Some(Ok(SegmentEvent::Start {
+                id: segment_id,
+                line: self.current_line,
+            }));
+        }
+
         self.current_segment_id = Some(segment_id);
         self.current_field_index = 0;
         self.field_position = id_end;
@@ -429,6 +459,20 @@ impl<'a> StreamingParser<'a> {
 
         // Check if we've gone past the end of the line
         if self.field_position >= line.len() {
+            // A trailing separator yields one more empty field,
+            // like strict split ("PID|1|2|" has 3 fields).
+            if self.field_position == line.len()
+                && self.current_field_index > 0
+                && line.trim_end().ends_with(delims.field_separator)
+            {
+                self.current_field_index += 1;
+                let field_index = self.current_field_index;
+                self.field_position = line.len() + 1;
+                return Some(Ok(SegmentEvent::Field {
+                    index: field_index,
+                    value: "",
+                }));
+            }
             self.state = ParserState::BetweenSegments;
             self.line_index += 1;
             self.current_line += 1;
@@ -463,6 +507,16 @@ impl<'a> StreamingParser<'a> {
         };
 
         if remaining.is_empty() {
+            // Line ends right after a separator ("PID|"): strict
+            // split yields one empty field, so emit it here.
+            if line.trim_end().ends_with(delims.field_separator) {
+                let field_index = self.current_field_index;
+                self.field_position = line.len() + 1;
+                return Some(Ok(SegmentEvent::Field {
+                    index: field_index,
+                    value: "",
+                }));
+            }
             self.state = ParserState::BetweenSegments;
             self.line_index += 1;
             self.current_line += 1;
@@ -480,18 +534,13 @@ impl<'a> StreamingParser<'a> {
                 value: field_value,
             }))
         } else {
-            // Last field
+            // Last field, possibly empty when whitespace-only.
             let field_index = self.current_field_index;
             self.state = ParserState::EmitEnd;
 
-            let trimmed = remaining.trim_end();
-            if trimmed.is_empty() {
-                return self.emit_end();
-            }
-
             Some(Ok(SegmentEvent::Field {
                 index: field_index,
-                value: trimmed,
+                value: remaining.trim_end(),
             }))
         }
     }
@@ -1079,5 +1128,54 @@ mod tests {
             assert!(crate::parse_message(hl7).is_err(), "regular parses {hl7:?}");
             assert!(parse_streaming(hl7).is_err(), "streaming parses {hl7:?}");
         }
+    }
+
+    #[test]
+    fn test_streaming_second_msh_keeps_alignment() {
+        let hl7 = "MSH|^~\\&|APP1|FAC1|R|D|20240101||ADT^A01|123|P|2.5\r\
+                   PID|1||PAT001\r\
+                   MSH|^~\\&|APP2|FAC2|R|D|20240102||ADT^A01|124|P|2.5\r";
+        let message = parse_streaming(hl7).unwrap();
+        let second = message
+            .segments
+            .iter()
+            .filter(|s| s.id == "MSH")
+            .nth(1)
+            .unwrap();
+        assert_eq!(second.get_field_value(3), Some("APP2"));
+        assert_eq!(second.get_field_value(9), Some("ADT"));
+        assert!(second.encode(&message.delimiters).contains("APP2"));
+    }
+
+    #[test]
+    fn test_streaming_trailing_delimiter_matches_strict() {
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\rPID|1|2|\r";
+        let streaming = parse_streaming(hl7).unwrap();
+        let regular = crate::parse_message(hl7).unwrap();
+        let pid_s = streaming.segments.iter().find(|s| s.id == "PID").unwrap();
+        let pid_r = regular.segments.iter().find(|s| s.id == "PID").unwrap();
+        assert_eq!(pid_s.fields.len(), 3);
+        assert_eq!(pid_s.fields.len(), pid_r.fields.len());
+
+        let hl7 = "MSH|^~\\&|APP|FAC|\rPID|1\r";
+        let streaming = parse_streaming(hl7).unwrap();
+        let regular = crate::parse_message(hl7).unwrap();
+        assert_eq!(
+            streaming.segments[0].fields.len(),
+            regular.segments[0].fields.len()
+        );
+    }
+
+    #[test]
+    fn test_streaming_accepts_bare_eight_byte_msh() {
+        let bare = "MSH|^~\\&";
+        assert_eq!(bare.len(), 8);
+        let streaming = parse_streaming(bare).unwrap();
+        let regular = crate::parse_message(bare).unwrap();
+        assert_eq!(streaming.segments.len(), 1);
+        assert_eq!(
+            streaming.segments[0].fields.len(),
+            regular.segments[0].fields.len()
+        );
     }
 }

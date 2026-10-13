@@ -53,8 +53,8 @@ pub fn get_terser_values(message: &WasmMessage, paths: Vec<String>) -> Result<Js
         }
     }
 
-    serde_wasm_bindgen::to_value(&results)
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+    // Plain object (not ES Map) with `null` for missing paths, per d.ts.
+    crate::to_json_jsvalue(&results)
 }
 
 /// Extract patient demographics from a message
@@ -259,6 +259,30 @@ mod tests {
         let observations = from_js(extract_observations(&msg).unwrap());
 
         assert_eq!(observations[0]["value"], "POS^Positive^LN");
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen_test]
+    fn test_terser_values_serialize_as_plain_object_with_nulls() {
+        // Pre-fix this returned an ES Map (bracket access `undefined`,
+        // `JSON.stringify` `{}`) with `undefined` for missing paths;
+        // d.ts promises `Record<string, string | null>`.
+        let msg = parse_wasm(
+            "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+             PID|1||MRN123||DOE^JOHN||19800101|M",
+        )
+        .unwrap();
+        let values =
+            get_terser_values(&msg, vec!["PID-5-1".to_string(), "PID-5-99".to_string()]).unwrap();
+        let json = crate::test_stringify(&values);
+        assert!(
+            json.contains("\"PID-5-1\":\"DOE\""),
+            "not an object: {json}"
+        );
+        assert!(
+            json.contains("\"PID-5-99\":null"),
+            "missing must be null: {json}"
+        );
     }
 
     #[wasm_bindgen_test]

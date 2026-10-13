@@ -141,6 +141,15 @@ impl PatientReverseConverter {
                 let _ = pid.set_component(5, rep, 3, first_suffix);
             }
 
+            // Degree - component 6 (0-indexed: 5). The forward
+            // converter appends XPN-6 after XPN-4 in `suffix`, so
+            // the second entry round-trips here.
+            if let Some(ref suffix) = name.suffix
+                && suffix.len() > 1
+            {
+                let _ = pid.set_component(5, rep, 5, &suffix[1]);
+            }
+
             // Prefix - component 5 (0-indexed: 4)
             if let Some(ref prefix) = name.prefix
                 && let Some(first_prefix) = prefix.first()
@@ -586,6 +595,21 @@ mod tests {
         patient.deceased_date_time = Some("2024-03-15T10:00:00Z".to_string());
         let pid = PatientReverseConverter::convert(&patient).unwrap();
         assert_eq!(pid.get_field_value(29), Some("20240315100000+0000"));
+    }
+
+    #[test]
+    fn test_suffix_and_degree_round_trip() {
+        use crate::converters::patient::PatientConverter;
+        use vyna_hl7_parser::parse_message;
+
+        let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                   PID|1||67890^^^MRN||DOE^JOHN^A^JR^MR^MD^L||19800101|M";
+        let message = parse_message(hl7).unwrap();
+        let patient = PatientConverter::convert(&message).unwrap();
+        let pid = PatientReverseConverter::convert(&patient).unwrap();
+        // XPN-4 keeps the suffix, XPN-6 keeps the degree.
+        assert_eq!(rep_component(&pid, 5, 0, 3).as_deref(), Some("JR"));
+        assert_eq!(rep_component(&pid, 5, 0, 5).as_deref(), Some("MD"));
     }
 
     #[test]

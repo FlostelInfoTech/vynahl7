@@ -233,7 +233,9 @@ pub fn get_message_definition(
         name: String,
         required: bool,
         repeating: bool,
-        fields: HashMap<usize, JsFieldDefinition>,
+        // String keys: plain JS objects only support string keys, and
+        // d.ts types this as `Record<string, FieldDefinition>`.
+        fields: HashMap<String, JsFieldDefinition>,
     }
 
     #[derive(Serialize)]
@@ -267,7 +269,7 @@ pub fn get_message_definition(
                         .into_iter()
                         .map(|(idx, field_def)| {
                             (
-                                idx,
+                                idx.to_string(),
                                 JsFieldDefinition {
                                     name: field_def.name,
                                     data_type: field_def.data_type,
@@ -285,7 +287,9 @@ pub fn get_message_definition(
             .collect(),
     };
 
-    serde_wasm_bindgen::to_value(&js_schema).map_err(|e| JsValue::from_str(&e.to_string()))
+    // Plain nested objects (not ES Maps) with `null` for missing
+    // `max_length`, per d.ts (`MessageSchema`).
+    crate::to_json_jsvalue(&js_schema)
 }
 
 /// Get a specific segment definition from a message schema
@@ -391,7 +395,9 @@ fn serialize_segment_definition(
         name: String,
         required: bool,
         repeating: bool,
-        fields: HashMap<usize, JsFieldResult>,
+        // String keys: plain JS objects only support string keys, and
+        // d.ts types this as `Record<string, FieldDefinition>`.
+        fields: HashMap<String, JsFieldResult>,
     }
 
     #[derive(Serialize)]
@@ -416,7 +422,7 @@ fn serialize_segment_definition(
             .iter()
             .map(|(idx, field_def)| {
                 (
-                    *idx,
+                    idx.to_string(),
                     JsFieldResult {
                         name: field_def.name.clone(),
                         data_type: field_def.data_type.clone(),
@@ -430,7 +436,9 @@ fn serialize_segment_definition(
             .collect(),
     };
 
-    serde_wasm_bindgen::to_value(&result).map_err(|e| JsValue::from_str(&e.to_string()))
+    // Plain nested objects (not ES Maps) with `null` for missing
+    // `max_length`, per d.ts (`SegmentResult`).
+    crate::to_json_jsvalue(&result)
 }
 
 /// Get a vocabulary table by its table ID
@@ -459,7 +467,8 @@ pub fn get_vocabulary_table(table_id: &str) -> Result<JsValue, JsValue> {
 
     match registry.get_table(table_id) {
         Some(table) => {
-            serde_wasm_bindgen::to_value(table).map_err(|e| JsValue::from_str(&e.to_string()))
+            // Plain `values` object (not ES Map), per d.ts.
+            crate::to_json_jsvalue(table)
         }
         None => Err(JsValue::from_str(&format!(
             "Vocabulary table '{}' not found. Available tables include: 0001, 0002, 0004, 0007, 0061, 0063, 0078, 0085, 0103, 0119, 0201, 0203, 0301",
@@ -579,12 +588,16 @@ pub fn search_definitions(version: &str, query: &str) -> Result<JsValue, JsValue
     // Limit to 50 results
     results.truncate(50);
 
-    serde_wasm_bindgen::to_value(&results).map_err(|e| JsValue::from_str(&e.to_string()))
+    // `null` (not `undefined`) for missing `field_index`/`data_type`,
+    // per d.ts (`SearchResult`).
+    crate::to_json_jsvalue(&results)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_arch = "wasm32")]
+    use wasm_bindgen_test::wasm_bindgen_test;
 
     #[test]
     fn test_parse_version_valid() {
@@ -703,6 +716,69 @@ mod tests {
             );
         }
         assert!(find_segment_definition(Version::V2_5, "ZZZ").is_none());
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen_test]
+    fn test_vocabulary_table_serializes_values_as_object() {
+        // Pre-fix `values` was an ES Map (`values["M"]` undefined,
+        // stringified as `{}`); d.ts promises a `Record`.
+        let json = crate::test_stringify(&get_vocabulary_table("0001").unwrap());
+        assert!(
+            json.contains("\"M\":{\"code\":\"M\"}"),
+            "not an object: {json}"
+        );
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen_test]
+    fn test_message_definition_uses_string_field_keys() {
+        // Pre-fix `segments`/`fields` were nested ES Maps (stringified
+        // as `{}`); d.ts promises nested `Record`s with string keys.
+        let def = get_message_definition("2.5", "ADT", "A01").unwrap();
+        let json = crate::test_stringify(&def);
+        assert!(json.contains("\"PID\":"), "segments not an object: {json}");
+        assert!(
+            json.contains("\"5\":{\"name\":\"Patient Name\"}"),
+            "bad keys: {json}"
+        );
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen_test]
+    fn test_segment_definition_uses_string_keys_and_nulls() {
+        // Pre-fix `fields` was an ES Map and missing `max_length` was
+        // `undefined` (dropped from JSON); d.ts wants string keys and
+        // `maxLength: number | null` (PID-20 has no max length).
+        let def = get_segment_definition("2.5", "PID").unwrap();
+        let json = crate::test_stringify(&def);
+        assert!(
+            json.contains("\"5\":{\"name\":\"Patient Name\"}"),
+            "bad keys: {json}"
+        );
+        assert!(json.contains("\"20\":"), "PID-20 missing: {json}");
+        assert!(
+            json.contains("\"maxLength\":null"),
+            "missing must be null: {json}"
+        );
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen_test]
+    fn test_search_definitions_use_null_for_missing() {
+        // Pre-fix segment hits carried `fieldIndex`/`dataType` as
+        // `undefined` (dropped from JSON); d.ts wants explicit `null`.
+        let json = crate::test_stringify(&search_definitions("2.5", "patient").unwrap());
+        assert!(
+            json.contains("\"matchType\":\"segment\""),
+            "no segment hit: {json}"
+        );
+        assert!(json.contains("\"fieldIndex\":null"), "must be null: {json}");
+        assert!(json.contains("\"dataType\":null"), "must be null: {json}");
+        assert!(
+            json.contains("\"matchType\":\"field\""),
+            "no field hit: {json}"
+        );
     }
 
     #[test]

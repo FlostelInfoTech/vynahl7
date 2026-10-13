@@ -79,6 +79,14 @@ impl PatientConverter {
             }
         }
 
+        // PID-25: Birth Order -> Patient.multipleBirth (integer)
+        if let Ok(Some(birth_order)) = terser.get("PID-25")
+            && !birth_order.is_empty()
+            && let Ok(order) = birth_order.parse::<i32>()
+        {
+            patient.multiple_birth_integer = Some(order);
+        }
+
         // PID-29: Patient Death Date and Time -> Patient.deceased
         // PID-30: Patient Death Indicator -> Patient.deceased
         // FHIR deceased[x] is a choice: emit exactly one. The date wins
@@ -87,10 +95,13 @@ impl PatientConverter {
             && !death_date.is_empty()
         {
             patient.deceased_date_time = Some(Self::convert_datetime(death_date)?);
-        } else if let Ok(Some(death_ind)) = terser.get("PID-30")
-            && death_ind == "Y"
-        {
-            patient.deceased_boolean = Some(true);
+        } else if let Ok(Some(death_ind)) = terser.get("PID-30") {
+            // An explicit N means known alive, not unknown.
+            if death_ind == "Y" {
+                patient.deceased_boolean = Some(true);
+            } else if death_ind == "N" {
+                patient.deceased_boolean = Some(false);
+            }
         }
 
         patient.active = Some(true);
@@ -849,6 +860,30 @@ mod tests {
         let patient = PatientConverter::convert(&message).unwrap();
         assert_eq!(patient.deceased_date_time, None);
         assert_eq!(patient.deceased_boolean, Some(true));
+    }
+
+    #[test]
+    fn test_deceased_indicator_n_sets_false() {
+        // An explicit N means known alive, not unknown.
+        let hl7 = pid_message_with_death_fields("", "N");
+        let message = parse_message(&hl7).unwrap();
+        let patient = PatientConverter::convert(&message).unwrap();
+        assert_eq!(patient.deceased_date_time, None);
+        assert_eq!(patient.deceased_boolean, Some(false));
+    }
+
+    #[test]
+    fn test_birth_order_sets_multiple_birth_integer() {
+        let mut fields = vec![String::new(); 25];
+        fields[0] = "1".to_string();
+        fields[24] = "2".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\rPID|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let patient = PatientConverter::convert(&message).unwrap();
+        assert_eq!(patient.multiple_birth_integer, Some(2));
     }
 
     #[test]

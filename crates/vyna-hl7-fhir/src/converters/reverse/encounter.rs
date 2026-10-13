@@ -32,15 +32,46 @@ impl EncounterReverseConverter {
             let _ = pv1.set_field_value(2, &patient_class);
         }
 
-        // PV1-3: Assigned Patient Location
+        // PV1-3: Assigned Patient Location (PL: point of care ^
+        // room ^ bed ^ facility). The forward converter joins the
+        // PL parts into the display ("ER, 101, 1") with the point of
+        // care as `Location/{id}`; splitting the display back into
+        // components (with component 1 from the reference id) keeps
+        // the reference stable across a re-forward. Writing the
+        // display as a single PL component would corrupt the
+        // reference to `Location/ER, 101, 1`.
         if let Some(ref locations) = encounter.location
             && let Some(first_loc) = locations.first()
         {
             // location is a required Reference field (not Optional)
             let location = &first_loc.location;
-            if let Some(ref display) = location.display {
-                let _ = pv1.set_field_value(3, display);
-            } else if let Some(ref reference) = location.reference {
+            let mut parts: Vec<&str> = location
+                .display
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .map(|display| display.split(", ").collect())
+                .unwrap_or_default();
+            if let Some(id) = location
+                .reference
+                .as_deref()
+                .and_then(|r| r.strip_prefix("Location/"))
+                .filter(|s| !s.is_empty())
+            {
+                if parts.is_empty() {
+                    parts.push(id);
+                } else {
+                    parts[0] = id;
+                }
+            }
+            for (index, part) in parts.iter().take(4).enumerate() {
+                let _ = pv1.set_component(3, 0, index, *part);
+            }
+            // A non-Location reference with no display keeps the old
+            // whole-field behavior so nothing is silently dropped.
+            if parts.is_empty()
+                && let Some(ref reference) = location.reference
+                && !reference.is_empty()
+            {
                 let _ = pv1.set_field_value(3, reference);
             }
         }
@@ -169,17 +200,22 @@ impl EncounterReverseConverter {
         Ok(pv1)
     }
 
-    /// Convert FHIR encounter class to HL7 v2 patient class
+    /// Convert FHIR encounter class to HL7 v2 patient class.
+    ///
+    /// Observation (`OBSENC`) and short-stay (`SS`) have no distinct
+    /// HL7 Table 0004 letter: `B` is obstetrics and re-forwards to
+    /// `IMP`, so both fold to the outpatient default `O` (which
+    /// re-forwards to `AMB` and stays stable).
     fn convert_class_to_hl7(class: &Coding) -> String {
         if let Some(ref code) = class.code {
             match code.as_str() {
                 "IMP" | "ACUTE" | "inpatient" => "I",       // Inpatient
                 "AMB" | "ambulatory" | "outpatient" => "O", // Outpatient
                 "EMER" | "emergency" => "E",                // Emergency
-                "OBSENC" | "observation" => "B",            // Observation
                 "PRENC" | "preadmit" => "P",                // Preadmit
-                "SS" | "short-stay" => "R",                 // Recurring patient
-                _ => "O",                                   // Default to outpatient
+                // No distinct Table 0004 letter (see doc comment).
+                "OBSENC" | "observation" | "SS" | "short-stay" => "O",
+                _ => "O", // Default to outpatient
             }
             .to_string()
         } else {
@@ -302,6 +338,73 @@ mod tests {
             EncounterReverseConverter::convert_class_to_hl7(&coding3),
             "E"
         );
+    }
+
+    #[test]
+    fn test_location_pl_structure_round_trips() {
+        use crate::converters::encounter::EncounterConverter;
+        use vyna_hl7_core::delimiters::Delimiters;
+        use vyna_hl7_parser::parse_message;
+
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||ADT^A01|1|P|2.5\r\
+                   PID|1||1||A^B||19800101|M\r\
+                   PV1|1|I|ER^101^1";
+        let message = parse_message(hl7).unwrap();
+        let encounter = EncounterConverter::convert(&message).unwrap();
+        let pv1 = EncounterReverseConverter::convert(&encounter).unwrap();
+        // PL components are preserved, not flattened to the display.
+        let field = pv1.get_field(3).unwrap();
+        let comp = |i: usize| field.repetitions[0].components[i].value();
+        assert_eq!(
+            (comp(0), comp(1), comp(2)),
+            (Some("ER"), Some("101"), Some("1"))
+        );
+        // Re-forward keeps the Location reference intact.
+        let hl7 = format!(
+            "MSH|^~\\&|A|B|C|D|20240315||ADT^A01|1|P|2.5\r\
+             PID|1||1||A^B||19800101|M\r{}",
+            pv1.encode(&Delimiters::default())
+        );
+        let back = EncounterConverter::convert(&parse_message(&hl7).unwrap()).unwrap();
+        let location = &back.location.as_ref().unwrap()[0].location;
+        assert_eq!(location.reference.as_deref(), Some("Location/ER"));
+        assert_eq!(location.display.as_deref(), Some("ER, 101, 1"));
+    }
+
+    #[test]
+    fn test_location_reference_without_display() {
+        let mut encounter = Encounter::new("finished".to_string());
+        encounter.location = Some(vec![crate::resources::encounter::EncounterLocation {
+            location: Reference {
+                reference: Some("Location/ER".to_string()),
+                type_: Some("Location".to_string()),
+                identifier: None,
+                display: None,
+            },
+            status: Some("active".to_string()),
+            period: None,
+        }]);
+        let pv1 = EncounterReverseConverter::convert(&encounter).unwrap();
+        // The reference id becomes PL component 1, not the whole reference.
+        assert_eq!(pv1.get_field_value(3), Some("ER"));
+    }
+
+    #[test]
+    fn test_observation_and_short_stay_fold_to_outpatient() {
+        for code in ["OBSENC", "observation", "SS", "short-stay"] {
+            let coding = Coding {
+                system: None,
+                version: None,
+                code: Some(code.to_string()),
+                display: None,
+            };
+            // Never B: B is obstetrics and re-forwards to IMP.
+            assert_eq!(
+                EncounterReverseConverter::convert_class_to_hl7(&coding),
+                "O",
+                "class {code}"
+            );
+        }
     }
 
     #[test]

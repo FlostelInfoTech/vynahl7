@@ -162,7 +162,13 @@ vynahl7 validate message.hl7 --format json  # machine-readable incl. "mode"
 vynahl7 extract message.hl7 PID-5 OBX\(2\)-5
 vynahl7 send message.hl7 --to mllp://127.0.0.1:2575
 vynahl7 diff old.hl7 new.hl7
+vynahl7 --charset 8859/1 parse latin1.hl7  # force decoding, ignore MSH-18
 ```
+
+Input decoding follows the MSH-18 declaration by default; the global
+`--charset` flag overrides it (MSH-18 spellings such as `8859/1`,
+`ASCII`, `UTF-8`) for peers that misdeclare their encoding, and applies
+to every command.
 
 The GUI test panel (`cargo run -p vyna-hl7-testpanel`) offers parser,
 builder, terser, strict validator, FHIR, MLLP, HTTP, FTP, and XML tabs

@@ -910,7 +910,7 @@
     "DG1": {
       "name": "Diagnosis",
       "required": false,
-      "repeating": false,
+      "repeating": true,
       "fields": {
         "1": {
           "name": "Set ID - DG1",

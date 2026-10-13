@@ -893,4 +893,32 @@ mod tests {
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
+
+    #[tokio::test]
+    async fn test_xml_response_content_type_rejected() {
+        use axum::{Router, routing::post};
+
+        async fn xml() -> impl axum::response::IntoResponse {
+            (
+                [("content-type", "x-application/hl7-v2+xml")],
+                "MSH|^~\\&|A\r",
+            )
+        }
+
+        let app = Router::new().route("/", post(xml));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        // The crate only speaks ER7: an XML media type must be rejected
+        // even though the payload itself would parse.
+        let client = HttpClient::new(format!("http://{addr}")).unwrap();
+        let err = client.send_message_raw("MSH|^~\\&|A\r").await.unwrap_err();
+        assert!(
+            matches!(err, Error::ContentType { .. }),
+            "XML type accepted: {err:?}"
+        );
+    }
 }

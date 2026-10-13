@@ -543,6 +543,7 @@ impl ConformanceValidator {
             segment_index,
             field_position,
             field_profile,
+            message,
             result,
             ..
         } = ctx;
@@ -556,12 +557,11 @@ impl ConformanceValidator {
                     if segment_id == "MSH" && (field_position == 1 || field_position == 2) {
                         decoded_length(repetition)
                     } else {
-                        // Get the encoded value of this repetition
-                        // Use default delimiters for length calculation.
-                        // Length is counted in characters, not bytes, so
-                        // multibyte text is not falsely over the limit.
-                        let delimiters = vyna_hl7_core::Delimiters::default();
-                        let value = repetition.encode(&delimiters);
+                        // Measure with the message delimiters: the
+                        // default would escape-expand text that is
+                        // literal under custom separators.
+                        // Length is counted in characters, not bytes.
+                        let value = repetition.encode(&message.delimiters);
                         value.chars().count()
                     };
 
@@ -976,5 +976,38 @@ mod tests {
             "expected a max-length error, got: {:?}",
             result.errors
         );
+    }
+
+    #[test]
+    fn test_field_length_uses_message_delimiters() {
+        use vyna_hl7_core::{Delimiters, Field, Segment};
+
+        let metadata =
+            ProfileMetadata::new("DelimLen".to_string(), "1.0".to_string(), Version::V2_5);
+        let mut message_profile = MessageProfile::new("ADT".to_string(), "A01".to_string());
+        let mut pid = SegmentProfile::new("PID".to_string(), Usage::Required, Cardinality::one());
+        let mut f3 = FieldProfile::new(3, Usage::Required, Cardinality::one());
+        f3.length = Some(4);
+        pid.add_field(f3);
+        message_profile.add_segment(pid);
+        let validator =
+            ConformanceValidator::new(ConformanceProfile::new(metadata, message_profile));
+
+        // Custom '#' separator: 'A|B' is 3 literal chars, not 5.
+        let delimiters = Delimiters {
+            field_separator: '#',
+            ..Delimiters::default()
+        };
+        let mut message = Message::with_delimiters(delimiters);
+        let mut msh = Segment::new("MSH");
+        msh.set_field(1, Field::from_value("#")).unwrap();
+        msh.set_field(2, Field::from_value("^~\\&")).unwrap();
+        message.add_segment(msh);
+        let mut pid_seg = Segment::new("PID");
+        pid_seg.set_field(3, Field::from_value("A|B")).unwrap();
+        message.add_segment(pid_seg);
+
+        let result = validator.validate(&message);
+        assert!(result.is_valid(), "errors: {:?}", result.errors);
     }
 }

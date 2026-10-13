@@ -542,18 +542,27 @@ impl Validator {
             }
         }
 
-        // Check for required segments
+        // Check for required segments and non-repeating cardinality
         for (seg_id, seg_def) in &schema.segments {
-            if seg_def.required {
-                let found = message.segments.iter().any(|s| &s.id == seg_id);
-                if !found {
-                    self.emit(
-                        result,
-                        "Message".to_string(),
-                        format!("Required segment {} is missing", seg_id),
-                        ValidationErrorType::MissingRequiredField,
-                    );
-                }
+            let count = message.segments.iter().filter(|s| &s.id == seg_id).count();
+            if seg_def.required && count == 0 {
+                self.emit(
+                    result,
+                    "Message".to_string(),
+                    format!("Required segment {} is missing", seg_id),
+                    ValidationErrorType::MissingRequiredField,
+                );
+            }
+            if !seg_def.repeating && count > 1 {
+                self.emit(
+                    result,
+                    seg_id.clone(),
+                    format!(
+                        "Segment {} occurs {} times but is not repeating",
+                        seg_id, count
+                    ),
+                    ValidationErrorType::InvalidCardinality,
+                );
             }
         }
     }
@@ -585,6 +594,23 @@ impl Validator {
             // Validate field if it exists
             if let Some(f) = field {
                 let field_location = format!("{}-{}", location_prefix, field_idx);
+
+                // Non-repeating fields must not carry multiple values.
+                // Empty repetitions mean absent, so only count content.
+                if !field_def.repeating {
+                    let rep_count = f.repetitions.iter().filter(|r| !r.is_empty()).count();
+                    if rep_count > 1 {
+                        self.emit(
+                            result,
+                            field_location.clone(),
+                            format!(
+                                "Field {} repeats {} times but is not repeating",
+                                field_idx, rep_count
+                            ),
+                            ValidationErrorType::InvalidCardinality,
+                        );
+                    }
+                }
 
                 // Validate max length
                 // For repeating fields, check the encoded length (with all repetitions)
@@ -2304,6 +2330,65 @@ mod tests {
                 .errors
                 .iter()
                 .any(|e| e.error_type == ValidationErrorType::InvalidValue),
+            "errors: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_non_repeating_segment_cardinality_errors() {
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\rEVN|A01|20240101\r\
+             PID|1||7||DOE^JOHN||19600101|M\rPID|1||8||SMITH^JANE\rPV1||I\r",
+        )
+        .unwrap();
+        let validator = Validator::for_message_type(Version::V2_5, "ADT", "A01").unwrap();
+        let result = validator.validate(&message);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.error_type == ValidationErrorType::InvalidCardinality
+                    && e.location == "PID"),
+            "errors: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_non_repeating_field_cardinality_errors() {
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\rEVN|A01|20240101\r\
+             PID|1|AAA~BBB|7||DOE^JOHN\rPV1||I\r",
+        )
+        .unwrap();
+        let validator = Validator::for_message_type(Version::V2_5, "ADT", "A01").unwrap();
+        let result = validator.validate(&message);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.error_type == ValidationErrorType::InvalidCardinality
+                    && e.location.contains("-2")),
+            "errors: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_repeating_field_cardinality_passes() {
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\rEVN|A01|20240101\r\
+             PID|1||7||DOE^JOHN\rPV1||I\r",
+        )
+        .unwrap();
+        let validator = Validator::for_message_type(Version::V2_5, "ADT", "A01").unwrap();
+        let result = validator.validate(&message);
+        assert!(
+            result
+                .errors
+                .iter()
+                .all(|e| e.error_type != ValidationErrorType::InvalidCardinality),
             "errors: {:?}",
             result.errors
         );

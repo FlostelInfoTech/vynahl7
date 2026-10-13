@@ -379,6 +379,40 @@ fn repetition_to_escaped_tokens() -> proc_macro2::TokenStream {
     }
 }
 
+/// Generate code storing a component value subcomponent-aware.
+///
+/// The value is split on `&` into subcomponents, the inverse of the
+/// component read (which joins them), so composite component text
+/// survives a no-change round trip. `set_component` first gap-fills the
+/// field/repetition/component structure; the built component then
+/// replaces the placeholder. The generated code avoids let-chains so it
+/// compiles under older editions too.
+fn set_component_split_tokens(
+    field_num: usize,
+    comp: usize,
+    value_expr: &proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    quote! {
+        {
+            let mut __comp = vyna_hl7_core::field::Component::new();
+            for __sub in (#value_expr).split('&') {
+                __comp.add_subcomponent(
+                    vyna_hl7_core::field::SubComponent::new(__sub.to_string()),
+                );
+            }
+            let _ = segment.set_component(#field_num, 0, #comp - 1, "");
+            if let Some(__rep) = segment
+                .get_field_mut(#field_num)
+                .and_then(|__f| __f.get_repetition_mut(0))
+            {
+                if let Some(__slot) = __rep.components.get_mut(#comp - 1) {
+                    *__slot = __comp;
+                }
+            }
+        }
+    }
+}
+
 /// Extract the inner type `T` from `Option<T>` or `Vec<T>`
 fn inner_generic_type(ty: &Type) -> Option<&Type> {
     if let Type::Path(type_path) = ty
@@ -427,9 +461,10 @@ fn inner_generic_type(ty: &Type) -> Option<&Type> {
 /// decode back, so escaped data survives the round trip. Trailing empty
 /// components are trimmed on read.
 ///
-/// A `component = N` mapping reads and writes one component's decoded
-/// text; separator characters in the value are stored literally and
-/// escaped on encode.
+/// A `component = N` mapping reads and writes one component's full
+/// decoded text with subcomponents joined by `&`; the value is split
+/// back into subcomponents on write, so composite component text
+/// survives a no-change round trip.
 ///
 /// # Example
 ///
@@ -683,13 +718,27 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
 
         // Generate extraction code based on component
         let extraction = if let Some(comp) = attrs.component {
-            // Extract specific component
+            // Extract one component's full decoded text: every
+            // subcomponent joined by `&`, so "A&B" reads as "A&B" and a
+            // no-change round trip preserves it. A component without
+            // subcomponents is still None, like a missing field.
             quote! {
                 segment.get_field(#field_num)
                     .and_then(|f| f.get_repetition(0))
                     .and_then(|r| r.get_component(#comp - 1))
-                    .and_then(|c| c.value())
-                    .map(|s| s.to_string())
+                    .and_then(|c| {
+                        if c.subcomponents.is_empty() {
+                            None
+                        } else {
+                            Some(
+                                c.subcomponents
+                                    .iter()
+                                    .map(|s| s.as_str())
+                                    .collect::<Vec<&str>>()
+                                    .join("&"),
+                            )
+                        }
+                    })
             }
         } else {
             // Extract entire field value: every repetition rendered as
@@ -727,9 +776,10 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
         // Generate serialization code
         if is_optional {
             if let Some(comp) = attrs.component {
+                let store = set_component_split_tokens(field_num, comp, &quote! { val });
                 to_segment_fields.push(quote! {
                     if let Some(ref val) = self.#field_name {
-                        let _ = segment.set_component(#field_num, 0, #comp - 1, val);
+                        #store
                     }
                 });
             } else {
@@ -743,8 +793,9 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
                 });
             }
         } else if let Some(comp) = attrs.component {
+            let store = set_component_split_tokens(field_num, comp, &quote! { &self.#field_name });
             to_segment_fields.push(quote! {
-                let _ = segment.set_component(#field_num, 0, #comp - 1, &self.#field_name);
+                #store
             });
         } else {
             let append = append_reps_tokens(&quote! { &self.#field_name });
@@ -797,10 +848,21 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
             type Error = vyna_hl7_core::error::Error;
 
             fn try_from(segment: &vyna_hl7_core::segment::Segment) -> Result<Self, Self::Error> {
-                Self::from_segment(segment)
-                    .ok_or_else(|| vyna_hl7_core::error::Error::InvalidSegment(
+                // from_segment returns None both for an id mismatch and
+                // for a missing required field: branch so an id-matching
+                // segment names the real cause instead of reporting
+                // "Expected PID segment, got PID".
+                if segment.id != #segment_id {
+                    return Err(vyna_hl7_core::error::Error::InvalidSegment(
                         format!("Expected {} segment, got {}", #segment_id, segment.id)
+                    ));
+                }
+                Self::from_segment(segment).ok_or_else(|| {
+                    vyna_hl7_core::error::Error::MissingRequiredField(format!(
+                        "Segment {} is missing required fields",
+                        #segment_id
                     ))
+                })
             }
         }
     };
@@ -1150,12 +1212,44 @@ fn derive_message_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
             type Error = vyna_hl7_core::error::Error;
 
             fn try_from(message: &vyna_hl7_core::message::Message) -> Result<Self, Self::Error> {
-                Self::from_message(message).ok_or_else(|| {
-                    vyna_hl7_core::error::Error::MessageType(format!(
-                        "Message is missing required segments for {}^{}",
-                        #message_type, #trigger_event
-                    ))
-                })
+                if let Some(value) = Self::from_message(message) {
+                    return Ok(value);
+                }
+                // from_message returns None both for an MSH-9 type/trigger
+                // mismatch and for missing segments: re-run the MSH-9
+                // probe so a mismatched message names the disagreement
+                // instead of reporting missing segments that are present.
+                let __msh9 = message
+                    .get_segment_by_id("MSH")
+                    .and_then(|__msh| __msh.get_field(9))
+                    .and_then(|__field| __field.get_repetition(0));
+                let __actual_type = __msh9
+                    .and_then(|__rep| __rep.get_component(0))
+                    .and_then(|__comp| __comp.value());
+                let __actual_trigger = __msh9
+                    .and_then(|__rep| __rep.get_component(1))
+                    .and_then(|__comp| __comp.value());
+                let __has_content =
+                    __actual_type.is_some_and(|__s| !__s.is_empty())
+                        || __actual_trigger.is_some_and(|__s| !__s.is_empty());
+                let __type_mismatch = __has_content
+                    && ((!#message_type.is_empty()
+                        && __actual_type.unwrap_or("") != #message_type)
+                        || (!#trigger_event.is_empty()
+                            && __actual_trigger.unwrap_or("") != #trigger_event));
+                if __type_mismatch {
+                    return Err(vyna_hl7_core::error::Error::MessageType(format!(
+                        "Message type mismatch: expected {}^{}, got {}^{}",
+                        #message_type,
+                        #trigger_event,
+                        __actual_type.unwrap_or(""),
+                        __actual_trigger.unwrap_or("")
+                    )));
+                }
+                Err(vyna_hl7_core::error::Error::MessageType(format!(
+                    "Message is missing required segments for {}^{}",
+                    #message_type, #trigger_event
+                )))
             }
         }
     };
@@ -1349,17 +1443,26 @@ fn hl7_type_impl(attr_meta: Meta, input: DeriveInput) -> syn::Result<proc_macro2
     // Get original struct definition parts, dropping the consumed `hl7`
     // field attributes: the emitted struct carries no derive that
     // registers `hl7` as a helper attribute, so keeping them would fail
-    // with "cannot find attribute `hl7` in this scope".
+    // with "cannot find attribute `hl7` in this scope". Struct-level
+    // attributes (derives, docs) and generics are re-emitted, so the
+    // expansion keeps the input's traits and type parameters.
     let vis = &input.vis;
     let mut struct_fields = struct_fields.clone();
     for field in struct_fields.named.iter_mut() {
         field.attrs.retain(|attr| !attr.path().is_ident("hl7"));
     }
+    let struct_attrs: Vec<&Attribute> = input
+        .attrs
+        .iter()
+        .filter(|attr| !attr.path().is_ident("hl7"))
+        .collect();
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let expanded = quote! {
-        #vis struct #name #struct_fields
+        #(#struct_attrs)*
+        #vis struct #name #impl_generics #struct_fields #where_clause
 
-        impl #name {
+        impl #impl_generics #name #ty_generics #where_clause {
             /// The HL7 data type code
             pub const DATA_TYPE: &'static str = #data_type;
 
@@ -1387,13 +1490,19 @@ fn hl7_type_impl(attr_meta: Meta, input: DeriveInput) -> syn::Result<proc_macro2
             }
         }
 
-        impl From<#name> for vyna_hl7_core::field::Repetition {
-            fn from(value: #name) -> Self {
+        impl #impl_generics From<#name #ty_generics>
+            for vyna_hl7_core::field::Repetition #where_clause
+        {
+            fn from(value: #name #ty_generics) -> Self {
                 value.to_repetition()
             }
         }
 
-        impl std::convert::TryFrom<&vyna_hl7_core::field::Repetition> for #name {
+        impl #impl_generics
+            std::convert::TryFrom<&vyna_hl7_core::field::Repetition>
+            for #name #ty_generics
+            #where_clause
+        {
             type Error = vyna_hl7_core::error::Error;
 
             fn try_from(
@@ -1959,6 +2068,115 @@ mod tests {
         assert!(
             compact.contains("is_empty()=>returnNone"),
             "required repeating must fail when empty: {compact}"
+        );
+    }
+
+    #[test]
+    fn hl7_type_impl_preserves_attrs_and_generics() {
+        // The expansion must re-emit struct attributes (derives, docs)
+        // and generics: dropping them silently un-derives traits and
+        // breaks generic data types.
+        let meta: Meta = syn::parse_str("data_type = \"XPN\"").unwrap();
+        let tokens = hl7_type_impl(
+            meta,
+            parse_input(
+                "#[derive(Debug, Clone, PartialEq)]\n\
+                 /// Family name holder.\n\
+                 pub struct N<T> where T: Clone {\n\
+                 #[hl7(component = 1)] x: T }",
+            ),
+        )
+        .expect("valid input must expand");
+        let rendered = tokens.to_string();
+        assert!(
+            rendered.contains("derive"),
+            "derive attr must survive: {rendered}"
+        );
+        assert!(
+            rendered.contains("Debug"),
+            "derive list must survive: {rendered}"
+        );
+        assert!(
+            rendered.contains("doc"),
+            "doc comment must survive: {rendered}"
+        );
+        let compact = rendered.replace(' ', "");
+        assert!(
+            compact.contains("structN<T>"),
+            "generic params must survive: {rendered}"
+        );
+        assert!(
+            compact.contains("whereT:Clone"),
+            "where clause must survive: {rendered}"
+        );
+        assert!(
+            compact.contains("impl<T>N<T>"),
+            "impl blocks must carry generics: {rendered}"
+        );
+        assert!(
+            !compact.contains("#[hl7("),
+            "consumed hl7 markers must stay stripped: {rendered}"
+        );
+    }
+
+    #[test]
+    fn segment_impl_try_from_distinguishes_missing_required_field() {
+        // An id-matching segment that lacks a required field must not
+        // report "Expected PID segment, got PID": the id matched, so
+        // the error must name the real cause.
+        let tokens = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { #[hl7(field = 3)] x: String }",
+        ))
+        .expect("valid struct must expand");
+        let rendered = tokens.to_string();
+        assert!(
+            rendered.contains("Expected {} segment, got {}"),
+            "id mismatch keeps its message: {rendered}"
+        );
+        assert!(
+            rendered.contains("MissingRequiredField"),
+            "matched id with missing field needs a cause error: {rendered}"
+        );
+    }
+
+    #[test]
+    fn message_impl_try_from_distinguishes_type_mismatch() {
+        // A message whose MSH-9 disagrees with the declared type must
+        // not report "missing required segments" when none is missing.
+        let tokens = derive_message_impl(parse_input(
+            "#[hl7(message_type = \"ADT\", trigger_event = \"A01\")] struct M { \
+             #[hl7(segment)] pid: Pid }",
+        ))
+        .expect("valid struct must expand");
+        let rendered = tokens.to_string();
+        assert!(
+            rendered.contains("missing required segments"),
+            "absent segments keep their message: {rendered}"
+        );
+        assert!(
+            rendered.contains("mismatch"),
+            "type/trigger disagreement needs its own error: {rendered}"
+        );
+    }
+
+    #[test]
+    fn segment_impl_component_mapping_preserves_subcomponents() {
+        // A component=N mapping reads one component's full decoded text
+        // (subcomponents joined by &) and writes it back
+        // subcomponent-aware, so "A&B" survives a no-change round trip.
+        let tokens = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { \
+             #[hl7(field = 5, component = 1)] x: String }",
+        ))
+        .expect("valid struct must expand");
+        let rendered = tokens.to_string();
+        assert!(
+            rendered.contains("join"),
+            "component read must join subcomponents: {rendered}"
+        );
+        assert!(
+            rendered.contains("split"),
+            "component write must split subcomponents: {rendered}"
         );
     }
 

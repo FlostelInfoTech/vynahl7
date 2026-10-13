@@ -503,6 +503,16 @@ impl MllpClient {
         // Wrap in MLLP frame
         let framed = MllpFrame::wrap_bytes(&hl7_bytes);
 
+        // Enforce the size limit outbound too, mirroring the inbound
+        // check (and MllpCodec::encode_payload), so oversize messages
+        // fail before any bytes hit the wire.
+        if framed.len() > self.max_message_size {
+            return Err(Error::Mllp(format!(
+                "Message exceeds maximum size of {} bytes",
+                self.max_message_size
+            )));
+        }
+
         // Send with timeout
         tokio::time::timeout(self.write_timeout, async {
             self.stream.write_all(&framed).await?;
@@ -543,7 +553,15 @@ impl MllpClient {
                 .map_err(|e| Error::Network(format!("Failed to read: {}", e)))?;
 
             if n == 0 {
-                return Err(Error::Network("Connection closed".to_string()));
+                // EOF with a partial frame buffered means the peer went
+                // away mid-frame (mirrors MllpCodec::decode_eof); a clean
+                // EOF with nothing pending keeps the generic error.
+                if self.pending.is_empty() {
+                    return Err(Error::Network("Connection closed".to_string()));
+                }
+                return Err(Error::Mllp(
+                    "connection closed mid-frame (truncated frame)".to_string(),
+                ));
             }
 
             self.pending.extend_from_slice(&chunk[..n]);
@@ -758,7 +776,15 @@ impl MllpConnection {
                 .map_err(|e| Error::Network(format!("Failed to read: {}", e)))?;
 
             if n == 0 {
-                return Err(Error::Network("Connection closed".to_string()));
+                // EOF with a partial frame buffered means the peer went
+                // away mid-frame (mirrors MllpCodec::decode_eof); a clean
+                // EOF with nothing pending keeps the generic error.
+                if self.pending.is_empty() {
+                    return Err(Error::Network("Connection closed".to_string()));
+                }
+                return Err(Error::Mllp(
+                    "connection closed mid-frame (truncated frame)".to_string(),
+                ));
             }
 
             self.pending.extend_from_slice(&chunk[..n]);
@@ -772,6 +798,16 @@ impl MllpConnection {
     pub async fn send_message(&mut self, message: &Message) -> Result<()> {
         let hl7_bytes = message.encode_bytes()?;
         let framed = MllpFrame::wrap_bytes(&hl7_bytes);
+
+        // Enforce the size limit outbound too, mirroring the inbound
+        // check (and MllpCodec::encode_payload), so oversize messages
+        // fail before any bytes hit the wire.
+        if framed.len() > self.max_message_size {
+            return Err(Error::Mllp(format!(
+                "Message exceeds maximum size of {} bytes",
+                self.max_message_size
+            )));
+        }
 
         tokio::time::timeout(self.write_timeout, async {
             self.stream.write_all(&framed).await?;
@@ -994,6 +1030,154 @@ mod tests {
         let received = server_task.await.unwrap();
         let pid = received.get_segment_by_id("PID").unwrap();
         assert_eq!(pid.get_field_value(5), Some("Müller"));
+    }
+
+    /// Outbound size limit (client): a message over `max_message_size`
+    /// must fail before any bytes hit the wire, not only when the echo
+    /// trips the inbound limit.
+    #[tokio::test]
+    async fn test_client_send_rejects_oversize_before_transmit() {
+        let server = MllpServer::bind("127.0.0.1:0").await.unwrap();
+        let addr = server.local_addr().unwrap();
+        let server_task = tokio::spawn(async move {
+            let mut conn = server.accept().await.unwrap();
+            let res =
+                tokio::time::timeout(Duration::from_millis(500), conn.receive_message()).await;
+            assert!(res.is_err(), "oversize message was transmitted: {res:?}");
+        });
+
+        let config = MllpConfig::new().with_max_message_size(10);
+        let mut client = MllpClient::connect_with_config(&addr.to_string(), config)
+            .await
+            .unwrap();
+        let msg = parse_message(PIPELINED_MSG1).unwrap();
+        assert!(MllpFrame::wrap(&msg.encode()).len() > 10);
+        let err = client.send_message(&msg).await.unwrap_err();
+        assert!(
+            err.to_string().contains("exceeds maximum size"),
+            "unexpected: {err}"
+        );
+
+        server_task.await.unwrap();
+    }
+
+    /// Outbound size limit (connection): same guarantee server-side.
+    #[tokio::test]
+    async fn test_connection_send_rejects_oversize_before_transmit() {
+        use tokio::io::AsyncReadExt;
+
+        let config = MllpConfig::new().with_max_message_size(10);
+        let server = MllpServer::bind_with_config("127.0.0.1:0", config)
+            .await
+            .unwrap();
+        let addr = server.local_addr().unwrap();
+        let server_task = tokio::spawn(async move {
+            let mut conn = server.accept().await.unwrap();
+            let msg = parse_message(PIPELINED_MSG1).unwrap();
+            let err = conn.send_message(&msg).await.unwrap_err();
+            assert!(
+                err.to_string().contains("exceeds maximum size"),
+                "unexpected: {err}"
+            );
+        });
+
+        // The server must not transmit anything: either no bytes arrive
+        // or the connection closes without data.
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        let mut buf = [0u8; 64];
+        let res = tokio::time::timeout(Duration::from_millis(500), stream.read(&mut buf)).await;
+        match res {
+            Err(_) | Ok(Ok(0)) => {}
+            other => panic!("oversize message was transmitted: {other:?}"),
+        }
+
+        server_task.await.unwrap();
+    }
+
+    /// EOF after a partial frame (client): must report a truncated-frame
+    /// error, not the generic "Connection closed".
+    #[tokio::test]
+    async fn test_client_receive_partial_frame_eof_is_truncated() {
+        async fn receive_after(peer_writes: Option<Vec<u8>>) -> Result<Message> {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let server_task = tokio::spawn(async move {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                if let Some(bytes) = peer_writes {
+                    use tokio::io::AsyncWriteExt;
+                    socket.write_all(&bytes).await.unwrap();
+                }
+                socket.shutdown().await.unwrap();
+            });
+            let mut client = MllpClient::connect_with_config(
+                &addr.to_string(),
+                MllpConfig::new().with_read_timeout(Duration::from_secs(5)),
+            )
+            .await
+            .unwrap();
+            let res = client.receive_message().await;
+            server_task.await.unwrap();
+            res
+        }
+
+        // Partial frame then EOF: truncation-specific Mllp error.
+        let partial = b"\x0BMSH|partial-no-terminator".to_vec();
+        let err = receive_after(Some(partial)).await.unwrap_err();
+        assert!(matches!(err, Error::Mllp(_)), "unexpected variant: {err:?}");
+        assert!(err.to_string().contains("mid-frame"), "unexpected: {err}");
+
+        // Clean EOF with nothing pending: still the generic error.
+        let err = receive_after(None).await.unwrap_err();
+        assert!(
+            matches!(err, Error::Network(_)),
+            "unexpected variant: {err:?}"
+        );
+        assert!(
+            err.to_string().contains("Connection closed"),
+            "unexpected: {err}"
+        );
+    }
+
+    /// EOF after a partial frame (connection): same guarantee server-side.
+    #[tokio::test]
+    async fn test_connection_receive_partial_frame_eof_is_truncated() {
+        async fn receive_after(peer_writes: Option<Vec<u8>>) -> Result<Message> {
+            let server = MllpServer::bind_with_config(
+                "127.0.0.1:0",
+                MllpConfig::new().with_read_timeout(Duration::from_secs(5)),
+            )
+            .await
+            .unwrap();
+            let addr = server.local_addr().unwrap();
+            let server_task = tokio::spawn(async move {
+                let mut conn = server.accept().await.unwrap();
+                conn.receive_message().await
+            });
+            let mut stream = TcpStream::connect(addr).await.unwrap();
+            if let Some(bytes) = peer_writes {
+                use tokio::io::AsyncWriteExt;
+                stream.write_all(&bytes).await.unwrap();
+            }
+            stream.shutdown().await.unwrap();
+            server_task.await.unwrap()
+        }
+
+        // Partial frame then EOF: truncation-specific Mllp error.
+        let partial = b"\x0BMSH|partial-no-terminator".to_vec();
+        let err = receive_after(Some(partial)).await.unwrap_err();
+        assert!(matches!(err, Error::Mllp(_)), "unexpected variant: {err:?}");
+        assert!(err.to_string().contains("mid-frame"), "unexpected: {err}");
+
+        // Clean EOF with nothing pending: still the generic error.
+        let err = receive_after(None).await.unwrap_err();
+        assert!(
+            matches!(err, Error::Network(_)),
+            "unexpected variant: {err:?}"
+        );
+        assert!(
+            err.to_string().contains("Connection closed"),
+            "unexpected: {err}"
+        );
     }
 
     #[cfg(feature = "tls")]

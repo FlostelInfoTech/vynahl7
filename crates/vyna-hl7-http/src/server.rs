@@ -1,6 +1,6 @@
 //! HTTP server for receiving HL7 messages
 
-use crate::{CONTENT_TYPE_HL7_ER7, CONTENT_TYPE_HL7_XML, Error, Result, decode_body};
+use crate::{CONTENT_TYPE_HL7_ER7, Error, Result, decode_body};
 use axum::{
     Router,
     body::Bytes,
@@ -246,7 +246,10 @@ impl HttpServer {
 
     /// Build the axum router: routes plus tracing, the body-size limit,
     /// the request timeout, optional compression, and this server as state.
-    fn build_router(self) -> Router {
+    ///
+    /// Shared with the `testing` mock server so it enforces the same
+    /// limits and timeouts as the real server.
+    pub(crate) fn build_router(self) -> Router {
         let app = Router::new()
             .route("/", post(handle_message))
             .route("/{*path}", post(handle_message))
@@ -517,16 +520,17 @@ where
     }
 }
 
-/// True when `content_type` names an HL7 v2 media type.
+/// True when `content_type` names the ER7 media type.
 ///
 /// Compares the media type (before any `;` parameters) case-insensitively
-/// against the crate's HL7 content types. Substring matching is deliberately
+/// against [`CONTENT_TYPE_HL7_ER7`]. Substring matching is deliberately
 /// avoided so spoof types such as `application/hl7-evil` are rejected while
-/// parameters (e.g. `; charset=utf-8`) are allowed.
+/// parameters (e.g. `; charset=utf-8`) are allowed. The XML media type is
+/// rejected: this crate parses ER7 only, so admitting it would misparse
+/// ER7 bodies sent under it and 400 XML bodies at the ER7 parser.
 pub(crate) fn is_hl7_content_type(content_type: &str) -> bool {
     let media_type = content_type.split(';').next().unwrap_or("").trim();
     media_type.eq_ignore_ascii_case(CONTENT_TYPE_HL7_ER7)
-        || media_type.eq_ignore_ascii_case(CONTENT_TYPE_HL7_XML)
 }
 
 /// Handle incoming HTTP POST requests with HL7 messages
@@ -535,23 +539,8 @@ pub(crate) async fn handle_message(
     headers: HeaderMap,
     body: Bytes,
 ) -> std::result::Result<(StatusCode, HeaderMap, Vec<u8>), (StatusCode, String)> {
-    // Verify content type
-    let content_type = headers
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    if !is_hl7_content_type(content_type) {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            format!(
-                "Invalid content type: expected {}, got {}",
-                CONTENT_TYPE_HL7_ER7, content_type
-            ),
-        ));
-    }
-
-    // Check authentication if required
+    // Check authentication first so unauthenticated callers cannot probe
+    // validation (content type, parsing) and learn about the endpoint.
     if let Some((_username, _password)) = &server.auth {
         if let Some(_auth_header) = headers.get("authorization").and_then(|v| v.to_str().ok()) {
             #[cfg(feature = "auth")]
@@ -577,6 +566,22 @@ pub(crate) async fn handle_message(
                 "Authentication required but no Authorization header provided".to_string(),
             ));
         }
+    }
+
+    // Verify content type
+    let content_type = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if !is_hl7_content_type(content_type) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!(
+                "Invalid content type: expected {}, got {}",
+                CONTENT_TYPE_HL7_ER7, content_type
+            ),
+        ));
     }
 
     // Decode the body, preferring the Content-Type charset parameter
@@ -847,7 +852,6 @@ mod tests {
             CONTENT_TYPE_HL7_ER7,
             "x-application/hl7-v2+er7; charset=utf-8",
             "X-Application/HL7-V2+ER7",
-            "x-application/hl7-v2+xml",
         ] {
             let (status, _, _) = handle_message(
                 State(server.clone()),
@@ -857,6 +861,31 @@ mod tests {
             .await
             .unwrap();
             assert_eq!(status, StatusCode::OK, "rejected: {ok_type}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_message_rejects_xml_content_type() {
+        // The crate parses ER7 only: the XML media type must be rejected
+        // at the gate instead of misparsing ER7 bodies or 400ing XML
+        // bodies at the ER7 parser.
+        let server = HttpServer::new();
+        for (body, label) in [
+            (VALID_HL7, "ER7 body"),
+            ("<ADT_A01><MSH/></ADT_A01>", "XML body"),
+        ] {
+            let result = handle_message(
+                State(server.clone()),
+                headers(Some("x-application/hl7-v2+xml"), None),
+                body.into(),
+            )
+            .await;
+            let (status, message) = result.unwrap_err();
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{label}");
+            assert!(
+                message.contains("Invalid content type"),
+                "{label}: {message}"
+            );
         }
     }
 
@@ -1105,5 +1134,28 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(status, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "auth")]
+    async fn test_handle_message_auth_runs_before_content_type() {
+        // Unauthenticated callers must get 401 even when the content type
+        // is wrong, so they cannot probe validation without credentials.
+        let server = HttpServer::new().with_auth("user".to_string(), "pass".to_string());
+
+        // Wrong content type, no credentials: auth wins.
+        let result = handle_message(
+            State(server.clone()),
+            headers(Some("application/json"), None),
+            VALID_HL7.into(),
+        )
+        .await;
+        let (status, _) = result.unwrap_err();
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        // Missing content type, no credentials: still 401.
+        let result = handle_message(State(server), HeaderMap::new(), VALID_HL7.into()).await;
+        let (status, _) = result.unwrap_err();
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
 }

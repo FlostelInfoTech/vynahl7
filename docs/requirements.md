@@ -171,7 +171,8 @@ pointer to the suite that proves it. Roadmap items are marked
   [SBOM](sbom/)). Verify: SBOM regeneration.
 - REQ-NFR-040 (quality gates): `#![warn]`-clean `cargo clippy
   --workspace --all-targets` and per-area test suites are required
-  before merge. Verify: gates (no CI wired yet — see roadmap).
+  before merge. Verify: `.github/workflows/ci.yml` (`check`,
+  `feature-combos`, `fmt` jobs).
 
 ## 10. Verification mapping
 
@@ -189,6 +190,5 @@ pointer to the suite that proves it. Roadmap items are marked
 - QBP/RSP/batch message schemas (validator falls back honestly today).
 - Full CVX (0292) registry refresh from the CDC source (covers 01–122,
   141, 998–999 today).
-- CI wiring (build/test/clippy/fmt gates).
 - Repo-wide `rustfmt` normalization (large pre-existing baseline drift).
 

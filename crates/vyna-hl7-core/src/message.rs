@@ -88,6 +88,21 @@ impl Message {
         self.get_msh().and_then(|msh| {
             msh.get_field(9).and_then(|field| {
                 let rep = field.get_repetition(0)?;
+                // Unsplit tolerance: a single component holding
+                // "ACK^A01" (via set_field_value) splits on the
+                // component separator, unless escaped.
+                if rep.components.len() == 1
+                    && let Some(value) = rep.get_component(0).and_then(|c| c.value())
+                    && !value.contains(self.delimiters.escape_character)
+                    && let Some((first, rest)) =
+                        value.split_once(self.delimiters.component_separator)
+                {
+                    let trigger = rest
+                        .split(self.delimiters.component_separator)
+                        .next()
+                        .unwrap_or("");
+                    return Some((first.to_string(), trigger.to_string()));
+                }
                 let msg_type = rep.get_component(0)?.value()?.to_string();
                 let trigger = rep
                     .get_component(1)
@@ -245,10 +260,27 @@ impl Message {
     /// Only MSH-9-1 (the message type) is consulted, so genuine ACKs with
     /// a bare MSH-9 (`ACK` with no trigger component) are recognized.
     pub fn is_acknowledgment(&self) -> bool {
-        self.get_msh()
-            .and_then(|msh| msh.get_field_value(9))
-            .map(|msg_type| msg_type == "ACK")
-            .unwrap_or(false)
+        let Some(msh) = self.get_msh() else {
+            return false;
+        };
+        let Some(field) = msh.get_field(9) else {
+            return false;
+        };
+        let Some(rep) = field.get_repetition(0) else {
+            return false;
+        };
+        let Some(value) = rep.get_component(0).and_then(|c| c.value()) else {
+            return false;
+        };
+        // Unsplit tolerance mirrors get_message_type: split a lone
+        // "ACK^A01" on the component separator, unless escaped.
+        if rep.components.len() == 1
+            && !value.contains(self.delimiters.escape_character)
+            && let Some((first, _)) = value.split_once(self.delimiters.component_separator)
+        {
+            return first == "ACK";
+        }
+        value == "ACK"
     }
 }
 
@@ -539,6 +571,44 @@ mod tests {
         let mut msg = Message::new();
         msg.add_segment(create_test_msh());
         assert!(!msg.is_acknowledgment());
+    }
+
+    #[test]
+    fn test_unsplit_ack_composite_is_recognized() {
+        // set_field_value stores "ACK^A01" as one literal component;
+        // both accessors must still see (ACK, A01).
+        let mut msh = Segment::new("MSH");
+        msh.add_field(Field::from_value("|"));
+        msh.add_field(Field::from_value("^~\\&"));
+        for _ in 3..9 {
+            msh.add_field(Field::from_value(""));
+        }
+        msh.set_field_value(9, "ACK^A01").unwrap();
+        let mut msg = Message::new();
+        msg.add_segment(msh);
+        assert!(msg.is_acknowledgment());
+        assert_eq!(
+            msg.get_message_type(),
+            Some(("ACK".to_string(), "A01".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_unsplit_ack_with_escape_does_not_split() {
+        let mut msh = Segment::new("MSH");
+        msh.add_field(Field::from_value("|"));
+        msh.add_field(Field::from_value("^~\\&"));
+        for _ in 3..9 {
+            msh.add_field(Field::from_value(""));
+        }
+        msh.set_field_value(9, "ACK\\S\\A01").unwrap();
+        let mut msg = Message::new();
+        msg.add_segment(msh);
+        assert!(!msg.is_acknowledgment());
+        assert_eq!(
+            msg.get_message_type(),
+            Some(("ACK\\S\\A01".to_string(), "".to_string()))
+        );
     }
 
     #[test]

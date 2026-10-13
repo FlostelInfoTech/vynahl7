@@ -120,23 +120,24 @@ impl EncounterConverter {
         let admit_dt = terser.get("PV1-44").ok().flatten();
         let discharge_dt = terser.get("PV1-45").ok().flatten();
 
-        if admit_dt.is_some() || discharge_dt.is_some() {
-            encounter.period = Some(Period {
-                start: admit_dt.and_then(|dt| {
-                    if dt.is_empty() {
-                        None
-                    } else {
-                        Self::convert_datetime(dt).ok()
-                    }
-                }),
-                end: discharge_dt.and_then(|dt| {
-                    if dt.is_empty() {
-                        None
-                    } else {
-                        Self::convert_datetime(dt).ok()
-                    }
-                }),
-            });
+        // The wrapper exists only when at least one bound is valued:
+        // empty or invalid bounds must not yield an all-None period.
+        let start = admit_dt.and_then(|dt| {
+            if dt.is_empty() {
+                None
+            } else {
+                Self::convert_datetime(dt).ok()
+            }
+        });
+        let end = discharge_dt.and_then(|dt| {
+            if dt.is_empty() {
+                None
+            } else {
+                Self::convert_datetime(dt).ok()
+            }
+        });
+        if start.is_some() || end.is_some() {
+            encounter.period = Some(Period { start, end });
         }
 
         // PV1-7: Attending Doctor -> Encounter.participant
@@ -186,23 +187,13 @@ impl EncounterConverter {
         let admit_source = terser.get("PV1-14").ok().flatten();
         let discharge_disp = terser.get("PV1-36").ok().flatten();
 
-        if admit_source.is_some() || discharge_disp.is_some() {
-            let mut hospitalization = EncounterHospitalization {
-                pre_admission_identifier: None,
-                origin: None,
-                admit_source: None,
-                re_admission: None,
-                diet_preference: None,
-                special_courtesy: None,
-                special_arrangement: None,
-                destination: None,
-                discharge_disposition: None,
-            };
-
-            if let Some(source) = admit_source
-                && !source.is_empty()
-            {
-                hospitalization.admit_source = Some(CodeableConcept {
+        // The wrapper exists only when at least one side is valued:
+        // empty fields must not yield an all-None hospitalization.
+        let admit_source = admit_source.and_then(|source| {
+            if source.is_empty() {
+                None
+            } else {
+                Some(CodeableConcept {
                     coding: Some(vec![Coding {
                         system: Some("http://terminology.hl7.org/CodeSystem/v2-0023".to_string()),
                         version: None,
@@ -210,13 +201,14 @@ impl EncounterConverter {
                         display: None,
                     }]),
                     text: Some(source.to_string()),
-                });
+                })
             }
-
-            if let Some(disp) = discharge_disp
-                && !disp.is_empty()
-            {
-                hospitalization.discharge_disposition = Some(CodeableConcept {
+        });
+        let discharge_disposition = discharge_disp.and_then(|disp| {
+            if disp.is_empty() {
+                None
+            } else {
+                Some(CodeableConcept {
                     coding: Some(vec![Coding {
                         system: Some("http://terminology.hl7.org/CodeSystem/v2-0112".to_string()),
                         version: None,
@@ -224,10 +216,21 @@ impl EncounterConverter {
                         display: None,
                     }]),
                     text: Some(disp.to_string()),
-                });
+                })
             }
-
-            encounter.hospitalization = Some(hospitalization);
+        });
+        if admit_source.is_some() || discharge_disposition.is_some() {
+            encounter.hospitalization = Some(EncounterHospitalization {
+                pre_admission_identifier: None,
+                origin: None,
+                admit_source,
+                re_admission: None,
+                diet_preference: None,
+                special_courtesy: None,
+                special_arrangement: None,
+                destination: None,
+                discharge_disposition,
+            });
         }
 
         // Set patient reference if we have patient ID from PID segment
@@ -488,7 +491,7 @@ mod tests {
 
         let message = parse_message(&hl7).unwrap();
         let encounter = EncounterConverter::convert(&message).unwrap();
-        assert_eq!(encounter.period.unwrap().start, None);
+        assert!(encounter.period.is_none());
         assert!(EncounterConverter::convert_datetime("123\u{e9}56789012").is_err());
     }
 
@@ -511,7 +514,42 @@ mod tests {
 
         let message = parse_message(&hl7).unwrap();
         let encounter = EncounterConverter::convert(&message).unwrap();
-        assert_eq!(encounter.period.unwrap().start, None);
+        assert!(encounter.period.is_none());
+    }
+
+    #[test]
+    fn test_empty_period_and_hospitalization_omitted() {
+        // PV1-44/45 present-but-empty (PV1-46 forces presence):
+        // no all-None period.
+        let mut pv1 = vec![String::new(); 46];
+        pv1[0] = "1".to_string();
+        pv1[1] = "I".to_string();
+        pv1[45] = "X".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+             PID|1||MRN123^^^MRN||DOE^JOHN||19800101|M\r\
+             PV1|{}",
+            pv1.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let encounter = EncounterConverter::convert(&message).unwrap();
+        assert!(encounter.period.is_none());
+
+        // PV1-14/36 present-but-empty (PV1-37 forces presence): no
+        // all-None hospitalization.
+        let mut pv1 = vec![String::new(); 37];
+        pv1[0] = "1".to_string();
+        pv1[1] = "I".to_string();
+        pv1[36] = "X".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+             PID|1||MRN123^^^MRN||DOE^JOHN||19800101|M\r\
+             PV1|{}",
+            pv1.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let encounter = EncounterConverter::convert(&message).unwrap();
+        assert!(encounter.hospitalization.is_none());
     }
 
     #[test]

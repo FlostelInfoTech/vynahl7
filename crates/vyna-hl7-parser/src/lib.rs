@@ -174,6 +174,9 @@ pub fn parse_message_with_config(
 
         let segment_result = if idx == 0 {
             parse_msh_segment_with_config(seg_str, &delimiters, config)
+        } else if is_msh_segment(seg_str) {
+            // Any MSH uses the MSH-1/2 path so fields stay aligned.
+            parse_msh_segment_with_config(seg_str, &delimiters, config)
         } else {
             parse_segment_with_config(seg_str, &delimiters, config)
         };
@@ -260,6 +263,33 @@ fn extract_delimiters_with_config(input: &str, config: &ParserConfig) -> Result<
     Delimiters::from_encoding_characters(field_sep, encoding_chars)
 }
 
+/// True when a segment line carries the MSH id (exactly "MSH").
+fn is_msh_segment(seg_str: &str) -> bool {
+    if !seg_str.starts_with("MSH") {
+        return false;
+    }
+    if seg_str.len() == 3 {
+        return true;
+    }
+    // "MSH" is 3 ASCII bytes, so byte 3 is a char boundary.
+    !seg_str[3..]
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphanumeric())
+}
+
+/// Cap an echoed id at 32 chars plus length; short ids stay verbatim.
+fn truncate_id(value: &str) -> String {
+    const MAX: usize = 32;
+    let count = value.chars().count();
+    if count <= MAX {
+        value.to_string()
+    } else {
+        let head: String = value.chars().take(MAX).collect();
+        format!("{head}... ({} chars total)", count)
+    }
+}
+
 /// Parse MSH segment with configuration
 fn parse_msh_segment_with_config(
     input: &str,
@@ -338,7 +368,8 @@ fn parse_segment_with_config(
     if id_len != 3 && !config.allow_non_standard_segment_ids {
         return Err(Error::parse(format!(
             "Segment ID must be 3 characters, got {} ('{}')",
-            id_len, segment_id
+            id_len,
+            truncate_id(segment_id)
         )));
     }
 
@@ -353,7 +384,7 @@ fn parse_segment_with_config(
     if config.validate_segment_ids && !is_known_segment_id(segment_id) {
         warnings.push(ParseWarning {
             location: 0,
-            message: format!("Unknown segment ID: {segment_id}"),
+            message: format!("Unknown segment ID: {}", truncate_id(segment_id)),
             code: WarningCode::UnknownSegmentId,
         });
     }
@@ -1667,5 +1698,43 @@ BTS|1";
                 .iter()
                 .any(|w| w.code == WarningCode::SegmentsTruncated)
         );
+    }
+
+    #[test]
+    fn test_second_msh_keeps_msh_field_alignment() {
+        let msg = "MSH|^~\\&|APP1|FAC1|R|D|20240101||ADT^A01|123|P|2.5\r\
+                   PID|1||PAT001\r\
+                   MSH|^~\\&|APP2|FAC2|R|D|20240102||ADT^A01|124|P|2.5\r\
+                   PID|1||PAT002\r";
+        for config in [ParserConfig::strict(), ParserConfig::lenient()] {
+            let message = parse_message_with_config(msg, &config).unwrap().value;
+            let second = message
+                .segments
+                .iter()
+                .filter(|s| s.id == "MSH")
+                .nth(1)
+                .unwrap();
+            assert_eq!(second.get_field_value(3), Some("APP2"));
+            assert_eq!(second.get_field_value(9), Some("ADT"));
+            assert!(second.encode(&message.delimiters).contains("APP2"));
+        }
+    }
+
+    #[test]
+    fn test_is_msh_segment_rejects_longer_ids() {
+        assert!(is_msh_segment("MSH|^~\\&|APP"));
+        assert!(is_msh_segment("MSH"));
+        assert!(!is_msh_segment("MSHA|1"));
+        assert!(!is_msh_segment("PID|1"));
+    }
+
+    #[test]
+    fn test_long_segment_id_is_truncated_in_error() {
+        let long = "A".repeat(66);
+        let msg = format!("MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\r{long}");
+        let err = parse_message(&msg).unwrap_err().to_string();
+        assert!(!err.contains(&long), "{err}");
+        assert!(err.contains("66"), "{err}");
+        assert!(err.contains("chars total"), "{err}");
     }
 }

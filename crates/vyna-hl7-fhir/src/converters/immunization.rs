@@ -1,5 +1,6 @@
 //! Immunization converter - RXA segment to FHIR Immunization resource
 
+use super::coding_systems::convert_coding_system;
 use super::patient::{
     split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time, valid_hl7_year_month,
 };
@@ -80,7 +81,9 @@ impl ImmunizationConverter {
             Immunization::new(status, vaccine_code, patient, occurrence_date_time);
 
         // PV1-19: Visit Number -> encounter reference
-        if let Ok(Some(visit_num)) = terser.get("PV1-19") {
+        if let Ok(Some(visit_num)) = terser.get("PV1-19")
+            && !visit_num.is_empty()
+        {
             immunization.encounter = Some(Reference {
                 reference: Some(format!("Encounter/{}", visit_num)),
                 type_: Some("Encounter".to_string()),
@@ -125,7 +128,9 @@ impl ImmunizationConverter {
         }
 
         // RXA-27: Administration Address -> location
-        if let Ok(Some(location_id)) = terser.get(&path("27")) {
+        if let Ok(Some(location_id)) = terser.get(&path("27"))
+            && !location_id.is_empty()
+        {
             immunization.location = Some(Reference {
                 reference: Some(format!("Location/{}", location_id)),
                 type_: Some("Location".to_string()),
@@ -135,7 +140,9 @@ impl ImmunizationConverter {
         }
 
         // RXA-17: Substance Manufacturer Name -> manufacturer
-        if let Ok(Some(mfr_id)) = terser.get(&path("17")) {
+        if let Ok(Some(mfr_id)) = terser.get(&path("17"))
+            && !mfr_id.is_empty()
+        {
             immunization.manufacturer = Some(Reference {
                 reference: Some(format!("Organization/{}", mfr_id)),
                 type_: Some("Organization".to_string()),
@@ -159,9 +166,10 @@ impl ImmunizationConverter {
             immunization.expiration_date = Some(date);
         }
 
-        // RXA-20: Substance Refusal Reason (when status is not-done)
+        // RXA-18: Substance Refusal Reason (when status is not-done)
         if immunization.status == "not-done"
             && let Ok(Some(refusal_reason)) = terser.get(&path("18"))
+            && !refusal_reason.is_empty()
         {
             immunization.status_reason = Some(CodeableConcept {
                 coding: Some(vec![Coding {
@@ -195,7 +203,9 @@ impl ImmunizationConverter {
                 code: None,
             };
 
-            if let Ok(Some(units)) = terser.get(&path("7")) {
+            if let Ok(Some(units)) = terser.get(&path("7"))
+                && !units.is_empty()
+            {
                 dose.unit = Some(units.to_string());
                 dose.code = Some(units.to_string());
             }
@@ -204,7 +214,9 @@ impl ImmunizationConverter {
         }
 
         // RXA-10: Administering Provider -> performer
-        if let Ok(Some(performer_id)) = terser.get(&path("10")) {
+        if let Ok(Some(performer_id)) = terser.get(&path("10"))
+            && !performer_id.is_empty()
+        {
             immunization.performer = Some(vec![ImmunizationPerformer {
                 function: Some(CodeableConcept {
                     coding: Some(vec![Coding {
@@ -225,7 +237,9 @@ impl ImmunizationConverter {
         }
 
         // RXA-11: Administered-at Location -> site
-        if let Ok(Some(site_code)) = terser.get(&path("11")) {
+        if let Ok(Some(site_code)) = terser.get(&path("11"))
+            && !site_code.is_empty()
+        {
             let mut coding = Coding {
                 system: Some("http://terminology.hl7.org/CodeSystem/v2-0163".to_string()),
                 code: Some(site_code.to_string()),
@@ -234,7 +248,9 @@ impl ImmunizationConverter {
             };
 
             // Component 1: Site text
-            if let Ok(Some(site_text)) = terser.get(&format!("{}-2", path("11"))) {
+            if let Ok(Some(site_text)) = terser.get(&format!("{}-2", path("11")))
+                && !site_text.is_empty()
+            {
                 coding.display = Some(site_text.to_string());
             }
 
@@ -244,16 +260,8 @@ impl ImmunizationConverter {
             });
         }
 
-        // RXA-21: Administration Notes -> note
-        if let Ok(Some(note_text)) = terser.get(&path("21")) {
-            immunization.note = Some(vec![Annotation {
-                author_string: None,
-                author_reference: None,
-                time: None,
-                text: note_text.to_string(),
-            }]);
-        }
-
+        // RXA-21 is the HL7 Action Code, not Administration Notes
+        // (RXA-9, already mapped above); it has no Immunization mapping.
         Ok(immunization)
     }
 
@@ -362,16 +370,6 @@ impl ImmunizationConverter {
         )
     }
 
-    /// Convert an RXA-5-3 coding system to a FHIR system URI.
-    fn convert_coding_system(system: &str) -> String {
-        match system {
-            "CVX" => "http://hl7.org/fhir/sid/cvx".to_string(),
-            "NDC" => "http://hl7.org/fhir/sid/ndc".to_string(),
-            "MVX" => "http://hl7.org/fhir/sid/mvx".to_string(),
-            _ => format!("urn:oid:{system}"),
-        }
-    }
-
     /// Extract vaccine code from RXA-5 field
     fn extract_vaccine_code(terser: &Terser, base_path: &str) -> ConversionResult<CodeableConcept> {
         let code = terser.get(base_path).ok().flatten().ok_or_else(|| {
@@ -384,7 +382,7 @@ impl ImmunizationConverter {
             .ok()
             .flatten()
             .filter(|s| !s.is_empty())
-            .map(Self::convert_coding_system)
+            .map(convert_coding_system)
             .unwrap_or_else(|| "http://hl7.org/fhir/sid/cvx".to_string());
 
         let mut coding = Coding {
@@ -395,7 +393,9 @@ impl ImmunizationConverter {
         };
 
         // Component 1: Vaccine text/display (1-based component indexing)
-        if let Ok(Some(display)) = terser.get(&format!("{}-2", base_path)) {
+        if let Ok(Some(display)) = terser.get(&format!("{}-2", base_path))
+            && !display.is_empty()
+        {
             coding.display = Some(display.to_string());
         }
 
@@ -653,5 +653,104 @@ mod tests {
             Err(ConversionError::MissingSegment(seg)) => assert_eq!(seg, "RXA"),
             _ => panic!("Expected MissingSegment error"),
         }
+    }
+
+    #[test]
+    fn test_empty_rxa_fields_omit_references_and_codes() {
+        // Present-but-empty RXA-7/10/11/17/27, RXA-5-2, and PV1-19
+        // must not emit empty references, codes, or quantities.
+        let mut fields = vec![String::new(); 27];
+        fields[0] = "0".to_string();
+        fields[1] = "1".to_string();
+        fields[2] = "20240315100000".to_string();
+        fields[4] = "08^^CVX".to_string();
+        fields[5] = "1.0".to_string();
+        fields[19] = "CP".to_string();
+        let mut pv1 = vec![String::new(); 19];
+        pv1[0] = "1".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rPV1|{}\rRXA|{}",
+            pv1.join("|"),
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let imm = &ImmunizationConverter::convert_all(&message).unwrap()[0];
+        assert!(imm.performer.is_none());
+        assert!(imm.site.is_none());
+        assert!(imm.manufacturer.is_none());
+        assert!(imm.encounter.is_none());
+        assert!(imm.location.is_none());
+        let coding = imm.vaccine_code.coding.as_ref().unwrap();
+        assert!(coding[0].display.is_none());
+        let dose = imm.dose_quantity.as_ref().unwrap();
+        assert_eq!(dose.value, Some(1.0));
+        assert!(dose.unit.is_none());
+        assert!(dose.code.is_none());
+    }
+
+    #[test]
+    fn test_empty_rxa11_text_omits_site_display() {
+        // RXA-11 with a code but empty text keeps the code only.
+        let mut fields = vec![String::new(); 20];
+        fields[0] = "0".to_string();
+        fields[1] = "1".to_string();
+        fields[2] = "20240315100000".to_string();
+        fields[4] = "08^HepB adult^CVX".to_string();
+        fields[5] = "1.0".to_string();
+        fields[6] = "mL".to_string();
+        fields[10] = "LA^".to_string();
+        fields[19] = "CP".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rRXA|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let imm = &ImmunizationConverter::convert_all(&message).unwrap()[0];
+        let site = imm.site.as_ref().unwrap().coding.as_ref().unwrap();
+        assert_eq!(site[0].code.as_deref(), Some("LA"));
+        assert!(site[0].display.is_none());
+    }
+
+    #[test]
+    fn test_empty_rxa18_omits_status_reason() {
+        // A refused dose with empty RXA-18 has no status reason.
+        let mut fields = vec![String::new(); 20];
+        fields[0] = "0".to_string();
+        fields[1] = "1".to_string();
+        fields[2] = "20240315100000".to_string();
+        fields[4] = "08^HepB adult^CVX".to_string();
+        fields[19] = "RE".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rRXA|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let imm = &ImmunizationConverter::convert_all(&message).unwrap()[0];
+        assert_eq!(imm.status, "not-done");
+        assert!(imm.status_reason.is_none());
+    }
+
+    #[test]
+    fn test_rxa21_action_code_not_mapped_to_note() {
+        // RXA-21 is the HL7 Action Code, not Administration Notes
+        // (RXA-9); it must not become note text.
+        let mut fields = vec![String::new(); 21];
+        fields[0] = "0".to_string();
+        fields[1] = "1".to_string();
+        fields[2] = "20240315100000".to_string();
+        fields[4] = "08^HepB adult^CVX".to_string();
+        fields[19] = "CP".to_string();
+        fields[20] = "A".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rRXA|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let imm = &ImmunizationConverter::convert_all(&message).unwrap()[0];
+        assert!(imm.note.is_none());
     }
 }

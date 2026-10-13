@@ -182,6 +182,19 @@ impl TemplateEngine {
             }
         }
 
+        // MSH positions 1 and 2 are the delimiter placeholders, which no
+        // template may set (rejected above): fill them from the message
+        // delimiters like the parser does, so built MSH has the same
+        // shape as parsed MSH instead of empty fields.
+        if seg_template.id == "MSH" {
+            let delimiters = Delimiters::default();
+            while fields.len() < 2 {
+                fields.push(Field::new());
+            }
+            fields[0] = Field::from_value(delimiters.field_separator.to_string());
+            fields[1] = Field::from_value(delimiters.encoding_characters());
+        }
+
         Ok(Segment {
             id: seg_template.id.clone(),
             fields,
@@ -804,6 +817,36 @@ mod tests {
         // Repeated placeholders still each expand.
         let result = engine.substitute_variables("{{b}} {{b}}", &vars, false);
         assert_eq!(result.unwrap(), "X X");
+    }
+
+    #[test]
+    fn test_engine_msh_carries_delimiter_placeholders() {
+        // Like the parser, engine-built MSH holds the delimiter
+        // placeholders at fields 1 and 2, so MSH-1/MSH-2 readers see
+        // the same shape on built and parsed messages.
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut msh = SegmentTemplate::new("MSH");
+        msh.add_field(3, FieldTemplate::new().with_default("APP"));
+        template.add_segment(msh);
+
+        let message = TemplateEngine::new().create_message(&template).unwrap();
+        let msh = message.get_segment_by_id("MSH").unwrap();
+        assert_eq!(msh.get_field_value(1), Some("|"));
+        assert_eq!(msh.get_field_value(2), Some("^~\\&"));
+        assert_eq!(msh.get_field_value(3), Some("APP"));
+    }
+
+    #[test]
+    fn test_engine_bare_msh_carries_delimiter_placeholders() {
+        // An MSH template without fields still yields the two
+        // delimiter placeholders, matching parsed MSH shape.
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        template.add_segment(SegmentTemplate::new("MSH"));
+
+        let message = TemplateEngine::new().create_message(&template).unwrap();
+        let msh = message.get_segment_by_id("MSH").unwrap();
+        assert_eq!(msh.get_field(1).and_then(|f| f.value()), Some("|"));
+        assert_eq!(msh.get_field(2).and_then(|f| f.value()), Some("^~\\&"));
     }
 
     #[test]

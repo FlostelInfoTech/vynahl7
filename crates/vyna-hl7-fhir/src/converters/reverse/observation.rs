@@ -86,7 +86,10 @@ impl ObservationReverseConverter {
         } else if observation.value_codeable_concept.is_some() {
             "CE".to_string() // Coded Element
         } else if observation.value_boolean.is_some() {
-            "ST".to_string() // Boolean as string
+            // Boolean as string. valueBoolean does not round-trip:
+            // the forward converter has no boolean arm, so this
+            // re-forwards to valueString.
+            "ST".to_string()
         } else if observation.value_time.is_some() {
             "TM".to_string() // Time
         } else if observation.value_date_time.is_some() {
@@ -140,10 +143,12 @@ impl ObservationReverseConverter {
         } else if let Some(ref concept) = observation.value_codeable_concept {
             Self::set_coded_element(obx, 5, concept)?;
         } else if let Some(boolean_value) = observation.value_boolean {
+            // Y/N pairing with the ST type above (which documents
+            // why booleans do not round-trip).
             let _ = obx.set_field_value(5, if boolean_value { "Y" } else { "N" });
         } else if let Some(ref time) = observation.value_time {
             // FHIR `time` carries colons; HL7 TM does not.
-            let _ = obx.set_field_value(5, &time.replace(':', ""));
+            let _ = obx.set_field_value(5, time.replace(':', ""));
         } else if let Some(ref datetime) = observation.value_date_time {
             let hl7_datetime = Self::convert_datetime_to_hl7(datetime);
             let _ = obx.set_field_value(5, &hl7_datetime);
@@ -422,6 +427,21 @@ mod tests {
         let obx = ObservationReverseConverter::convert(&observation, 1).unwrap();
         assert_eq!(obx.get_field_value(14), Some("20240315100000+0000"));
         assert_eq!(obx.get_field_value(5), Some("20240315100000+0000"));
+    }
+
+    #[test]
+    fn test_value_boolean_documents_no_round_trip() {
+        // valueBoolean degrades by design for now: ST + Y/N
+        // re-forwards to valueString because the forward converter
+        // has no boolean arm. Pinned until the forward arm lands.
+        let mut observation = Observation::new("final".to_string(), create_code());
+        observation.value_boolean = Some(true);
+        let obx = ObservationReverseConverter::convert(&observation, 1).unwrap();
+        assert_eq!(obx.get_field_value(2), Some("ST"));
+        assert_eq!(obx.get_field_value(5), Some("Y"));
+        let back = round_trip(&obx);
+        assert_eq!(back.value_boolean, None);
+        assert_eq!(back.value_string.as_deref(), Some("Y"));
     }
 
     #[test]

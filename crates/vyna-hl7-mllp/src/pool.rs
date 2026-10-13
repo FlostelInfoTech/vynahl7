@@ -301,30 +301,37 @@ impl MllpPool {
 
     /// Acquire a connection from the pool
     async fn acquire(&self) -> Result<PooledConnection> {
-        // Try to acquire a permit (limits concurrent connections)
-        let permit = tokio::time::timeout(
-            self.config.acquire_timeout,
-            self.semaphore.clone().acquire_owned(),
-        )
-        .await
-        .map_err(|_| {
-            // Update timeout stats
-            let mut stats = self.stats.try_lock().ok();
-            if let Some(ref mut s) = stats {
-                s.timeouts += 1;
+        // Fast path: a permit available immediately means no waiting.
+        let permit = match self.semaphore.clone().try_acquire_owned() {
+            Ok(permit) => permit,
+            Err(tokio::sync::TryAcquireError::Closed) => {
+                return Err(Error::Network("Semaphore closed".to_string()));
             }
-            Error::Network(format!(
-                "Connection pool acquire timeout after {:?}",
-                self.config.acquire_timeout
-            ))
-        })?
-        .map_err(|e| Error::Network(format!("Semaphore closed: {}", e)))?;
-
-        // Track that we're waiting
-        {
-            let mut stats = self.stats.lock().await;
-            stats.waits += 1;
-        }
+            Err(_) => {
+                // All permits are checked out: this request really waits.
+                {
+                    let mut stats = self.stats.lock().await;
+                    stats.waits += 1;
+                }
+                tokio::time::timeout(
+                    self.config.acquire_timeout,
+                    self.semaphore.clone().acquire_owned(),
+                )
+                .await
+                .map_err(|_| {
+                    // Update timeout stats
+                    let mut stats = self.stats.try_lock().ok();
+                    if let Some(ref mut s) = stats {
+                        s.timeouts += 1;
+                    }
+                    Error::Network(format!(
+                        "Connection pool acquire timeout after {:?}",
+                        self.config.acquire_timeout
+                    ))
+                })?
+                .map_err(|e| Error::Network(format!("Semaphore closed: {}", e)))?
+            }
+        };
 
         // Try to get an existing connection
         loop {
@@ -704,5 +711,98 @@ mod tests {
         // Check expiry logic
         assert!(conn_metadata.0.elapsed() > config.max_lifetime); // expired by lifetime
         assert!(conn_metadata.1.elapsed() > config.idle_timeout); // expired by idle
+    }
+
+    /// `waits` counts requests that actually blocked for a permit: one
+    /// uncontended send must leave it at 0.
+    #[tokio::test]
+    async fn test_uncontended_send_does_not_count_wait() {
+        let (addr, _server) = spawn_ack_server().await;
+        for min in [0, 1] {
+            let pool = MllpPool::with_config(
+                &addr,
+                PoolConfig::new()
+                    .with_min_connections(min)
+                    .with_max_connections(5),
+            )
+            .await
+            .unwrap();
+            pool.send(&test_message()).await.unwrap();
+            let stats = pool.stats().await;
+            assert_eq!(stats.acquires, 1);
+            assert_eq!(
+                stats.waits, 0,
+                "uncontended send counted a wait (min={min})"
+            );
+            pool.close().await;
+        }
+    }
+
+    /// Spawn an ACK server that delays each ACK by `delay`, so two
+    /// concurrent sends are guaranteed to overlap.
+    async fn spawn_slow_ack_server(delay: Duration) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let handle = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = match listener.accept().await {
+                    Ok(s) => s,
+                    Err(_) => break,
+                };
+                tokio::spawn(async move {
+                    let mut buf = Vec::new();
+                    let mut tmp = [0u8; 4096];
+                    loop {
+                        match socket.read(&mut tmp).await {
+                            Ok(0) => break,
+                            Ok(n) => {
+                                buf.extend_from_slice(&tmp[..n]);
+                                while let Some(end) = find_frame_end(&buf) {
+                                    tokio::time::sleep(delay).await;
+                                    let ack = concat!(
+                                        "\x0BMSH|^~\\&|SRV|F|SND|F|20240101||ACK^A01|1|P|2.5\r",
+                                        "MSA|AA|1\r\x1C\x0D",
+                                    );
+                                    if socket.write_all(ack.as_bytes()).await.is_err() {
+                                        break;
+                                    }
+                                    buf.drain(..end);
+                                }
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                });
+            }
+        });
+        (addr, handle)
+    }
+
+    /// With a single permit and overlapping sends, the loser must count a
+    /// wait while both sends still succeed.
+    #[tokio::test]
+    async fn test_contended_acquire_counts_wait() {
+        let (addr, _server) = spawn_slow_ack_server(Duration::from_millis(300)).await;
+        let pool = MllpPool::with_config(
+            &addr,
+            PoolConfig::new()
+                .with_min_connections(0)
+                .with_max_connections(1)
+                .with_acquire_timeout(Duration::from_secs(10)),
+        )
+        .await
+        .unwrap();
+
+        let first_msg = test_message();
+        let second_msg = test_message();
+        let (first, second) = tokio::join!(pool.send(&first_msg), pool.send(&second_msg));
+        first.unwrap();
+        second.unwrap();
+
+        let stats = pool.stats().await;
+        assert_eq!(stats.acquires, 2);
+        assert_eq!(stats.waits, 1);
+        assert_eq!(stats.timeouts, 0);
+        pool.close().await;
     }
 }

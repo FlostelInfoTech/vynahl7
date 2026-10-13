@@ -17,8 +17,10 @@ fields:
     source: AL1-3
   - target: code.coding[0].display
     source: AL1-3-2
+    when: AL1-3
   - target: code.coding[0].system
     source: AL1-3-3
+    when: AL1-3
   - target: code.text
     source: AL1-3-2
     fallback_source: AL1-3

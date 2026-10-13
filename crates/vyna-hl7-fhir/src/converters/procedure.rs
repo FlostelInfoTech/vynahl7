@@ -48,7 +48,12 @@ impl ProcedureConverter {
         } else {
             format!("PR1({})-3", pr1_index + 1)
         };
-        if let Ok(Some(code)) = terser.get(&code_path) {
+        // Empty is absent on every part: an empty code leaves the
+        // whole code unset, and empty text/system stay None instead
+        // of `""` / a fabricated `urn:oid:`.
+        if let Ok(Some(code)) = terser.get(&code_path)
+            && !code.is_empty()
+        {
             let mut coding = Coding {
                 system: None,
                 version: None,
@@ -57,12 +62,16 @@ impl ProcedureConverter {
             };
 
             // Component 1: Text (1-based indexing)
-            if let Ok(Some(text)) = terser.get(&format!("{}-2", code_path)) {
+            if let Ok(Some(text)) = terser.get(&format!("{}-2", code_path))
+                && !text.is_empty()
+            {
                 coding.display = Some(text.to_string());
             }
 
             // Component 2: Coding System (1-based indexing)
-            if let Ok(Some(system)) = terser.get(&format!("{}-3", code_path)) {
+            if let Ok(Some(system)) = terser.get(&format!("{}-3", code_path))
+                && !system.is_empty()
+            {
                 coding.system = Some(Self::convert_coding_system(system));
             }
 
@@ -255,6 +264,28 @@ mod tests {
             ProcedureConverter::convert_datetime("20240315100000+0500").unwrap(),
             "2024-03-15T10:00:00+05:00"
         );
+    }
+
+    #[test]
+    fn test_empty_code_parts_treated_as_absent() {
+        // Empty system stays None instead of a fabricated `urn:oid:`.
+        let hl7 = "MSH|^~\\&|System|Hospital|EMR|Hospital|20240315||ADT^A01|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   PR1|1||0016^Appendectomy^||20240315100000";
+        let message = parse_message(hl7).unwrap();
+        let procedure = &ProcedureConverter::convert_all(&message).unwrap()[0];
+        let coding = &procedure.code.as_ref().unwrap().coding.as_ref().unwrap()[0];
+        assert_eq!(coding.code.as_deref(), Some("0016"));
+        assert_eq!(coding.display.as_deref(), Some("Appendectomy"));
+        assert_eq!(coding.system, None);
+
+        // Empty code leaves the whole code unset.
+        let hl7 = "MSH|^~\\&|System|Hospital|EMR|Hospital|20240315||ADT^A01|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   PR1|1|||X";
+        let message = parse_message(hl7).unwrap();
+        let procedure = &ProcedureConverter::convert_all(&message).unwrap()[0];
+        assert_eq!(procedure.code, None);
     }
 
     #[test]

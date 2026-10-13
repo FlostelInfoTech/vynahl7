@@ -174,8 +174,12 @@ impl Hl7Time {
             ));
         }
         let nanos = frac_to_nanos(frac)?;
-        let time = NaiveTime::from_hms_nano_opt(hour, minute, second, nanos)
-            .ok_or_else(|| Error::parse(format!("TM has out-of-range fields: '{s}'")))?;
+        let time = NaiveTime::from_hms_nano_opt(hour, minute, second, nanos).ok_or_else(|| {
+            Error::parse(format!(
+                "TM has out-of-range fields: '{}'",
+                truncate_value(s)
+            ))
+        })?;
         Ok(Self {
             time,
             precision,
@@ -275,7 +279,10 @@ impl Hl7DateTime {
             }
             10 | 12 | 14 => {
                 let date_prefix = digits.get(0..8).ok_or_else(|| {
-                    Error::parse(format!("TS date part is not 8 digits: '{digits}'"))
+                    Error::parse(format!(
+                        "TS date part is not 8 digits: '{}'",
+                        truncate_value(digits)
+                    ))
                 })?;
                 let date = parse_full_date(date_prefix, "TS")?;
                 let hour = parse_two(digits, 8, "TS hour")?;
@@ -311,8 +318,12 @@ impl Hl7DateTime {
                 "TS fractional seconds require seconds precision (YYYYMMDDHHMMSS.S)".to_string(),
             ));
         }
-        let datetime =
-            datetime.ok_or_else(|| Error::parse(format!("TS has out-of-range fields: '{s}'")))?;
+        let datetime = datetime.ok_or_else(|| {
+            Error::parse(format!(
+                "TS has out-of-range fields: '{}'",
+                truncate_value(s)
+            ))
+        })?;
         Ok(Self {
             datetime,
             precision,
@@ -400,7 +411,12 @@ fn parse_two(s: &str, at: usize, what: &str) -> Result<u32> {
     s.get(at..at + 2)
         .filter(|part| part.bytes().all(|b| b.is_ascii_digit()))
         .and_then(|part| part.parse::<u32>().ok())
-        .ok_or_else(|| Error::parse(format!("{what} is not two digits in '{s}'")))
+        .ok_or_else(|| {
+            Error::parse(format!(
+                "{what} is not two digits in '{}'",
+                truncate_value(s)
+            ))
+        })
 }
 
 /// Parse `YYYY` plus month/day, rejecting impossible dates.
@@ -409,10 +425,16 @@ fn parse_ymd(year: &str, month: u32, day: u32, what: &str) -> Result<NaiveDate> 
         .parse::<i32>()
         .ok()
         .filter(|_| year.bytes().all(|b| b.is_ascii_digit()))
-        .ok_or_else(|| Error::parse(format!("{what} year is not four digits in '{year}'")))?;
+        .ok_or_else(|| {
+            Error::parse(format!(
+                "{what} year is not four digits in '{}'",
+                truncate_value(year)
+            ))
+        })?;
     NaiveDate::from_ymd_opt(year_num, month, day).ok_or_else(|| {
         Error::parse(format!(
-            "{what} has an impossible date: '{year}-{month}-{day}'"
+            "{what} has an impossible date: '{}-{month}-{day}'",
+            truncate_value(year)
         ))
     })
 }
@@ -434,21 +456,24 @@ fn split_offset<'a>(s: &'a str, what: &str) -> Result<(&'a str, Option<i32>)> {
     let (main, offset) = s.split_at(at);
     if main.is_empty() {
         return Err(Error::parse(format!(
-            "{what} value is missing before the offset: '{s}'"
+            "{what} value is missing before the offset: '{}'",
+            truncate_value(s)
         )));
     }
     let sign = if offset.starts_with('-') { -1 } else { 1 };
     let digits = &offset[1..];
     if digits.len() != 4 || !digits.bytes().all(|b| b.is_ascii_digit()) {
         return Err(Error::parse(format!(
-            "{what} offset must be [+/-]HHMM (4 digits), got '{offset}'"
+            "{what} offset must be [+/-]HHMM (4 digits), got '{}'",
+            truncate_value(offset)
         )));
     }
     let hours: i32 = digits[0..2].parse().unwrap();
     let minutes: i32 = digits[2..4].parse().unwrap();
     if hours > 23 || minutes > 59 {
         return Err(Error::parse(format!(
-            "{what} offset is out of range: '{offset}'"
+            "{what} offset is out of range: '{}'",
+            truncate_value(offset)
         )));
     }
     Ok((main, Some(sign * (hours * 60 + minutes))))
@@ -462,17 +487,20 @@ fn split_fraction<'a>(s: &'a str, what: &str) -> Result<(&'a str, Option<&'a str
     let (main, frac) = (&s[..at], &s[at + 1..]);
     if main.is_empty() {
         return Err(Error::parse(format!(
-            "{what} value is missing before '.': '{s}'"
+            "{what} value is missing before '.': '{}'",
+            truncate_value(s)
         )));
     }
     if frac.is_empty() || frac.len() > 9 || !frac.bytes().all(|b| b.is_ascii_digit()) {
         return Err(Error::parse(format!(
-            "{what} fractional seconds must be 1-9 digits, got '{frac}'"
+            "{what} fractional seconds must be 1-9 digits, got '{}'",
+            truncate_value(frac)
         )));
     }
     if frac.contains('.') {
         return Err(Error::parse(format!(
-            "{what} has more than one decimal point: '{s}'"
+            "{what} has more than one decimal point: '{}'",
+            truncate_value(s)
         )));
     }
     Ok((main, Some(frac)))
@@ -483,9 +511,12 @@ fn frac_to_nanos(frac: Option<&str>) -> Result<u32> {
     match frac {
         None => Ok(0),
         Some(f) => {
-            let mut nanos = f
-                .parse::<u32>()
-                .map_err(|_| Error::parse(format!("fractional seconds overflow: '{f}'")))?;
+            let mut nanos = f.parse::<u32>().map_err(|_| {
+                Error::parse(format!(
+                    "fractional seconds overflow: '{}'",
+                    truncate_value(f)
+                ))
+            })?;
             for _ in f.len()..9 {
                 nanos *= 10;
             }
@@ -505,6 +536,18 @@ fn format_offset(minutes: i32) -> String {
     let sign = if minutes < 0 { '-' } else { '+' };
     let abs = minutes.abs();
     format!("{sign}{:02}{:02}", abs / 60, abs % 60)
+}
+
+/// Cap an echoed value at 32 chars plus length; short values stay verbatim.
+fn truncate_value(value: &str) -> String {
+    const MAX: usize = 32;
+    let count = value.chars().count();
+    if count <= MAX {
+        value.to_string()
+    } else {
+        let head: String = value.chars().take(MAX).collect();
+        format!("{head}... ({} chars total)", count)
+    }
 }
 
 #[cfg(test)]
@@ -634,5 +677,18 @@ mod tests {
         assert!("20é40315".parse::<Hl7Date>().is_err());
         assert!("1é3000".parse::<Hl7Time>().is_err());
         assert!("é".parse::<Hl7DateTime>().is_err());
+    }
+
+    #[test]
+    fn long_values_are_truncated_in_errors() {
+        let long = format!("20240101120000-{}", "A".repeat(100));
+        let err = long.parse::<Hl7DateTime>().unwrap_err().to_string();
+        assert!(!err.contains(&"A".repeat(100)), "{err}");
+        assert!(err.contains("chars total"), "{err}");
+
+        let frac = format!("20240101120000.{}", "1".repeat(100));
+        let err = frac.parse::<Hl7DateTime>().unwrap_err().to_string();
+        assert!(!err.contains(&"1".repeat(100)), "{err}");
+        assert!(err.contains("chars total"), "{err}");
     }
 }

@@ -124,7 +124,9 @@ impl Hl7Table {
                     VocabularyValidation::Invalid {
                         reason: format!(
                             "Code '{}' is deprecated in table {} ({})",
-                            code, self.table_id, self.name
+                            truncate_code(code),
+                            self.table_id,
+                            self.name
                         ),
                     }
                 } else {
@@ -134,7 +136,7 @@ impl Hl7Table {
             None => VocabularyValidation::Invalid {
                 reason: format!(
                     "Invalid code '{}' for table {} ({}). Valid codes: {}",
-                    code,
+                    truncate_code(code),
                     self.table_id,
                     self.name,
                     self.list_valid_codes()
@@ -158,6 +160,19 @@ impl Hl7Table {
         } else {
             codes.join(", ")
         }
+    }
+}
+
+/// Cap an echoed code at 32 chars plus its length, keeping short
+/// codes verbatim so existing diagnostics are unchanged.
+fn truncate_code(code: &str) -> String {
+    const MAX: usize = 32;
+    let count = code.chars().count();
+    if count <= MAX {
+        code.to_string()
+    } else {
+        let head: String = code.chars().take(MAX).collect();
+        format!("{head}... ({} chars total)", count)
     }
 }
 
@@ -8105,5 +8120,30 @@ mod tests {
         }
         walk(json, &mut ids);
         ids
+    }
+
+    #[test]
+    fn test_long_code_is_truncated_in_error() {
+        let registry = TableRegistry::new();
+        let long = "A".repeat(200);
+        let msg = registry
+            .validate("0001", &long)
+            .error_message()
+            .unwrap()
+            .to_string();
+        assert!(!msg.contains(&long), "must not echo full code");
+        assert!(msg.contains("200 chars total"), "{msg}");
+        assert!(msg.contains(&"A".repeat(32)), "{msg}");
+    }
+
+    #[test]
+    fn test_short_code_stays_verbatim_in_error() {
+        let registry = TableRegistry::new();
+        let msg = registry
+            .validate("0001", "ZZ")
+            .error_message()
+            .unwrap()
+            .to_string();
+        assert!(msg.contains("'ZZ'"), "{msg}");
     }
 }

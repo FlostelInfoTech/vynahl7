@@ -102,13 +102,13 @@ impl Encoding {
                             } else {
                                 return Err(Error::Decoding(format!(
                                     "Invalid hexadecimal escape sequence: \\{}\\",
-                                    seq
+                                    truncate_escape(seq)
                                 )));
                             }
                         } else {
                             return Err(Error::Decoding(format!(
                                 "Invalid hexadecimal escape sequence: \\{}\\",
-                                seq
+                                truncate_escape(seq)
                             )));
                         }
                     }
@@ -121,7 +121,7 @@ impl Encoding {
                     _ => {
                         return Err(Error::Decoding(format!(
                             "Unknown escape sequence: \\{}\\",
-                            escape_seq
+                            truncate_escape(&escape_seq)
                         )));
                     }
                 }
@@ -131,6 +131,18 @@ impl Encoding {
         }
 
         Ok(result)
+    }
+}
+
+/// Cap an echoed escape body at 32 chars plus length.
+fn truncate_escape(value: &str) -> String {
+    const MAX: usize = 32;
+    let count = value.chars().count();
+    if count <= MAX {
+        value.to_string()
+    } else {
+        let head: String = value.chars().take(MAX).collect();
+        format!("{head}... ({} chars total)", count)
     }
 }
 
@@ -217,5 +229,26 @@ mod tests {
         let delims = Delimiters::default();
         let result = Encoding::decode("\\XZZ\\", &delims);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_long_escape_body_is_truncated_in_error() {
+        let delims = Delimiters::default();
+        let long = "B".repeat(200);
+        let err = Encoding::decode(&format!("\\{long}\\"), &delims)
+            .unwrap_err()
+            .to_string();
+        assert!(!err.contains(&long), "{err}");
+        assert!(err.contains("chars total"), "{err}");
+        assert!(err.contains(&"B".repeat(32)), "{err}");
+    }
+
+    #[test]
+    fn test_short_escape_body_stays_verbatim() {
+        let delims = Delimiters::default();
+        let err = Encoding::decode("\\INVALID\\", &delims)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("INVALID"), "{err}");
     }
 }

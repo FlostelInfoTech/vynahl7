@@ -180,8 +180,10 @@ impl ServiceRequestConverter {
                 version: None,
             };
 
-            // Component 1: Service text/display
-            if let Ok(Some(service_text)) = terser.get(&format!("{}-2", obr_path("4"))) {
+            // Component 1: Service text/display (empty is absent).
+            if let Ok(Some(service_text)) = terser.get(&format!("{}-2", obr_path("4")))
+                && !service_text.is_empty()
+            {
                 coding.display = Some(service_text.to_string());
             }
 
@@ -256,8 +258,10 @@ impl ServiceRequestConverter {
                 version: None,
             };
 
-            // Component 1: Reason text
-            if let Ok(Some(reason_text)) = terser.get(&format!("{}-2", obr_path("31"))) {
+            // Component 1: Reason text (empty is absent).
+            if let Ok(Some(reason_text)) = terser.get(&format!("{}-2", obr_path("31")))
+                && !reason_text.is_empty()
+            {
                 coding.display = Some(reason_text.to_string());
             }
 
@@ -584,6 +588,40 @@ mod tests {
         assert_eq!(requests[0].reason_code, None);
         assert_eq!(requests[0].encounter, None);
         assert_eq!(requests[0].priority.as_deref(), Some("routine"));
+    }
+
+    #[test]
+    fn test_empty_display_components_treated_as_absent() {
+        // OBR-4 with empty text (component 2) leaves display unset.
+        let hl7 = "MSH|^~\\&|CPOE|Hospital|LAB|Hospital|20240315||ORM^O01|MSG123|P|2.5\r\
+                   PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+                   ORC|NW|O1|||A\r\
+                   OBR|1|O1||CBC^^LN";
+        let message = parse_message(hl7).unwrap();
+        let requests = ServiceRequestConverter::convert_all(&message).unwrap();
+        let coding = &requests[0].code.as_ref().unwrap().coding.as_ref().unwrap()[0];
+        assert_eq!(coding.code.as_deref(), Some("CBC"));
+        assert_eq!(coding.display, None);
+
+        // Same rule for OBR-31 (reason) component 2.
+        let mut obr = vec![String::new(); 31];
+        obr[0] = "1".to_string();
+        obr[1] = "O1".to_string();
+        obr[3] = "CBC^Complete Blood Count^LN".to_string();
+        obr[30] = "R1^^LN".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|CPOE|Hospital|LAB|Hospital|20240315||ORM^O01|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rORC|NW|O1|||A\rOBR|{}",
+            obr.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let requests = ServiceRequestConverter::convert_all(&message).unwrap();
+        let coding = &requests[0].reason_code.as_ref().unwrap()[0]
+            .coding
+            .as_ref()
+            .unwrap()[0];
+        assert_eq!(coding.code.as_deref(), Some("R1"));
+        assert_eq!(coding.display, None);
     }
 
     #[test]

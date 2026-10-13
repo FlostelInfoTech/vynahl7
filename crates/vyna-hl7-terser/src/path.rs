@@ -77,6 +77,12 @@ impl TerserPath {
         // Parse segment part (e.g., "PID" or "OBX(2)")
         let (segment_id, segment_index) = Self::parse_segment_part(parts[0])?;
 
+        // An empty segment id is malformed, not a wildcard: without
+        // this, set("-5", x) would append a garbage segment with id "".
+        if segment_id.trim().is_empty() {
+            return Err(Error::terser_path("Empty segment id"));
+        }
+
         // Parse field part (e.g., "5" or "11(1)")
         if parts.len() < 2 {
             return Err(Error::terser_path("Missing field index"));
@@ -298,6 +304,18 @@ mod tests {
         assert!(TerserPath::parse("PID-11(2)(3)-1").is_err());
         // Clean indexed paths still parse.
         assert!(TerserPath::parse("PID-11(2)-1").is_ok());
+    }
+
+    #[test]
+    fn test_parse_rejects_empty_segment_id() {
+        // An empty or whitespace-only segment id is malformed: without
+        // this, TerserMut::set("-5", x) appends a garbage segment.
+        assert!(TerserPath::parse("-5").is_err());
+        assert!(TerserPath::parse("   -5").is_err());
+        assert!(TerserPath::parse("(1)-5").is_err());
+        assert!(TerserPath::parse("\t-5-1").is_err());
+        // Ordinary ids still parse.
+        assert!(TerserPath::parse("PID-5").is_ok());
     }
 
     #[test]

@@ -248,14 +248,15 @@ impl TemplateValidator {
             // Check field length if specified (in characters, not
             // bytes: multibyte text must not warn under the limit). The
             // whole field value is measured: `value()` sees only the
-            // first component and would miss long trailing components.
+            // first component and `full_value()` only first subcomponents,
+            // so both would miss long trailing content.
             if let Some(max_length) = field_template.length
                 && !is_empty
             {
                 let text = field
                     .repetitions
                     .iter()
-                    .map(|r| r.full_value().unwrap_or_default())
+                    .map(Self::repetition_full_text)
                     .collect::<Vec<_>>()
                     .join("~");
                 if text.chars().count() > max_length {
@@ -276,6 +277,31 @@ impl TemplateValidator {
                 Self::validate_field_components(&segment.id, *pos, field, components, result);
             }
         }
+    }
+
+    /// Render one repetition as decoded composite text.
+    ///
+    /// Every subcomponent value is joined with `&` and components with
+    /// `^` (trailing empty components trimmed), so length limits see the
+    /// whole value. Unlike `Repetition::full_value`, which reads only
+    /// each component's first subcomponent, this counts subcomponent
+    /// content too.
+    fn repetition_full_text(repetition: &vyna_hl7_core::field::Repetition) -> String {
+        let mut parts: Vec<String> = repetition
+            .components
+            .iter()
+            .map(|c| {
+                c.subcomponents
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join("&")
+            })
+            .collect();
+        while parts.last().is_some_and(|p| p.is_empty()) {
+            parts.pop();
+        }
+        parts.join("^")
     }
 
     /// Validate a field's first repetition against component templates
@@ -632,6 +658,34 @@ mod tests {
             "unexpected warnings: {:?}",
             result.warnings
         );
+    }
+
+    #[test]
+    fn test_field_length_counts_subcomponent_content() {
+        // "A&<60 chars>" is 62 chars of field text: subcomponent
+        // content counts toward the limit exactly like component
+        // content, so both shapes warn under a length-5 limit.
+        for value in [
+            format!("A&{}", "B".repeat(60)),
+            format!("A^{}", "B".repeat(60)),
+        ] {
+            let mut message = create_test_message();
+            message.segments[1]
+                .set_field(5, Field::from_delimited(&value))
+                .unwrap();
+
+            let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+            let mut pid_segment = SegmentTemplate::new("PID");
+            pid_segment.add_field(5, FieldTemplate::new().with_length(5));
+            template.add_segment(pid_segment);
+
+            let result = TemplateValidator::validate(&message, &template);
+            assert!(
+                result.has_warnings(),
+                "value {value:?} must warn: {:?}",
+                result.warnings
+            );
+        }
     }
 
     #[test]

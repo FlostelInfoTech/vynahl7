@@ -259,6 +259,21 @@ vynahl7 diff old.hl7 new.hl7 --ignore MSH-7,MSH-10
 ~ PID-5-2: JOHN -> JANE
 ```
 
+### Character set override (`--charset`)
+
+All commands decode input bytes using the MSH-18 declaration by default.
+When a peer misdeclares its encoding, the global `--charset` flag forces
+input decoding to the given character set instead:
+
+```bash
+# Peer sends Latin-1 bytes but declares (or omits) the wrong MSH-18 value
+vynahl7 --charset 8859/1 parse latin1.hl7
+vynahl7 --charset 8859/1 validate latin1.hl7
+```
+
+Accepted values are MSH-18 spellings such as `8859/1`, `ASCII`, and
+`UTF-8`. The flag applies to every command that reads a message file.
+
 ## Input Methods
 
 All commands support reading from files or standard input:

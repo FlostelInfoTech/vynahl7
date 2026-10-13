@@ -6,6 +6,7 @@
 //! - Reverse converters: FHIR R4 -> HL7 v2.x
 
 pub mod allergy_intolerance;
+pub mod coding_systems;
 pub mod condition;
 pub mod diagnostic_report;
 pub mod encounter;

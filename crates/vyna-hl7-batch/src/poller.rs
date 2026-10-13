@@ -151,7 +151,26 @@ impl<T: FileTransport> Poller<T> {
     }
 
     /// Inbox directory to list (default: transport root).
+    ///
+    /// # Panics
+    ///
+    /// Panics when the inbox equals a previously configured archive or
+    /// error dir (compared after normalization).
     pub fn with_inbox(mut self, inbox: &str) -> Self {
+        if let Some(dir) = &self.archive_dir {
+            assert!(
+                normalize_dir(dir) != normalize_dir(inbox),
+                "inbox ({inbox:?}) must differ from archive_dir: settling into \
+                 the inbox re-consumes versioned files forever"
+            );
+        }
+        if let Some(dir) = &self.error_dir {
+            assert!(
+                normalize_dir(dir) != normalize_dir(inbox),
+                "inbox ({inbox:?}) must differ from error_dir: quarantining \
+                 into the inbox re-consumes versioned files forever"
+            );
+        }
         self.inbox = inbox.to_string();
         self
     }
@@ -160,7 +179,18 @@ impl<T: FileTransport> Poller<T> {
     /// relative to the inbox) instead of deleting them. When the destination
     /// already holds a file, the newcomer is versioned (`name.1`, ...) so a
     /// redrop never destroys a prior archive.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the dir equals the inbox (compared after
+    /// normalization): archiving into the inbox re-consumes the
+    /// versioned files (`a.hl7.1`, `a.hl7.1.1`, ...) forever.
     pub fn with_archive_dir(mut self, dir: &str) -> Self {
+        assert!(
+            normalize_dir(dir) != normalize_dir(&self.inbox),
+            "archive_dir ({dir:?}) must differ from inbox: archiving into the \
+             inbox re-consumes versioned files forever"
+        );
         self.archive_dir = Some(dir.to_string());
         self
     }
@@ -169,7 +199,18 @@ impl<T: FileTransport> Poller<T> {
     /// the inbox. Files whose every message failed to parse are quarantined
     /// here too: they carry nothing deliverable, so settling them as
     /// consumed would silently drop the failure.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the dir equals the inbox (compared after
+    /// normalization): quarantining into the inbox re-consumes the
+    /// versioned files forever.
     pub fn with_error_dir(mut self, dir: &str) -> Self {
+        assert!(
+            normalize_dir(dir) != normalize_dir(&self.inbox),
+            "error_dir ({dir:?}) must differ from inbox: quarantining into \
+             the inbox re-consumes versioned files forever"
+        );
         self.error_dir = Some(dir.to_string());
         self
     }
@@ -473,6 +514,12 @@ impl<T: FileTransport> Poller<T> {
 
         Ok(report)
     }
+}
+
+/// Transport dirs are `/`-separated; surrounding slashes are
+/// insignificant, so `inbox`, `/inbox`, and `inbox/` name one directory.
+fn normalize_dir(dir: &str) -> &str {
+    dir.trim_matches('/')
 }
 
 /// Path of `path` relative to inbox `base` (both `/`-separated).
@@ -955,6 +1002,58 @@ mod tests {
         assert!(report.files.is_empty());
         assert_eq!(report.skipped.len(), 1);
         assert!(report.skipped[0].reason.contains("exceeds limit"));
+    }
+
+    fn scripted() -> ScriptedTransport {
+        ScriptedTransport {
+            listings: vec![vec![]],
+            polls: 0,
+            body: vec![],
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "must differ from inbox")]
+    fn archive_dir_equal_to_inbox_is_rejected() {
+        let _ = Poller::new(scripted())
+            .with_inbox("inbox")
+            .with_archive_dir("inbox");
+    }
+
+    #[test]
+    #[should_panic(expected = "must differ from inbox")]
+    fn archive_dir_equal_to_inbox_after_normalization_is_rejected() {
+        let _ = Poller::new(scripted())
+            .with_inbox("/inbox/")
+            .with_archive_dir("inbox");
+    }
+
+    #[test]
+    #[should_panic(expected = "must differ from inbox")]
+    fn error_dir_equal_to_inbox_is_rejected() {
+        let _ = Poller::new(scripted())
+            .with_inbox("inbox")
+            .with_error_dir("inbox/");
+    }
+
+    #[test]
+    #[should_panic(expected = "must differ from archive_dir")]
+    fn inbox_equal_to_archive_dir_is_rejected_regardless_of_order() {
+        let _ = Poller::new(scripted())
+            .with_archive_dir("inbox")
+            .with_inbox("inbox");
+    }
+
+    #[test]
+    fn distinct_dirs_build_without_panicking() {
+        // Sibling and nested dirs settle outside the inbox listing.
+        let _ = Poller::new(scripted())
+            .with_inbox("inbox")
+            .with_archive_dir("archive")
+            .with_error_dir("error");
+        let _ = Poller::new(scripted())
+            .with_inbox("inbox")
+            .with_archive_dir("inbox/archive");
     }
 
     #[tokio::test]

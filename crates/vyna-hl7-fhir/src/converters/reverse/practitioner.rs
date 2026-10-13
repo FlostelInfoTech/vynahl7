@@ -111,6 +111,16 @@ impl PractitionerReverseConverter {
             }
         }
 
+        // Component 7: Degree, from the first qualification's code
+        // text (where the forward converter puts XCN-7).
+        if let Some(ref qualifications) = practitioner.qualification
+            && let Some(first) = qualifications.first()
+            && let Some(ref text) = first.code.text
+            && !text.is_empty()
+        {
+            components[6] = text.clone();
+        }
+
         // Build the XCN string, trimming trailing empty components
         let mut result = components.join("^");
         while result.ends_with('^') {
@@ -201,6 +211,17 @@ impl PractitionerReverseConverter {
             }
         }
 
+        // Component 7: Degree (0-indexed: 6), from the first
+        // qualification's code text (where the forward converter
+        // puts XCN-7).
+        if let Some(ref qualifications) = practitioner.qualification
+            && let Some(first) = qualifications.first()
+            && let Some(ref text) = first.code.text
+            && !text.is_empty()
+        {
+            components.push((6, text.clone()));
+        }
+
         Ok(components)
     }
 }
@@ -271,6 +292,23 @@ mod tests {
         let given_component = components.iter().find(|(idx, _)| *idx == 2);
         assert!(given_component.is_some());
         assert_eq!(given_component.unwrap().1, "John");
+    }
+
+    #[test]
+    fn test_qualification_round_trips_to_xcn7() {
+        use crate::converters::practitioner::PractitionerConverter;
+        use vyna_hl7_parser::parse_message;
+
+        let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                   PID|1||MRN123|||DOE^JOHN||19800101|M\r\
+                   PV1|1|I|ER^101^1||||1234567890^SMITH^JAMES^^^DR^MD";
+        let message = parse_message(hl7).unwrap();
+        let practitioner = PractitionerConverter::convert_attending_doctor(&message).unwrap();
+        let xcn = PractitionerReverseConverter::convert_to_xcn(&practitioner).unwrap();
+        assert_eq!(xcn.split('^').nth(6), Some("MD"));
+        let components =
+            PractitionerReverseConverter::convert_to_components(&practitioner).unwrap();
+        assert!(components.contains(&(6, "MD".to_string())));
     }
 
     #[test]

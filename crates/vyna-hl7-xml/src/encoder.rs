@@ -150,12 +150,27 @@ impl XmlEncoder {
         {
             // Parse ADT^A01 format
             let parts: Vec<&str> = value.split('^').collect();
-            if parts.len() >= 2 {
+            let candidate = if parts.len() >= 2 {
                 let raw = format!("{}_{}", parts[0], parts[1]);
-                return sanitize_element_name(&raw);
+                sanitize_element_name(&raw)
             } else if !parts.is_empty() {
-                return sanitize_element_name(parts[0]);
+                sanitize_element_name(parts[0])
+            } else {
+                "HL7Message".to_string()
+            };
+            // A bare 3-uppercase-alnum root (a lone MSH-9 "ACK") is
+            // indistinguishable from a segment element to the decoder
+            // (see XmlDecoder::is_segment_name), which would read it back
+            // as a spurious empty segment. Suffix it so the root stays a
+            // wrapper and the message round-trips exactly.
+            if candidate.len() == 3
+                && candidate
+                    .bytes()
+                    .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+            {
+                return format!("{candidate}_Message");
             }
+            return candidate;
         }
         "HL7Message".to_string()
     }
@@ -460,5 +475,30 @@ mod tests {
         let xml = XmlEncoder::new().encode(&message).unwrap();
         assert!(xml.contains("<AD_T>"));
         assert!(!xml.contains("<AD<T>"));
+    }
+
+    #[test]
+    fn test_bare_ack_root_round_trips_exactly() {
+        use crate::XmlDecoder;
+
+        let mut message = Message::new();
+        let mut msh = Segment::new("MSH");
+        let _ = msh.set_field_value(9, "ACK");
+        message.add_segment(msh);
+        let mut msa = Segment::new("MSA");
+        let _ = msa.set_field_value(1, "AA");
+        message.add_segment(msa);
+
+        // A bare <ACK> root would decode as a spurious empty segment.
+        let xml = XmlEncoder::new().encode(&message).unwrap();
+        assert!(!xml.contains("<ACK>"), "bare root decodes as segment");
+        assert!(xml.contains("<ACK_Message>"));
+
+        let back = XmlDecoder::new().decode(&xml).unwrap();
+        assert_eq!(back.segments.len(), 2);
+        assert_eq!(back.segments[0].id, "MSH");
+        assert_eq!(back.segments[1].id, "MSA");
+        assert_eq!(back.segments[0].get_field_value(9), Some("ACK"));
+        assert_eq!(back.segments[1].get_field_value(1), Some("AA"));
     }
 }

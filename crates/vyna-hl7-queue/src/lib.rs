@@ -231,11 +231,23 @@ fn saturating_add_delay(now: u64, delay: Duration) -> u64 {
     now.saturating_add(u64::try_from(delay.as_millis()).unwrap_or(u64::MAX))
 }
 
-/// Serializes [`FileQueue::dequeue`] across same-process handles so two
-/// handles can never lease one message. Sharing a directory between
-/// processes is unsupported (see [`FileQueue`]), so a process-wide mutex
-/// around the check-then-claim window is sufficient — no lock files.
+/// Serializes mutating [`FileQueue`] ops across same-process handles.
+/// Dequeue already needed it so two handles never lease one message, but
+/// enqueue/ack/nack/open must hold it too: without that, a dequeue's
+/// recover/scan/claim window can observe a meta file whose body a
+/// concurrent enqueue has not written yet, and quarantine a live message
+/// as bodyless. Sharing a directory between processes is unsupported (see
+/// [`FileQueue`]), so a process-wide mutex is sufficient — no lock files.
 static DEQUEUE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Hold across every mutating [`FileQueue`] op (enqueue, dequeue, ack,
+/// nack, open). A poisoned lock still serializes; the state on disk stays
+/// consistent either way.
+fn queue_lock() -> std::sync::MutexGuard<'static, ()> {
+    DEQUEUE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 /// Next queue id: hex nanos, pid, and a process-wide sequence
 /// (filename-safe). Unique across same-process handles even when the clock
@@ -486,7 +498,7 @@ pub struct RecoveryReport {
     pub pending: usize,
     /// Dead-lettered messages.
     pub dead: usize,
-    /// Entries too corrupt to read, quarantined under `dead/`.
+    /// Bare ids of entries too corrupt to read, quarantined under `dead/`.
     pub skipped: Vec<String>,
 }
 
@@ -497,6 +509,8 @@ pub struct RecoveryReport {
 /// `dead/`. Writes go through temp files plus atomic renames with fsync,
 /// so an acknowledged enqueue survives a crash. Opening reaps `.tmp-*`
 /// files stranded by a crash between the temp write and the rename.
+/// Handles on one directory may be shared across threads: every mutating
+/// op (including open's recovery) holds a process-wide lock.
 pub struct FileQueue {
     pending: PathBuf,
     inflight: PathBuf,
@@ -546,11 +560,15 @@ impl FileQueue {
         // Crash orphans from an interrupted write_entry predate this handle;
         // reaping runs once here rather than in recover() so a dequeue can
         // never delete a temp file another live handle is still writing.
+        // Open takes the lock (it calls nothing else that does, so this
+        // cannot deadlock): concurrent opens and live handles' mutating
+        // ops serialize instead of reaping/recovering mid-write entries.
+        let _guard = queue_lock();
         for dir in [&queue.pending, &queue.inflight, &queue.dead] {
             reap_temp_files(dir)?;
             reap_orphan_bodies(dir)?;
         }
-        let report = queue.recover()?;
+        let report = queue.recover(true)?;
         Ok((queue, report))
     }
 
@@ -572,8 +590,16 @@ impl FileQueue {
     }
 
     /// Crash recovery: stale leases return to pending, corrupt or
-    /// bodyless entries are quarantined under `dead/`.
-    fn recover(&self) -> Result<RecoveryReport, QueueError> {
+    /// bodyless entries are quarantined under `dead/`. Callers must hold
+    /// [`queue_lock`].
+    ///
+    /// `quarantine_bodyless` is true only at open: a bodyless pending meta
+    /// on the dequeue path may be half of a torn write from a concurrent
+    /// enqueue, so dequeue skips those in place (see [`next_visible`])
+    /// instead of quarantining a live message. Genuinely corrupt metas
+    /// quarantine on both paths: atomic renames mean they were never
+    /// mid-write.
+    fn recover(&self, quarantine_bodyless: bool) -> Result<RecoveryReport, QueueError> {
         let mut report = RecoveryReport::default();
         let now = self.clock.now_ms();
         // Quarantine corrupt pending/dead entries first, so one bad file can
@@ -583,12 +609,14 @@ impl FileQueue {
         // writes) is unrecoverable and quarantines like a corrupt meta.
         for dir in [&self.dead, &self.pending] {
             for id in list_ids(dir)? {
-                let corrupt = match read_meta(dir, &id)? {
-                    None => true,
-                    Some(_) => read_body(dir, &id)?.is_none(),
-                };
-                if corrupt {
-                    report.skipped.push(format!("{}/{}", dir_name(dir), id));
+                let meta = read_meta(dir, &id)?;
+                let bodyless = meta.is_some() && read_body(dir, &id)?.is_none();
+                let corrupt = meta.is_none();
+                if bodyless && dir == &self.pending && !quarantine_bodyless {
+                    continue;
+                }
+                if corrupt || bodyless {
+                    report.skipped.push(id.clone());
                     if dir != &self.dead {
                         quarantine(dir, &self.dead, &id)?;
                     }
@@ -651,6 +679,10 @@ impl MessageQueue for FileQueue {
         body: &[u8],
         headers: HashMap<String, String>,
     ) -> Result<String, QueueError> {
+        // Under the lock, before the cap check: the check-then-write is
+        // atomic, and a dequeue's recover can never observe this entry
+        // mid-write (meta without body) and quarantine it.
+        let _guard = queue_lock();
         if let Some(limit) = self.max_depth
             && self.live_count()? >= limit
         {
@@ -673,13 +705,13 @@ impl MessageQueue for FileQueue {
 
     fn dequeue(&mut self) -> Result<Option<Leased>, QueueError> {
         // One lease per message across same-process handles: the lock makes
-        // the recover/scan/claim window atomic (a poisoned lock still
-        // serializes; the state on disk stays consistent either way).
-        let _guard = DEQUEUE_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        // the recover/scan/claim window atomic against every other
+        // handle's mutating op.
+        let _guard = queue_lock();
         // Opportunistic recovery keeps leases honest without reopening.
-        self.recover()?;
+        // Bodyless pending entries are skipped in place here (only open
+        // quarantines them): they may be a concurrent enqueue mid-write.
+        self.recover(false)?;
         let Some((mut meta, body)) = self.next_visible()? else {
             return Ok(None);
         };
@@ -698,6 +730,9 @@ impl MessageQueue for FileQueue {
 
     fn ack(&mut self, id: &str) -> Result<(), QueueError> {
         validate_id(id)?;
+        // Under the lock: the check-then-remove must be atomic against a
+        // concurrent recover/move of the same entry.
+        let _guard = queue_lock();
         if !meta_path(&self.inflight, id).exists() {
             return Err(QueueError::Unknown(id.to_string()));
         }
@@ -707,6 +742,9 @@ impl MessageQueue for FileQueue {
 
     fn nack(&mut self, id: &str, error: Option<&str>) -> Result<NackOutcome, QueueError> {
         validate_id(id)?;
+        // Under the lock: the read/move window must be atomic against a
+        // concurrent recover or lease expiry of the same entry.
+        let _guard = queue_lock();
         let Some(mut meta) = read_meta(&self.inflight, id)? else {
             return Err(QueueError::Unknown(id.to_string()));
         };
@@ -750,10 +788,6 @@ impl MessageQueue for FileQueue {
             dead: list_ids(&self.dead)?.len(),
         })
     }
-}
-
-fn dir_name(dir: &Path) -> &str {
-    dir.file_name().and_then(|n| n.to_str()).unwrap_or("?")
 }
 
 /// Caller-supplied ids are joined into state-directory paths, so anything
@@ -863,7 +897,11 @@ fn fsync_file_and_dir(path: &Path) -> Result<(), QueueError> {
     Ok(())
 }
 
-/// Write an entry through temp files plus atomic renames.
+/// Write an entry through temp files plus atomic renames. The body lands
+/// first and the meta last, so a meta file implies a complete entry: a
+/// concurrent reader can only ever see a body without its meta (invisible
+/// — listing keys off metadata, and open reaps such orphans), never a
+/// meta without its body.
 fn write_entry(dir: &Path, id: &str, meta: &FileMeta, body: &[u8]) -> Result<(), QueueError> {
     let meta_json = serde_json::to_vec(meta)
         .map_err(|e| QueueError::State(format!("cannot encode entry {id}: {e}")))?;
@@ -873,8 +911,8 @@ fn write_entry(dir: &Path, id: &str, meta: &FileMeta, body: &[u8]) -> Result<(),
         .unwrap_or_default()
         .as_nanos();
     for (final_path, bytes) in [
-        (meta_path(dir, id), meta_json.as_slice()),
         (body_path(dir, id), body),
+        (meta_path(dir, id), meta_json.as_slice()),
     ] {
         let tmp = dir.join(format!(".tmp-{tag}-{id}"));
         std::fs::write(&tmp, bytes)?;
@@ -1565,6 +1603,124 @@ mod tests {
             }
         );
         drop(queue);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn concurrent_enqueue_and_dequeue_loses_nothing() {
+        use std::sync::Barrier;
+        use std::sync::atomic::AtomicBool;
+
+        let dir = scratch_dir();
+        // Pre-seed so the dequeuer has work from the first barrier release.
+        let seeds: Vec<String> = (0..20).map(|i| format!("seed-{i:02}")).collect();
+        {
+            let (mut seeder, _) = FileQueue::open(&dir).unwrap();
+            for body in &seeds {
+                seeder.enqueue(body.as_bytes(), HashMap::new()).unwrap();
+            }
+        }
+
+        let n = 200usize;
+        let seed_count = seeds.len();
+        let barrier = Barrier::new(2);
+        let enq_done = std::sync::Arc::new(AtomicBool::new(false));
+        let (dir_d, bar_d) = (&dir, &barrier);
+        let done_d = enq_done.clone();
+        std::thread::scope(|s| {
+            let producer = s.spawn(|| {
+                let (mut queue, _) = FileQueue::open(&dir).unwrap();
+                barrier.wait();
+                for i in 0..n {
+                    let body = format!("msg-{i:04}");
+                    queue.enqueue(body.as_bytes(), HashMap::new()).unwrap();
+                }
+            });
+            let consumer = s.spawn(move || {
+                let (mut queue, _) = FileQueue::open(dir_d).unwrap();
+                bar_d.wait();
+                let mut got = std::collections::HashSet::new();
+                let mut empty_streak = 0u32;
+                while got.len() < n + seed_count {
+                    match queue.dequeue().unwrap() {
+                        Some(leased) => {
+                            empty_streak = 0;
+                            got.insert(String::from_utf8(leased.body.clone()).unwrap());
+                            queue.ack(&leased.id).unwrap();
+                        }
+                        None if done_d.load(Ordering::SeqCst) => {
+                            empty_streak += 1;
+                            if empty_streak >= 50 {
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(1));
+                        }
+                        None => std::thread::sleep(std::time::Duration::from_millis(1)),
+                    }
+                }
+                got
+            });
+            producer.join().unwrap();
+            enq_done.store(true, Ordering::SeqCst);
+            let got = consumer.join().unwrap();
+
+            // At-least-once: every enqueued body arrives exactly once.
+            assert_eq!(got.len(), n + seed_count, "lost messages under concurrency");
+            for i in 0..n {
+                assert!(got.contains(&format!("msg-{i:04}")), "lost msg-{i:04}");
+            }
+            for body in &seeds {
+                assert!(got.contains(body), "lost {body}");
+            }
+        });
+
+        // Nothing quarantined, nothing left behind.
+        let (queue, _) = FileQueue::open(&dir).unwrap();
+        assert_eq!(
+            queue.stats().unwrap(),
+            QueueStats {
+                pending: 0,
+                inflight: 0,
+                dead: 0
+            }
+        );
+        assert!(queue.dead_letters().unwrap().is_empty());
+        for entry in std::fs::read_dir(dir.join("dead")).unwrap() {
+            let name = entry.unwrap().file_name().to_string_lossy().into_owned();
+            if let Some(id) = name.strip_suffix(".meta.json") {
+                assert!(
+                    dir.join("dead").join(format!("{id}.body")).exists(),
+                    "bodyless dead meta {id}"
+                );
+            }
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn recovery_skipped_uses_uniform_bare_ids() {
+        let dir = scratch_dir();
+        {
+            let (mut queue, _) = FileQueue::open(&dir).unwrap();
+            queue.enqueue(b"A", HashMap::new()).unwrap();
+            queue.enqueue(b"B", HashMap::new()).unwrap();
+            queue.dequeue().unwrap().unwrap(); // one leased goes inflight
+        }
+        // Corrupt one pending meta and one inflight meta.
+        for sub in ["pending", "inflight"] {
+            for entry in std::fs::read_dir(dir.join(sub)).unwrap() {
+                let path = entry.unwrap().path();
+                if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                    std::fs::write(&path, b"{not valid json").unwrap();
+                }
+            }
+        }
+        let (queue, report) = FileQueue::open(&dir).unwrap();
+        assert_eq!(report.skipped.len(), 2);
+        for entry in &report.skipped {
+            assert!(!entry.contains('/'), "mixed skipped format: {entry}");
+        }
+        assert_eq!(queue.stats().unwrap().dead, 2);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

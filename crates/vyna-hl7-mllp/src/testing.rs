@@ -3,7 +3,7 @@
 //! This module provides mock servers and test helpers for integration testing.
 
 use crate::{MllpConfig, MllpServer};
-use vyna_hl7_core::{error::Result, Message};
+use vyna_hl7_core::{builders::ack::AckBuilder, error::Result, Message};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -69,6 +69,8 @@ impl MockMllpServer {
     /// Set a custom message handler
     ///
     /// The handler receives each message and returns a response message.
+    /// A handler error answers with an AE NACK (like a real responder)
+    /// and the connection stays open.
     ///
     /// # Example
     ///
@@ -186,14 +188,26 @@ impl MockMllpServer {
                     // Receive error or connection closed ends the loop.
                     while let Ok(msg) = conn.receive_message().await {
                         // Process message with handler
-                        match handler(msg) {
+                        match handler(msg.clone()) {
                             Ok(response) => {
                                 if let Err(_e) = conn.send_message(&response).await {
                                     break; // Send failed
                                 }
                             }
-                            Err(_e) => {
-                                break; // Handler error
+                            Err(e) => {
+                                // Application errors get an AE NACK like a
+                                // real responder; the connection stays open.
+                                let nack = AckBuilder::for_message(&msg)
+                                    .error(&format!("Mock handler error: {e}"))
+                                    .build();
+                                match nack {
+                                    Ok(nack) => {
+                                        if let Err(_e) = conn.send_message(&nack).await {
+                                            break; // Send failed
+                                        }
+                                    }
+                                    Err(_e) => break, // Cannot NACK
+                                }
                             }
                         }
                     }
@@ -334,6 +348,61 @@ mod tests {
             response.segments[1].fields[0].value(),
             Some("AA")
         );
+
+        client.close().await.unwrap();
+        server.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_mock_server_handler_error_sends_ae_nack() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use vyna_hl7_core::error::Error;
+
+        // A handler error answers with an AE NACK (not a dropped
+        // connection) and the connection stays open for the next
+        // message.
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_handler = Arc::clone(&calls);
+        let server = MockMllpServer::new()
+            .with_handler(move |_msg| {
+                if calls_handler.fetch_add(1, Ordering::SeqCst) == 0 {
+                    Err(Error::parse("boom"))
+                } else {
+                    let mut ack = Message::default();
+                    let mut msh = Segment::new("MSH");
+                    msh.fields.push(Field::from_value("|"));
+                    msh.fields.push(Field::from_value("^~\\&"));
+                    ack.segments.push(msh);
+                    let mut msa = Segment::new("MSA");
+                    msa.fields.push(Field::from_value("AA"));
+                    ack.segments.push(msa);
+                    Ok(ack)
+                }
+            })
+            .start()
+            .await
+            .unwrap();
+
+        let addr = server.url();
+        let mut client = MllpClient::connect(&addr).await.unwrap();
+
+        let mut msg = Message::default();
+        let mut msh = Segment::new("MSH");
+        msh.fields.push(Field::from_value("|"));
+        msh.fields.push(Field::from_value("^~\\&"));
+        msg.segments.push(msh);
+
+        let nack = client.send_message(&msg).await.unwrap();
+        let msa = nack.get_segment_by_id("MSA").unwrap();
+        assert_eq!(msa.fields[0].value(), Some("AE"));
+
+        // Connection still open: the second message gets its reply.
+        let ack = client.send_message(&msg).await.unwrap();
+        assert_eq!(
+            ack.get_segment_by_id("MSA").unwrap().fields[0].value(),
+            Some("AA")
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
 
         client.close().await.unwrap();
         server.shutdown().await.unwrap();

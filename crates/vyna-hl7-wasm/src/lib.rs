@@ -18,7 +18,10 @@
 //! console.log(patientName); // "DOE"
 //! ```
 
+#[cfg(target_arch = "wasm32")]
+use std::sync::atomic::{AtomicU64, Ordering};
 use vyna_hl7_core::Version;
+#[cfg(not(target_arch = "wasm32"))]
 use vyna_hl7_core::builders::generate_control_id;
 use vyna_hl7_parser::parse_message as vyna_hl7_parse;
 use vyna_hl7_terser::Terser;
@@ -35,6 +38,70 @@ pub use definitions::*;
 pub use message::*;
 pub use terser::*;
 pub use validation::*;
+
+/// Serialize a value to `JsValue` with JSON-compatible mapping: maps
+/// become plain objects (not ES Maps) and missing values become `null`
+/// (not `undefined`), matching `vynahl7.d.ts`.
+pub(crate) fn to_json_jsvalue<T>(value: &T) -> Result<JsValue, JsValue>
+where
+    T: serde::Serialize + ?Sized,
+{
+    value
+        .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+}
+
+/// `JSON.stringify` import for wasm regression tests: plain objects
+/// stringify with their keys while ES Maps stringify as `{}`, and
+/// `null` is kept while `undefined` is dropped. Only exists on wasm
+/// test builds; the tests using it are gated the same way.
+#[cfg(all(test, target_arch = "wasm32"))]
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = JSON, js_name = stringify)]
+    pub(crate) fn test_stringify(value: &JsValue) -> String;
+}
+
+/// JS `Date.now()` binding (wasm32 only): milliseconds since the Unix
+/// epoch. `std::time::SystemTime` is unimplemented on
+/// wasm32-unknown-unknown, so the JS clock is the only option there.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = Date, js_name = now)]
+    fn js_date_now() -> f64;
+}
+
+/// Current UTC time as HL7 DTM (`YYYYMMDDHHMMSS`) for MSH-7.
+#[cfg(target_arch = "wasm32")]
+fn current_msh_timestamp() -> String {
+    chrono::DateTime::from_timestamp_millis(js_date_now() as i64)
+        .map(|dt| dt.format("%Y%m%d%H%M%S").to_string())
+        .unwrap_or_default()
+}
+
+/// Current UTC time as HL7 DTM (`YYYYMMDDHHMMSS`) for MSH-7.
+#[cfg(not(target_arch = "wasm32"))]
+fn current_msh_timestamp() -> String {
+    chrono::Utc::now().format("%Y%m%d%H%M%S").to_string()
+}
+
+/// Message control ID for MSH-10. The wasm32 variant mirrors core's
+/// `MSG<millis><seq>` scheme with the JS clock plus a sequence counter
+/// (`SystemTime` and `process::id` are unavailable on wasm32).
+#[cfg(target_arch = "wasm32")]
+fn generate_wasm_control_id() -> String {
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    let millis = js_date_now() as u64;
+    let seq = SEQUENCE.fetch_add(1, Ordering::Relaxed) % 10_000;
+    format!("MSG{millis}{seq:04}")
+}
+
+/// Message control ID for MSH-10 (native builds use core's generator).
+#[cfg(not(target_arch = "wasm32"))]
+fn generate_wasm_control_id() -> String {
+    generate_control_id()
+}
 
 /// Initialize panic hook for better error messages in wasm
 #[wasm_bindgen(start)]
@@ -237,12 +304,12 @@ pub fn create_message(
     // ID) are required by the schemas: generate the control ID and
     // default the processing ID to "P" (Production) like the core
     // builders; callers can change it via setTerserValue.
-    let control_id = generate_control_id();
+    let control_id = generate_wasm_control_id();
     let msh = format!(
         "MSH|^~\\&|{}|{}|||{}||{}|{}|P|{}",
         sending_app,
         sending_fac,
-        chrono::Utc::now().format("%Y%m%d%H%M%S"),
+        current_msh_timestamp(),
         message_type,
         control_id,
         version
@@ -358,6 +425,32 @@ mod tests {
     fn test_create_message_rejects_unknown_version() {
         assert!(create_message("9.9", "ADT^A01", "App", "Fac").is_err());
         assert!(create_message("2.5", "ADT^A01", "App", "Fac").is_ok());
+    }
+
+    #[test]
+    fn msh_timestamp_and_control_id_have_valid_shapes() {
+        // Locks the MSH-7/MSH-10 contract for both clock backends (the
+        // native branch here; the wasm32 branch via the test below).
+        let ts = current_msh_timestamp();
+        assert_eq!(ts.len(), 14, "MSH-7 must be YYYYMMDDHHMMSS: {ts}");
+        assert!(ts.chars().all(|c| c.is_ascii_digit()), "non-digit: {ts}");
+        let id = generate_wasm_control_id();
+        assert!(id.starts_with("MSG"), "unexpected control ID: {id}");
+        assert!(id.len() <= 20, "MSH-10 exceeds max length 20: {id}");
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen_test]
+    fn test_create_message_uses_wasm_safe_clock() {
+        // Pre-fix this trapped ("time not implemented on this platform"):
+        // `generate_control_id` and `chrono::Utc::now` both need
+        // `SystemTime`, which wasm32-unknown-unknown lacks.
+        let msg = create_message("2.5", "ADT^A01", "App", "Fac").unwrap();
+        let terser = Terser::new(msg.inner());
+        let ts = terser.get("MSH-7").unwrap().unwrap();
+        assert_eq!(ts.len(), 14, "MSH-7 must be YYYYMMDDHHMMSS: {ts}");
+        assert!(ts.chars().all(|c| c.is_ascii_digit()), "non-digit: {ts}");
+        assert!(!msg.control_id().unwrap_or_default().is_empty());
     }
 
     #[test]

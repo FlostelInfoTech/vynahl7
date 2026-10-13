@@ -74,7 +74,9 @@ impl SpecimenConverter {
         }
 
         // SPM-30: Accession ID -> accessionIdentifier
-        if let Ok(Some(accession_id)) = terser.get(&spm_path("30")) {
+        if let Ok(Some(accession_id)) = terser.get(&spm_path("30"))
+            && !accession_id.is_empty()
+        {
             specimen.accession_identifier = Some(Identifier {
                 system: Some("http://hospital.example.org/accession".to_string()),
                 value: Some(accession_id.to_string()),
@@ -121,7 +123,9 @@ impl SpecimenConverter {
         }
 
         // SPM-7: Specimen Collection Method -> collection.method
-        if let Ok(Some(method_code)) = terser.get(&spm_path("7")) {
+        if let Ok(Some(method_code)) = terser.get(&spm_path("7"))
+            && !method_code.is_empty()
+        {
             let mut coding = Coding {
                 system: Some("http://terminology.hl7.org/CodeSystem/v2-0488".to_string()),
                 code: Some(method_code.to_string()),
@@ -130,7 +134,9 @@ impl SpecimenConverter {
             };
 
             // Component 1: Method text
-            if let Ok(Some(method_text)) = terser.get(&format!("{}-2", spm_path("7"))) {
+            if let Ok(Some(method_text)) = terser.get(&format!("{}-2", spm_path("7")))
+                && !method_text.is_empty()
+            {
                 coding.display = Some(method_text.to_string());
             }
 
@@ -142,7 +148,9 @@ impl SpecimenConverter {
         }
 
         // SPM-8: Specimen Source Site -> collection.bodySite
-        if let Ok(Some(site_code)) = terser.get(&spm_path("8")) {
+        if let Ok(Some(site_code)) = terser.get(&spm_path("8"))
+            && !site_code.is_empty()
+        {
             let mut coding = Coding {
                 system: Some("http://terminology.hl7.org/CodeSystem/v2-0163".to_string()),
                 code: Some(site_code.to_string()),
@@ -151,7 +159,9 @@ impl SpecimenConverter {
             };
 
             // Component 1: Site text
-            if let Ok(Some(site_text)) = terser.get(&format!("{}-2", spm_path("8"))) {
+            if let Ok(Some(site_text)) = terser.get(&format!("{}-2", spm_path("8")))
+                && !site_text.is_empty()
+            {
                 coding.display = Some(site_text.to_string());
             }
 
@@ -184,7 +194,9 @@ impl SpecimenConverter {
             };
 
             // Component 2: Units (SPM-12-2)
-            if let Ok(Some(units)) = terser.get(&format!("{}-2", spm_path("12"))) {
+            if let Ok(Some(units)) = terser.get(&format!("{}-2", spm_path("12")))
+                && !units.is_empty()
+            {
                 quantity.unit = Some(units.to_string());
                 quantity.code = Some(units.to_string());
             }
@@ -198,7 +210,9 @@ impl SpecimenConverter {
         }
 
         // SPM-24: Specimen Condition -> condition
-        if let Ok(Some(condition_code)) = terser.get(&spm_path("24")) {
+        if let Ok(Some(condition_code)) = terser.get(&spm_path("24"))
+            && !condition_code.is_empty()
+        {
             let mut coding = Coding {
                 system: Some("http://terminology.hl7.org/CodeSystem/v2-0493".to_string()),
                 code: Some(condition_code.to_string()),
@@ -207,7 +221,9 @@ impl SpecimenConverter {
             };
 
             // Component 1: Condition text
-            if let Ok(Some(condition_text)) = terser.get(&format!("{}-2", spm_path("24"))) {
+            if let Ok(Some(condition_text)) = terser.get(&format!("{}-2", spm_path("24")))
+                && !condition_text.is_empty()
+            {
                 coding.display = Some(condition_text.to_string());
             }
 
@@ -218,7 +234,9 @@ impl SpecimenConverter {
         }
 
         // SPM-14: Specimen Description -> note
-        if let Ok(Some(description)) = terser.get(&spm_path("14")) {
+        if let Ok(Some(description)) = terser.get(&spm_path("14"))
+            && !description.is_empty()
+        {
             specimen.note = Some(vec![Annotation {
                 author_string: None,
                 author_reference: None,
@@ -228,7 +246,9 @@ impl SpecimenConverter {
         }
 
         // SPM-15: Specimen Handling Code -> container
-        if let Ok(Some(container_type)) = terser.get(&spm_path("15")) {
+        if let Ok(Some(container_type)) = terser.get(&spm_path("15"))
+            && !container_type.is_empty()
+        {
             let mut coding = Coding {
                 system: Some("http://terminology.hl7.org/CodeSystem/v2-0376".to_string()),
                 code: Some(container_type.to_string()),
@@ -236,7 +256,9 @@ impl SpecimenConverter {
                 version: None,
             };
 
-            if let Ok(Some(container_text)) = terser.get(&format!("{}-2", spm_path("15"))) {
+            if let Ok(Some(container_text)) = terser.get(&format!("{}-2", spm_path("15")))
+                && !container_text.is_empty()
+            {
                 coding.display = Some(container_text.to_string());
             }
 
@@ -333,9 +355,15 @@ impl SpecimenConverter {
         terser: &Terser,
         base_path: &str,
     ) -> ConversionResult<CodeableConcept> {
-        let code = terser.get(base_path).ok().flatten().ok_or_else(|| {
-            ConversionError::MissingField(base_path.to_string(), "SPM".to_string())
-        })?;
+        // Empty is missing: it must not become a type with an empty code.
+        let code = terser
+            .get(base_path)
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| {
+                ConversionError::MissingField(base_path.to_string(), "SPM".to_string())
+            })?;
 
         let mut coding = Coding {
             system: Some("http://terminology.hl7.org/CodeSystem/v2-0487".to_string()),
@@ -345,7 +373,9 @@ impl SpecimenConverter {
         };
 
         // Component 1: Specimen type text/display
-        if let Ok(Some(display)) = terser.get(&format!("{}-2", base_path)) {
+        if let Ok(Some(display)) = terser.get(&format!("{}-2", base_path))
+            && !display.is_empty()
+        {
             coding.display = Some(display.to_string());
         }
 
@@ -459,7 +489,7 @@ mod tests {
     fn test_convert_specimen_with_condition() {
         let hl7 = "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||OML^O21|MSG123|P|2.5\r\
                    PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
-                   SPM|1|SPEC123||BLD^Blood^HL70487|||||||||||||||||||||||||HEM^Hemolyzed^HL70493";
+                   SPM|1|SPEC123||BLD^Blood^HL70487||||||||||||||||||||HEM^Hemolyzed^HL70493";
 
         let message = parse_message(hl7).unwrap();
         let specimens = SpecimenConverter::convert_all(&message).unwrap();
@@ -467,6 +497,8 @@ mod tests {
         assert_eq!(specimens.len(), 1);
         let spec = &specimens[0];
         assert!(spec.condition.is_some());
+        let condition = spec.condition.as_ref().unwrap()[0].coding.as_ref().unwrap();
+        assert_eq!(condition[0].code.as_deref(), Some("HEM"));
     }
 
     #[test]
@@ -608,5 +640,95 @@ mod tests {
             Err(ConversionError::MissingSegment(seg)) => assert_eq!(seg, "SPM"),
             _ => panic!("Expected MissingSegment error"),
         }
+    }
+
+    #[test]
+    fn test_empty_spm_fields_omitted() {
+        // Present-but-empty SPM-7/8/12-units/14/15/24/30 must not
+        // emit empty codes, units, text, or values.
+        let mut fields = vec![String::new(); 30];
+        fields[0] = "1".to_string();
+        fields[1] = "SPEC123".to_string();
+        fields[3] = "BLD^Blood^HL70487".to_string();
+        fields[11] = "5.0^".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||OML^O21|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rSPM|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let spec = &SpecimenConverter::convert_all(&message).unwrap()[0];
+        let collection = spec.collection.as_ref().unwrap();
+        assert!(collection.method.is_none());
+        assert!(collection.body_site.is_none());
+        let quantity = collection.quantity.as_ref().unwrap();
+        assert_eq!(quantity.value, Some(5.0));
+        assert!(quantity.unit.is_none());
+        assert!(quantity.code.is_none());
+        assert!(spec.note.is_none());
+        assert!(spec.container.is_none());
+        assert!(spec.condition.is_none());
+        assert!(spec.accession_identifier.is_none());
+    }
+
+    #[test]
+    fn test_empty_spm_component_text_omitted() {
+        // Fields with a code but empty text keep the code only.
+        let mut fields = vec![String::new(); 30];
+        fields[0] = "1".to_string();
+        fields[1] = "SPEC123".to_string();
+        fields[3] = "BLD^^HL70487".to_string();
+        fields[6] = "ANP^".to_string();
+        fields[7] = "LA^".to_string();
+        fields[14] = "X^".to_string();
+        fields[23] = "Y^".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||OML^O21|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rSPM|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let spec = &SpecimenConverter::convert_all(&message).unwrap()[0];
+        let type_coding = spec.type_.coding.as_ref().unwrap();
+        assert_eq!(type_coding[0].code.as_deref(), Some("BLD"));
+        assert!(type_coding[0].display.is_none());
+        let collection = spec.collection.as_ref().unwrap();
+        let method = collection.method.as_ref().unwrap().coding.as_ref().unwrap();
+        assert!(method[0].display.is_none());
+        let site = collection
+            .body_site
+            .as_ref()
+            .unwrap()
+            .coding
+            .as_ref()
+            .unwrap();
+        assert!(site[0].display.is_none());
+        let container = spec.container.as_ref().unwrap()[0]
+            .type_
+            .as_ref()
+            .unwrap()
+            .coding
+            .as_ref()
+            .unwrap();
+        assert!(container[0].display.is_none());
+        let condition = spec.condition.as_ref().unwrap()[0].coding.as_ref().unwrap();
+        assert!(condition[0].display.is_none());
+    }
+
+    #[test]
+    fn test_empty_spm4_returns_missing_field() {
+        // SPM-4 present-but-empty is missing, like an absent SPM-4.
+        let mut fields = vec![String::new(); 30];
+        fields[0] = "1".to_string();
+        fields[1] = "SPEC123".to_string();
+        fields[29] = "ACC123".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||OML^O21|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rSPM|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let result = SpecimenConverter::convert_all(&message);
+        assert!(matches!(result, Err(ConversionError::MissingField(_, _))));
     }
 }

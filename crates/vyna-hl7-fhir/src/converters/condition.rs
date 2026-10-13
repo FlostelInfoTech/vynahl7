@@ -1,5 +1,6 @@
 //! Condition converter - PRB/DG1 segments to FHIR Condition resource
 
+use super::coding_systems::convert_coding_system;
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
 use crate::resources::condition::*;
@@ -77,7 +78,7 @@ impl ConditionConverter {
             if let Ok(Some(system)) = terser.get(&format!("{}-3", code_path))
                 && !system.is_empty()
             {
-                coding.system = Some(Self::convert_coding_system(system));
+                coding.system = Some(convert_coding_system(system));
             }
 
             condition.code = Some(CodeableConcept {
@@ -140,6 +141,13 @@ impl ConditionConverter {
                 coding.display = Some(text.to_string());
             }
 
+            // Component 3: Coding System (1-based indexing)
+            if let Ok(Some(system)) = terser.get(&format!("{}-3", code_path))
+                && !system.is_empty()
+            {
+                coding.system = Some(convert_coding_system(system));
+            }
+
             condition.code = Some(CodeableConcept {
                 coding: Some(vec![coding]),
                 text: None,
@@ -159,18 +167,6 @@ impl ConditionConverter {
         }
 
         Ok(condition)
-    }
-
-    /// Convert HL7 v2 coding system to FHIR system URI
-    fn convert_coding_system(system: &str) -> String {
-        match system {
-            "LN" | "LNC" => "http://loinc.org".to_string(),
-            "SNM" | "SCT" => "http://snomed.info/sct".to_string(),
-            "ICD9" => "http://hl7.org/fhir/sid/icd-9-cm".to_string(),
-            "ICD10" => "http://hl7.org/fhir/sid/icd-10".to_string(),
-            "CPT" => "http://www.ama-assn.org/go/cpt".to_string(),
-            _ => format!("urn:oid:{}", system),
-        }
     }
 }
 
@@ -282,5 +278,28 @@ mod tests {
             .unwrap()[0];
         assert_eq!(coding.code.as_deref(), Some("I10"));
         assert!(coding.display.is_none());
+    }
+
+    #[test]
+    fn test_dg1_system_mapped_from_component_3() {
+        // DG1-3-3 selects the system, like PRB-3-3 does.
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||ADT^A01|1|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   DG1|1||I10^Essential Hypertension^ICD10";
+        let message = parse_message(hl7).unwrap();
+        let conditions = ConditionConverter::convert_all(&message).unwrap();
+        let coding = &conditions[0]
+            .code
+            .as_ref()
+            .unwrap()
+            .coding
+            .as_ref()
+            .unwrap()[0];
+        assert_eq!(coding.code.as_deref(), Some("I10"));
+        assert_eq!(coding.display.as_deref(), Some("Essential Hypertension"));
+        assert_eq!(
+            coding.system.as_deref(),
+            Some("http://hl7.org/fhir/sid/icd-10")
+        );
     }
 }

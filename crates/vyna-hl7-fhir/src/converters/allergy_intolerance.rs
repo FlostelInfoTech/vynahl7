@@ -120,8 +120,11 @@ impl AllergyIntoleranceConverter {
             allergy.criticality = Some(Self::convert_severity(severity));
         }
 
-        // Link to patient
-        if let Ok(Some(patient_id)) = terser.get("PID-3") {
+        // Link to patient. Empty is absent: it must not become a
+        // `Patient/` reference.
+        if let Ok(Some(patient_id)) = terser.get("PID-3")
+            && !patient_id.is_empty()
+        {
             allergy.patient = Some(Reference {
                 reference: Some(format!("Patient/{}", patient_id)),
                 type_: Some("Patient".to_string()),
@@ -261,6 +264,16 @@ mod tests {
         let concept = allergies[0].code.as_ref().unwrap();
         assert_eq!(concept.coding, None);
         assert_eq!(concept.text.as_deref(), Some("ASPIRIN"));
+    }
+
+    #[test]
+    fn test_empty_pid3_omits_patient() {
+        let hl7 = "MSH|^~\\&|System|Hospital|EMR|Hospital|20240315||ADT^A01|MSG123|P|2.5\r\
+                   PID|1||||DOE^JOHN||19800101|M\r\
+                   AL1|1|DA|1191^ASPIRIN|SV";
+        let message = parse_message(hl7).unwrap();
+        let allergies = AllergyIntoleranceConverter::convert_all(&message).unwrap();
+        assert_eq!(allergies[0].patient, None);
     }
 
     #[test]

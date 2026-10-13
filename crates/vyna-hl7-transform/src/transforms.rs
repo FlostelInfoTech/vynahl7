@@ -175,6 +175,11 @@ pub fn format_date(value: &str, ctx: &TransformContext) -> Result<String> {
 /// Note: This function expects the context to contain a "format" key.
 /// Supported formats: "YYYY-MM-DD HH:MM:SS", "ISO8601"
 ///
+/// HL7 DTM carries variable precision: date (8 digits), hour (10), minute
+/// (12), seconds (14). Shorter, ragged (9/11/13), overlong, or non-numeric
+/// values are rejected, as are trailing fractional seconds or timezone
+/// offsets, which this function does not interpret.
+///
 /// # Examples
 ///
 /// ```rust
@@ -191,37 +196,59 @@ pub fn format_datetime(value: &str, ctx: &TransformContext) -> Result<String> {
         .get_data("format")
         .ok_or_else(|| Error::transform_fn("format_datetime requires 'format' in context"))?;
 
-    // Parse HL7 datetime (YYYYMMDDHHMMSS).
-    // .get() keeps non-ASCII input from panicking on a split boundary.
-    let datetime = if value.len() >= 14 {
-        let head = value
-            .get(..14)
-            .ok_or_else(|| Error::transform_fn(format!("Invalid datetime format: {value}")))?;
-        if !head.bytes().all(|b| b.is_ascii_digit()) {
-            return Err(Error::transform_fn(format!(
-                "Invalid datetime format: {value}"
-            )));
-        }
-        NaiveDateTime::parse_from_str(head, "%Y%m%d%H%M%S")
-            .map_err(|e| Error::transform_fn(format!("Invalid datetime format: {}", e)))?
-    } else if value.len() >= 8 {
-        // Date only, default time to 00:00:00
-        let head = value
-            .get(..8)
-            .ok_or_else(|| Error::transform_fn(format!("Invalid datetime format: {value}")))?;
-        if !head.bytes().all(|b| b.is_ascii_digit()) {
-            return Err(Error::transform_fn(format!(
-                "Invalid datetime format: {value}"
-            )));
-        }
-        let date = chrono::NaiveDate::parse_from_str(head, "%Y%m%d")
-            .map_err(|e| Error::transform_fn(format!("Invalid date format: {}", e)))?;
-        date.and_hms_opt(0, 0, 0)
-            .ok_or_else(|| Error::transform_fn("Failed to create datetime"))?
-    } else {
+    // Whole-value validation (no slicing, so non-ASCII input cannot panic
+    // on a split boundary): every precision band parses its own time
+    // fields, and anything past them is trailing garbage, rejected
+    // instead of silently truncated.
+    if value.len() < 8 {
         return Err(Error::transform_fn(
             "Datetime must be at least 8 characters (YYYYMMDD)",
         ));
+    }
+    if !value.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(Error::transform_fn(format!(
+            "Invalid datetime format: {value}"
+        )));
+    }
+    let datetime = match value.len() {
+        8 => {
+            // Date only, default time to 00:00:00
+            let date = chrono::NaiveDate::parse_from_str(value, "%Y%m%d")
+                .map_err(|e| Error::transform_fn(format!("Invalid date format: {}", e)))?;
+            date.and_hms_opt(0, 0, 0)
+                .ok_or_else(|| Error::transform_fn("Failed to create datetime"))?
+        }
+        // Hour/minute precision: chrono cannot build a NaiveDateTime
+        // from a bare "%Y%m%d%H", so the date and time fields parse
+        // separately (slicing is safe: the value is all ASCII digits).
+        10 => {
+            let date = chrono::NaiveDate::parse_from_str(&value[..8], "%Y%m%d")
+                .map_err(|e| Error::transform_fn(format!("Invalid date format: {}", e)))?;
+            let hour: u32 = value[8..10]
+                .parse()
+                .map_err(|e| Error::transform_fn(format!("Invalid datetime format: {e}")))?;
+            date.and_hms_opt(hour, 0, 0)
+                .ok_or_else(|| Error::transform_fn(format!("Invalid datetime format: {value}")))?
+        }
+        12 => {
+            let date = chrono::NaiveDate::parse_from_str(&value[..8], "%Y%m%d")
+                .map_err(|e| Error::transform_fn(format!("Invalid date format: {}", e)))?;
+            let hour: u32 = value[8..10]
+                .parse()
+                .map_err(|e| Error::transform_fn(format!("Invalid datetime format: {e}")))?;
+            let minute: u32 = value[10..12]
+                .parse()
+                .map_err(|e| Error::transform_fn(format!("Invalid datetime format: {e}")))?;
+            date.and_hms_opt(hour, minute, 0)
+                .ok_or_else(|| Error::transform_fn(format!("Invalid datetime format: {value}")))?
+        }
+        14 => NaiveDateTime::parse_from_str(value, "%Y%m%d%H%M%S")
+            .map_err(|e| Error::transform_fn(format!("Invalid datetime format: {}", e)))?,
+        _ => {
+            return Err(Error::transform_fn(format!(
+                "Invalid datetime format: {value}"
+            )));
+        }
     };
 
     // Format according to requested format
@@ -608,6 +635,47 @@ mod tests {
                 .add_data("side".to_string(), "left".to_string());
 
             assert!(pad("123", &ctx).is_err());
+        }
+    }
+
+    #[test]
+    fn test_format_datetime_parses_hour_and_minute_precision() {
+        let ctx = TransformContext::new().add_data("format".to_string(), "ISO8601".to_string());
+
+        assert_eq!(
+            format_datetime("2024031512", &ctx).unwrap(),
+            "2024-03-15T12:00:00"
+        );
+        assert_eq!(
+            format_datetime("202403151230", &ctx).unwrap(),
+            "2024-03-15T12:30:00"
+        );
+        // Date-only still defaults the time to midnight.
+        assert_eq!(
+            format_datetime("20240315", &ctx).unwrap(),
+            "2024-03-15T00:00:00"
+        );
+    }
+
+    #[test]
+    fn test_format_datetime_rejects_ragged_and_trailing_garbage() {
+        let ctx = TransformContext::new().add_data("format".to_string(), "ISO8601".to_string());
+
+        for bad in [
+            "202403151",           // ragged: 9 chars
+            "20240315123",         // ragged: 11 chars
+            "2024031512304",       // ragged: 13 chars
+            "20240315123045X",     // trailing garbage
+            "20240315XYZ",         // trailing garbage on a date
+            "2024031512304599",    // overlong digits
+            "20240315123045+0000", // unsupported offset tail
+            "2024031525",          // hour 25 out of range
+            "202403151260",        // minute 60 out of range
+        ] {
+            assert!(
+                format_datetime(bad, &ctx).is_err(),
+                "{bad} must be rejected"
+            );
         }
     }
 

@@ -62,6 +62,20 @@ impl<'a> Terser<'a> {
     /// index exceeds the number of occurrences of that segment id (e.g.
     /// `OBX(5)` when the message holds two OBX segments).
     /// [`CachedTerser::get`](crate::CachedTerser::get) shares this contract.
+    ///
+    /// # Whole-field reads yield the first component
+    ///
+    /// A path without a component (e.g. `PID-5`) returns the first
+    /// component of the addressed repetition (`DOE` for `DOE^JOHN^A`,
+    /// `ADT` for `ADT^A01`), not the composite text. Use explicit
+    /// component paths (`PID-5-2`, `MSH-9-2`) for the remaining parts.
+    ///
+    /// Whole-field `set` is asymmetric by provenance:
+    /// [`TerserMut::set`](crate::TerserMut::set) stores the value
+    /// literally as a single component, so delimiter characters in a
+    /// `set` value read back whole here (`PID-5` returns `DOE^JOHN^A`)
+    /// while the same characters in a parsed message are structure
+    /// (`PID-5` returns `DOE`, `PID-5-2` returns `JOHN`).
     pub fn get(&self, path: &str) -> Result<Option<&str>> {
         let parsed_path = TerserPath::parse(path)?;
 
@@ -137,10 +151,26 @@ impl<'a> TerserMut<'a> {
     /// while keeping the rest.
     ///
     /// Returns [`Error::terser_path`](Error::terser_path) when the path is
-    /// malformed, uses a 0 index (all path indices are 1-based), or
-    /// addresses an index beyond `MAX_SET_INDEX` (10,000).
+    /// malformed, uses a 0 index (all path indices are 1-based),
+    /// addresses an index beyond `MAX_SET_INDEX` (10,000), or writes
+    /// field 1 or 2 of `MSH`, `FHS`, or `BHS`: those hold the message
+    /// delimiters, which live on the message, not the field, and encode
+    /// would silently drop anything written there.
     pub fn set(&mut self, path: &str, value: &str) -> Result<()> {
         let parsed_path = TerserPath::parse(path)?;
+
+        // MSH/FHS/BHS fields 1 and 2 are the message delimiters: encode
+        // derives them from Delimiters and skips the stored fields, so a
+        // write here would vanish. Reject it instead of dropping it.
+        if matches!(parsed_path.segment_id.as_str(), "MSH" | "FHS" | "BHS")
+            && matches!(parsed_path.field_index, 1 | 2)
+        {
+            return Err(Error::terser_path(format!(
+                "Cannot set {}-{}: fields 1 and 2 of {} hold the message \
+                 delimiters, which are message-level, not field values",
+                parsed_path.segment_id, parsed_path.field_index, parsed_path.segment_id
+            )));
+        }
 
         // Bound gap-filling before mutating anything: every dimension is
         // compared as a 1-based occurrence count, so no partial structure
@@ -551,6 +581,82 @@ mod tests {
 
         // Rejected before mutating: PID still holds its single field.
         assert_eq!(message.get_segments_by_id("PID")[0].fields.len(), 1);
+    }
+
+    #[test]
+    fn test_get_whole_field_yields_first_component_parsed() {
+        // Whole-field reads return the first component, not composite
+        // text: PID-5 "DOE^JOHN^A" reads as "DOE", MSH-9 "ADT^A01" as
+        // "ADT". Use explicit component paths for the rest.
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\r\
+                   PID|1||PAT001||DOE^JOHN^A\r";
+        let message = parse_message(hl7).unwrap();
+        let terser = Terser::new(&message);
+        assert_eq!(terser.get("PID-5").unwrap(), Some("DOE"));
+        assert_eq!(terser.get("MSH-9").unwrap(), Some("ADT"));
+        assert_eq!(terser.get("PID-5-2").unwrap(), Some("JOHN"));
+        assert_eq!(terser.get("MSH-9-2").unwrap(), Some("A01"));
+    }
+
+    #[test]
+    fn test_cached_get_whole_field_yields_first_component() {
+        // CachedTerser shares Terser::get's first-component contract.
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\r\
+                   PID|1||PAT001||DOE^JOHN^A\r";
+        let message = parse_message(hl7).unwrap();
+        let mut cached = CachedTerser::new(&message);
+        assert_eq!(cached.get("PID-5").unwrap(), Some("DOE"));
+        assert_eq!(cached.get("MSH-9").unwrap(), Some("ADT"));
+    }
+
+    #[test]
+    fn test_get_whole_field_set_provenance_is_literal() {
+        // set() stores whole-field values literally as one component:
+        // delimiters in the value are text, not structure, so the
+        // same characters read back whole here but split in a parsed
+        // message. This pins the set/parse provenance asymmetry.
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\rPID|1\r";
+        let mut message = parse_message(hl7).unwrap();
+        TerserMut::new(&mut message)
+            .set("PID-5", "DOE^JOHN^A")
+            .unwrap();
+        let terser = Terser::new(&message);
+        assert_eq!(terser.get("PID-5").unwrap(), Some("DOE^JOHN^A"));
+        assert_eq!(terser.get("PID-5-2").unwrap(), None);
+    }
+
+    #[test]
+    fn test_set_rejects_empty_segment_id() {
+        // An empty segment id is a malformed path, not a new segment:
+        // no garbage segment may be appended.
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\r";
+        let mut message = parse_message(hl7).unwrap();
+        let before = message.segments.len();
+        assert!(TerserMut::new(&mut message).set("-5", "x").is_err());
+        assert!(TerserMut::new(&mut message).set("   -5", "x").is_err());
+        assert_eq!(message.segments.len(), before);
+    }
+
+    #[test]
+    fn test_set_rejects_delimiter_fields_on_msh_fhs_bhs() {
+        // MSH/FHS/BHS fields 1 and 2 are the message delimiters: encode
+        // derives them from Delimiters and drops anything written here,
+        // so writes are rejected instead of silently lost.
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\r";
+        let mut message = parse_message(hl7).unwrap();
+        {
+            let mut terser = TerserMut::new(&mut message);
+            for path in [
+                "MSH-1", "MSH-2", "MSH-2-1", "FHS-1", "FHS-2", "BHS-1", "BHS-2",
+            ] {
+                assert!(terser.set(path, "@@@@").is_err(), "{path} must fail");
+            }
+            // Control: neighboring fields still write.
+            terser.set("MSH-3", "APP2").unwrap();
+        }
+        let terser = Terser::new(&message);
+        assert_eq!(terser.get("MSH-3").unwrap(), Some("APP2"));
+        assert!(message.encode().starts_with("MSH|^~\\&|"));
     }
 
     #[test]

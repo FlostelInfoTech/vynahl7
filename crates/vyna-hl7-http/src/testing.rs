@@ -158,6 +158,25 @@ impl MockHttpServer {
         self
     }
 
+    /// Cap the request body size in bytes (default: 2 MB).
+    ///
+    /// Bodies larger than the cap are rejected with `413 Payload Too Large`
+    /// before reaching the handler. Mirrors
+    /// [`HttpServer::with_max_body_size`](crate::HttpServer::with_max_body_size).
+    pub fn with_max_body_size(mut self, max_body_size: usize) -> Self {
+        self.http_server = self.http_server.clone().with_max_body_size(max_body_size);
+        self
+    }
+
+    /// Bound how long one request may take (default: 300 s).
+    ///
+    /// Requests that exceed the bound fail with `408 Request Timeout`.
+    /// Mirrors [`HttpServer::with_request_timeout`](crate::HttpServer::with_request_timeout).
+    pub fn with_request_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.http_server = self.http_server.clone().with_request_timeout(timeout);
+        self
+    }
+
     /// Start the mock server
     ///
     /// The server will bind to a random available port on localhost and
@@ -188,24 +207,10 @@ impl MockHttpServer {
             return Ok(self);
         }
 
-        // Build axum router
-        use axum::{routing::post, Router};
-        use tower_http::trace::TraceLayer;
-
-        let app = Router::new()
-            .route("/", post(crate::server::handle_message))
-            .route("/{*path}", post(crate::server::handle_message))
-            .layer(TraceLayer::new_for_http());
-
-        #[cfg(feature = "compression")]
-        let app = if server.enable_compression {
-            use tower_http::compression::CompressionLayer;
-            app.layer(CompressionLayer::new())
-        } else {
-            app
-        };
-
-        let app = app.with_state(server);
+        // Build the router through the same code path as HttpServer so
+        // the mock enforces the same body limit, request timeout, and
+        // optional compression as the real server.
+        let app = server.build_router();
 
         // Spawn server task with graceful shutdown
         let server_task = tokio::spawn(async move {
@@ -498,5 +503,84 @@ mod tests {
 
         server.shutdown().await.unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The mock must answer a stalled partial body with 408 like the real
+    /// server instead of leaving the connection hanging.
+    #[tokio::test]
+    async fn test_mock_server_request_timeout_closes_stalled_body() {
+        use std::time::Duration;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let server = MockHttpServer::new()
+            .with_request_timeout(Duration::from_millis(300))
+            .start()
+            .await
+            .unwrap();
+        let addr = server.local_addr();
+
+        // Complete headers promising 100 body bytes, then only 7 bytes.
+        let partial = concat!(
+            "POST / HTTP/1.1\r\nHost: x\r\n",
+            "Content-Type: x-application/hl7-v2+er7\r\n",
+            "Content-Length: 100\r\n\r\n1234567"
+        );
+        let mut tcp = tokio::net::TcpStream::connect(addr).await.unwrap();
+        tcp.write_all(partial.as_bytes()).await.unwrap();
+
+        let mut buf = [0u8; 1024];
+        let read = tokio::time::timeout(Duration::from_secs(5), tcp.read(&mut buf)).await;
+        let n = read
+            .expect("mock left stalled partial body open (missing timeout layer)")
+            .expect("reading stalled connection failed");
+        if n > 0 {
+            let head = String::from_utf8_lossy(&buf[..n]);
+            assert!(head.contains("408"), "expected 408, got: {head}");
+        }
+
+        server.shutdown().await.unwrap();
+    }
+
+    /// The mock must enforce the body-size limit, and the knob must move it.
+    #[tokio::test]
+    async fn test_mock_server_body_limit_enforced_and_configurable() {
+        let mut big = String::from("MSH|^~\\&|SND|FAC|RCV|RFAC|20240115120000||ADT^A01|1|P|2.5\r");
+        while big.len() <= 64 * 1024 {
+            big.push_str("NTE|1||padding-padding-padding-padding-padding\r");
+        }
+
+        // A ~64 KiB body exceeds a 1 KiB cap: expect 413.
+        let server = MockHttpServer::new()
+            .with_max_body_size(1024)
+            .start()
+            .await
+            .unwrap();
+        let status = reqwest::Client::new()
+            .post(format!("{}/", server.url()))
+            .header("content-type", crate::CONTENT_TYPE_HL7_ER7)
+            .body(big.clone())
+            .send()
+            .await
+            .unwrap()
+            .status();
+        assert_eq!(status, reqwest::StatusCode::PAYLOAD_TOO_LARGE);
+        server.shutdown().await.unwrap();
+
+        // A raised cap accepts the same body.
+        let server = MockHttpServer::new()
+            .with_max_body_size(8 * 1024 * 1024)
+            .start()
+            .await
+            .unwrap();
+        let status = reqwest::Client::new()
+            .post(format!("{}/", server.url()))
+            .header("content-type", crate::CONTENT_TYPE_HL7_ER7)
+            .body(big)
+            .send()
+            .await
+            .unwrap()
+            .status();
+        assert_eq!(status, reqwest::StatusCode::OK);
+        server.shutdown().await.unwrap();
     }
 }

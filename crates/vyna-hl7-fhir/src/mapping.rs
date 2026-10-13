@@ -40,6 +40,8 @@
 //! - `template`: wrap the value, e.g. `"Patient/{value}"`.
 //! - `when`: terser path that must resolve to a non-empty value, else the
 //!   rule is skipped.
+//! - `fallback_source`: second terser path tried when `source` resolves
+//!   to nothing (absent or empty).
 //! - `repeat: {segment: XXX}`: emit one resource per segment, rewriting
 //!   sources on that segment to the current repetition (`OBX-5` reads the
 //!   Nth OBX); sources on other segments stay global.
@@ -568,7 +570,8 @@ impl MappingEngine {
     }
 }
 
-/// `YYYYMMDD[HHMMSS...]` -> `YYYY-MM-DD` (`YYYYMM` -> `YYYY-MM`).
+/// `YYYYMMDD[HHMMSS...]` -> `YYYY-MM-DD` (`YYYYMM` -> `YYYY-MM`,
+/// `YYYY` stays a year).
 fn format_date(text: &str) -> Option<String> {
     // A zone suffix cannot apply to a date, so format the stem alone.
     let (stem, _) = split_hl7_offset(text);
@@ -584,6 +587,10 @@ fn format_date(text: &str) -> Option<String> {
     if bytes.len() >= 6 && bytes[..6].iter().all(|b| b.is_ascii_digit()) {
         return valid_hl7_year_month(&stem[0..6])
             .then(|| format!("{}-{}", &stem[0..4], &stem[4..6]));
+    }
+    // Year precision, like the code converters accept.
+    if bytes.len() >= 4 && bytes[..4].iter().all(|b| b.is_ascii_digit()) {
+        return Some(stem[0..4].to_string());
     }
     None
 }
@@ -1100,5 +1107,45 @@ fields:
         .unwrap();
         let out = MappingEngine::apply(&mapping, &message).unwrap();
         assert_eq!(out[0]["a"], "2024-03-15T10:00:00+05:00");
+    }
+
+    #[test]
+    fn engine_format_accepts_year_precision() {
+        assert_eq!(format_date("1980"), Some("1980".to_string()));
+        assert_eq!(format_datetime("1980"), Some("1980".to_string()));
+        // End to end: a year PID-7 no longer errors the whole apply.
+        let message = parse_message(
+            "MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1||7||Smith^John||1980|M",
+        )
+        .unwrap();
+        let mapping = Mapping::from_yaml(
+            r#"
+resourceType: Patient
+fields:
+  - target: birthDate
+    source: PID-7
+    format: date
+"#,
+        )
+        .unwrap();
+        let out = MappingEngine::apply(&mapping, &message).unwrap();
+        assert_eq!(out[0]["birthDate"], "1980");
+    }
+
+    #[test]
+    fn shipped_allergy_mapping_matches_text_only_code() {
+        // Text-only CWE (`^ASPIRIN`): both sides emit text with no
+        // coding, keeping the yaml header's parity claim.
+        let message = parse_message(
+            "MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1||7\rAL1|1|DA|^ASPIRIN|SV",
+        )
+        .unwrap();
+
+        let mapping = Mapping::from_yaml(mappings::ALLERGY_INTOLERANCE).unwrap();
+        let declarative = MappingEngine::apply(&mapping, &message).unwrap();
+        let coded = AllergyIntoleranceConverter::convert_all(&message).unwrap();
+
+        assert_eq!(declarative.len(), 1);
+        assert_eq!(declarative[0], serde_json::to_value(&coded[0]).unwrap());
     }
 }

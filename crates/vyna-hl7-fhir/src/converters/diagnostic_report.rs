@@ -47,7 +47,12 @@ impl DiagnosticReportConverter {
             format!("OBR({})-4", obr_index + 1)
         };
 
-        let code = if let Ok(Some(code_id)) = terser.get(&code_path) {
+        // Empty is missing: the report code is required, so a
+        // present-but-empty OBR-4 errors instead of yielding an
+        // empty coding.
+        let code = if let Ok(Some(code_id)) = terser.get(&code_path)
+            && !code_id.is_empty()
+        {
             let mut coding = Coding {
                 system: None,
                 version: None,
@@ -379,6 +384,21 @@ mod tests {
             DiagnosticReportConverter::convert_datetime("20240315100000+0500").unwrap(),
             "2024-03-15T10:00:00+05:00"
         );
+    }
+
+    #[test]
+    fn test_empty_obr4_is_missing_field() {
+        // OBR-4 present-but-empty (OBR-5 forces presence) errors
+        // instead of yielding a coding with an empty code.
+        let hl7 = "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||ORU^R01|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   OBR|1|LAB123|LAB123-01||R";
+        let message = parse_message(hl7).unwrap();
+        let err = DiagnosticReportConverter::convert_all(&message).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::ConversionError::MissingField(_, _)
+        ));
     }
 
     #[test]
