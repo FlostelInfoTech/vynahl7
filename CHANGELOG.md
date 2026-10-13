@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Living SDLC documentation: requirements specification (`docs/requirements.md`), design specification (`docs/design.md`), integration guide (`docs/integration.md` with executed snippets), CycloneDX SBOM (`docs/sbom/`), and a documentation index with update rules (`docs/README.md`)
+- `scripts/merge_sbom.py` merges per-crate CycloneDX files into one workspace SBOM
+
+### Fixed
+
+- Documentation staleness: 23-crate workspace map (was 10), 12+4 FHIR converters (was 9), ADT A34, full v2.1–v2.8.2 version list, BAR/MFN builder coverage, and a broken `with_strict_mode` blog snippet now using `ValidationContext`
+
 ## [0.7.0] - 2026-10-13
 
 ### Added

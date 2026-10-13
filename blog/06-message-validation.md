@@ -504,12 +504,16 @@ if !result.is_valid() {
 Different scenarios need different validation levels:
 
 ```rust
-// Strict: Production systems receiving from known senders
+// Strict (the default): production systems receiving from known senders
 let strict_validator = Validator::new(Version::V2_5);
+
+// Standard: pinned-version feeds whose senders drift in MSH-12
+let standard_validator = Validator::new(Version::V2_5)
+    .with_context(ValidationContext::standard());
 
 // Lenient: Testing or receiving from legacy systems
 let lenient_validator = Validator::new(Version::V2_5)
-    .with_strict_mode(false);
+    .with_context(ValidationContext::lenient());
 ```
 
 ### 4. Combine with Business Rules
