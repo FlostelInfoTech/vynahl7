@@ -183,7 +183,7 @@ pointer to the suite that proves it. Roadmap items are marked
 | Validation | `cargo test -p vyna-hl7-validator`, `site_tables.rs` |
 | Transports | mllp/http tests incl. `--features tls,testing` |
 | UX | CLI tests, testpanel tests, wasm-pack builds |
-| Full gate | `cargo test --workspace` (1384 passing at 0.9.0), clippy clean |
+| Full gate | `cargo test --workspace` green across default and all-features builds, clippy clean |
 
 ## 11. Roadmap (explicitly out of scope for 0.9.0)
 

@@ -693,7 +693,11 @@ pub fn parse_streaming(input: &str) -> Result<Message> {
         builder.process_event(event)?;
     }
 
-    Ok(builder.finish())
+    let message = builder.finish();
+    if message.segments.is_empty() {
+        return Err(Error::parse("Message must start with MSH segment"));
+    }
+    Ok(message)
 }
 
 /// Segment callback for streaming processing
@@ -959,6 +963,15 @@ mod tests {
         let event = parser.next_event().unwrap().unwrap();
         assert!(matches!(event, SegmentEvent::EndOfMessage));
         assert!(parser.next_event().is_none());
+    }
+
+    #[test]
+    fn test_parse_streaming_rejects_empty_input() {
+        // No segments means no MSH: error like parse_message does.
+        for input in ["", "   ", "  \r\n  \r\n"] {
+            let err = parse_streaming(input).unwrap_err().to_string();
+            assert!(err.contains("must start with MSH"), "{input:?}: {err}");
+        }
     }
 
     #[test]

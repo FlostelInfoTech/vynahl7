@@ -886,6 +886,21 @@ fn parse_bhs_segment(input: &str, delimiters: &Delimiters) -> Result<BatchHeader
     })
 }
 
+/// Parse an NM-typed trailer count (BTS-1, FTS-1)
+///
+/// Absent or blank counts mean "no count given" (`None`, so the trailer
+/// check is skipped); a present but non-numeric count is a parse error,
+/// never a silent skip.
+fn parse_trailer_count(label: &str, value: Option<&str>) -> Result<Option<usize>> {
+    match value.map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(text) => text
+            .parse::<usize>()
+            .map(Some)
+            .map_err(|_| Error::parse(format!("Invalid {label}: '{text}' is not a number"))),
+    }
+}
+
 /// Parse FTS (File Trailer Segment)
 fn parse_fts_segment(input: &str, delimiters: &Delimiters) -> Result<FileTrailer> {
     let segment = parse_segment(input, delimiters)?;
@@ -894,9 +909,7 @@ fn parse_fts_segment(input: &str, delimiters: &Delimiters) -> Result<FileTrailer
         return Err(Error::parse("Expected FTS segment"));
     }
 
-    let batch_count = segment
-        .get_field_value(1)
-        .and_then(|s| s.parse::<usize>().ok());
+    let batch_count = parse_trailer_count("FTS-1 batch count", segment.get_field_value(1))?;
 
     let comment = segment.get_field_value(2).map(String::from);
 
@@ -914,20 +927,31 @@ fn parse_bts_segment(input: &str, delimiters: &Delimiters) -> Result<BatchTraile
         return Err(Error::parse("Expected BTS segment"));
     }
 
-    let message_count = segment
-        .get_field_value(1)
-        .and_then(|s| s.parse::<usize>().ok());
+    let message_count =
+        parse_trailer_count("BTS-1 message count", segment.get_field_value(1))?;
 
     let comment = segment.get_field_value(2).map(String::from);
 
-    let totals = if let Some(totals_str) = segment.get_field_value(3) {
-        totals_str
-            .split(delimiters.repetition_separator)
-            .filter_map(|s| s.parse::<f64>().ok())
-            .collect()
-    } else {
-        Vec::new()
-    };
+    // BTS-3 is a repeating field: collect every component of every
+    // repetition. Blank entries carry no total; a present but
+    // non-numeric entry is a parse error, never a silent drop.
+    let mut totals = Vec::new();
+    if let Some(field) = segment.get_field(3) {
+        for repetition in &field.repetitions {
+            for component in &repetition.components {
+                let text = component.value().map(str::trim).unwrap_or("");
+                if text.is_empty() {
+                    continue;
+                }
+                let total = text.parse::<f64>().map_err(|_| {
+                    Error::parse(format!(
+                        "Invalid BTS-3 batch total: '{text}' is not a number"
+                    ))
+                })?;
+                totals.push(total);
+            }
+        }
+    }
 
     Ok(BatchTrailer {
         message_count,
@@ -1184,6 +1208,58 @@ mod tests {
 
         assert_eq!(trailer.batch_count, Some(1));
         assert_eq!(trailer.comment, Some("File complete".to_string()));
+    }
+
+    #[test]
+    fn test_parse_bts_totals_collect_all_repetitions() {
+        // BTS-3 is repeating: every repetition (and component) is a total.
+        let delims = Delimiters::default();
+        let trailer = parse_bts_segment("BTS|1|done|1.5~2.5", &delims).unwrap();
+        assert_eq!(trailer.message_count, Some(1));
+        assert_eq!(trailer.totals, vec![1.5, 2.5]);
+
+        // Blank entries carry no total and do not error.
+        let trailer = parse_bts_segment("BTS|1|done|", &delims).unwrap();
+        assert!(trailer.totals.is_empty());
+        let trailer = parse_bts_segment("BTS|1|done", &delims).unwrap();
+        assert!(trailer.totals.is_empty());
+    }
+
+    #[test]
+    fn test_parse_bts_rejects_non_numeric_counts_and_totals() {
+        let delims = Delimiters::default();
+        for bts in [
+            "BTS|abc|done",
+            "BTS|1|done|abc",
+            "BTS|1|done|1.5~oops",
+            "BTS|1.5|done",
+        ] {
+            let err = parse_bts_segment(bts, &delims).unwrap_err().to_string();
+            assert!(err.contains("not a number"), "{bts}: {err}");
+        }
+        // Blank BTS-1 still means "no count given", not an error.
+        let trailer = parse_bts_segment("BTS||done", &delims).unwrap();
+        assert_eq!(trailer.message_count, None);
+    }
+
+    #[test]
+    fn test_parse_fts_rejects_non_numeric_batch_count() {
+        let delims = Delimiters::default();
+        let err = parse_fts_segment("FTS|abc", &delims)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not a number"), "{err}");
+        let trailer = parse_fts_segment("FTS|", &delims).unwrap();
+        assert_eq!(trailer.batch_count, None);
+    }
+
+    #[test]
+    fn test_strict_parse_rejects_unterminated_escape() {
+        // Unterminated escapes error like other malformed escapes do.
+        let err = parse_message("MSH|^~\\&|A|B|||20250115||ADT^A01|1|P|2.5\rPID|1||X\\X0D")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Unterminated"), "{err}");
     }
 
     #[test]

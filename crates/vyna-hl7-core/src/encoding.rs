@@ -73,14 +73,23 @@ impl Encoding {
             if ch == delimiters.escape_character {
                 // Look for the escape sequence
                 let mut escape_seq = String::new();
+                let mut closed = false;
 
                 while let Some(&next_ch) = chars.peek() {
                     if next_ch == delimiters.escape_character {
                         chars.next(); // consume the closing escape character
+                        closed = true;
                         break;
                     }
                     escape_seq.push(next_ch);
                     chars.next();
+                }
+
+                if !closed {
+                    return Err(Error::Decoding(format!(
+                        "Unterminated escape sequence: \\{}",
+                        truncate_escape(&escape_seq)
+                    )));
                 }
 
                 // Decode the escape sequence
@@ -241,6 +250,19 @@ mod tests {
         assert!(!err.contains(&long), "{err}");
         assert!(err.contains("chars total"), "{err}");
         assert!(err.contains(&"B".repeat(32)), "{err}");
+    }
+
+    #[test]
+    fn test_unterminated_escape_sequence_errors() {
+        let delims = Delimiters::default();
+        // A known sequence without its closer must not decode silently.
+        let err = Encoding::decode("A\\X0D", &delims).unwrap_err().to_string();
+        assert!(err.contains("Unterminated"), "{err}");
+        let err = Encoding::decode("A\\H", &delims).unwrap_err().to_string();
+        assert!(err.contains("Unterminated"), "{err}");
+        // Terminated forms still decode.
+        assert_eq!(Encoding::decode("A\\X0D\\", &delims).unwrap(), "A\r");
+        assert_eq!(Encoding::decode("A\\H\\", &delims).unwrap(), "A");
     }
 
     #[test]

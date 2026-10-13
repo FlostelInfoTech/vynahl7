@@ -291,10 +291,18 @@ impl SftpTransport {
     }
 
     /// Resolve a transport path under the configured remote root.
+    ///
+    /// An empty resolution (default root, empty path) maps to `"."`:
+    /// real OpenSSH answers `""` with an empty listing even when the
+    /// login dir is full, which would stall the poller with no error.
     fn remote(&self, path: &str) -> Result<String, BatchError> {
         let relative = crate::transport::clean_relative_parts(path)?.join("/");
         if self.config.root.is_empty() {
-            Ok(relative)
+            if relative.is_empty() {
+                Ok(".".to_string())
+            } else {
+                Ok(relative)
+            }
         } else if relative.is_empty() {
             Ok(self.config.root.clone())
         } else {
@@ -417,6 +425,10 @@ impl FileTransport for SftpTransport {
             if !self.config.root.is_empty() {
                 let prefix = format!("{}/", self.config.root);
                 path = path.strip_prefix(&prefix).unwrap_or(&path).to_string();
+            } else {
+                // `read_dir(".")` joins a "./" prefix onto names; drop
+                // it so root listings report bare names like any other.
+                path = path.strip_prefix("./").unwrap_or(&path).to_string();
             }
             if is_staged_upload(&path) {
                 continue;
@@ -482,7 +494,7 @@ impl FileTransport for SftpTransport {
 
     async fn put(&mut self, path: &str, data: &[u8]) -> Result<(), BatchError> {
         let remote = self.remote(path)?;
-        if remote.is_empty() {
+        if remote.is_empty() || remote == "." {
             return Err(BatchError::Invalid("empty path".to_string()));
         }
         if let Some((parent, _)) = remote.rsplit_once('/') {
@@ -664,6 +676,44 @@ mod tests {
             .collect();
         let unique: std::collections::HashSet<_> = names.iter().collect();
         assert_eq!(unique.len(), names.len(), "staging names collided");
+    }
+
+    fn unconnected(config: SftpConfig) -> SftpTransport {
+        SftpTransport {
+            config,
+            ssh: None,
+            sftp: None,
+        }
+    }
+
+    #[test]
+    fn empty_remote_resolves_to_login_dir() {
+        // Real OpenSSH lists nothing for "" against a non-empty login
+        // dir, so the transport root (""/".") must map to "." like the
+        // FTP (None dir) and filesystem transports list the login dir.
+        let config = SftpConfig::new("host:22", "u", SftpAuth::Password("p".into()));
+        let transport = unconnected(config);
+        assert_eq!(transport.remote("").unwrap(), ".");
+        assert_eq!(transport.remote(".").unwrap(), ".");
+        assert_eq!(transport.remote("inbox").unwrap(), "inbox");
+        // A configured root still anchors every path.
+        let config =
+            SftpConfig::new("host:22", "u", SftpAuth::Password("p".into())).with_root("base");
+        let transport = unconnected(config);
+        assert_eq!(transport.remote("").unwrap(), "base");
+        assert_eq!(transport.remote("inbox").unwrap(), "base/inbox");
+    }
+
+    #[tokio::test]
+    async fn put_still_rejects_empty_paths() {
+        // `remote("")` is now "." (the login dir), but uploading to it
+        // must keep failing as an empty path, not stage a temp file.
+        let config = SftpConfig::new("host:22", "u", SftpAuth::Password("p".into()));
+        let mut transport = unconnected(config);
+        assert!(matches!(
+            transport.put("", b"x").await,
+            Err(BatchError::Invalid(_))
+        ));
     }
 
     #[test]

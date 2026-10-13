@@ -1,8 +1,8 @@
 //! Specimen converter - SPM segment to FHIR Specimen resource
 
 use super::patient::{
-    hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min,
-    valid_hl7_time,
+    hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time,
+    valid_hl7_year_month,
 };
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
@@ -116,13 +116,39 @@ impl SpecimenConverter {
         };
         let mut has_collection = false;
 
-        // SPM-17: Specimen Collection Date/Time -> collection.collectedDateTime
-        // Lenient by design (see crate docs "Invalid datetime handling").
-        if let Ok(Some(collected_dt)) = terser.get(&spm_path("17"))
-            && let Ok(collected_time) = Self::convert_datetime(collected_dt)
-        {
-            collection.collected_date_time = Some(collected_time);
-            has_collection = true;
+        // SPM-17: Specimen Collection Date/Time (DR) -> collection.
+        // A valued range end emits collectedPeriod; a single
+        // component keeps collectedDateTime. Lenient by design
+        // (see crate docs "Invalid datetime handling").
+        let spm17_start = terser
+            .get(&spm_path("17"))
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty());
+        let spm17_end = terser
+            .get(&format!("{}-2", spm_path("17")))
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty());
+        match (spm17_start, spm17_end) {
+            (Some(start), Some(end)) => {
+                if let (Ok(start_dt), Ok(end_dt)) =
+                    (Self::convert_datetime(start), Self::convert_datetime(end))
+                {
+                    collection.collected_period = Some(Period {
+                        start: Some(start_dt),
+                        end: Some(end_dt),
+                    });
+                    has_collection = true;
+                }
+            }
+            (Some(start), None) => {
+                if let Ok(collected_time) = Self::convert_datetime(start) {
+                    collection.collected_date_time = Some(collected_time);
+                    has_collection = true;
+                }
+            }
+            _ => {}
         }
 
         // SPM-7: Specimen Collection Method -> collection.method
@@ -297,7 +323,8 @@ impl SpecimenConverter {
     ///
     /// `YYYYMMDDHHMM` keeps its minutes and a trailing HL7 zone is
     /// preserved as `±HH:MM`. Validated fractional seconds are kept
-    /// as `.digits`.
+    /// as `.digits`. Shorter `YYYYMM`/`YYYY` stems delegate to
+    /// [`Self::convert_date`].
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
         let (stem, offset) = split_hl7_offset(datetime);
         let zone = offset.as_deref().unwrap_or("");
@@ -341,11 +368,48 @@ impl SpecimenConverter {
             } else {
                 Err(Self::invalid_datetime(datetime))
             }
+        } else if bytes.len() >= 4 {
+            // Month or year precision, like the patient converter.
+            Self::convert_date(stem)
         } else {
             Err(Self::invalid_datetime(datetime))
         }
     }
 
+    /// Convert HL7 date (YYYYMMDD) to FHIR date format
+    ///
+    /// `YYYYMM` month precision is preserved as `YYYY-MM`.
+    fn convert_date(date: &str) -> ConversionResult<String> {
+        let (stem, _) = split_hl7_offset(date);
+        let bytes = stem.as_bytes();
+        if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_date(&stem[0..8]) {
+                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
+            } else {
+                Err(Self::invalid_date())
+            }
+        } else if bytes.len() >= 6 && bytes[..6].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_year_month(&stem[0..6]) {
+                Ok(format!("{}-{}", &stem[0..4], &stem[4..6]))
+            } else {
+                Err(Self::invalid_date())
+            }
+        } else if bytes.len() >= 4 && bytes[..4].iter().all(|b| b.is_ascii_digit()) {
+            Ok(stem[0..4].to_string())
+        } else {
+            Err(Self::invalid_date())
+        }
+    }
+
+    /// Redacted bad-date error: field location + reason only, never the value.
+    fn invalid_date() -> ConversionError {
+        ConversionError::InvalidFormat(
+            "SPM-17/SPM-18".to_string(),
+            "SPM".to_string(),
+            // Redacted: never embed the source value (may be PHI).
+            "expected YYYYMMDD calendar date, YYYYMM month, or YYYY year".to_string(),
+        )
+    }
 
     /// Redacted bad-datetime error: field location + reason only, never the value.
     fn invalid_datetime(_datetime: &str) -> ConversionError {
@@ -744,5 +808,61 @@ mod tests {
             SpecimenConverter::convert_datetime("20240315100000.123").unwrap(),
             "2024-03-15T10:00:00.123"
         );
+    }
+
+    #[test]
+    fn test_convert_datetime_accepts_month_and_year_precision() {
+        assert_eq!(
+            SpecimenConverter::convert_datetime("202403").unwrap(),
+            "2024-03"
+        );
+        assert_eq!(SpecimenConverter::convert_datetime("2024").unwrap(), "2024");
+    }
+
+    #[test]
+    fn test_spm17_range_emits_collected_period() {
+        // SPM-17 is a DR: a valued range end emits
+        // collectedPeriod instead of dropping the end.
+        let mut fields = vec![String::new(); 30];
+        fields[0] = "1".to_string();
+        fields[1] = "SPEC123".to_string();
+        fields[3] = "BLD^Blood^HL70487".to_string();
+        fields[16] = "20240101^20240102".to_string(); // SPM-17
+        let hl7 = format!(
+            "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||OML^O21|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rSPM|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let spec = &SpecimenConverter::convert_all(&message).unwrap()[0];
+        let collection = spec.collection.as_ref().unwrap();
+        assert_eq!(collection.collected_date_time, None);
+        let period = collection.collected_period.as_ref().unwrap();
+        assert_eq!(period.start.as_deref(), Some("2024-01-01"));
+        assert_eq!(period.end.as_deref(), Some("2024-01-02"));
+    }
+
+    #[test]
+    fn test_spm17_single_value_keeps_collected_date_time() {
+        // A single-component SPM-17 still maps to
+        // collectedDateTime, never a period.
+        let mut fields = vec![String::new(); 30];
+        fields[0] = "1".to_string();
+        fields[1] = "SPEC123".to_string();
+        fields[3] = "BLD^Blood^HL70487".to_string();
+        fields[16] = "20240101".to_string(); // SPM-17
+        let hl7 = format!(
+            "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||OML^O21|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rSPM|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let spec = &SpecimenConverter::convert_all(&message).unwrap()[0];
+        let collection = spec.collection.as_ref().unwrap();
+        assert_eq!(
+            collection.collected_date_time.as_deref(),
+            Some("2024-01-01")
+        );
+        assert_eq!(collection.collected_period, None);
     }
 }

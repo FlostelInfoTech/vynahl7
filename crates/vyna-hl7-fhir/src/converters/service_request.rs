@@ -2,8 +2,8 @@
 
 use super::coding_systems::convert_coding_system;
 use super::patient::{
-    hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min,
-    valid_hl7_time,
+    hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time,
+    valid_hl7_year_month,
 };
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
@@ -173,7 +173,9 @@ impl ServiceRequestConverter {
         };
 
         // OBR-4: Universal Service Identifier -> code. Empty is
-        // absent: it must not become a coding with an empty code.
+        // absent: it must not become a coding with an empty code,
+        // but a text-only CWE keeps its text like the allergy
+        // converter.
         if let Ok(Some(service_code)) = terser.get(&obr_path("4"))
             && !service_code.is_empty()
         {
@@ -201,6 +203,13 @@ impl ServiceRequestConverter {
             service_request.code = Some(CodeableConcept {
                 coding: Some(vec![coding]),
                 text: None,
+            });
+        } else if let Ok(Some(service_text)) = terser.get(&format!("{}-2", obr_path("4")))
+            && !service_text.is_empty()
+        {
+            service_request.code = Some(CodeableConcept {
+                coding: None,
+                text: Some(service_text.to_string()),
             });
         }
 
@@ -251,7 +260,9 @@ impl ServiceRequestConverter {
         }
 
         // OBR-31: Reason for Study -> reasonCode. Empty is
-        // absent: it must not become a coding with an empty code.
+        // absent: it must not become a coding with an empty code,
+        // but a text-only CWE keeps its text like the allergy
+        // converter.
         if let Ok(Some(reason_code)) = terser.get(&obr_path("31"))
             && !reason_code.is_empty()
         {
@@ -272,6 +283,13 @@ impl ServiceRequestConverter {
             service_request.reason_code = Some(vec![CodeableConcept {
                 coding: Some(vec![coding]),
                 text: None,
+            }]);
+        } else if let Ok(Some(reason_text)) = terser.get(&format!("{}-2", obr_path("31")))
+            && !reason_text.is_empty()
+        {
+            service_request.reason_code = Some(vec![CodeableConcept {
+                coding: None,
+                text: Some(reason_text.to_string()),
             }]);
         }
 
@@ -306,6 +324,30 @@ impl ServiceRequestConverter {
             _ => "routine",
         }
         .to_string()
+    }
+
+    /// `YYYYMMDD` -> `YYYY-MM-DD` (`YYYYMM` -> `YYYY-MM`,
+    /// `YYYY` stays a year).
+    fn convert_date(date: &str) -> ConversionResult<String> {
+        let (stem, _) = split_hl7_offset(date);
+        let bytes = stem.as_bytes();
+        if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_date(&stem[0..8]) {
+                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
+            } else {
+                Err(Self::invalid_datetime_format())
+            }
+        } else if bytes.len() >= 6 && bytes[..6].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_year_month(&stem[0..6]) {
+                Ok(format!("{}-{}", &stem[0..4], &stem[4..6]))
+            } else {
+                Err(Self::invalid_datetime_format())
+            }
+        } else if bytes.len() >= 4 && bytes[..4].iter().all(|b| b.is_ascii_digit()) {
+            Ok(stem[0..4].to_string())
+        } else {
+            Err(Self::invalid_datetime_format())
+        }
     }
 
     /// Convert HL7 datetime (YYYYMMDDHHMMSS) to FHIR ISO 8601 format
@@ -349,13 +391,10 @@ impl ServiceRequestConverter {
             } else {
                 Err(Self::invalid_datetime_format())
             }
-        } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
-            // Date only; still requires a real calendar date.
-            if valid_hl7_date(&stem[0..8]) {
-                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
-            } else {
-                Err(Self::invalid_datetime_format())
-            }
+        } else if bytes.len() >= 4 {
+            // Date, month, or year precision, like the patient
+            // converter.
+            Self::convert_date(stem)
         } else {
             Err(Self::invalid_datetime_format())
         }
@@ -795,6 +834,50 @@ mod tests {
         assert_eq!(
             ServiceRequestConverter::convert_datetime("20240315100000.123").unwrap(),
             "2024-03-15T10:00:00.123"
+        );
+    }
+
+    #[test]
+    fn test_text_only_obr4_code_preserved() {
+        let hl7 = "MSH|^~\\&|CPOE|Hospital|LAB|Hospital|20240315||ORM^O01|MSG123|P|2.5\r\
+                   PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+                   ORC|NW|O1|||A\r\
+                   OBR|1|O1||^Free text order";
+        let message = parse_message(hl7).unwrap();
+        let requests = ServiceRequestConverter::convert_all(&message).unwrap();
+        let code = requests[0].code.as_ref().unwrap();
+        assert_eq!(code.coding, None);
+        assert_eq!(code.text.as_deref(), Some("Free text order"));
+    }
+
+    #[test]
+    fn test_text_only_obr31_reason_preserved() {
+        let mut obr = vec![String::new(); 31];
+        obr[0] = "1".to_string();
+        obr[1] = "O1".to_string();
+        obr[3] = "CBC^Complete Blood Count^LN".to_string();
+        obr[30] = "^Free text reason".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|CPOE|Hospital|LAB|Hospital|20240315||ORM^O01|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rORC|NW|O1|||A\rOBR|{}",
+            obr.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let requests = ServiceRequestConverter::convert_all(&message).unwrap();
+        let reason = &requests[0].reason_code.as_ref().unwrap()[0];
+        assert_eq!(reason.coding, None);
+        assert_eq!(reason.text.as_deref(), Some("Free text reason"));
+    }
+
+    #[test]
+    fn test_datetime_accepts_year_month_precision() {
+        assert_eq!(
+            ServiceRequestConverter::convert_datetime("202401").unwrap(),
+            "2024-01"
+        );
+        assert_eq!(
+            ServiceRequestConverter::convert_datetime("1980").unwrap(),
+            "1980"
         );
     }
 }

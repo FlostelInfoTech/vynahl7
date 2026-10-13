@@ -454,8 +454,11 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("ORC", 2),
         ("ORC", 3),
         ("ORC", 4),
+        ("ORC", 8),
         ("OBR", 2),
         ("OBR", 3),
+        ("OBR", 26),
+        ("OBR", 29),
         ("GT1", 2),
         ("GT1", 29),
         ("IN1", 10),
@@ -477,6 +480,7 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("STF", 1),
         ("STF", 2),
         ("STF", 14),
+        ("STF", 22),
         ("PRD", 7),
         ("TXA", 12),
         ("TXA", 13),
@@ -507,6 +511,8 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("DG1", 20),
         ("ROL", 1),
         ("PR1", 19),
+        ("PRB", 4),
+        ("PRB", 5),
     ];
     let removed: &[(&str, usize)] = &[
         ("PID", 5),
@@ -619,6 +625,7 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("STF", 3),
         ("STF", 10),
         ("STF", 15),
+        ("STF", 34),
         ("PRD", 2),
         ("PRD", 5),
         ("PRD", 10),
@@ -671,8 +678,6 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("PRB", 9),
         ("PRB", 15),
         ("PRB", 16),
-        ("PRB", 24),
-        ("PRB", 25),
         ("DG1", 5),
         ("DG1", 19),
         ("GT1", 8),
@@ -683,8 +688,6 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("GT1", 32),
         ("IN1", 12),
         ("IN1", 13),
-        ("IN1", 14),
-        ("IN1", 15),
         ("IN1", 18),
         ("IN1", 24),
         ("IN1", 26),
@@ -699,6 +702,11 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("STF", 6),
         ("STF", 12),
         ("STF", 13),
+        ("STF", 24),
+        ("STF", 25),
+        ("STF", 26),
+        ("STF", 31),
+        ("STF", 35),
         ("PRD", 8),
         ("PRD", 9),
         ("TXA", 4),
@@ -768,6 +776,15 @@ fn safe_harbor_rules() -> Vec<Rule> {
         }
         rules.push(Rule::component(segment, field, 5, Truncate(3)));
     }
+    // Timing/quantity fields (TQ): components 4/5 are TS Start/End
+    // Date-Time and shift while quantity/interval/priority are kept.
+    for (segment, field) in [("ORC", 7), ("SCH", 11), ("RXE", 1), ("OBR", 27)] {
+        rules.push(Rule::component(segment, field, 4, DateShift));
+        rules.push(Rule::component(segment, field, 5, DateShift));
+    }
+    // IN1-14 Authorization Information (AUI): only component 2 (DT)
+    // is a date; the authorization number and source are kept.
+    rules.push(Rule::component("IN1", 14, 2, DateShift));
     rules
 }
 
@@ -1973,5 +1990,151 @@ mod tests {
             "escape-corrupted range: {}",
             message.encode()
         );
+    }
+
+    #[test]
+    fn safe_harbor_hashes_orc_parent_numbers() {
+        // ORC-8 Parent (EIP) carries the same placer/filler numbers
+        // hashed in ORC-2/ORC-3; leaving it verbatim leaks them.
+        let key = b"site-secret";
+        let message = redact_segments(&[seg("ORC", &[(8, "PLACER99^FILLER99")])]);
+        let orc = message.get_segment_by_id("ORC").unwrap();
+        assert_eq!(
+            orc.get_field_value(8),
+            Some(hash_of(key, "PLACER99^FILLER99").as_str()),
+            "ORC-8 parent numbers survive verbatim"
+        );
+    }
+
+    #[test]
+    fn safe_harbor_hashes_obr_parent_numbers() {
+        // OBR-26 Parent Result (PRL) and OBR-29 Parent (EIP) carry
+        // parent placer/filler numbers like OBR-2/OBR-3.
+        let key = b"site-secret";
+        let message = redact_segments(&[seg(
+            "OBR",
+            &[(26, "WBC^PLACER88^FILLER88"), (29, "PLACER77^FILLER77")],
+        )]);
+        let obr = message.get_segment_by_id("OBR").unwrap();
+        assert_eq!(
+            obr.get_field_value(26),
+            Some(hash_of(key, "WBC^PLACER88^FILLER88").as_str()),
+            "OBR-26 parent result survives verbatim"
+        );
+        assert_eq!(
+            obr.get_field_value(29),
+            Some(hash_of(key, "PLACER77^FILLER77").as_str()),
+            "OBR-29 parent numbers survive verbatim"
+        );
+    }
+
+    #[test]
+    fn safe_harbor_hashes_problem_instance_ids() {
+        // PRB-4 Problem Instance ID (EI) and PRB-5 Episode of Care ID
+        // (EI) are identifiers like DG1-20/PR1-19.
+        let key = b"site-secret";
+        let message = redact_segments(&[seg("PRB", &[(4, "PROBINST1"), (5, "EPISODE1")])]);
+        let prb = message.get_segment_by_id("PRB").unwrap();
+        assert_eq!(
+            prb.get_field_value(4),
+            Some(hash_of(key, "PROBINST1").as_str()),
+            "PRB-4 instance id survives verbatim"
+        );
+        assert_eq!(
+            prb.get_field_value(5),
+            Some(hash_of(key, "EPISODE1").as_str()),
+            "PRB-5 episode id survives verbatim"
+        );
+    }
+
+    #[test]
+    fn safe_harbor_redacts_staff_license_and_review_dates() {
+        // STF-22 Driver's License Number (DLN) is an explicit Safe
+        // Harbor identifier; STF-24/25/26/31/35 are dates (DT/TS) and
+        // STF-34 an Institution Relationship Period (DR) removed like
+        // PDA-7/SPM-17/FT1-4. (STF is absent from our validator
+        // schemas; numbering follows the HL7 v2.5 STF segment.)
+        let key = b"site-secret";
+        let message = redact_segments(&[seg(
+            "STF",
+            &[
+                (22, "DL1234567"),
+                (24, "20250101"),
+                (25, "20240101"),
+                (26, "20260101"),
+                (31, "20240315120000"),
+                (34, "20240101^20241231"),
+                (35, "20250201"),
+            ],
+        )]);
+        let stf = message.get_segment_by_id("STF").unwrap();
+        assert_eq!(
+            stf.get_field_value(22),
+            Some(hash_of(key, "DL1234567").as_str()),
+            "STF-22 license survives verbatim"
+        );
+        for (field, expected) in [
+            (24, "20250131"),
+            (25, "20240131"),
+            (26, "20260131"),
+            (31, "20240414120000"),
+            (35, "20250303"),
+        ] {
+            assert_eq!(
+                stf.get_field_value(field),
+                Some(expected),
+                "STF-{field} not shifted"
+            );
+        }
+        assert!(stf.get_field_value(34).is_none(), "STF-34 DR survives");
+    }
+
+    #[test]
+    fn safe_harbor_keeps_prb_awareness_and_sensitivity() {
+        // PRB-24 Family Awareness (ST) and PRB-25 Security/Sensitivity
+        // (CE) are not dates: DateShift deleted them (unparseable yields
+        // None) though Safe Harbor does not cover them.
+        let message = redact_segments(&[seg("PRB", &[(24, "Y"), (25, "R")])]);
+        let prb = message.get_segment_by_id("PRB").unwrap();
+        assert_eq!(prb.get_field_value(24), Some("Y"));
+        assert_eq!(prb.get_field_value(25), Some("R"));
+    }
+
+    #[test]
+    fn safe_harbor_keeps_in1_plan_type_and_shifts_auth_date() {
+        // IN1-14 Authorization Information (AUI) is not a date as a
+        // whole: only its component 2 (DT) shifts, the number and
+        // source stay. IN1-15 Plan Type (IS) is kept.
+        let message =
+            redact_segments(&[seg("IN1", &[(14, "AUTH456^20240101^SRC"), (15, "PTYPE")])]);
+        let in1 = message.get_segment_by_id("IN1").unwrap();
+        assert_eq!(
+            full_value_of(in1, 14),
+            "AUTH456^20240131^SRC",
+            "IN1-14-2 auth date not shifted"
+        );
+        assert_eq!(in1.get_field_value(15), Some("PTYPE"));
+    }
+
+    #[test]
+    fn safe_harbor_shifts_timing_quantity_datetimes() {
+        // ORC-7, SCH-11, RXE-1, OBR-27 are TQ: components 4/5 are TS
+        // Start/End Date-Time and must shift while the rest is kept.
+        let timing = "1^once^^20240101120000^20240101130000";
+        let shifted = "1^once^^20240131120000^20240131130000";
+        let message = redact_segments(&[
+            seg("ORC", &[(7, timing)]),
+            seg("SCH", &[(11, timing)]),
+            seg("RXE", &[(1, timing)]),
+            seg("OBR", &[(27, timing)]),
+        ]);
+        for (segment, field) in [("ORC", 7), ("SCH", 11), ("RXE", 1), ("OBR", 27)] {
+            let seg = message.get_segment_by_id(segment).unwrap();
+            assert_eq!(
+                full_value_of(seg, field),
+                shifted,
+                "{segment}-{field} TQ datetimes not shifted"
+            );
+        }
     }
 }

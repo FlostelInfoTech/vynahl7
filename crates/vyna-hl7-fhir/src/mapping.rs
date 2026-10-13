@@ -54,7 +54,8 @@ use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
 
 use crate::converters::patient::{
-    split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time, valid_hl7_year_month,
+    hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time,
+    valid_hl7_year_month,
 };
 use crate::error::{ConversionError, ConversionResult};
 
@@ -610,13 +611,14 @@ fn format_datetime(text: &str) -> Option<String> {
     if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
         if valid_hl7_date(&stem[0..8]) && valid_hl7_time(&stem[8..14]) {
             Some(format!(
-                "{}-{}-{}T{}:{}:{}{}",
+                "{}-{}-{}T{}:{}:{}{}{}",
                 &stem[0..4],
                 &stem[4..6],
                 &stem[6..8],
                 &stem[8..10],
                 &stem[10..12],
                 &stem[12..14],
+                hl7_fraction_suffix(stem, 14),
                 zone
             ))
         } else {
@@ -1206,5 +1208,29 @@ fields:
 
         assert_eq!(declarative.len(), 1);
         assert_eq!(declarative[0], serde_json::to_value(&coded[0]).unwrap());
+    }
+
+    #[test]
+    fn shipped_allergy_mapping_matches_coded_system() {
+        let message = parse_message(
+            "MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\r\
+             PID|1||7\rAL1|1|DA|1191^ASPIRIN^RXNORM|SV",
+        )
+        .unwrap();
+
+        let mapping = Mapping::from_yaml(mappings::ALLERGY_INTOLERANCE).unwrap();
+        let declarative = MappingEngine::apply(&mapping, &message).unwrap();
+        let coded = AllergyIntoleranceConverter::convert_all(&message).unwrap();
+
+        assert_eq!(declarative.len(), 1);
+        assert_eq!(declarative[0], serde_json::to_value(&coded[0]).unwrap());
+    }
+
+    #[test]
+    fn engine_format_datetime_preserves_fraction() {
+        assert_eq!(
+            format_datetime("20240315100000.123"),
+            Some("2024-03-15T10:00:00.123".to_string())
+        );
     }
 }

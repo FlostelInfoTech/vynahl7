@@ -2,8 +2,8 @@
 
 use super::coding_systems::convert_coding_system;
 use super::patient::{
-    hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min,
-    valid_hl7_time,
+    hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time,
+    valid_hl7_year_month,
 };
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
@@ -212,7 +212,8 @@ impl DiagnosticReportConverter {
 
     /// `YYYYMMDDHHMM` keeps its minutes and a trailing HL7 zone is
     /// preserved as `±HH:MM`. Validated fractional seconds are kept
-    /// as `.digits`.
+    /// as `.digits`. Shorter `YYYYMM`/`YYYY` stems delegate to
+    /// [`Self::convert_date`].
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
         let (stem, offset) = split_hl7_offset(datetime);
         let zone = offset.as_deref().unwrap_or("");
@@ -256,11 +257,48 @@ impl DiagnosticReportConverter {
             } else {
                 Err(Self::invalid_datetime(datetime))
             }
+        } else if bytes.len() >= 4 {
+            // Month or year precision, like the patient converter.
+            Self::convert_date(stem)
         } else {
             Err(Self::invalid_datetime(datetime))
         }
     }
 
+    /// Convert HL7 date (YYYYMMDD) to FHIR date format
+    ///
+    /// `YYYYMM` month precision is preserved as `YYYY-MM`.
+    fn convert_date(date: &str) -> ConversionResult<String> {
+        let (stem, _) = split_hl7_offset(date);
+        let bytes = stem.as_bytes();
+        if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_date(&stem[0..8]) {
+                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
+            } else {
+                Err(Self::invalid_date())
+            }
+        } else if bytes.len() >= 6 && bytes[..6].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_year_month(&stem[0..6]) {
+                Ok(format!("{}-{}", &stem[0..4], &stem[4..6]))
+            } else {
+                Err(Self::invalid_date())
+            }
+        } else if bytes.len() >= 4 && bytes[..4].iter().all(|b| b.is_ascii_digit()) {
+            Ok(stem[0..4].to_string())
+        } else {
+            Err(Self::invalid_date())
+        }
+    }
+
+    /// Redacted bad-date error: field location + reason only, never the value.
+    fn invalid_date() -> ConversionError {
+        ConversionError::InvalidFormat(
+            "datetime".to_string(),
+            "OBR".to_string(),
+            // Redacted: never embed the source value (may be PHI).
+            "expected YYYYMMDD calendar date, YYYYMM month, or YYYY year".to_string(),
+        )
+    }
 
     /// Redacted bad-datetime error: field location + reason only, never the value.
     fn invalid_datetime(_datetime: &str) -> ConversionError {
@@ -448,6 +486,18 @@ mod tests {
         assert_eq!(
             DiagnosticReportConverter::convert_datetime("20240315100000.123").unwrap(),
             "2024-03-15T10:00:00.123"
+        );
+    }
+
+    #[test]
+    fn test_convert_datetime_accepts_month_and_year_precision() {
+        assert_eq!(
+            DiagnosticReportConverter::convert_datetime("202403").unwrap(),
+            "2024-03"
+        );
+        assert_eq!(
+            DiagnosticReportConverter::convert_datetime("2024").unwrap(),
+            "2024"
         );
     }
 }

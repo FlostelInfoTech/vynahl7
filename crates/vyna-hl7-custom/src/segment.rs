@@ -1470,6 +1470,10 @@ impl BuildableField for Vec<String> {
     }
 }
 
+/// `Vec<String>` keeps empty repetitions (`A~~B` yields
+/// `["A", "", "B"]`) for positional fidelity, while typed `Vec`s
+/// (via `parse_repeating_scalar`) skip them (`1~~2` yields `[1, 2]`)
+/// because `""` does not parse. This distinction is intentional.
 impl ParseSegmentField for Vec<String> {
     fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
         if let Some(field) = segment.get_field(field_num) {
@@ -3533,6 +3537,32 @@ mod tests {
 
         let result = Vec::<String>::parse_field(&segment, 1, "TEST").unwrap();
         assert_eq!(result, Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_vec_string_keeps_empty_while_typed_skips() {
+        // Positional fidelity for String vs parse skip for typed Vecs.
+        use vyna_hl7_core::{Field, Repetition};
+        let mut segment = Segment::new("TEST");
+        let mut strings = Field::new();
+        strings.add_repetition(Repetition::from_value("A"));
+        strings.add_repetition(Repetition::from_value(""));
+        strings.add_repetition(Repetition::from_value("B"));
+        segment.set_field(1, strings).unwrap();
+        let mut numbers = Field::new();
+        numbers.add_repetition(Repetition::from_value("1"));
+        numbers.add_repetition(Repetition::from_value(""));
+        numbers.add_repetition(Repetition::from_value("2"));
+        segment.set_field(2, numbers).unwrap();
+
+        assert_eq!(
+            Vec::<String>::parse_field(&segment, 1, "TEST").unwrap(),
+            vec!["A".to_string(), "".to_string(), "B".to_string()]
+        );
+        assert_eq!(
+            Vec::<i32>::parse_field(&segment, 2, "TEST").unwrap(),
+            vec![1, 2]
+        );
     }
 
     #[test]

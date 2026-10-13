@@ -82,6 +82,13 @@ impl TerserPath {
         if segment_id.trim().is_empty() {
             return Err(Error::terser_path("Empty segment id"));
         }
+        // Interior whitespace is malformed too: without this, set("PID
+        // -5", x) would create segment id "PID ", which fails validate_id.
+        if segment_id.chars().any(|c| c.is_whitespace()) {
+            return Err(Error::terser_path(
+                "Invalid segment id: must not contain whitespace",
+            ));
+        }
 
         // Parse field part (e.g., "5" or "11(1)")
         if parts.len() < 2 {
@@ -324,5 +331,14 @@ mod tests {
         assert!(TerserPath::parse("PID-5-1-2-3-4").is_err());
         // A full four-part path still parses.
         assert!(TerserPath::parse("PID-5-1-2").is_ok());
+    }
+
+    #[test]
+    fn test_parse_rejects_segment_id_with_whitespace() {
+        // "PID " would create a segment failing validate_id (3 alnum).
+        assert!(TerserPath::parse("PID -5").is_err());
+        assert!(TerserPath::parse("P ID-5").is_err());
+        assert!(TerserPath::parse("PID\t-5").is_err());
+        assert!(TerserPath::parse("PID-5").is_ok());
     }
 }

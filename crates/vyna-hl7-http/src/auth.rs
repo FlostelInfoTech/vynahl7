@@ -186,16 +186,22 @@ pub struct JwtClaims {
     /// Subject (typically user ID)
     pub sub: String,
     /// Issuer
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub iss: Option<String>,
     /// Audience
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub aud: Option<String>,
     /// Expiration time (as UTC timestamp)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub exp: Option<usize>,
     /// Not before time (as UTC timestamp)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub nbf: Option<usize>,
     /// Issued at time (as UTC timestamp)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub iat: Option<usize>,
     /// JWT ID
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub jti: Option<String>,
 }
 
@@ -305,6 +311,9 @@ pub fn verify_jwt(
     config: &JwtConfig,
 ) -> Result<JwtClaims, jsonwebtoken::errors::Error> {
     let mut validation = Validation::new(config.algorithm);
+    // RFC 7519 s4.1.5: a JWT MUST NOT be accepted before nbf.
+    // jsonwebtoken defaults validate_nbf to false, so enable it.
+    validation.validate_nbf = true;
 
     if let Some(ref issuer) = config.issuer {
         validation.set_issuer(&[issuer]);
@@ -508,12 +517,16 @@ mod jwt_tests {
     }
 
     fn claims(exp: usize, iss: &str, aud: &str) -> JwtClaims {
+        claims_with_nbf(exp, None, iss, aud)
+    }
+
+    fn claims_with_nbf(exp: usize, nbf: Option<usize>, iss: &str, aud: &str) -> JwtClaims {
         JwtClaims {
             sub: "user-123".to_string(),
             iss: Some(iss.to_string()),
             aud: Some(aud.to_string()),
             exp: Some(exp),
-            nbf: None,
+            nbf,
             iat: Some(now()),
             jti: None,
         }
@@ -578,6 +591,43 @@ mod jwt_tests {
             Algorithm::HS384,
         );
         assert!(verify_jwt(&token, &config()).is_err());
+    }
+
+    #[test]
+    fn test_verify_jwt_premature_nbf_rejected() {
+        // RFC 7519 s4.1.5: a JWT MUST NOT be accepted before nbf.
+        let token = mint(
+            &claims_with_nbf(
+                now() + 7200,
+                Some(now() + 3600),
+                "https://auth.example.com",
+                "vyna-hl7",
+            ),
+            Algorithm::HS256,
+        );
+        let err = verify_jwt(&token, &config()).unwrap_err();
+        assert!(
+            matches!(
+                err.kind(),
+                jsonwebtoken::errors::ErrorKind::ImmatureSignature
+            ),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_verify_jwt_mature_nbf_accepted() {
+        let token = mint(
+            &claims_with_nbf(
+                now() + 3600,
+                Some(now() - 60),
+                "https://auth.example.com",
+                "vyna-hl7",
+            ),
+            Algorithm::HS256,
+        );
+        let decoded = verify_jwt(&token, &config()).unwrap();
+        assert_eq!(decoded.sub, "user-123");
     }
 
     #[test]

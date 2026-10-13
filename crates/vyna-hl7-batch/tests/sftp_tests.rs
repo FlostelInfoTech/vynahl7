@@ -537,6 +537,30 @@ async fn sftp_get_refuses_oversize_files() {
 }
 
 #[tokio::test]
+async fn sftp_root_listing_lists_login_dir() {
+    // Default root ('') with list(''): the transport must send "." so
+    // real OpenSSH lists the login dir instead of answering empty.
+    // The harness resolves '' and '.' identically (both pin the root),
+    // so this also pins that the fix stays covered here.
+    let server = start_server("rootlist", vec![]).await;
+    let mut sftp = SftpTransport::connect(password_config(&server))
+        .await
+        .unwrap();
+    sftp.put("a.hl7", MSH.as_bytes()).await.unwrap();
+    sftp.put("b.hl7", MSH.as_bytes()).await.unwrap();
+
+    let from_empty = sftp.list("").await.unwrap();
+    let from_dot = sftp.list(".").await.unwrap();
+    assert_eq!(from_empty.len(), 2);
+    assert_eq!(from_dot.len(), 2);
+    assert_eq!(from_empty[0].path, "a.hl7");
+    assert_eq!(from_empty[1].path, "b.hl7");
+
+    sftp.close().await.unwrap();
+    tokio::fs::remove_dir_all(&server._dir).await.unwrap();
+}
+
+#[tokio::test]
 async fn sftp_poller_consumes_and_archives() {
     let server = start_server("poller", vec![]).await;
     let mut sftp = SftpTransport::connect(password_config(&server))

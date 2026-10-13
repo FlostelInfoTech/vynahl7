@@ -549,27 +549,17 @@ impl ConformanceValidator {
             segment_index,
             field_position,
             field_profile,
-            message,
             result,
             ..
         } = ctx;
         if let Some(max_length) = field_profile.length {
             // Check each repetition
             for (rep_index, repetition) in field.repetitions.iter().enumerate() {
-                // MSH-1/2 store the raw delimiter characters, which
-                // encode() escape-expands ("|" to 3 chars, "^~\\&" to
-                // 12); measure the decoded length instead.
-                let actual_length =
-                    if segment_id == "MSH" && (field_position == 1 || field_position == 2) {
-                        decoded_length(repetition)
-                    } else {
-                        // Measure with the message delimiters: the
-                        // default would escape-expand text that is
-                        // literal under custom separators.
-                        // Length is counted in characters, not bytes.
-                        let value = repetition.encode(&message.delimiters);
-                        value.chars().count()
-                    };
+                // Decoded characters, without escape expansion: encode()
+                // would inflate raw delimiters ("|" to 3 chars) and any
+                // escaped text (wire `A\T\B` to 5 chars for `A&B`).
+                // Length is counted in characters, not bytes.
+                let actual_length = decoded_length(repetition);
 
                 if actual_length > max_length {
                     let location = if segment_index > 0 {
@@ -1042,5 +1032,18 @@ mod tests {
 
         let result = validator.validate(&message);
         assert!(result.is_valid(), "errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn test_field_length_counts_decoded_characters() {
+        // Wire `A\T\B` decodes to `A&B` (3 chars): a max of 4 passes.
+        // Measuring the escape-expanded encoding (5 chars) would fail.
+        let validator = ConformanceValidator::new(length_profile(4));
+        let result = validator.validate(&conditional_message("PID|1||PATID1234||A\\T\\B"));
+        assert!(
+            result.is_valid(),
+            "expected valid, got: {:?}",
+            result.errors
+        );
     }
 }

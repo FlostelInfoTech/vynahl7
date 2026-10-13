@@ -135,47 +135,68 @@ impl PractitionerConverter {
             practitioner.id = Some(id_number.to_string());
         }
 
-        // XCN-2 through XCN-7: Name components -> Practitioner.name
-        // XCN-2: Family Name (component 2, 1-based indexing)
-        if let Ok(Some(family)) = terser.get(&format!("{}-2", base_path))
-            && !family.is_empty()
+        // XCN-2 through XCN-6: Name components -> Practitioner.name.
+        // Any valued part keeps the name, like the patient converter
+        // keeps a given-only XPN.
+        let family = terser
+            .get(&format!("{}-2", base_path))
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty());
+        let given = terser
+            .get(&format!("{}-3", base_path))
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty());
+        let middle = terser
+            .get(&format!("{}-4", base_path))
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty());
+        let suffix = terser
+            .get(&format!("{}-5", base_path))
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty());
+        let prefix = terser
+            .get(&format!("{}-6", base_path))
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty());
+        if family.is_some()
+            || given.is_some()
+            || middle.is_some()
+            || suffix.is_some()
+            || prefix.is_some()
         {
             let mut name = HumanName {
                 use_: Some("official".to_string()),
                 text: None,
-                family: Some(family.to_string()),
+                family: family.map(|s| s.to_string()),
                 given: None,
                 prefix: None,
                 suffix: None,
             };
 
-            // XCN-3: Given Name (component 3, 1-based indexing)
-            if let Ok(Some(given)) = terser.get(&format!("{}-3", base_path))
-                && !given.is_empty()
-            {
-                let mut given_names = vec![given.to_string()];
-
-                // XCN-4: Second/Middle Name (component 4, 1-based indexing)
-                if let Ok(Some(middle)) = terser.get(&format!("{}-4", base_path))
-                    && !middle.is_empty()
-                {
-                    given_names.push(middle.to_string());
+            match (given, middle) {
+                (Some(given), middle) => {
+                    let mut given_names = vec![given.to_string()];
+                    if let Some(middle) = middle {
+                        given_names.push(middle.to_string());
+                    }
+                    name.given = Some(given_names);
                 }
-
-                name.given = Some(given_names);
+                (None, Some(middle)) => {
+                    name.given = Some(vec![middle.to_string()]);
+                }
+                (None, None) => {}
             }
 
-            // XCN-5: Suffix (component 5, 1-based indexing)
-            if let Ok(Some(suffix)) = terser.get(&format!("{}-5", base_path))
-                && !suffix.is_empty()
-            {
+            if let Some(suffix) = suffix {
                 name.suffix = Some(vec![suffix.to_string()]);
             }
 
-            // XCN-6: Prefix (component 6, 1-based indexing)
-            if let Ok(Some(prefix)) = terser.get(&format!("{}-6", base_path))
-                && !prefix.is_empty()
-            {
+            if let Some(prefix) = prefix {
                 name.prefix = Some(vec![prefix.to_string()]);
             }
 
@@ -361,5 +382,17 @@ mod tests {
         let practitioners = PractitionerConverter::extract_all_practitioners(&message).unwrap();
         assert_eq!(practitioners.len(), 1);
         assert_eq!(practitioners[0].id.as_deref(), Some("123"));
+    }
+
+    #[test]
+    fn test_given_only_xcn_preserves_name() {
+        let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                   PID|1||MRN123|||DOE^JOHN||19800101|M\r\
+                   PV1|1|I|||||123^^JOHN";
+        let message = parse_message(hl7).unwrap();
+        let practitioner = PractitionerConverter::convert_attending_doctor(&message).unwrap();
+        let names = practitioner.name.as_ref().unwrap();
+        assert_eq!(names[0].family, None);
+        assert_eq!(names[0].given, Some(vec!["JOHN".to_string()]));
     }
 }

@@ -21,6 +21,19 @@ fields:
   - target: code.coding[0].system
     source: AL1-3-3
     when: AL1-3
+    map:
+      CVX: http://hl7.org/fhir/sid/cvx
+      NDC: http://hl7.org/fhir/sid/ndc
+      MVX: http://hl7.org/fhir/sid/mvx
+      RXNORM: http://www.nlm.nih.gov/research/umls/rxnorm
+      LN: http://loinc.org
+      LNC: http://loinc.org
+      SNM: http://snomed.info/sct
+      SCT: http://snomed.info/sct
+      ICD9: http://hl7.org/fhir/sid/icd-9-cm
+      ICD10: http://hl7.org/fhir/sid/icd-10
+      CPT: http://www.ama-assn.org/go/cpt
+    default: "urn:oid:{value}"
   - target: code.text
     source: AL1-3-2
     fallback_source: AL1-3

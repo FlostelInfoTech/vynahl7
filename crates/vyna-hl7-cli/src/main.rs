@@ -969,8 +969,12 @@ async fn send_mllp(
     use vyna_hl7_mllp::MllpClient;
 
     if !tls {
-        if ca_cert.is_some() || client_cert.is_some() || client_key.is_some() {
-            bail!("--ca-cert/--client-cert/--client-key require --tls");
+        if ca_cert.is_some()
+            || client_cert.is_some()
+            || client_key.is_some()
+            || server_name.is_some()
+        {
+            bail!("--ca-cert/--client-cert/--client-key/--server-name require --tls");
         }
         let mut client = tokio::time::timeout(timeout, MllpClient::connect(addr))
             .await
@@ -1033,6 +1037,9 @@ async fn send_http(
     client = client.with_timeout(timeout).context("invalid timeout")?;
 
     if tls {
+        if !endpoint.starts_with("https://") {
+            bail!("--tls requires an https:// endpoint (got '{endpoint}')");
+        }
         #[cfg(not(feature = "tls"))]
         {
             let _ = (ca_cert, client_cert, client_key);

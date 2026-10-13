@@ -70,10 +70,13 @@ impl ImmunizationConverter {
         let patient = Self::extract_patient_reference(&terser)?;
 
         // RXA-3: Date/Time Start of Administration -> occurrenceDateTime
+        // Empty is absent: it reports MissingField like an absent
+        // RXA-3, not an InvalidFormat datetime.
         let occurrence_date_time = terser
             .get(&path("3"))
             .ok()
             .flatten()
+            .filter(|s| !s.is_empty())
             .map(Self::convert_datetime)
             .transpose()?
             .ok_or_else(|| ConversionError::MissingField("RXA-3".to_string(), "RXA".to_string()))?;
@@ -323,7 +326,8 @@ impl ImmunizationConverter {
     /// Convert HL7 datetime (YYYYMMDDHHMMSS) to FHIR ISO 8601 format
     ///
     /// `YYYYMMDDHHMM` keeps its minutes and a trailing HL7 zone is
-    /// preserved as `±HH:MM`.
+    /// preserved as `±HH:MM`. Shorter `YYYYMM`/`YYYY` stems delegate
+    /// to [`Self::convert_date`].
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
         let (stem, offset) = split_hl7_offset(datetime);
         let zone = offset.as_deref().unwrap_or("");
@@ -368,6 +372,9 @@ impl ImmunizationConverter {
             } else {
                 Err(Self::invalid_datetime(datetime))
             }
+        } else if bytes.len() >= 4 {
+            // Month or year precision, like the patient converter.
+            Self::convert_date(stem)
         } else {
             Err(Self::invalid_datetime(datetime))
         }
@@ -879,6 +886,44 @@ mod tests {
         let message = parse_message(&hl7).unwrap();
         let imm = &ImmunizationConverter::convert_all(&message).unwrap()[0];
         assert_eq!(imm.expiration_date.as_deref(), Some("2025"));
+    }
+
+    #[test]
+    fn test_empty_rxa3_returns_missing_field() {
+        // RXA-3 present-but-empty is absent (MissingField), like an
+        // absent RXA-3, not an InvalidFormat datetime.
+        let mut fields = vec![String::new(); 20];
+        fields[0] = "0".to_string();
+        fields[1] = "1".to_string();
+        fields[4] = "08^HepB adult^CVX".to_string();
+        fields[19] = "CP".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rRXA|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let err = ImmunizationConverter::convert_all(&message).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                ConversionError::MissingField(ref f, _)
+                if f == "RXA-3"
+            ),
+            "expected MissingField(RXA-3), got {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_convert_datetime_accepts_month_and_year_precision() {
+        assert_eq!(
+            ImmunizationConverter::convert_datetime("202403").unwrap(),
+            "2024-03"
+        );
+        assert_eq!(
+            ImmunizationConverter::convert_datetime("2024").unwrap(),
+            "2024"
+        );
     }
 
     #[test]

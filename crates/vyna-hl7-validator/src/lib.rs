@@ -613,16 +613,23 @@ impl Validator {
                     }
                 }
 
-                // Validate max length
-                // For repeating fields, check the encoded length (with all repetitions)
-                // For non-repeating fields, check the trimmed value length
+                // Validate max length in decoded characters, not bytes
+                // and not the wire form: an escape like `\F\` counts its
+                // one decoded character.
+                //
+                // Length unit: repeating fields measure the whole decoded
+                // value (repetitions joined); non-repeating fields measure
+                // the first component. For string types (ST/TX/FT/NM/DT)
+                // that is the whole value; for coded and composite types
+                // (IS/ID/CE/XPN/...) it is the code, which is the
+                // length-constrained part in real interfaces — display
+                // text routinely travels beside the code (EVN-4
+                // "A01^Admit", PV1-4 "E^Emergency"), and whole-value
+                // measurement would reject every such message.
                 if let Some(max_len) = field_def.max_length {
-                    // HL7 lengths are characters, not bytes.
                     let field_length = if field_def.repeating {
-                        // For repeating fields, encode to get full length including separators
-                        f.encode(delimiters).chars().count()
+                        decoded_field_text(f, delimiters).chars().count()
                     } else {
-                        // For non-repeating fields, use the first repetition value (trimmed)
                         f.value().map(|v| v.trim().chars().count()).unwrap_or(0)
                     };
 
@@ -870,6 +877,34 @@ fn field_table_code<'a>(
     } else {
         Some(value)
     }
+}
+
+/// Whole decoded text of a field: subcomponent values joined by the
+/// message separators, without escape expansion. Field lengths measured
+/// on this text count decoded characters across every repetition and
+/// component, as HL7 defines them.
+fn decoded_field_text(
+    field: &vyna_hl7_core::field::Field,
+    delimiters: &vyna_hl7_core::delimiters::Delimiters,
+) -> String {
+    let mut text = String::new();
+    for (rep_idx, repetition) in field.repetitions.iter().enumerate() {
+        if rep_idx > 0 {
+            text.push(delimiters.repetition_separator);
+        }
+        for (comp_idx, component) in repetition.components.iter().enumerate() {
+            if comp_idx > 0 {
+                text.push(delimiters.component_separator);
+            }
+            for (sub_idx, sub) in component.subcomponents.iter().enumerate() {
+                if sub_idx > 0 {
+                    text.push(delimiters.subcomponent_separator);
+                }
+                text.push_str(&sub.value);
+            }
+        }
+    }
+    text
 }
 
 /// HL7 datatypes with components (field-level tables constrain component 1).
@@ -2237,6 +2272,104 @@ mod tests {
         let result =
             Validator::with_schema(Version::V2_5, schema_with_pid5(field_def)).validate(&message);
         assert!(result.is_valid(), "errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn test_repeating_length_counts_decoded_characters() {
+        // Wire `A\F\B` decodes to `A|B` (3 chars): a max of 4 passes.
+        // Measuring the escape-encoded wire form (5 chars) would fail.
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\rPID|1||7||A\\F\\B\r",
+        )
+        .unwrap();
+        let field_def = FieldDefinition {
+            name: "Patient Name".to_string(),
+            data_type: "ST".to_string(),
+            required: false,
+            repeating: true,
+            max_length: Some(4),
+            table_id: None,
+            components: None,
+        };
+        let result =
+            Validator::with_schema(Version::V2_5, schema_with_pid5(field_def)).validate(&message);
+        assert!(result.is_valid(), "errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn test_non_repeating_length_measures_first_component() {
+        // Non-repeating fields measure the first component (the code
+        // for coded types): `AB^CDEFGHIJKLMNOP` passes a max of 5
+        // because `AB` is 2 chars. Display text beside the code is
+        // normal in real interfaces (EVN-4 "A01^Admit").
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\rPID|1||7||AB^CDEFGHIJKLMNOP\r",
+        )
+        .unwrap();
+        let field_def = FieldDefinition {
+            name: "Patient Name".to_string(),
+            data_type: "XPN".to_string(),
+            required: false,
+            repeating: false,
+            max_length: Some(5),
+            table_id: None,
+            components: None,
+        };
+        let result = Validator::with_schema(Version::V2_5, schema_with_pid5(field_def.clone()))
+            .validate(&message);
+        assert!(
+            result
+                .errors
+                .iter()
+                .all(|e| { e.error_type != ValidationErrorType::InvalidLength }),
+            "errors: {:?}",
+            result.errors
+        );
+
+        // ...but an overlong first component still fails.
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\rPID|1||7||ABCDEFGH^IJ\r",
+        )
+        .unwrap();
+        let result =
+            Validator::with_schema(Version::V2_5, schema_with_pid5(field_def)).validate(&message);
+        assert!(
+            result.errors.iter().any(|e| {
+                e.error_type == ValidationErrorType::InvalidLength
+                    && e.location.contains("PID")
+                    && e.location.contains("-5")
+            }),
+            "errors: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_shipped_schema_obr27_length_measures_first_component() {
+        // v2.7 ORU_R01 OBR-27 (TQ, max 200, no component defs) with a
+        // 252-char two-component value passes: the non-repeating rule
+        // measures the first component ("A"), not the whole field.
+        let value = format!("A^{}", "B".repeat(250));
+        assert_eq!(value.chars().count(), 252);
+        let mut msg = Message::new();
+        let mut msh = Segment::new("MSH");
+        msh.set_field(9, Field::from_delimited("ORU^R01")).unwrap();
+        msh.set_field(12, Field::from_value("2.7")).unwrap();
+        msg.add_segment(msh);
+        let mut obr = Segment::new("OBR");
+        obr.set_field(27, Field::from_delimited(&value)).unwrap();
+        msg.add_segment(obr);
+        let result = Validator::for_message_type(Version::V2_7, "ORU", "R01")
+            .unwrap()
+            .validate(&msg);
+        assert!(
+            result
+                .errors
+                .iter()
+                .all(|e| { e.error_type != ValidationErrorType::InvalidLength }),
+            "errors: {:?}",
+            result.errors
+        );
     }
 
     #[test]

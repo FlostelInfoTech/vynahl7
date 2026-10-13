@@ -570,3 +570,58 @@ async fn send_rejects_bad_scheme_and_refused_ports() {
     assert!(!output.status.success());
     std::fs::remove_file(file).unwrap();
 }
+
+#[test]
+fn send_mllp_server_name_requires_tls() {
+    // --server-name without --tls must bail loudly, like --ca-cert
+    // does, instead of silently sending plaintext.
+    let file = write_temp("send.hl7", ADT_A);
+    let output = vynahl7()
+        .args([
+            "send",
+            file.to_str().unwrap(),
+            "--to",
+            "mllp://127.0.0.1:9",
+            "--timeout",
+            "2",
+            "--server-name",
+            "ignored.example.com",
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--server-name") && stderr.contains("require --tls"),
+        "{stderr}"
+    );
+    std::fs::remove_file(file).unwrap();
+}
+
+#[test]
+fn send_http_tls_requires_https() {
+    // --tls on a plaintext http:// URL must refuse loudly, never send
+    // PHI in the clear. Nonexistent CA proves the scheme guard first.
+    let file = write_temp("send.hl7", ADT_A);
+    let output = vynahl7()
+        .args([
+            "send",
+            file.to_str().unwrap(),
+            "--to",
+            "http://127.0.0.1:9/hl7",
+            "--timeout",
+            "2",
+            "--tls",
+            "--ca-cert",
+            "/nonexistent-ca.pem",
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--tls") && stderr.contains("https://"),
+        "{stderr}"
+    );
+    std::fs::remove_file(file).unwrap();
+}

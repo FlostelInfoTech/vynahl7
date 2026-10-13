@@ -704,3 +704,30 @@ fn test_optional_segment_serialization() {
     // Should have 2 segments when OBX is present
     assert_eq!(message.segments.len(), 2);
 }
+
+#[test]
+fn test_repeating_segment_invalid_present_fails_whole_conversion() {
+    // A repeating Vec holding an invalid element fails the whole
+    // conversion (required or not), never silently dropping the bad
+    // element. The bad OBX lacks required value_type/identifier.
+    let mut bad = Segment::new("OBX");
+    let _ = bad.set_field_value(1, "2");
+    for with_bad in [false, true] {
+        let mut message = Message::new();
+        message.add_segment(sample_pid_segment());
+        message.add_segment(sample_obx_segment("1", "100"));
+        if with_bad {
+            message.add_segment(bad.clone());
+        }
+        assert_eq!(
+            OruR01::from_message(&message).is_some(),
+            !with_bad,
+            "plain repeating with_bad={with_bad}"
+        );
+        assert_eq!(
+            RequiredOruR01::from_message(&message).is_some(),
+            !with_bad,
+            "required repeating with_bad={with_bad}"
+        );
+    }
+}

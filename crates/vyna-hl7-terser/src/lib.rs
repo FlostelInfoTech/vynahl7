@@ -663,6 +663,16 @@ mod tests {
     }
 
     #[test]
+    fn test_set_rejects_segment_id_with_whitespace() {
+        // "PID " would create a segment failing validate_id (3 alnum).
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\r";
+        let mut message = parse_message(hl7).unwrap();
+        let before = message.segments.len();
+        assert!(TerserMut::new(&mut message).set("PID -5", "x").is_err());
+        assert_eq!(message.segments.len(), before);
+    }
+
+    #[test]
     fn test_set_rejects_delimiter_fields_on_msh_fhs_bhs() {
         // MSH/FHS/BHS fields 1 and 2 are the message delimiters: encode
         // derives them from Delimiters and drops anything written here,

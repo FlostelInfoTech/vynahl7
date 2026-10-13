@@ -459,13 +459,10 @@ impl ObservationConverter {
             } else {
                 Err(Self::invalid_datetime(datetime))
             }
-        } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
-            // Date only; still requires a real calendar date.
-            if valid_hl7_date(&stem[0..8]) {
-                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
-            } else {
-                Err(Self::invalid_datetime(datetime))
-            }
+        } else if bytes.len() >= 4 {
+            // Date, month, or year precision, like the patient
+            // converter.
+            Self::convert_date(stem)
         } else {
             Err(Self::invalid_datetime(datetime))
         }
@@ -752,6 +749,18 @@ mod tests {
         assert_eq!(
             obs.effective_date_time.as_deref(),
             Some("2024-03-15T10:00:00.123")
+        );
+    }
+
+    #[test]
+    fn test_datetime_accepts_year_month_precision() {
+        assert_eq!(
+            ObservationConverter::convert_datetime("202401").unwrap(),
+            "2024-01"
+        );
+        assert_eq!(
+            ObservationConverter::convert_datetime("1980").unwrap(),
+            "1980"
         );
     }
 }

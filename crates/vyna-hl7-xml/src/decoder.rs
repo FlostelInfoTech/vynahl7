@@ -280,12 +280,10 @@ impl XmlDecoder {
                 return self.misplaced(format!("component element <{name}> has number 0"));
             }
             Self::check_element_number(name, comp_num)?;
-            if field_num != parent_field
-                && let Err(e) = self.check_context(format!(
+            if field_num != parent_field {
+                return self.misplaced(format!(
                     "component element <{name}> nested in field {parent_field}"
-                ))
-            {
-                return Err(e);
+                ));
             }
             return Ok(Frame::Component {
                 number: comp_num,
@@ -302,13 +300,11 @@ impl XmlDecoder {
                 return self.misplaced(format!("subcomponent element <{name}> has number 0"));
             }
             Self::check_element_number(name, sub_num)?;
-            if (field_num != parent_field || comp_num != parent_comp)
-                && let Err(e) = self.check_context(format!(
+            if field_num != parent_field || comp_num != parent_comp {
+                return self.misplaced(format!(
                     "subcomponent element <{name}> nested in field \
                      {parent_field} component {parent_comp}"
-                ))
-            {
-                return Err(e);
+                ));
             }
             return Ok(Frame::Subcomponent {
                 number: sub_num,
@@ -967,6 +963,47 @@ mod tests {
         let rep = &message.segments[0].get_field(5).unwrap().repetitions[0];
         assert_eq!(rep.components.len(), 1);
         assert_eq!(rep.components[0].value(), Some("second"));
+    }
+
+    #[test]
+    fn test_lenient_skips_number_mismatched_children() {
+        // Component/subcomponent numbers that disagree with the
+        // enclosing element are skipped in lenient mode (per
+        // `XmlDecoderConfig::lenient` docs), errors when strict.
+        let lenient = XmlDecoder::new();
+        let message = lenient
+            .decode("<PID><PID.5><PID.9.1>x</PID.9.1></PID.5></PID>")
+            .unwrap();
+        let field = message.segments[0].get_field(5).unwrap();
+        assert_eq!(field.repetitions.len(), 1);
+        assert!(
+            field.repetitions[0].value().unwrap_or("").is_empty(),
+            "mismatched component kept: {:?}",
+            field.repetitions[0].value()
+        );
+
+        let message = lenient
+            .decode("<PID><PID.5><PID.5.1><PID.5.2.7>y</PID.5.2.7></PID.5.1></PID.5></PID>")
+            .unwrap();
+        let rep = &message.segments[0].get_field(5).unwrap().repetitions[0];
+        assert!(
+            rep.components
+                .iter()
+                .all(|c| c.subcomponents.iter().all(|s| s.as_str().is_empty())),
+            "mismatched subcomponent kept: {:?}",
+            rep.full_value()
+        );
+
+        assert!(
+            strict_decoder()
+                .decode("<PID><PID.5><PID.9.1>x</PID.9.1></PID.5></PID>")
+                .is_err()
+        );
+        assert!(
+            strict_decoder()
+                .decode("<PID><PID.5><PID.5.1><PID.5.2.7>y</PID.5.2.7></PID.5.1></PID.5></PID>")
+                .is_err()
+        );
     }
 
     #[test]

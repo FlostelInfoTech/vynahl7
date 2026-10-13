@@ -59,7 +59,8 @@ use crate::tls::TlsClientConfig;
 pub struct PoolConfig {
     /// Maximum number of connections in the pool (default: 10)
     pub max_connections: usize,
-    /// Minimum number of connections to maintain (default: 1)
+    /// Minimum number of connections to maintain (default: 1).
+    /// Clamped to `max_connections` when the pool is built.
     pub min_connections: usize,
     /// Maximum time to wait for a connection (default: 30 seconds)
     pub acquire_timeout: Duration,
@@ -213,7 +214,13 @@ impl MllpPool {
     }
 
     /// Create a new connection pool with custom configuration
-    pub async fn with_config(address: &str, config: PoolConfig) -> Result<Self> {
+    ///
+    /// A `min_connections` above `max_connections` is clamped to the max
+    /// (rather than rejected): the builder sets the two bounds
+    /// independently, and treating min as "up to max" keeps every builder
+    /// order usable while honoring the `max_connections` cap.
+    pub async fn with_config(address: &str, mut config: PoolConfig) -> Result<Self> {
+        config.min_connections = config.min_connections.min(config.max_connections);
         let pool = Self {
             address: address.to_string(),
             connections: Arc::new(Mutex::new(VecDeque::with_capacity(config.max_connections))),
@@ -244,13 +251,17 @@ impl MllpPool {
     }
 
     /// Create a new TLS connection pool with custom configuration
+    ///
+    /// Like [`MllpPool::with_config`], a `min_connections` above
+    /// `max_connections` is clamped to the max.
     #[cfg(feature = "tls")]
     pub async fn with_tls_config(
         address: &str,
         server_name: &str,
         tls_config: TlsClientConfig,
-        config: PoolConfig,
+        mut config: PoolConfig,
     ) -> Result<Self> {
+        config.min_connections = config.min_connections.min(config.max_connections);
         let pool = Self {
             address: address.to_string(),
             connections: Arc::new(Mutex::new(VecDeque::with_capacity(config.max_connections))),
@@ -502,12 +513,16 @@ impl MllpPool {
     }
 
     /// Ensure minimum connections are maintained
+    ///
+    /// Checked-out connections count toward the minimum, and the total
+    /// never grows past `max_connections`.
     pub async fn maintain_min_connections(&self) -> Result<()> {
         let connections = self.connections.lock().await;
-        let current_count = connections.len();
+        let current_count = connections.len() + self.active_count.load(Ordering::SeqCst);
+        let target = self.config.min_connections.min(self.config.max_connections);
 
-        if current_count < self.config.min_connections {
-            let needed = self.config.min_connections - current_count;
+        if current_count < target {
+            let needed = target - current_count;
             drop(connections);
 
             for _ in 0..needed {
@@ -776,6 +791,55 @@ mod tests {
             }
         });
         (addr, handle)
+    }
+
+    /// `maintain_min_connections` must count checked-out connections:
+    /// with max=2/min=2 and one connection held, topping up the idle
+    /// count alone would leave 3 live TCP connections past the max.
+    #[tokio::test]
+    async fn test_maintain_min_connections_counts_active() {
+        let (addr, _server) = spawn_ack_server().await;
+        let pool = MllpPool::with_config(
+            &addr,
+            PoolConfig::new()
+                .with_min_connections(2)
+                .with_max_connections(2),
+        )
+        .await
+        .unwrap();
+
+        let held = pool.acquire().await.unwrap();
+        assert_eq!(pool.active_connections(), 1);
+        pool.maintain_min_connections().await.unwrap();
+
+        let total = pool.idle_connections().await + pool.active_connections();
+        assert!(
+            total <= 2,
+            "maintain opened past max_connections: idle={} active={}",
+            pool.idle_connections().await,
+            pool.active_connections()
+        );
+        pool.release(held).await;
+    }
+
+    /// A min above max is clamped to max at construction, so the pool
+    /// never starts (or maintains) more idle connections than allowed.
+    #[tokio::test]
+    async fn test_pool_clamps_min_above_max() {
+        let (addr, _server) = spawn_ack_server().await;
+        let pool = MllpPool::with_config(
+            &addr,
+            PoolConfig::new()
+                .with_min_connections(3)
+                .with_max_connections(1),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(pool.idle_connections().await, 1);
+        pool.maintain_min_connections().await.unwrap();
+        assert_eq!(pool.idle_connections().await, 1);
+        pool.close().await;
     }
 
     /// With a single permit and overlapping sends, the loser must count a

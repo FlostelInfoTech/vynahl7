@@ -11,6 +11,9 @@
 /// - A builder struct with fluent API
 /// - Conversion methods
 ///
+/// Field numbers must be unique: a duplicate is rejected at expansion
+/// instead of silently last-winning in `to_segment`.
+///
 /// # Basic Usage
 ///
 /// ```rust,ignore
@@ -99,6 +102,12 @@ macro_rules! z_segment {
                 "z_segment! field numbers are 1-based; field 0 addresses nothing"
             );
         )*
+        // Reject duplicate field numbers at expansion: two Rust fields
+        // on one HL7 position would silently last-win in to_segment.
+        const _: () = assert!(
+            !$crate::macros::__has_duplicate_fields(&[$($field_num as usize),*]),
+            "z_segment! duplicate field numbers are not allowed"
+        );
 
         /// Custom Z-segment
         #[derive(Debug, Clone, PartialEq)]
@@ -199,6 +208,26 @@ macro_rules! z_segment {
 #[doc(hidden)]
 pub const fn __is_z_segment_id(id: &str) -> bool {
     !id.is_empty() && id.as_bytes()[0] == b'Z'
+}
+
+/// Report whether a `z_segment!` field-number list holds a duplicate
+/// (const so the macro can reject duplicates at expansion: two Rust
+/// fields on one HL7 position would silently last-win in to_segment
+/// and read the same value back in from_segment).
+#[doc(hidden)]
+pub const fn __has_duplicate_fields(nums: &[usize]) -> bool {
+    let mut i = 0;
+    while i < nums.len() {
+        let mut j = i + 1;
+        while j < nums.len() {
+            if nums[i] == nums[j] {
+                return true;
+            }
+            j += 1;
+        }
+        i += 1;
+    }
+    false
 }
 
 // Re-export paste for `z_segment!`, which resolves it through
@@ -322,6 +351,15 @@ mod tests {
         assert!(!__is_z_segment_id("PID"));
         assert!(!__is_z_segment_id(""));
         assert!(!__is_z_segment_id("zpv"));
+    }
+
+    #[test]
+    fn test_has_duplicate_fields() {
+        // Predicate behind the duplicate field-number expansion check.
+        assert!(!__has_duplicate_fields(&[]));
+        assert!(!__has_duplicate_fields(&[1, 2, 3]));
+        assert!(__has_duplicate_fields(&[1, 1]));
+        assert!(__has_duplicate_fields(&[1, 2, 1]));
     }
 
     #[test]

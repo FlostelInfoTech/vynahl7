@@ -130,13 +130,11 @@ impl<'a> BulkTerser<'a> {
             // Determine if it's a segment wildcard or field repetition wildcard
             let before_wildcard = &pattern[..wildcard_pos];
 
-            // Check if this is a segment wildcard (e.g., "OBX(*)-5" or "NK1(*)-2")
-            // Segment wildcard: no hyphens before the wildcard, only segment ID
-            if !before_wildcard.contains('-')
-                && before_wildcard
-                    .chars()
-                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
-            {
+            // Segment wildcard (e.g., "OBX(*)-5"): no hyphen before
+            // the wildcard, so the head is a segment id. Any casing
+            // routes here: a lowercase id simply matches no segments
+            // (Ok([])), like Terser::get returning Ok(None).
+            if !before_wildcard.contains('-') {
                 self.expand_segment_wildcard(pattern, before_wildcard)
             } else {
                 // Field repetition wildcard (e.g., "PID-11(*)-1")
@@ -155,6 +153,13 @@ impl<'a> BulkTerser<'a> {
         pattern: &str,
         segment_id: &str,
     ) -> vyna_hl7_core::Result<Vec<(String, &str)>> {
+        // An empty segment id is malformed, not a wildcard, mirroring
+        // TerserPath::parse ("(*)-5" must Err, not Ok([])).
+        if segment_id.trim().is_empty() {
+            return Err(vyna_hl7_core::Error::terser_path(
+                "Empty segment id".to_string(),
+            ));
+        }
         let after_wildcard = &pattern[segment_id.len() + 3..]; // Skip "SEG(*)"
         let mut results = Vec::new();
 
@@ -217,6 +222,13 @@ impl<'a> BulkTerser<'a> {
         } else {
             (segment_part, 0)
         };
+        // An empty segment id is malformed, not a wildcard, mirroring
+        // TerserPath::parse ("(1)-5(*)-1" must Err, not Ok([])).
+        if segment_id.trim().is_empty() {
+            return Err(vyna_hl7_core::Error::terser_path(
+                "Empty segment id".to_string(),
+            ));
+        }
 
         let field_idx: usize = field_part
             .parse()
@@ -577,5 +589,28 @@ PID|1||PAT001||DOE^JOHN";
         // A missing segment id is still Ok(None), not an error.
         let values = bulk.get_multiple(&["OBX-5"]).unwrap();
         assert_eq!(values.get("OBX-5"), Some(&None));
+    }
+
+    #[test]
+    fn test_get_pattern_lowercase_segment_id_is_empty() {
+        // Lowercase ids route to the segment-wildcard branch and match
+        // nothing (Ok([])), like absent-id "ZZZ(*)-5" and get("obx-5").
+        let hl7 = r"MSH|^~\&|APP|FAC|||20250115||ORU^R01|123|P|2.5
+OBX|1|NM|GLU||98";
+        let message = parse_message(hl7).unwrap();
+        let bulk = BulkTerser::new(&message);
+        assert_eq!(bulk.get_pattern("obx(*)-5").unwrap(), vec![]);
+        assert_eq!(bulk.get_pattern("ZZZ(*)-5").unwrap(), vec![]);
+    }
+
+    #[test]
+    fn test_get_pattern_rejects_empty_segment_id() {
+        // Empty ids are malformed, not wildcards, mirroring get("-5").
+        let hl7 = r"MSH|^~\&|APP|FAC|||20250115||ORU^R01|123|P|2.5
+OBX|1|NM|GLU||98";
+        let message = parse_message(hl7).unwrap();
+        let bulk = BulkTerser::new(&message);
+        assert!(bulk.get_pattern("(*)-5").is_err());
+        assert!(bulk.get_pattern("(1)-5(*)-1").is_err());
     }
 }

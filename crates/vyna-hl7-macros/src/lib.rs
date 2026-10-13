@@ -1444,6 +1444,10 @@ fn hl7_type_impl(attr_meta: Meta, input: DeriveInput) -> syn::Result<proc_macro2
 
     let mut from_rep_fields = Vec::new();
     let mut to_rep_fields = Vec::new();
+    // Mapped components, to reject duplicates that would silently
+    // last-win in to_repetition, mirroring Segment derive.
+    let mut component_mapped: std::collections::HashMap<usize, String> =
+        std::collections::HashMap::new();
 
     for field in fields {
         let field_name = field
@@ -1460,6 +1464,19 @@ fn hl7_type_impl(attr_meta: Meta, input: DeriveInput) -> syn::Result<proc_macro2
                 format!(
                     "field `{field_name}` is marked `optional` but is not \
                      Option<T>",
+                ),
+            ));
+        }
+        // `required` is meaningless here (Option-vs-plain already encodes
+        // it); silently ignoring it would hide a typo, so reject it like
+        // Segment derive rejects required-on-non-Vec.
+        if attrs.required {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "hl7_type field `{field_name}` uses `required`, which \
+                     hl7_type does not support; use a plain type for \
+                     required components and Option<T> for optional ones",
                 ),
             ));
         }
@@ -1481,6 +1498,16 @@ fn hl7_type_impl(attr_meta: Meta, input: DeriveInput) -> syn::Result<proc_macro2
                 ),
             ));
         };
+        if let Some(first) = component_mapped.insert(comp, field_name.to_string()) {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "duplicate HL7 mapping: field `{field_name}` and field \
+                     `{first}` both map to component {comp}; the second \
+                     write would silently overwrite the first",
+                ),
+            ));
+        }
 
         let comp_idx = comp - 1; // Convert to 0-based (comp >= 1 validated)
 
@@ -2323,5 +2350,34 @@ mod tests {
             msg.contains("optional") || msg.contains("required"),
             "{msg}"
         );
+    }
+
+    #[test]
+    fn hl7_type_impl_rejects_duplicate_component() {
+        // Two fields on one component silently last-win in to_repetition;
+        // reject at expansion like Segment derive.
+        let meta: Meta = syn::parse_str("data_type = \"XPN\"").unwrap();
+        let err = hl7_type_impl(
+            meta,
+            parse_input(
+                "struct N { #[hl7(component = 1)] a: String, \
+                 #[hl7(component = 1)] b: String }",
+            ),
+        )
+        .unwrap_err();
+        assert!(err_message(err).contains("duplicate"));
+    }
+
+    #[test]
+    fn hl7_type_impl_rejects_required_flag() {
+        // `required` is silently ignored today; Option-vs-plain already
+        // encodes it, so the flag is a typo to reject.
+        let meta: Meta = syn::parse_str("data_type = \"XPN\"").unwrap();
+        let err = hl7_type_impl(
+            meta,
+            parse_input("struct N { #[hl7(component = 1, required)] x: Option<String> }"),
+        )
+        .unwrap_err();
+        assert!(err_message(err).contains("required"));
     }
 }

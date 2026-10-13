@@ -99,6 +99,10 @@ impl HttpClient {
                 "URL must start with http:// or https://".to_string(),
             ));
         }
+        // Reject malformed URLs eagerly so callers get InvalidUrl here
+        // instead of a network error at send time.
+        reqwest::Url::parse(&endpoint)
+            .map_err(|e| Error::InvalidUrl(format!("Invalid endpoint URL: {e}")))?;
 
         let timeout = Duration::from_secs(30);
         let client = ClientBuilder::new().timeout(timeout).build()?;
@@ -330,10 +334,34 @@ impl HttpClient {
         self.post_bytes(&body, &content_type).await
     }
 
+    /// Read an error response body for diagnostics, bounded by `cap`.
+    ///
+    /// Returns the body as lossy text plus whether it was truncated. A
+    /// mid-body stream failure yields whatever was read so far rather
+    /// than masking the status error with a transport error.
+    async fn read_error_body(response: &mut reqwest::Response, cap: usize) -> (String, bool) {
+        let mut body = Vec::new();
+        let mut truncated = false;
+        while let Ok(Some(chunk)) = response.chunk().await {
+            if body.len() >= cap {
+                truncated = true;
+                break;
+            }
+            let take = chunk.len().min(cap - body.len());
+            body.extend_from_slice(&chunk[..take]);
+            if take < chunk.len() {
+                truncated = true;
+                break;
+            }
+        }
+        (String::from_utf8_lossy(&body).into_owned(), truncated)
+    }
+
     /// POST pre-encoded bytes and decode the response
     ///
     /// The response is decoded using its Content-Type `charset` parameter,
     /// falling back to MSH-18 detection when the parameter is absent.
+    /// Non-2xx responses carry the bounded response body in the error.
     async fn post_bytes(&self, body: &[u8], content_type: &str) -> Result<String> {
         // Build request
         let mut request = self
@@ -363,11 +391,18 @@ impl HttpClient {
         // Check status code
         let status = response.status();
         if !status.is_success() {
-            return Err(Error::Http(format!(
-                "HTTP {} {}",
-                status.as_u16(),
-                status.canonical_reason().unwrap_or("Unknown")
-            )));
+            let reason = status.canonical_reason().unwrap_or("Unknown");
+            let (detail, truncated) =
+                Self::read_error_body(&mut response, self.max_response_size).await;
+            let mut message = format!("HTTP {} {}", status.as_u16(), reason);
+            if !detail.is_empty() {
+                message.push_str(": ");
+                message.push_str(&detail);
+                if truncated {
+                    message.push_str("... (truncated)");
+                }
+            }
+            return Err(Error::Http(message));
         }
 
         // Verify content type
@@ -425,6 +460,21 @@ mod tests {
         assert!(HttpClient::new("ftp://example.com").is_err());
         assert!(HttpClient::new("example.com").is_err());
         assert!(HttpClient::new("").is_err());
+    }
+
+    #[test]
+    fn test_new_client_rejects_malformed_url() {
+        // Well-formed scheme but unparseable remainder must fail here,
+        // not later at send time with a network error.
+        for endpoint in ["http://[::1", "https://", "http://exa mple.com"] {
+            let err = HttpClient::new(endpoint)
+                .err()
+                .unwrap_or_else(|| panic!("malformed URL accepted: {endpoint:?}"));
+            assert!(
+                matches!(err, Error::InvalidUrl(_)),
+                "unexpected error for {endpoint:?}: {err:?}"
+            );
+        }
     }
 
     #[test]
@@ -585,6 +635,66 @@ mod tests {
         let valid = HttpClient::new(format!("http://{addr}/valid")).unwrap();
         let body = valid.send_message_raw("MSH|^~\\&|A\r").await.unwrap();
         assert_eq!(body, "MSH|^~\\&|A\r");
+    }
+
+    #[tokio::test]
+    async fn test_error_response_carries_diagnostic_body() {
+        use axum::{Router, http::StatusCode, routing::post};
+
+        async fn bad_request() -> impl axum::response::IntoResponse {
+            (
+                StatusCode::BAD_REQUEST,
+                "Failed to parse HL7 message: bad MSH",
+            )
+        }
+
+        let app = Router::new().route("/", post(bad_request));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let client = HttpClient::new(format!("http://{addr}")).unwrap();
+        let err = client.send_message_raw("MSH|^~\\&|A\r").await.unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("400"), "status lost: {msg}");
+        assert!(
+            msg.contains("Failed to parse HL7 message: bad MSH"),
+            "diagnostic body discarded: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_error_response_body_truncated_to_cap() {
+        use axum::{Router, http::StatusCode, routing::post};
+
+        let big_detail = "E".repeat(2048);
+        let app = Router::new().route(
+            "/",
+            post(move || {
+                let big_detail = big_detail.clone();
+                async move { (StatusCode::INTERNAL_SERVER_ERROR, big_detail) }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let client = HttpClient::new(format!("http://{addr}"))
+            .unwrap()
+            .with_max_response_size(64);
+        let err = client.send_message_raw("MSH|^~\\&|A\r").await.unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("500"), "status lost: {msg}");
+        assert!(msg.contains("truncated"), "no truncation marker: {msg}");
+        assert!(
+            msg.len() < 2048,
+            "error body not bounded to the cap: {} bytes",
+            msg.len()
+        );
     }
 
     #[tokio::test]

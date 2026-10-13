@@ -2,8 +2,8 @@
 
 use super::coding_systems::convert_coding_system;
 use super::patient::{
-    hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min,
-    valid_hl7_time,
+    hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time,
+    valid_hl7_year_month,
 };
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
@@ -62,7 +62,8 @@ impl MedicationConverter {
 
         let mut admin = MedicationAdministration::new(status);
 
-        // RXA-5: Administered Code -> MedicationAdministration.medicationCodeableConcept
+        // RXA-5: Administered Code -> MedicationAdministration.medicationCodeableConcept.
+        // A text-only CWE keeps its text like the allergy converter.
         let code_path = if rxa_index == 0 {
             "RXA-5".to_string()
         } else {
@@ -95,6 +96,13 @@ impl MedicationConverter {
             admin.medication_codeable_concept = Some(CodeableConcept {
                 coding: Some(vec![coding]),
                 text: None,
+            });
+        } else if let Ok(Some(text)) = terser.get(&format!("{}-2", code_path))
+            && !text.is_empty()
+        {
+            admin.medication_codeable_concept = Some(CodeableConcept {
+                coding: None,
+                text: Some(text.to_string()),
             });
         }
 
@@ -179,10 +187,12 @@ impl MedicationConverter {
         } else {
             format!("RXA({})-5", rxa_index + 1)
         };
-        let code =
-            terser.get(&code_path).ok().flatten().ok_or_else(|| {
-                ConversionError::MissingField(code_path.clone(), "RXA".to_string())
-            })?;
+        let code = terser
+            .get(&code_path)
+            .ok()
+            .flatten()
+            .filter(|code| !code.is_empty())
+            .ok_or_else(|| ConversionError::MissingField(code_path.clone(), "RXA".to_string()))?;
 
         let mut coding = Coding {
             system: None,
@@ -220,6 +230,30 @@ impl MedicationConverter {
             "NA" => "entered-in-error".to_string(),
             "RE" => "not-done".to_string(),
             _ => "completed".to_string(),
+        }
+    }
+
+    /// `YYYYMMDD` -> `YYYY-MM-DD` (`YYYYMM` -> `YYYY-MM`,
+    /// `YYYY` stays a year).
+    fn convert_date(date: &str) -> ConversionResult<String> {
+        let (stem, _) = split_hl7_offset(date);
+        let bytes = stem.as_bytes();
+        if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_date(&stem[0..8]) {
+                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
+            } else {
+                Err(Self::invalid_datetime(date))
+            }
+        } else if bytes.len() >= 6 && bytes[..6].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_year_month(&stem[0..6]) {
+                Ok(format!("{}-{}", &stem[0..4], &stem[4..6]))
+            } else {
+                Err(Self::invalid_datetime(date))
+            }
+        } else if bytes.len() >= 4 && bytes[..4].iter().all(|b| b.is_ascii_digit()) {
+            Ok(stem[0..4].to_string())
+        } else {
+            Err(Self::invalid_datetime(date))
         }
     }
 
@@ -262,13 +296,10 @@ impl MedicationConverter {
             } else {
                 Err(Self::invalid_datetime(datetime))
             }
-        } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
-            // Date only; still requires a real calendar date.
-            if valid_hl7_date(&stem[0..8]) {
-                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
-            } else {
-                Err(Self::invalid_datetime(datetime))
-            }
+        } else if bytes.len() >= 4 {
+            // Date, month, or year precision, like the patient
+            // converter.
+            Self::convert_date(stem)
         } else {
             Err(Self::invalid_datetime(datetime))
         }
@@ -524,6 +555,40 @@ mod tests {
         assert_eq!(
             MedicationConverter::convert_datetime("20240315100000.123").unwrap(),
             "2024-03-15T10:00:00.123"
+        );
+    }
+
+    #[test]
+    fn test_text_only_rxa5_concept_preserved() {
+        let hl7 = "MSH|^~\\&|Pharmacy|Hospital|EMR|Hospital|20240315||RAS^O17|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000||^Aspirin free text|100|MG||||||||||||CP";
+        let message = parse_message(hl7).unwrap();
+        let admin = &MedicationConverter::convert_all(&message).unwrap()[0];
+        let concept = admin.medication_codeable_concept.as_ref().unwrap();
+        assert_eq!(concept.coding, None);
+        assert_eq!(concept.text.as_deref(), Some("Aspirin free text"));
+    }
+
+    #[test]
+    fn test_empty_rxa5_convert_medication_returns_missing_field() {
+        let hl7 = "MSH|^~\\&|Pharmacy|Hospital|EMR|Hospital|20240315||RAS^O17|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000|||100|MG||||||||||||CP";
+        let message = parse_message(hl7).unwrap();
+        let result = MedicationConverter::convert_medication(&message, 0);
+        assert!(matches!(result, Err(ConversionError::MissingField(_, _))));
+    }
+
+    #[test]
+    fn test_datetime_accepts_year_month_precision() {
+        assert_eq!(
+            MedicationConverter::convert_datetime("202401").unwrap(),
+            "2024-01"
+        );
+        assert_eq!(
+            MedicationConverter::convert_datetime("1980").unwrap(),
+            "1980"
         );
     }
 }

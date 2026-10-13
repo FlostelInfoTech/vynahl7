@@ -885,6 +885,73 @@ mod tests {
         tokio::fs::remove_dir_all(&dir).await.unwrap();
     }
 
+    /// Transport wrapper whose settle always fails (delete and rename).
+    struct FailSettle<T> {
+        inner: T,
+    }
+
+    impl<T: FileTransport + Send> FileTransport for FailSettle<T> {
+        async fn list(&mut self, dir: &str) -> Result<Vec<FileEntry>, BatchError> {
+            self.inner.list(dir).await
+        }
+
+        async fn get(&mut self, path: &str) -> Result<Vec<u8>, BatchError> {
+            self.inner.get(path).await
+        }
+
+        async fn put(&mut self, path: &str, data: &[u8]) -> Result<(), BatchError> {
+            self.inner.put(path, data).await
+        }
+
+        async fn delete(&mut self, _path: &str) -> Result<(), BatchError> {
+            Err(BatchError::Invalid("settle boom".to_string()))
+        }
+
+        async fn rename(&mut self, _from: &str, _to: &str) -> Result<(), BatchError> {
+            Err(BatchError::Invalid("settle boom".to_string()))
+        }
+    }
+
+    #[tokio::test]
+    async fn settle_failure_still_delivers_content_and_retries() {
+        // At-least-once on settle failure: content lands in the report
+        // with the error recorded, and the file is redelivered next
+        // poll. Both settle modes (delete and archive/rename) behave
+        // the same.
+        for with_archive in [false, true] {
+            let dir = scratch_dir();
+            let mut t = FilesystemTransport::open(&dir).unwrap();
+            t.put("inbox/a.hl7", MSH.as_bytes()).await.unwrap();
+
+            let mut poller = Poller::new(FailSettle { inner: t })
+                .with_inbox("inbox")
+                .with_require_stable(false);
+            if with_archive {
+                poller = poller.with_archive_dir("archive");
+            }
+            let report = poller.poll_once().await.unwrap();
+            assert_eq!(report.files.len(), 1, "with_archive={with_archive}");
+            assert_eq!(report.files[0].name, "inbox/a.hl7");
+            assert_eq!(report.files[0].ok_count(), 1);
+            assert_eq!(report.errors.len(), 1, "with_archive={with_archive}");
+            assert_eq!(report.errors[0].path, "inbox/a.hl7");
+            assert!(
+                report.errors[0].reason.contains("delete failed")
+                    || report.errors[0].reason.contains("archive failed"),
+                "unexpected reason: {}",
+                report.errors[0].reason
+            );
+
+            // Unsettled: the next poll redelivers the same content.
+            let report = poller.poll_once().await.unwrap();
+            assert_eq!(report.files.len(), 1, "with_archive={with_archive}");
+            assert_eq!(report.files[0].name, "inbox/a.hl7");
+            assert_eq!(report.errors.len(), 1);
+
+            tokio::fs::remove_dir_all(&dir).await.unwrap();
+        }
+    }
+
     /// Transport with scripted listings (one per poll) for stability tests.
     struct ScriptedTransport {
         listings: Vec<Vec<FileEntry>>,

@@ -1,8 +1,8 @@
 //! Procedure converter - PR1 segment to FHIR Procedure resource
 
 use super::patient::{
-    hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min,
-    valid_hl7_time,
+    hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time,
+    valid_hl7_year_month,
 };
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
@@ -53,7 +53,8 @@ impl ProcedureConverter {
         };
         // Empty is absent on every part: an empty code leaves the
         // whole code unset, and empty text/system stay None instead
-        // of `""` / a fabricated `urn:oid:`.
+        // of `""` / a fabricated `urn:oid:`. A text-only CWE keeps
+        // its text like the allergy converter.
         if let Ok(Some(code)) = terser.get(&code_path)
             && !code.is_empty()
         {
@@ -81,6 +82,13 @@ impl ProcedureConverter {
             procedure.code = Some(CodeableConcept {
                 coding: Some(vec![coding]),
                 text: None,
+            });
+        } else if let Ok(Some(text)) = terser.get(&format!("{}-2", code_path))
+            && !text.is_empty()
+        {
+            procedure.code = Some(CodeableConcept {
+                coding: None,
+                text: Some(text.to_string()),
             });
         }
 
@@ -117,6 +125,30 @@ impl ProcedureConverter {
             "I10" | "I10P" => "http://hl7.org/fhir/sid/icd-10-pcs".to_string(),
             "C4" | "CPT" => "http://www.ama-assn.org/go/cpt".to_string(),
             _ => format!("urn:oid:{}", system),
+        }
+    }
+
+    /// `YYYYMMDD` -> `YYYY-MM-DD` (`YYYYMM` -> `YYYY-MM`,
+    /// `YYYY` stays a year).
+    fn convert_date(date: &str) -> ConversionResult<String> {
+        let (stem, _) = split_hl7_offset(date);
+        let bytes = stem.as_bytes();
+        if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_date(&stem[0..8]) {
+                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
+            } else {
+                Err(Self::invalid_datetime(date))
+            }
+        } else if bytes.len() >= 6 && bytes[..6].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_year_month(&stem[0..6]) {
+                Ok(format!("{}-{}", &stem[0..4], &stem[4..6]))
+            } else {
+                Err(Self::invalid_datetime(date))
+            }
+        } else if bytes.len() >= 4 && bytes[..4].iter().all(|b| b.is_ascii_digit()) {
+            Ok(stem[0..4].to_string())
+        } else {
+            Err(Self::invalid_datetime(date))
         }
     }
 
@@ -159,13 +191,10 @@ impl ProcedureConverter {
             } else {
                 Err(Self::invalid_datetime(datetime))
             }
-        } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
-            // Date only; still requires a real calendar date.
-            if valid_hl7_date(&stem[0..8]) {
-                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
-            } else {
-                Err(Self::invalid_datetime(datetime))
-            }
+        } else if bytes.len() >= 4 {
+            // Date, month, or year precision, like the patient
+            // converter.
+            Self::convert_date(stem)
         } else {
             Err(Self::invalid_datetime(datetime))
         }
@@ -309,6 +338,30 @@ mod tests {
         assert_eq!(
             ProcedureConverter::convert_datetime("20240315100000.123").unwrap(),
             "2024-03-15T10:00:00.123"
+        );
+    }
+
+    #[test]
+    fn test_text_only_procedure_code_preserved() {
+        let hl7 = "MSH|^~\\&|System|Hospital|EMR|Hospital|20240315||ADT^A01|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   PR1|1||^Appendectomy free text||20240315100000";
+        let message = parse_message(hl7).unwrap();
+        let procedure = &ProcedureConverter::convert_all(&message).unwrap()[0];
+        let code = procedure.code.as_ref().unwrap();
+        assert_eq!(code.coding, None);
+        assert_eq!(code.text.as_deref(), Some("Appendectomy free text"));
+    }
+
+    #[test]
+    fn test_datetime_accepts_year_month_precision() {
+        assert_eq!(
+            ProcedureConverter::convert_datetime("202401").unwrap(),
+            "2024-01"
+        );
+        assert_eq!(
+            ProcedureConverter::convert_datetime("1980").unwrap(),
+            "1980"
         );
     }
 }

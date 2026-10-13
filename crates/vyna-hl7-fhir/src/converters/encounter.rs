@@ -3,8 +3,8 @@
 //! Based on HL7 v2-to-FHIR mapping: <https://build.fhir.org/ig/HL7/v2-to-fhir/ConceptMap-segment-pv1-to-encounter.html>
 
 use super::patient::{
-    hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min,
-    valid_hl7_time,
+    hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time,
+    valid_hl7_year_month,
 };
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
@@ -40,8 +40,13 @@ impl EncounterConverter {
         // PV1-2: Patient Class -> Encounter.class (required for status determination)
         let patient_class = terser.get("PV1-2").ok().flatten().unwrap_or_default();
 
-        // Determine status based on context (default to "finished" for completed encounters)
-        let status = Self::determine_status(patient_class);
+        // A valued discharge date means the encounter finished.
+        let has_discharge = terser
+            .get("PV1-45")
+            .ok()
+            .flatten()
+            .is_some_and(|s| !s.is_empty());
+        let status = Self::determine_status(patient_class, has_discharge);
 
         let mut encounter = Encounter::new(status);
 
@@ -251,13 +256,11 @@ impl EncounterConverter {
         Ok(encounter)
     }
 
-    /// Determine encounter status from patient class and other context
-    fn determine_status(patient_class: &str) -> String {
-        // In a real implementation, you might determine this from:
-        // - Discharge date (if present, status is "finished")
-        // - Cancelled flag
-        // - Current state flags
-        // For now, we use a simple mapping
+    /// Determine encounter status from patient class and discharge.
+    fn determine_status(patient_class: &str, has_discharge: bool) -> String {
+        if has_discharge {
+            return "finished".to_string();
+        }
         match patient_class {
             "P" => "planned".to_string(),                 // Preadmit
             "I" | "O" | "E" => "in-progress".to_string(), // Inpatient, Outpatient, Emergency
@@ -372,6 +375,30 @@ impl EncounterConverter {
         })
     }
 
+    /// `YYYYMMDD` -> `YYYY-MM-DD` (`YYYYMM` -> `YYYY-MM`,
+    /// `YYYY` stays a year).
+    fn convert_date(date: &str) -> ConversionResult<String> {
+        let (stem, _) = split_hl7_offset(date);
+        let bytes = stem.as_bytes();
+        if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_date(&stem[0..8]) {
+                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
+            } else {
+                Err(Self::invalid_datetime(date))
+            }
+        } else if bytes.len() >= 6 && bytes[..6].iter().all(|b| b.is_ascii_digit()) {
+            if valid_hl7_year_month(&stem[0..6]) {
+                Ok(format!("{}-{}", &stem[0..4], &stem[4..6]))
+            } else {
+                Err(Self::invalid_datetime(date))
+            }
+        } else if bytes.len() >= 4 && bytes[..4].iter().all(|b| b.is_ascii_digit()) {
+            Ok(stem[0..4].to_string())
+        } else {
+            Err(Self::invalid_datetime(date))
+        }
+    }
+
     /// Convert HL7 v2 datetime format to FHIR datetime format
     ///
     /// `YYYYMMDDHHMM` keeps its minutes (`YYYY-MM-DDTHH:MM`) and a
@@ -413,13 +440,10 @@ impl EncounterConverter {
             } else {
                 Err(Self::invalid_datetime(datetime))
             }
-        } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
-            // Date only; still requires a real calendar date.
-            if valid_hl7_date(&stem[0..8]) {
-                Ok(format!("{}-{}-{}", &stem[0..4], &stem[4..6], &stem[6..8]))
-            } else {
-                Err(Self::invalid_datetime(datetime))
-            }
+        } else if bytes.len() >= 4 {
+            // Date, month, or year precision, like the patient
+            // converter.
+            Self::convert_date(stem)
         } else {
             Err(Self::invalid_datetime(datetime))
         }
@@ -615,6 +639,34 @@ mod tests {
         assert_eq!(
             EncounterConverter::convert_datetime("20240315100000.123").unwrap(),
             "2024-03-15T10:00:00.123"
+        );
+    }
+
+    #[test]
+    fn test_discharge_present_marks_finished() {
+        let mut pv1 = vec![String::new(); 45];
+        pv1[0] = "1".to_string();
+        pv1[1] = "I".to_string();
+        pv1[44] = "20240315120000".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+             PID|1||MRN123^^^MRN||DOE^JOHN||19800101|M\rPV1|{}",
+            pv1.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let encounter = EncounterConverter::convert(&message).unwrap();
+        assert_eq!(encounter.status, "finished");
+    }
+
+    #[test]
+    fn test_datetime_accepts_year_month_precision() {
+        assert_eq!(
+            EncounterConverter::convert_datetime("202401").unwrap(),
+            "2024-01"
+        );
+        assert_eq!(
+            EncounterConverter::convert_datetime("1980").unwrap(),
+            "1980"
         );
     }
 }

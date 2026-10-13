@@ -106,8 +106,11 @@ impl TemplateEngine {
 
         // Fill routing fields from the template metadata when the template
         // leaves them empty, so the message carries its own identity.
+        // Whole-field emptiness (not first-component) decides: a "^A08"
+        // default holds content in its second component and must win.
         if let Some(msh) = segments.iter_mut().find(|s| s.id == "MSH") {
-            if msh.get_field_value(9).unwrap_or("").is_empty() {
+            let msh9_empty = msh.get_field(9).map(|f| f.is_empty()).unwrap_or(true);
+            if msh9_empty {
                 let mut message_type = Field::new();
                 let mut repetition = Repetition::new();
                 repetition.add_component(Component::from_value(&template.message_type));
@@ -116,7 +119,8 @@ impl TemplateEngine {
                 msh.set_field(9, message_type)
                     .map_err(|e| Error::substitution(e.to_string()))?;
             }
-            if msh.get_field_value(12).unwrap_or("").is_empty() {
+            let msh12_empty = msh.get_field(12).map(|f| f.is_empty()).unwrap_or(true);
+            if msh12_empty {
                 msh.set_field(12, Field::from_value(template.version.clone()))
                     .map_err(|e| Error::substitution(e.to_string()))?;
             }
@@ -209,6 +213,14 @@ impl TemplateEngine {
     ) -> Result<Field> {
         // Handle component templates if present
         if let Some(components) = &field_template.components {
+            // A field-level placeholder/default plus components would
+            // silently drop the scalar value (components win); reject
+            // the combination instead of losing data.
+            if field_template.placeholder.is_some() || field_template.default.is_some() {
+                return Err(Error::substitution(
+                    "FieldTemplate cannot combine placeholder/default with components",
+                ));
+            }
             // Positions are 1-based: honor them (including gaps) rather
             // than pushing templates in vector order. A repeated position
             // is overwritten by the later template.
@@ -248,6 +260,13 @@ impl TemplateEngine {
             field.add_repetition(Repetition {
                 components: comp_vec,
             });
+            // Field-level `required` applies here too: a required field
+            // that renders empty fails, like the simple-field path.
+            if field_template.required && field.is_empty() {
+                return Err(Error::substitution(
+                    "Required field rendered empty (all components empty)",
+                ));
+            }
             Ok(field)
         } else {
             // Simple field with single value
@@ -876,5 +895,59 @@ mod tests {
             message.get_segment_by_id("PID").unwrap().get_field_value(1),
             Some("1")
         );
+    }
+
+    #[test]
+    fn test_msh9_partial_default_survives_autofill() {
+        // "^A08" holds content in its second component: whole-field
+        // emptiness must preserve it instead of autofilling ADT^A01.
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut msh = SegmentTemplate::new("MSH");
+        msh.add_field(9, FieldTemplate::new().with_default("^A08"));
+        template.add_segment(msh);
+        let message = TemplateEngine::new().create_message(&template).unwrap();
+        let field9 = message
+            .get_segment_by_id("MSH")
+            .unwrap()
+            .get_field(9)
+            .unwrap();
+        let comps = &field9.repetitions[0].components;
+        assert_eq!(comps[0].value(), Some(""));
+        assert_eq!(comps[1].value(), Some("A08"));
+    }
+
+    #[test]
+    fn test_required_field_with_empty_components_fails() {
+        // Field-level `required` applies in the components path too.
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut pid = SegmentTemplate::new("PID");
+        pid.add_field(
+            5,
+            FieldTemplate::new()
+                .required()
+                .with_components(vec![ComponentTemplate::new(1)]),
+        );
+        template.add_segment(pid);
+        assert!(TemplateEngine::new().create_message(&template).is_err());
+    }
+
+    #[test]
+    fn test_field_placeholder_with_components_is_rejected() {
+        // Scalar placeholder/default plus components would silently drop
+        // the scalar value; the combination is an error.
+        for field in [
+            FieldTemplate::new()
+                .with_placeholder("SHOULD_APPEAR")
+                .with_components(vec![ComponentTemplate::new(1).with_default("C")]),
+            FieldTemplate::new()
+                .with_default("SHOULD_APPEAR")
+                .with_components(vec![ComponentTemplate::new(1).with_default("C")]),
+        ] {
+            let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+            let mut pid = SegmentTemplate::new("PID");
+            pid.add_field(5, field);
+            template.add_segment(pid);
+            assert!(TemplateEngine::new().create_message(&template).is_err());
+        }
     }
 }

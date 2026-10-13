@@ -123,7 +123,10 @@ impl ObservationReverseConverter {
                 }
             }
         } else if let Some(ref text) = concept.text {
-            let _ = obx.set_field_value(field_num, text);
+            // Text-only CE: component 1 stays empty ('^text') so
+            // re-forwarding preserves the text instead of turning
+            // it into a code.
+            let _ = obx.set_component(field_num, 0, 1, text);
         }
         Ok(())
     }
@@ -234,8 +237,13 @@ impl ObservationReverseConverter {
         } else if system.contains("ucum") {
             "UCUM".to_string()
         } else {
-            // Return the last path segment as the system name
-            system.split('/').next_back().unwrap_or("L").to_string()
+            // Strip the urn:oid: prefix the forward converter adds
+            // before the last-segment fallback; otherwise the whole
+            // URI is kept and the system doubles every round trip.
+            system
+                .strip_prefix("urn:oid:")
+                .unwrap_or(system.split('/').next_back().unwrap_or("L"))
+                .to_string()
         }
     }
 }
@@ -497,6 +505,65 @@ mod tests {
             coding[0].system.as_deref(),
             Some("http://hl7.org/fhir/sid/icd-10")
         );
+    }
+
+    #[test]
+    fn test_text_only_value_concept_round_trips_as_text() {
+        // A text-only CE ('^Positive') forwards to {coding: None,
+        // text: Positive}; the reverse must keep component 1 empty
+        // so re-forwarding does not turn the text into a code.
+        let mut observation = Observation::new("final".to_string(), create_code());
+        observation.value_codeable_concept = Some(CodeableConcept {
+            coding: None,
+            text: Some("Positive".to_string()),
+        });
+        let obx = ObservationReverseConverter::convert(&observation, 1).unwrap();
+        let components = &obx
+            .get_field(5)
+            .unwrap()
+            .repetitions
+            .first()
+            .unwrap()
+            .components;
+        assert!(components[0].is_empty());
+        assert_eq!(components[1].value(), Some("Positive"));
+        let back = round_trip(&obx);
+        let concept = back.value_codeable_concept.as_ref().unwrap();
+        assert_eq!(concept.coding, None);
+        assert_eq!(concept.text.as_deref(), Some("Positive"));
+    }
+
+    #[test]
+    fn test_unknown_coding_system_round_trips_stably() {
+        // 'C1^Disp^LOCAL' forwards to system 'urn:oid:LOCAL'; the
+        // reverse must strip the prefix so the system does not
+        // double on every round trip.
+        let mut observation = Observation::new("final".to_string(), create_code());
+        observation.value_codeable_concept = Some(CodeableConcept {
+            coding: Some(vec![Coding {
+                system: Some("urn:oid:LOCAL".to_string()),
+                version: None,
+                code: Some("C1".to_string()),
+                display: Some("Disp".to_string()),
+            }]),
+            text: None,
+        });
+        let obx = ObservationReverseConverter::convert(&observation, 1).unwrap();
+        let system = obx
+            .get_field(5)
+            .and_then(|f| f.repetitions.first())
+            .and_then(|r| r.components.get(2))
+            .and_then(|c| c.value());
+        assert_eq!(system, Some("LOCAL"));
+        let back = round_trip(&obx);
+        let coding = back
+            .value_codeable_concept
+            .as_ref()
+            .unwrap()
+            .coding
+            .as_ref()
+            .unwrap();
+        assert_eq!(coding[0].system.as_deref(), Some("urn:oid:LOCAL"));
     }
 
     #[test]

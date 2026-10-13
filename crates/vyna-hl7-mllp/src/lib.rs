@@ -448,6 +448,11 @@ impl MllpClient {
             })?
             .map_err(|e| Error::Network(format!("Failed to connect: {}", e)))?;
 
+        // Disable Nagle's algorithm for low-latency messaging
+        tcp_stream
+            .set_nodelay(true)
+            .map_err(|e| Error::Network(format!("Failed to set TCP_NODELAY: {}", e)))?;
+
         // Perform TLS handshake, bounded so a stalled peer cannot hang
         // the caller forever.
         let connector = TlsConnector::from(tls_config.config.clone());
@@ -490,6 +495,20 @@ impl MllpClient {
     /// Pass `None` to decode per MSH-18 again.
     pub fn set_charset_override(&mut self, charset: Option<CharacterSet>) {
         self.charset_override = charset;
+    }
+
+    /// Test-only probe for the underlying TCP `TCP_NODELAY` state.
+    ///
+    /// Returns `None` when the state cannot be read.
+    #[cfg(all(test, feature = "tls"))]
+    fn tcp_nodelay(&self) -> Option<bool> {
+        match &self.stream {
+            MllpStream::Plain(stream) => stream.nodelay().ok(),
+            #[cfg(feature = "tls")]
+            MllpStream::TlsClient(stream) => stream.get_ref().0.nodelay().ok(),
+            #[cfg(feature = "tls")]
+            MllpStream::TlsServer(stream) => stream.get_ref().0.nodelay().ok(),
+        }
     }
 
     /// Send a message and wait for acknowledgment
@@ -1262,6 +1281,124 @@ mod tests {
             Ok(_) => panic!("expected a handshake timeout, got a connection"),
             Err(err) => assert!(err.to_string().contains("timed out"), "unexpected: {err}"),
         }
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Generate a CA plus a server certificate signed by it (requires
+    /// openssl). Returns `(ca_cert, server_cert, server_key)`.
+    #[cfg(feature = "tls")]
+    fn generate_tls_test_certs(dir: &std::path::Path) -> (String, String, String) {
+        use std::process::Command;
+
+        let path = |name: &str| dir.join(name).to_str().unwrap().to_string();
+        let (ca_key, ca_cert) = (path("ca-key.pem"), path("ca-cert.pem"));
+        let (srv_key, srv_csr, srv_cert, srv_ext) = (
+            path("srv-key.pem"),
+            path("srv.csr"),
+            path("srv-cert.pem"),
+            path("srv-ext.cnf"),
+        );
+        std::fs::write(
+            &srv_ext,
+            "[v3_req]\nbasicConstraints = CA:FALSE\n\
+             keyUsage = digitalSignature, keyEncipherment\n\
+             extendedKeyUsage = serverAuth\n\
+             subjectAltName = DNS:localhost,IP:127.0.0.1\n",
+        )
+        .unwrap();
+        let run = |args: &[&str]| {
+            let status = Command::new("openssl")
+                .args(args)
+                .status()
+                .expect("openssl must be installed for TLS tests");
+            assert!(status.success(), "openssl {args:?} failed");
+        };
+        run(&[
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            &ca_key,
+            "-out",
+            &ca_cert,
+            "-days",
+            "2",
+            "-subj",
+            "/CN=Test CA",
+        ]);
+        run(&[
+            "req",
+            "-new",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            &srv_key,
+            "-out",
+            &srv_csr,
+            "-subj",
+            "/CN=localhost",
+        ]);
+        run(&[
+            "x509",
+            "-req",
+            "-in",
+            &srv_csr,
+            "-CA",
+            &ca_cert,
+            "-CAkey",
+            &ca_key,
+            "-CAcreateserial",
+            "-out",
+            &srv_cert,
+            "-days",
+            "2",
+            "-extfile",
+            &srv_ext,
+            "-extensions",
+            "v3_req",
+        ]);
+        (ca_cert, srv_cert, srv_key)
+    }
+
+    /// The TLS connect path must disable Nagle like the plain path, so
+    /// small request/ACK turns do not stall on delayed-ACK interaction.
+    #[cfg(feature = "tls")]
+    #[tokio::test]
+    async fn tls_client_enables_tcp_nodelay() {
+        let dir = std::env::temp_dir().join(format!(
+            "vyna_mllp_nodelay_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (ca_cert, srv_cert, srv_key) = generate_tls_test_certs(&dir);
+
+        let server_tls = crate::tls::TlsServerConfig::new(&srv_cert, &srv_key).unwrap();
+        let server = MllpServer::bind_tls_with_config("127.0.0.1:0", server_tls, MllpConfig::new())
+            .await
+            .unwrap();
+        let addr = server.local_addr().unwrap().to_string();
+        let accept = tokio::spawn(async move { server.accept().await });
+
+        let client_tls = crate::tls::TlsClientConfig::with_ca_cert(&ca_cert).unwrap();
+        let client =
+            MllpClient::connect_tls_with_config(&addr, "localhost", client_tls, MllpConfig::new())
+                .await
+                .unwrap();
+        accept.await.unwrap().unwrap();
+
+        assert_eq!(
+            client.tcp_nodelay(),
+            Some(true),
+            "TLS connect left Nagle enabled"
+        );
 
         std::fs::remove_dir_all(&dir).unwrap();
     }

@@ -56,7 +56,9 @@ impl ConditionConverter {
         } else {
             format!("PRB({})-3", prb_index + 1)
         };
-        // Empty is absent: no code concept for a blank Problem ID.
+        // Empty is absent: no code concept for a blank Problem ID,
+        // but a text-only CWE keeps its text like the allergy
+        // converter.
         if let Ok(Some(code)) = terser.get(&code_path)
             && !code.is_empty()
         {
@@ -84,6 +86,13 @@ impl ConditionConverter {
             condition.code = Some(CodeableConcept {
                 coding: Some(vec![coding]),
                 text: None,
+            });
+        } else if let Ok(Some(text)) = terser.get(&format!("{}-2", code_path))
+            && !text.is_empty()
+        {
+            condition.code = Some(CodeableConcept {
+                coding: None,
+                text: Some(text.to_string()),
             });
         }
 
@@ -124,7 +133,9 @@ impl ConditionConverter {
         } else {
             format!("DG1({})-3", dg1_index + 1)
         };
-        // Empty is absent: no code concept for a blank Diagnosis Code.
+        // Empty is absent: no code concept for a blank Diagnosis
+        // Code, but a text-only CWE keeps its text like the
+        // allergy converter.
         if let Ok(Some(code)) = terser.get(&code_path)
             && !code.is_empty()
         {
@@ -151,6 +162,13 @@ impl ConditionConverter {
             condition.code = Some(CodeableConcept {
                 coding: Some(vec![coding]),
                 text: None,
+            });
+        } else if let Ok(Some(text)) = terser.get(&format!("{}-2", code_path))
+            && !text.is_empty()
+        {
+            condition.code = Some(CodeableConcept {
+                coding: None,
+                text: Some(text.to_string()),
             });
         }
 
@@ -335,5 +353,29 @@ mod tests {
             coding.system.as_deref(),
             Some("http://terminology.hl7.org/CodeSystem/condition-clinical")
         );
+    }
+
+    #[test]
+    fn test_prb_text_only_code_preserved() {
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||PPR^PC1|1|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   PRB|AD|20240315|^Chest pain|P1";
+        let message = parse_message(hl7).unwrap();
+        let conditions = ConditionConverter::convert_all(&message).unwrap();
+        let code = conditions[0].code.as_ref().unwrap();
+        assert_eq!(code.coding, None);
+        assert_eq!(code.text.as_deref(), Some("Chest pain"));
+    }
+
+    #[test]
+    fn test_dg1_text_only_code_preserved() {
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||ADT^A01|1|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   DG1|1||^Free text dx";
+        let message = parse_message(hl7).unwrap();
+        let conditions = ConditionConverter::convert_all(&message).unwrap();
+        let code = conditions[0].code.as_ref().unwrap();
+        assert_eq!(code.coding, None);
+        assert_eq!(code.text.as_deref(), Some("Free text dx"));
     }
 }
