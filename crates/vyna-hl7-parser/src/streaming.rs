@@ -41,6 +41,7 @@
 //! ```
 
 use vyna_hl7_core::delimiters::Delimiters;
+use vyna_hl7_core::encoding::Encoding;
 use vyna_hl7_core::error::{Error, ErrorLocation, Result};
 use vyna_hl7_core::field::{Component, Field, Repetition, SubComponent};
 use vyna_hl7_core::message::Message;
@@ -122,8 +123,9 @@ pub struct StreamingParser<'a> {
 impl<'a> StreamingParser<'a> {
     /// Create a new streaming parser for the given input
     pub fn new(input: &'a str) -> Self {
-        // Pre-split into lines for easier processing
-        let lines: Vec<&str> = input.split('\r').collect();
+        // Pre-split into lines for easier processing (parity with the
+        // non-streaming parser, which splits on both \r and \n)
+        let lines: Vec<&str> = input.split('\r').flat_map(|s| s.split('\n')).collect();
 
         Self {
             state: ParserState::Initial,
@@ -218,12 +220,14 @@ impl<'a> StreamingParser<'a> {
         };
         let msh_sep = after_msh.get(..sep_len).unwrap_or("");
 
-        let delimiters = Delimiters {
-            field_separator: field_sep,
-            component_separator: encoding_chars.chars().next().unwrap_or('^'),
-            repetition_separator: encoding_chars.chars().nth(1).unwrap_or('~'),
-            escape_character: encoding_chars.chars().nth(2).unwrap_or('\\'),
-            subcomponent_separator: encoding_chars.chars().nth(3).unwrap_or('&'),
+        let delimiters = match Delimiters::from_encoding_characters(field_sep, encoding_chars) {
+            Ok(delimiters) => delimiters,
+            Err(e) => {
+                return Some(Err(Error::parse_at(
+                    e.to_string(),
+                    ErrorLocation::new().line(self.current_line),
+                )));
+            }
         };
 
         self.delimiters = Some(delimiters);
@@ -508,11 +512,17 @@ impl StreamingMessageBuilder {
                 }
                 self.current_segment = Some(Segment::new(id));
             }
-            SegmentEvent::Field { index: _, value } => {
+            SegmentEvent::Field { index, value } => {
                 // Parse field and add to segment
                 let delims = self.delimiters;
                 if let (Some(seg), Some(delims)) = (&mut self.current_segment, delims.as_ref()) {
-                    let field = Self::parse_field_static(value, delims);
+                    // MSH-1/MSH-2 hold raw delimiter characters, never
+                    // escape-encoded data (mirrors the regular parser).
+                    let field = if seg.id == "MSH" && index <= 2 {
+                        Field::from_value(value)
+                    } else {
+                        Self::parse_field_static(value, delims)?
+                    };
                     seg.add_field(field);
                 }
             }
@@ -529,7 +539,9 @@ impl StreamingMessageBuilder {
     }
 
     /// Parse a field value into a Field structure (static version for borrow checker)
-    fn parse_field_static(value: &str, delims: &Delimiters) -> Field {
+    ///
+    /// Escape sequences are decoded, matching the regular parser.
+    fn parse_field_static(value: &str, delims: &Delimiters) -> Result<Field> {
         let mut field = Field::new();
 
         // Split by repetition separator
@@ -549,7 +561,8 @@ impl StreamingMessageBuilder {
                     comp_value.split(delims.subcomponent_separator).collect();
 
                 for sub_value in subcomponents {
-                    component.add_subcomponent(SubComponent::new(sub_value));
+                    let decoded = Encoding::decode(sub_value, delims)?;
+                    component.add_subcomponent(SubComponent::new(decoded));
                 }
 
                 repetition.add_component(component);
@@ -558,7 +571,7 @@ impl StreamingMessageBuilder {
             field.add_repetition(repetition);
         }
 
-        field
+        Ok(field)
     }
 
     /// Finish building and return the message
@@ -623,9 +636,15 @@ pub fn process_with_handler<H: SegmentHandler>(input: &str, handler: &mut H) -> 
                 }
                 current_segment = Some(Segment::new(id));
             }
-            SegmentEvent::Field { value, .. } => {
+            SegmentEvent::Field { index, value } => {
                 if let (Some(seg), Some(delims)) = (&mut current_segment, &delimiters) {
-                    let field = parse_field_with_delimiters(value, delims);
+                    // MSH-1/MSH-2 hold raw delimiter characters, never
+                    // escape-encoded data (mirrors the regular parser).
+                    let field = if seg.id == "MSH" && index <= 2 {
+                        Field::from_value(value)
+                    } else {
+                        parse_field_with_delimiters(value, delims)?
+                    };
                     seg.add_field(field);
                 }
             }
@@ -645,7 +664,9 @@ pub fn process_with_handler<H: SegmentHandler>(input: &str, handler: &mut H) -> 
 }
 
 /// Parse a field value with given delimiters
-fn parse_field_with_delimiters(value: &str, delims: &Delimiters) -> Field {
+///
+/// Escape sequences are decoded, matching the regular parser.
+fn parse_field_with_delimiters(value: &str, delims: &Delimiters) -> Result<Field> {
     let mut field = Field::new();
 
     let repetitions: Vec<&str> = value.split(delims.repetition_separator).collect();
@@ -660,7 +681,8 @@ fn parse_field_with_delimiters(value: &str, delims: &Delimiters) -> Field {
                 comp_value.split(delims.subcomponent_separator).collect();
 
             for sub_value in subcomponents {
-                component.add_subcomponent(SubComponent::new(sub_value));
+                let decoded = Encoding::decode(sub_value, delims)?;
+                component.add_subcomponent(SubComponent::new(decoded));
             }
 
             repetition.add_component(component);
@@ -669,7 +691,7 @@ fn parse_field_with_delimiters(value: &str, delims: &Delimiters) -> Field {
         field.add_repetition(repetition);
     }
 
-    field
+    Ok(field)
 }
 
 #[cfg(test)]
@@ -915,5 +937,81 @@ mod tests {
         parser.state = ParserState::InMsh;
         let event = parser.next_event().expect("expected an event");
         assert!(event.is_err());
+    }
+
+    #[test]
+    fn test_streaming_splits_lf_separated_segments() {
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\n\
+                   PID|1||PAT001||DOE^JOHN\n\
+                   PV1|1|I|ICU";
+        let message = parse_streaming(hl7).unwrap();
+        let ids: Vec<&str> = message.segments.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, vec!["MSH", "PID", "PV1"]);
+
+        // Parity with the non-streaming parser.
+        let regular = crate::parse_message(hl7).unwrap();
+        assert_eq!(message.segments.len(), regular.segments.len());
+    }
+
+    #[test]
+    fn test_streaming_splits_crlf_separated_segments() {
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\r\n\
+                   PID|1|PAT001\r\n";
+        let message = parse_streaming(hl7).unwrap();
+        let ids: Vec<&str> = message.segments.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, vec!["MSH", "PID"]);
+        assert_eq!(message.segments[1].get_field_value(2), Some("PAT001"));
+    }
+
+    #[test]
+    fn test_streaming_decodes_escape_sequences() {
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\r\
+                   PID|1|PAT001|Test\\F\\Value\r";
+        let message = parse_streaming(hl7).unwrap();
+        assert_eq!(message.segments[1].get_field_value(3), Some("Test|Value"));
+
+        // Parity with the non-streaming parser.
+        let regular = crate::parse_message(hl7).unwrap();
+        assert_eq!(regular.segments[1].get_field_value(3), Some("Test|Value"));
+    }
+
+    #[test]
+    fn test_streaming_rejects_invalid_escape_sequences() {
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\r\
+                   PID|1|Bad\\Q\\Value\r";
+        assert!(crate::parse_message(hl7).is_err());
+        assert!(parse_streaming(hl7).is_err());
+    }
+
+    #[test]
+    fn test_handler_path_decodes_escape_sequences() {
+        struct Capture {
+            fields: Vec<String>,
+        }
+        impl SegmentHandler for Capture {
+            fn handle_segment(&mut self, segment: &Segment) -> Result<()> {
+                for field in &segment.fields {
+                    self.fields.push(field.value().unwrap_or("").to_string());
+                }
+                Ok(())
+            }
+        }
+
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\r\
+                   PID|1|Test\\F\\Value\r";
+        let mut handler = Capture { fields: Vec::new() };
+        process_with_handler(hl7, &mut handler).unwrap();
+        assert!(handler.fields.iter().any(|f| f == "Test|Value"));
+        assert!(!handler.fields.iter().any(|f| f.contains("\\F\\")));
+    }
+
+    #[test]
+    fn test_streaming_validates_encoding_characters() {
+        // Duplicate delimiters and short (multibyte) encoding characters
+        // must error, matching the non-streaming parser.
+        for hl7 in ["MSH|^^^^|APP\rPID|1\r", "MSH|é~\\&|APP\rPID|1\r"] {
+            assert!(crate::parse_message(hl7).is_err(), "regular parses {hl7:?}");
+            assert!(parse_streaming(hl7).is_err(), "streaming parses {hl7:?}");
+        }
     }
 }

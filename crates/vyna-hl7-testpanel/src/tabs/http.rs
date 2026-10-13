@@ -957,6 +957,25 @@ async fn send_http_request(request: SendHttpRequest) -> Result<HttpResponse, Str
     })
 }
 
+/// Largest HTTP request body the test-panel server accepts (10 MiB).
+/// HL7 v2 messages are kilobytes; anything larger is rejected with a
+/// 413 rather than buffered.
+const MAX_HTTP_BODY_SIZE: usize = 10 * 1024 * 1024;
+
+/// Cap on the initial body buffer pre-allocation (64 KiB). The buffer
+/// grows toward `Content-Length` as bytes arrive, so a large (but
+/// allowed) claim cannot force a matching up-front allocation.
+const MAX_HTTP_BODY_PREALLOC: usize = 64 * 1024;
+
+/// Validate a peer-supplied `Content-Length` and compute a safe initial
+/// buffer capacity. Returns `Err` when the body must be rejected.
+fn body_buffer_capacity(content_length: usize) -> Result<usize, &'static str> {
+    if content_length > MAX_HTTP_BODY_SIZE {
+        return Err("Content-Length exceeds the 10 MiB limit");
+    }
+    Ok(content_length.min(MAX_HTTP_BODY_PREALLOC))
+}
+
 /// Run the HTTP server
 async fn run_http_server(
     port: u16,
@@ -1068,11 +1087,43 @@ async fn run_http_server(
                         }
                     }
 
-                    // Read body
-                    let mut body = vec![0u8; content_length];
+                    // Read body: reject over-limit claims with a 413
+                    // instead of pre-allocating the peer's claim, and cap
+                    // the initial buffer even for allowed sizes.
+                    let capacity = match body_buffer_capacity(content_length) {
+                        Ok(cap) => cap,
+                        Err(detail) => {
+                            {
+                                let mut s = state_clone.lock().unwrap();
+                                s.server_messages.push(LogEntry {
+                                    timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                                    direction: Direction::Error,
+                                    message: format!(
+                                        "Rejected {} {}: {} ({})",
+                                        method, path, detail, content_length
+                                    ),
+                                });
+                            }
+                            ctx_clone.request_repaint();
+                            let response = format!(
+                                "HTTP/1.1 413 Content Too Large\r\n\
+                                 Content-Type: text/plain\r\nContent-Length: {}\
+                                 \r\nConnection: close\r\n\r\n{}",
+                                detail.len(),
+                                detail
+                            );
+                            let _ = writer.write_all(response.as_bytes()).await;
+                            return;
+                        }
+                    };
+                    let mut body = Vec::with_capacity(capacity);
                     if content_length > 0 {
                         use tokio::io::AsyncReadExt;
-                        if let Err(e) = buf_reader.read_exact(&mut body).await {
+                        if let Err(e) = buf_reader
+                            .take(content_length as u64)
+                            .read_to_end(&mut body)
+                            .await
+                        {
                             let mut s = state_clone.lock().unwrap();
                             s.server_messages.push(LogEntry {
                                 timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
@@ -1377,4 +1428,122 @@ async fn run_http_load_test(params: HttpLoadTest) {
         }
     }
     ctx.request_repaint();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpStream;
+
+    /// Discover a free loopback port via a throwaway listener.
+    fn free_port() -> u16 {
+        std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port()
+    }
+
+    async fn start_test_server(port: u16) -> (Arc<Mutex<HttpState>>, Arc<AtomicBool>) {
+        let state = Arc::new(Mutex::new(HttpState::default()));
+        let shutdown = Arc::new(AtomicBool::new(false));
+        tokio::spawn(run_http_server(
+            port,
+            true,
+            state.clone(),
+            shutdown.clone(),
+            egui::Context::default(),
+        ));
+        // Wait for the listener to come up.
+        for _ in 0..50 {
+            if TcpStream::connect(format!("127.0.0.1:{}", port))
+                .await
+                .is_ok()
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        (state, shutdown)
+    }
+
+    #[tokio::test]
+    async fn oversized_content_length_is_rejected_without_waiting() {
+        let port = free_port();
+        let (_state, shutdown) = start_test_server(port).await;
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port))
+            .await
+            .unwrap();
+        // Claim a 64 MiB body but send no body bytes at all.
+        let head = "POST /hl7 HTTP/1.1\r\nHost: x\r\nContent-Length: 67108864\
+                    \r\nConnection: close\r\n\r\n";
+        stream.write_all(head.as_bytes()).await.unwrap();
+        // Fixed behavior: a prompt 413. Vulnerable behavior: the server
+        // pre-allocates the full claim and blocks in read_exact, so this
+        // read times out.
+        let mut buf = vec![0u8; 1024];
+        let n = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buf))
+            .await
+            .expect("server must answer oversized bodies promptly (413)")
+            .unwrap();
+        let head = String::from_utf8_lossy(&buf[..n]);
+        assert!(head.starts_with("HTTP/1.1 413"), "got: {}", head);
+        shutdown.store(true, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn body_capacity_matches_small_claims() {
+        assert_eq!(body_buffer_capacity(0).unwrap(), 0);
+        assert_eq!(body_buffer_capacity(100).unwrap(), 100);
+        assert_eq!(
+            body_buffer_capacity(MAX_HTTP_BODY_PREALLOC).unwrap(),
+            MAX_HTTP_BODY_PREALLOC
+        );
+    }
+
+    #[test]
+    fn body_capacity_caps_prealloc_for_allowed_claims() {
+        assert_eq!(
+            body_buffer_capacity(1024 * 1024).unwrap(),
+            MAX_HTTP_BODY_PREALLOC
+        );
+        assert_eq!(
+            body_buffer_capacity(MAX_HTTP_BODY_SIZE).unwrap(),
+            MAX_HTTP_BODY_PREALLOC
+        );
+    }
+
+    #[test]
+    fn body_capacity_rejects_over_limit_claims() {
+        assert!(body_buffer_capacity(MAX_HTTP_BODY_SIZE + 1).is_err());
+        assert!(body_buffer_capacity(usize::MAX).is_err());
+    }
+
+    #[tokio::test]
+    async fn normal_post_still_gets_ack() {
+        let port = free_port();
+        let (_state, shutdown) = start_test_server(port).await;
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port))
+            .await
+            .unwrap();
+        let body = "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5";
+        let req = format!(
+            "POST /hl7 HTTP/1.1\r\nHost: x\r\nContent-Length: {}\
+             \r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        stream.write_all(req.as_bytes()).await.unwrap();
+        let mut buf = Vec::new();
+        tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut buf))
+            .await
+            .expect("server must answer a small POST promptly")
+            .unwrap();
+        let resp = String::from_utf8_lossy(&buf);
+        assert!(resp.starts_with("HTTP/1.1 200"), "got: {}", resp);
+        assert!(resp.contains("MSA|AA"), "got: {}", resp);
+        shutdown.store(true, Ordering::SeqCst);
+    }
 }

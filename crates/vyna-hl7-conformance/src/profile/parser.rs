@@ -36,6 +36,20 @@ impl ProfileParser {
 
         loop {
             match reader.read_event_into(&mut buf) {
+                Ok(Event::Empty(ref e)) if e.name().as_ref() == "Segment" => {
+                    // A self-closing Segment has no child Fields: build it
+                    // from attributes alone so it cannot consume siblings.
+                    if message.is_none() {
+                        message = Some(MessageProfile::new(
+                            msg_type.clone().unwrap_or_default(),
+                            event_type.clone().unwrap_or_default(),
+                        ));
+                    }
+                    let segment = Self::parse_empty_segment_element(e)?;
+                    if let Some(ref mut msg) = message {
+                        msg.add_segment(segment);
+                    }
+                }
                 Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
                     match e.name().as_ref() {
                         "HL7v2xConformanceProfile" => {
@@ -163,9 +177,8 @@ impl ProfileParser {
         Ok(metadata)
     }
 
-    /// Parse Segment element
-    fn parse_segment_element<R: BufRead>(
-        reader: &mut Reader<R>,
+    /// Parse a self-closing Segment element (attributes only, no Fields)
+    fn parse_empty_segment_element(
         element: &quick_xml::events::BytesStart,
     ) -> Result<SegmentProfile> {
         let mut name = None;
@@ -207,6 +220,16 @@ impl ProfileParser {
 
         let mut segment = SegmentProfile::new(name, usage, cardinality);
         segment.long_name = long_name;
+
+        Ok(segment)
+    }
+
+    /// Parse Segment element
+    fn parse_segment_element<R: BufRead>(
+        reader: &mut Reader<R>,
+        element: &quick_xml::events::BytesStart,
+    ) -> Result<SegmentProfile> {
+        let mut segment = Self::parse_empty_segment_element(element)?;
 
         // Parse child Field elements; position is the 1-based ordinal of the
         // Field element within its segment, not the HL7 ItemNo (which is a
@@ -415,6 +438,30 @@ mod tests {
         assert_eq!(pid.fields[0].item_no, Some("00003".to_string()));
         assert_eq!(msh.fields[1].position, 2);
         assert_eq!(msh.fields[1].item_no, Some("00002".to_string()));
+    }
+
+    #[test]
+    fn test_self_closing_segment_keeps_siblings() {
+        // A self-closing <Segment .../> has no children: it must not
+        // consume the following sibling Segment's Field elements.
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<HL7v2xConformanceProfile HL7Version="2.5" ProfileType="HL7">
+  <HL7v2xStaticDef MsgType="ADT" EventType="A01" MsgStructID="ADT_A01">
+    <MetaData Name="Test Profile" OrgName="Test Org" Version="1.0.0" Status="ACTIVE"/>
+    <Segment Name="MSH" LongName="Message Header" Usage="R" Min="1" Max="1"/>
+    <Segment Name="PID" LongName="Patient Identification" Usage="R" Min="1" Max="1">
+      <Field Name="Patient ID" Usage="R" Min="1" Max="1" Datatype="CX" Length="20" ItemNo="00003"/>
+    </Segment>
+  </HL7v2xStaticDef>
+</HL7v2xConformanceProfile>"#;
+
+        let profile = ProfileParser::parse_xml(xml).unwrap();
+        assert_eq!(profile.message.segments.len(), 2);
+        assert_eq!(profile.message.segments[0].name, "MSH");
+        assert!(profile.message.segments[0].fields.is_empty());
+        assert_eq!(profile.message.segments[1].name, "PID");
+        assert_eq!(profile.message.segments[1].fields.len(), 1);
+        assert_eq!(profile.message.segments[1].fields[0].position, 1);
     }
 
     #[test]

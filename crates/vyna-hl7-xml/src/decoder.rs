@@ -63,6 +63,14 @@ enum Frame {
     Subcomponent { number: usize, text: String },
 }
 
+/// Maximum field, component, or subcomponent number accepted in an
+/// element name (e.g. `PID.5`, `PID.5.1`, `PID.5.1.2`).
+///
+/// Numbers drive allocation: fields extend the segment vec, and component
+/// positions fill placeholder vecs. Real HL7 segments stay far below this;
+/// anything beyond it is rejected before any allocation happens.
+const MAX_ELEMENT_NUMBER: usize = 1000;
+
 /// XML decoder for HL7 v2.x messages
 pub struct XmlDecoder {
     config: XmlDecoderConfig,
@@ -256,6 +264,7 @@ impl XmlDecoder {
             if !matches!(stack.last(), Some(Frame::Segment { .. })) || field_num == 0 {
                 return self.misplaced(format!("field element <{name}> outside <{seg_id}>"));
             }
+            Self::check_element_number(name, field_num)?;
             return Ok(Frame::Field {
                 number: field_num,
                 components: BTreeMap::new(),
@@ -270,6 +279,7 @@ impl XmlDecoder {
             if comp_num == 0 {
                 return self.misplaced(format!("component element <{name}> has number 0"));
             }
+            Self::check_element_number(name, comp_num)?;
             if field_num != parent_field
                 && let Err(e) = self.check_context(format!(
                     "component element <{name}> nested in field {parent_field}"
@@ -291,6 +301,7 @@ impl XmlDecoder {
             if sub_num == 0 {
                 return self.misplaced(format!("subcomponent element <{name}> has number 0"));
             }
+            Self::check_element_number(name, sub_num)?;
             if (field_num != parent_field || comp_num != parent_comp)
                 && let Err(e) = self.check_context(format!(
                     "subcomponent element <{name}> nested in field \
@@ -507,6 +518,19 @@ impl XmlDecoder {
             }
         }
         component
+    }
+
+    /// Reject element numbers beyond [`MAX_ELEMENT_NUMBER`].
+    ///
+    /// This is a hard error in both modes: lenient decoding must still
+    /// refuse allocations no real message needs.
+    fn check_element_number(name: &str, number: usize) -> XmlResult<()> {
+        if number > MAX_ELEMENT_NUMBER {
+            return Err(XmlError::InvalidStructure(format!(
+                "element <{name}> number {number} exceeds maximum of {MAX_ELEMENT_NUMBER}"
+            )));
+        }
+        Ok(())
     }
 
     /// Reject input nested deeper than the configured maximum.
@@ -863,6 +887,27 @@ mod tests {
                           <PID.5.1.1>x</PID.5.1.1></PID.5.1></PID.5></PID>";
         assert!(strict_decoder().decode(comp_mixed).is_err());
         assert!(XmlDecoder::new().decode(comp_mixed).is_ok());
+    }
+
+    #[test]
+    fn test_rejects_huge_element_numbers() {
+        // Element numbers drive allocation (field/component/subcomponent
+        // vecs), so absurd numbers must error instead of allocating.
+        let cases = [
+            "<PID><PID.200000>x</PID.200000></PID>",
+            "<PID><PID.5><PID.5.200000>x</PID.5.200000></PID.5></PID>",
+            "<PID><PID.5><PID.5.1><PID.5.1.200000>x</PID.5.1.200000>\
+             </PID.5.1></PID.5></PID>",
+        ];
+        for xml in cases {
+            for decoder in [&XmlDecoder::new(), &strict_decoder()] {
+                let err = decoder.decode(xml).unwrap_err();
+                assert!(
+                    matches!(err, XmlError::InvalidStructure(_)),
+                    "expected InvalidStructure for {xml:?}, got {err:?}"
+                );
+            }
+        }
     }
 
     #[test]

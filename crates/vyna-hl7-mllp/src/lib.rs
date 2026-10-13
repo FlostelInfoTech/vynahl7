@@ -123,7 +123,10 @@ pub struct MllpConfig {
     pub read_timeout: Duration,
     /// Write timeout (default: 30 seconds)
     pub write_timeout: Duration,
-    /// Connection timeout (default: 10 seconds)
+    /// TCP connect and TLS handshake timeout (default: 10 seconds).
+    ///
+    /// Each phase gets the full timeout; on the server it bounds the
+    /// handshake in `accept` so one stalled peer cannot wedge the loop.
     pub connect_timeout: Duration,
     /// Forced inbound character set, overriding MSH-18 detection.
     /// Set this only for peers that misdeclare their encoding;
@@ -396,14 +399,16 @@ impl MllpClient {
             })?
             .map_err(|e| Error::Network(format!("Failed to connect: {}", e)))?;
 
-        // Perform TLS handshake
+        // Perform TLS handshake, bounded so a stalled peer cannot hang
+        // the caller forever.
         let connector = TlsConnector::from(tls_config.config.clone());
         let server_name = ServerName::try_from(server_name.to_string())
             .map_err(|e| Error::Network(format!("Invalid server name: {}", e)))?;
 
-        let tls_stream = connector
-            .connect(server_name, tcp_stream)
+        let timeout = config.connect_timeout;
+        let tls_stream = tokio::time::timeout(timeout, connector.connect(server_name, tcp_stream))
             .await
+            .map_err(|_| Error::Network(format!("TLS handshake timed out after {timeout:?}")))?
             .map_err(|e| Error::Network(format!("TLS handshake failed: {}", e)))?;
 
         Ok(Self {
@@ -654,10 +659,12 @@ impl MllpServer {
 
         #[cfg(feature = "tls")]
         let stream = if let Some(ref acceptor) = self.tls_acceptor {
-            // Perform TLS handshake
-            let tls_stream = acceptor
-                .accept(tcp_stream)
+            // Bound the handshake so one stalled peer fails fast instead
+            // of wedging the accept loop.
+            let timeout = self.config.connect_timeout;
+            let tls_stream = tokio::time::timeout(timeout, acceptor.accept(tcp_stream))
                 .await
+                .map_err(|_| Error::Network(format!("TLS handshake timed out after {timeout:?}")))?
                 .map_err(|e| Error::Network(format!("TLS handshake failed: {}", e)))?;
             MllpStream::TlsServer(tls_stream)
         } else {
@@ -925,5 +932,91 @@ mod tests {
         let received = server_task.await.unwrap();
         let pid = received.get_segment_by_id("PID").unwrap();
         assert_eq!(pid.get_field_value(5), Some("Müller"));
+    }
+
+    #[cfg(feature = "tls")]
+    #[tokio::test]
+    async fn tls_connect_handshake_times_out() {
+        // Blackhole: accept TCP, then never speak TLS.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (_socket, _peer) = listener.accept().await.unwrap();
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        });
+
+        let tls_config = crate::tls::TlsClientConfig::new().unwrap();
+        let config = MllpConfig::new().with_connect_timeout(Duration::from_millis(200));
+        let addr = addr.to_string();
+        let connect = MllpClient::connect_tls_with_config(&addr, "localhost", tls_config, config);
+        // The outer timeout only bounds a wedged (pre-fix) handshake.
+        let result = tokio::time::timeout(Duration::from_secs(15), connect)
+            .await
+            .expect("connect_tls() wedged on a stalled TLS handshake");
+        match result {
+            Ok(_) => panic!("expected a handshake timeout, got a connection"),
+            Err(err) => assert!(err.to_string().contains("timed out"), "unexpected: {err}"),
+        }
+    }
+
+    #[cfg(feature = "tls")]
+    #[tokio::test]
+    async fn tls_accept_handshake_times_out() {
+        use std::process::Command;
+
+        // Self-signed server cert (never verified here: the stalled peer
+        // sends nothing, so the server only needs something loadable).
+        let dir = std::env::temp_dir().join(format!(
+            "vyna_mllp_probe_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cert = dir.join("srv-cert.pem").to_str().unwrap().to_string();
+        let key = dir.join("srv-key.pem").to_str().unwrap().to_string();
+        let status = Command::new("openssl")
+            .args([
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-keyout",
+                &key,
+                "-out",
+                &cert,
+                "-days",
+                "2",
+                "-subj",
+                "/CN=localhost",
+            ])
+            .status()
+            .expect("openssl must be installed for TLS tests");
+        assert!(status.success(), "openssl req -x509 failed");
+
+        let tls_config = crate::tls::TlsServerConfig::new(&cert, &key).unwrap();
+        let config = MllpConfig::new().with_connect_timeout(Duration::from_millis(200));
+        let server = MllpServer::bind_tls_with_config("127.0.0.1:0", tls_config, config)
+            .await
+            .unwrap();
+        let addr = server.local_addr().unwrap();
+
+        // Stalled peer: connect, then never speak TLS. The socket must stay
+        // open (an EOF would fail the handshake immediately instead).
+        let _stall = TcpStream::connect(addr).await.unwrap();
+        // The outer timeout only bounds a wedged (pre-fix) handshake; the
+        // accept loop must stay usable for the next connection instead.
+        let result = tokio::time::timeout(Duration::from_secs(15), server.accept())
+            .await
+            .expect("accept() wedged on a stalled TLS handshake");
+        match result {
+            Ok(_) => panic!("expected a handshake timeout, got a connection"),
+            Err(err) => assert!(err.to_string().contains("timed out"), "unexpected: {err}"),
+        }
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -541,6 +541,13 @@ impl FtpTab {
         };
 
         ui.heading(format!("{} Server", self.protocol.as_str()));
+        if self.protocol == Protocol::Sftp {
+            ui.colored_label(
+                Color32::YELLOW,
+                "SFTP server mode is not implemented, so Start is disabled. \
+                 Use FTP server mode for file-transfer testing.",
+            );
+        }
         ui.add_space(5.0);
 
         // Server settings
@@ -598,7 +605,10 @@ impl FtpTab {
                 }
                 ui.colored_label(Color32::GREEN, "Running");
             } else if ui
-                .button(RichText::new("Start Server").color(Color32::GREEN))
+                .add_enabled(
+                    self.protocol != Protocol::Sftp,
+                    egui::Button::new(RichText::new("Start Server").color(Color32::GREEN)),
+                )
                 .clicked()
             {
                 self.start_server(ctx.clone());
@@ -964,6 +974,22 @@ impl FtpTab {
     // === Server Operations ===
 
     fn start_server(&mut self, ctx: egui::Context) {
+        // The SFTP server path is locked (see the SFTP server section
+        // NOTE): refuse to start rather than run a server that can
+        // never complete a transfer.
+        if self.protocol == Protocol::Sftp {
+            let mut s = self.server_state.lock().unwrap();
+            s.starting = false;
+            s.running = false;
+            s.error = Some(SFTP_SERVER_UNSUPPORTED.to_string());
+            s.log_entries.push(LogEntry {
+                timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                direction: Direction::Error,
+                message: SFTP_SERVER_UNSUPPORTED.to_string(),
+            });
+            ctx.request_repaint();
+            return;
+        }
         let protocol = self.protocol;
         let port: u16 = self.server_port.parse().unwrap_or(protocol.default_port());
         let root = self.server_root.clone();
@@ -1685,6 +1711,20 @@ fn sftp_download_sync(
 }
 
 // === SFTP Server Implementation (using russh) ===
+//
+// NOTE: the test-panel SFTP *server* is intentionally not implemented.
+// An earlier revision accepted the `sftp` subsystem and then only logged
+// channel bytes without speaking the SFTP packet protocol, so real SFTP
+// clients hung waiting for replies while `transfer_count` miscounted raw
+// SSH bytes as completed transfers. Rather than mislead, the server path
+// is locked: `start_server` refuses SFTP mode, and `subsystem_request`
+// rejects the subsystem so direct callers fail fast with a clear error.
+// Use FTP server mode (or an external SFTP server with the SFTP client
+// tab) for file-transfer testing instead.
+
+/// User-facing explanation for the locked SFTP-server path.
+const SFTP_SERVER_UNSUPPORTED: &str =
+    "SFTP server mode is not implemented; use FTP server mode instead";
 
 async fn run_sftp_server(
     port: u16,
@@ -1809,6 +1849,7 @@ impl russh::server::Server for SftpServerHandler {
 
 // Session handler for each client connection
 struct SftpSessionHandler {
+    #[allow(dead_code)] // kept for a future SFTP implementation
     root: PathBuf,
     username: String,
     password: String,
@@ -1886,40 +1927,24 @@ impl russh::server::Handler for SftpSessionHandler {
         name: &str,
         session: &mut russh::server::Session,
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
-        let is_sftp = name == "sftp";
+        // The server implements no subsystem (see the section NOTE), so
+        // reject every request synchronously: clients fail fast instead
+        // of hanging on a channel that can never answer.
         let name = name.to_string();
         let state = self.state.clone();
         let ctx = self.ctx.clone();
-
-        // Send success/failure synchronously before returning future
-        if is_sftp {
-            let _ = session.channel_success(channel_id);
-        } else {
-            let _ = session.channel_failure(channel_id);
-        }
+        let _ = session.channel_failure(channel_id);
 
         async move {
-            if is_sftp {
-                {
-                    let mut s = state.lock().unwrap();
-                    s.log_entries.push(LogEntry {
-                        timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
-                        direction: Direction::Info,
-                        message: "SFTP subsystem requested".to_string(),
-                    });
-                }
-                ctx.request_repaint();
-            } else {
-                {
-                    let mut s = state.lock().unwrap();
-                    s.log_entries.push(LogEntry {
-                        timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
-                        direction: Direction::Error,
-                        message: format!("Unknown subsystem: {}", name),
-                    });
-                }
-                ctx.request_repaint();
+            {
+                let mut s = state.lock().unwrap();
+                s.log_entries.push(LogEntry {
+                    timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                    direction: Direction::Error,
+                    message: format!("Subsystem '{}' rejected: SFTP server not implemented", name),
+                });
             }
+            ctx.request_repaint();
             Ok(())
         }
     }
@@ -1930,31 +1955,157 @@ impl russh::server::Handler for SftpSessionHandler {
         data: &[u8],
         session: &mut russh::server::Session,
     ) -> impl std::future::Future<Output = Result<(), Self::Error>> + Send {
-        let root = self.root.clone();
         let state = self.state.clone();
         let ctx = self.ctx.clone();
         let data_len = data.len();
 
-        // Process SFTP data - for simplicity, we log and echo back
-        // A full implementation would parse SFTP protocol
-        {
-            let mut s = state.lock().unwrap();
-            s.transfer_count += 1;
-            let count = s.transfer_count;
-            s.log_entries.push(LogEntry {
-                timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
-                direction: Direction::Download,
-                message: format!("Received {} bytes (request #{})", data_len, count),
-            });
-        }
+        // No subsystem is ever accepted, so channel bytes can only arrive
+        // on a half-torn-down channel. Log and drop them; they must never
+        // count as transfers.
+        record_unsupported_channel_data(&state, data_len);
         ctx.request_repaint();
 
-        // For a basic test server, we don't parse SFTP protocol fully
-        // Just acknowledge the data was received
         let _ = channel_id;
         let _ = session;
-        let _ = root;
 
         async move { Ok(()) }
+    }
+}
+
+/// Log discarded channel bytes without touching `transfer_count`.
+///
+/// Only completed file operations may count as transfers; the
+/// not-implemented SFTP server performs none, so every byte it sees is
+/// protocol overhead on a rejected channel.
+fn record_unsupported_channel_data(state: &Mutex<ServerState>, data_len: usize) {
+    let mut s = state.lock().unwrap();
+    s.log_entries.push(LogEntry {
+        timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+        direction: Direction::Info,
+        message: format!(
+            "Discarded {} channel bytes: SFTP server not implemented",
+            data_len
+        ),
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    /// Discover a free loopback port via a throwaway listener.
+    fn free_port() -> u16 {
+        std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port()
+    }
+
+    #[test]
+    fn discarded_channel_data_does_not_count_as_transfers() {
+        let state = Mutex::new(ServerState::default());
+        record_unsupported_channel_data(&state, 64);
+        record_unsupported_channel_data(&state, 128);
+        let s = state.lock().unwrap();
+        assert_eq!(s.transfer_count, 0);
+        assert_eq!(s.log_entries.len(), 2);
+        assert!(
+            s.log_entries
+                .iter()
+                .all(|e| e.message.contains("not implemented"))
+        );
+    }
+
+    #[test]
+    fn start_server_refuses_sftp_mode() {
+        let mut tab = FtpTab {
+            protocol: Protocol::Sftp,
+            server_port: free_port().to_string(),
+            ..Default::default()
+        };
+        tab.start_server(egui::Context::default());
+        let s = tab.server_state.lock().unwrap();
+        assert!(!s.running);
+        assert!(!s.starting);
+        assert_eq!(s.error.as_deref(), Some(SFTP_SERVER_UNSUPPORTED));
+    }
+
+    /// The test-panel server does not implement the SFTP packet
+    /// protocol, so an SFTP subsystem request must fail fast with a
+    /// clear error instead of hanging the client, and raw channel
+    /// bytes must never count as completed transfers.
+    #[tokio::test]
+    async fn sftp_subsystem_request_fails_fast_without_counting_transfer() {
+        let port = free_port();
+        let state = Arc::new(Mutex::new(ServerState::default()));
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let root = std::env::temp_dir().to_string_lossy().to_string();
+        {
+            let (state, shutdown) = (state.clone(), shutdown.clone());
+            tokio::spawn(async move {
+                let _ = run_sftp_server(
+                    port,
+                    &root,
+                    "test",
+                    "test",
+                    state,
+                    shutdown,
+                    egui::Context::default(),
+                )
+                .await;
+            });
+        }
+        // Wait for the listener to come up.
+        for _ in 0..100 {
+            if std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_ok() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        let started = Instant::now();
+        // ssh2 is blocking; run the client off the async runtime.
+        let outcome: Result<(), String> = tokio::task::spawn_blocking(move || {
+            let tcp = std::net::TcpStream::connect(format!("127.0.0.1:{}", port))
+                .map_err(|e| format!("connect: {}", e))?;
+            let mut session = ssh2::Session::new().map_err(|e| format!("session: {}", e))?;
+            session.set_tcp_stream(tcp);
+            session.set_timeout(5000);
+            session
+                .handshake()
+                .map_err(|e| format!("handshake: {}", e))?;
+            session
+                .userauth_password("test", "test")
+                .map_err(|e| format!("auth: {}", e))?;
+            match session.sftp() {
+                Ok(_) => Err("unexpected SFTP session".to_string()),
+                Err(e) => Err(format!("sftp rejected: {}", e)),
+            }
+        })
+        .await
+        .unwrap();
+        let elapsed = started.elapsed();
+        shutdown.store(true, Ordering::SeqCst);
+
+        assert!(outcome.is_err(), "SFTP must not succeed: {:?}", outcome);
+        let s = state.lock().unwrap();
+        assert_eq!(
+            s.transfer_count, 0,
+            "raw bytes are not transfers (took {:?})",
+            elapsed
+        );
+        drop(s);
+        assert!(
+            elapsed < Duration::from_secs(4),
+            "SFTP setup must fail fast, not hang (took {:?})",
+            elapsed
+        );
+        let s = state.lock().unwrap();
+        assert!(
+            s.log_entries.iter().any(|e| e.message.contains("SFTP")),
+            "server must log the SFTP outcome"
+        );
     }
 }

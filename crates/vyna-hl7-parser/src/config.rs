@@ -290,6 +290,8 @@ pub enum WarningCode {
     RepetitionsTruncated,
     /// Unknown segment ID
     UnknownSegmentId,
+    /// Segment skipped after a parse error with continue_on_error
+    SkippedSegment,
 }
 
 impl std::fmt::Display for WarningCode {
@@ -304,6 +306,7 @@ impl std::fmt::Display for WarningCode {
             WarningCode::FieldTruncated => write!(f, "FIELD_TRUNCATED"),
             WarningCode::RepetitionsTruncated => write!(f, "REPETITIONS_TRUNCATED"),
             WarningCode::UnknownSegmentId => write!(f, "UNKNOWN_SEGMENT_ID"),
+            WarningCode::SkippedSegment => write!(f, "SKIPPED_SEGMENT"),
         }
     }
 }

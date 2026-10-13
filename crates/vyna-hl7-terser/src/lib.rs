@@ -119,6 +119,14 @@ impl<'a> TerserMut<'a> {
     /// the value back; existing occurrences are never overwritten by an
     /// out-of-range write.
     ///
+    /// A whole-field path (e.g. `PID-5`, with no component) replaces
+    /// the addressed repetition's entire content with `value` as a
+    /// single literal component: trailing components from a previous
+    /// composite value are cleared, and delimiter characters in
+    /// `value` are stored literally, not parsed as structure. Address
+    /// components explicitly (`PID-5-1`) to change one component
+    /// while keeping the rest.
+    ///
     /// Returns [`Error::terser_path`](Error::terser_path) when the path is
     /// malformed or uses a 0 index (all path indices are 1-based).
     pub fn set(&mut self, path: &str, value: &str) -> Result<()> {
@@ -211,12 +219,11 @@ impl<'a> TerserMut<'a> {
 
         match (comp_idx, sub_idx) {
             (None, None) => {
-                // Set entire field value
-                if repetition.components.is_empty() {
-                    repetition.add_component(Component::from_value(value));
-                } else {
-                    repetition.components[0] = Component::from_value(value);
-                }
+                // Set entire field value, replacing all components. A
+                // whole-field value is literal text stored as the single
+                // component, so trailing components from a previous
+                // composite value are cleared rather than left stale.
+                repetition.components = vec![Component::from_value(value)];
             }
             (Some(c_idx), None) => {
                 // Set component value (convert 1-based HL7 to 0-based internal)
@@ -472,5 +479,23 @@ mod tests {
         let read_terser = Terser::new(&message);
         assert_eq!(read_terser.get("PID-5(1)-1").unwrap(), Some("DOE"));
         assert_eq!(read_terser.get("PID-5(2)-1").unwrap(), Some("SMITH"));
+    }
+
+    #[test]
+    fn test_set_whole_field_clears_trailing_components() {
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\r\
+                   PID|1||PAT001||DOE^JOHN\r";
+        let mut message = parse_message(hl7).unwrap();
+        let mut terser = TerserMut::new(&mut message);
+
+        terser.set("PID-5", "SMITH").unwrap();
+
+        let read_terser = Terser::new(&message);
+        assert_eq!(read_terser.get("PID-5").unwrap(), Some("SMITH"));
+        assert_eq!(read_terser.get("PID-5-2").unwrap(), None);
+        let pid = &message.get_segments_by_id("PID")[0];
+        let rep = pid.get_field(5).unwrap().get_repetition(0).unwrap();
+        assert_eq!(rep.components.len(), 1);
+        assert!(!message.encode().contains("SMITH^JOHN"));
     }
 }

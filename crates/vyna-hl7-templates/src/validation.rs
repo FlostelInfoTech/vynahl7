@@ -127,27 +127,39 @@ impl TemplateValidator {
 
         // Validate message type and trigger event
         if let Some(msh) = message.segments.iter().find(|s| s.id == "MSH") {
-            // MSH-9 contains message type and trigger event
-            if let Some(msg_type_field) = msh.get_field_value(9) {
-                let parts: Vec<&str> = msg_type_field.split('^').collect();
-                if !parts.is_empty() && parts[0] != template.message_type {
-                    result.add_error(
-                        ValidationError::new(format!(
-                            "Message type mismatch: expected {}, got {}",
-                            template.message_type, parts[0]
-                        ))
-                        .with_location("MSH-9.1"),
-                    );
-                }
-                if parts.len() > 1 && parts[1] != template.trigger_event {
-                    result.add_error(
-                        ValidationError::new(format!(
-                            "Trigger event mismatch: expected {}, got {}",
-                            template.trigger_event, parts[1]
-                        ))
-                        .with_location("MSH-9.2"),
-                    );
-                }
+            // MSH-9 holds the message type (component 1) and trigger
+            // event (component 2). Read the components structurally:
+            // get_field_value returns only the first component, so
+            // splitting it on '^' can never see the trigger event on
+            // real parsed messages.
+            let repetition = msh.get_field(9).and_then(|f| f.get_repetition(0));
+            let msg_type = repetition
+                .and_then(|r| r.get_component(0))
+                .and_then(|c| c.value());
+            let trigger = repetition
+                .and_then(|r| r.get_component(1))
+                .and_then(|c| c.value());
+            if let Some(msg_type) = msg_type
+                && msg_type != template.message_type
+            {
+                result.add_error(
+                    ValidationError::new(format!(
+                        "Message type mismatch: expected {}, got {}",
+                        template.message_type, msg_type
+                    ))
+                    .with_location("MSH-9.1"),
+                );
+            }
+            if let Some(trigger) = trigger
+                && trigger != template.trigger_event
+            {
+                result.add_error(
+                    ValidationError::new(format!(
+                        "Trigger event mismatch: expected {}, got {}",
+                        template.trigger_event, trigger
+                    ))
+                    .with_location("MSH-9.2"),
+                );
             }
         } else {
             result.add_error(ValidationError::new("MSH segment is required"));
@@ -272,32 +284,16 @@ impl TemplateValidator {
 mod tests {
     use super::*;
     use crate::{FieldTemplate, SegmentTemplate};
-    use vyna_hl7_core::{Delimiters, Field, Segment};
+    use vyna_hl7_core::Field;
 
     fn create_test_message() -> Message {
-        Message {
-            delimiters: Delimiters::default(),
-            segments: vec![
-                Segment {
-                    id: "MSH".to_string(),
-                    fields: vec![
-                        Field::from_value("|"),
-                        Field::from_value("^~\\&"),
-                        Field::from_value("APP"),
-                        Field::from_value("FACILITY"),
-                        Field::new(),
-                        Field::new(),
-                        Field::new(),
-                        Field::new(),
-                        Field::from_value("ADT^A01"),
-                    ],
-                },
-                Segment {
-                    id: "PID".to_string(),
-                    fields: vec![Field::new(), Field::new(), Field::from_value("12345")],
-                },
-            ],
-        }
+        // A real parsed message: MSH-9 is structural ("ADT" and "A01"
+        // components), unlike Field::from_value("ADT^A01") which stores
+        // one literal component and masked the trigger-event check.
+        vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|APP|FACILITY|||20250115||ADT^A01|MSG001|P|2.5\rPID|1||12345\r",
+        )
+        .expect("test fixture parses")
     }
 
     #[test]
@@ -335,7 +331,7 @@ mod tests {
     fn test_validate_message_type_mismatch() {
         let mut message = create_test_message();
         // Change message type to ORU
-        message.segments[0].fields[8] = Field::from_value("ORU^R01");
+        message.segments[0].fields[8] = Field::from_delimited("ORU^R01");
 
         let template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
 
@@ -353,7 +349,7 @@ mod tests {
     fn test_validate_trigger_event_mismatch() {
         let mut message = create_test_message();
         // Change trigger event to A02
-        message.segments[0].fields[8] = Field::from_value("ADT^A02");
+        message.segments[0].fields[8] = Field::from_delimited("ADT^A02");
 
         let template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
 
@@ -530,5 +526,23 @@ mod tests {
 
         result.add_warning(ValidationWarning::new("Warning"));
         assert!(result.has_warnings());
+    }
+
+    #[test]
+    fn test_trigger_event_checked_on_parsed_message() {
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|APP|FACILITY|||20250115||ADT^A02|MSG001|P|2.5\rPID|1||12345\r",
+        )
+        .unwrap();
+        let template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+
+        let result = TemplateValidator::validate(&message, &template);
+        assert!(!result.valid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.message.contains("Trigger event mismatch"))
+        );
     }
 }

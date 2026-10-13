@@ -411,23 +411,24 @@ impl BuildableField for Option<u32> {
 }
 
 // Implementations for String
+//
+// Contract: String holds one simple scalar value. Composite values
+// (extra repetitions, components, or subcomponents) are an error,
+// never silently truncated; see parse_simple_string.
 impl ParseSegmentField for String {
     fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
-        segment
-            .get_field_value(field_num)
-            .map(|s| s.to_string())
-            .ok_or_else(|| {
-                crate::error::CustomSegmentError::missing_field(
-                    format!("{}-{}", seg_id, field_num),
-                    seg_id,
-                )
-            })
+        parse_simple_string(segment, field_num, seg_id)?.ok_or_else(|| {
+            crate::error::CustomSegmentError::missing_field(
+                format!("{}-{}", seg_id, field_num),
+                seg_id,
+            )
+        })
     }
 }
 
 impl ParseSegmentField for Option<String> {
-    fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
-        Ok(segment.get_field_value(field_num).map(|s| s.to_string()))
+    fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
+        parse_simple_string(segment, field_num, seg_id)
     }
 }
 
@@ -1097,6 +1098,77 @@ fn parse_hl7_bool(s: &str) -> Option<bool> {
     }
 }
 
+/// Parse a simple (non-composite) string field.
+///
+/// `String` fields hold a single scalar value: any non-empty content
+/// outside the first repetition/component/subcomponent is rejected
+/// instead of being silently truncated to the first component. Use
+/// tuple types for components and `Vec` types for repetitions.
+fn parse_simple_string(
+    segment: &Segment,
+    field_num: usize,
+    seg_id: &str,
+) -> Result<Option<String>> {
+    let Some(field) = segment.get_field(field_num) else {
+        return Ok(None);
+    };
+    let has_extra_content = field.repetitions.iter().enumerate().any(|(ri, rep)| {
+        rep.components.iter().enumerate().any(|(ci, comp)| {
+            comp.subcomponents
+                .iter()
+                .enumerate()
+                .any(|(si, sc)| (ri > 0 || ci > 0 || si > 0) && !sc.as_str().is_empty())
+        })
+    });
+    if has_extra_content {
+        return Err(crate::error::CustomSegmentError::invalid_field(
+            format!("{seg_id}-{field_num}"),
+            seg_id,
+            "composite value cannot be parsed as String; \
+             use a tuple type for components or Vec for repetitions",
+        ));
+    }
+    Ok(field.value().map(|s| s.to_string()))
+}
+
+/// Parse a repeating scalar field, rejecting invalid repetitions.
+///
+/// Empty repetitions (absent or zero-length values) are skipped,
+/// matching [`parse_optional_scalar`]; any other value that fails
+/// to parse is an error naming the 1-based repetition index and the
+/// offending text, so bad data is never silently dropped.
+fn parse_repeating_scalar<T, F>(
+    segment: &Segment,
+    field_num: usize,
+    seg_id: &str,
+    type_name: &str,
+    parse: F,
+) -> Result<Vec<T>>
+where
+    F: Fn(&str) -> Option<T>,
+{
+    let Some(field) = segment.get_field(field_num) else {
+        return Ok(Vec::new());
+    };
+    let mut values = Vec::with_capacity(field.repetitions.len());
+    for (idx, rep) in field.repetitions.iter().enumerate() {
+        match rep.value() {
+            None | Some("") => continue,
+            Some(s) => match parse(s) {
+                Some(v) => values.push(v),
+                None => {
+                    return Err(crate::error::CustomSegmentError::invalid_field(
+                        format!("{seg_id}-{field_num}"),
+                        seg_id,
+                        format!("repetition {} ({s:?}) is not a valid {type_name}", idx + 1),
+                    ));
+                }
+            },
+        }
+    }
+    Ok(values)
+}
+
 /// Parse HL7 datetime format: YYYYMMDDHHMMSS[.SSSS]
 fn parse_hl7_datetime(s: &str) -> Option<NaiveDateTime> {
     // Try full format with optional fractional seconds
@@ -1269,17 +1341,8 @@ impl BuildableField for Vec<u32> {
 }
 
 impl ParseSegmentField for Vec<u32> {
-    fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
-        if let Some(field) = segment.get_field(field_num) {
-            let values: Vec<u32> = field
-                .repetitions
-                .iter()
-                .filter_map(|rep| rep.value().and_then(|s| s.parse::<u32>().ok()))
-                .collect();
-            Ok(values)
-        } else {
-            Ok(Vec::new())
-        }
+    fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
+        parse_repeating_scalar(segment, field_num, seg_id, "u32", |s| s.parse::<u32>().ok())
     }
 }
 
@@ -1314,17 +1377,8 @@ impl BuildableField for Vec<i32> {
 }
 
 impl ParseSegmentField for Vec<i32> {
-    fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
-        if let Some(field) = segment.get_field(field_num) {
-            let values: Vec<i32> = field
-                .repetitions
-                .iter()
-                .filter_map(|rep| rep.value().and_then(|s| s.parse::<i32>().ok()))
-                .collect();
-            Ok(values)
-        } else {
-            Ok(Vec::new())
-        }
+    fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
+        parse_repeating_scalar(segment, field_num, seg_id, "i32", |s| s.parse::<i32>().ok())
     }
 }
 
@@ -1359,17 +1413,8 @@ impl BuildableField for Vec<i64> {
 }
 
 impl ParseSegmentField for Vec<i64> {
-    fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
-        if let Some(field) = segment.get_field(field_num) {
-            let values: Vec<i64> = field
-                .repetitions
-                .iter()
-                .filter_map(|rep| rep.value().and_then(|s| s.parse::<i64>().ok()))
-                .collect();
-            Ok(values)
-        } else {
-            Ok(Vec::new())
-        }
+    fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
+        parse_repeating_scalar(segment, field_num, seg_id, "i64", |s| s.parse::<i64>().ok())
     }
 }
 
@@ -1404,17 +1449,8 @@ impl BuildableField for Vec<f64> {
 }
 
 impl ParseSegmentField for Vec<f64> {
-    fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
-        if let Some(field) = segment.get_field(field_num) {
-            let values: Vec<f64> = field
-                .repetitions
-                .iter()
-                .filter_map(|rep| rep.value().and_then(|s| s.parse::<f64>().ok()))
-                .collect();
-            Ok(values)
-        } else {
-            Ok(Vec::new())
-        }
+    fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
+        parse_repeating_scalar(segment, field_num, seg_id, "f64", |s| s.parse::<f64>().ok())
     }
 }
 
@@ -1449,23 +1485,8 @@ impl BuildableField for Vec<bool> {
 }
 
 impl ParseSegmentField for Vec<bool> {
-    fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
-        if let Some(field) = segment.get_field(field_num) {
-            let values: Vec<bool> = field
-                .repetitions
-                .iter()
-                .filter_map(|rep| {
-                    rep.value().and_then(|s| match s.to_uppercase().as_str() {
-                        "Y" | "YES" | "T" | "TRUE" | "1" => Some(true),
-                        "N" | "NO" | "F" | "FALSE" | "0" => Some(false),
-                        _ => None,
-                    })
-                })
-                .collect();
-            Ok(values)
-        } else {
-            Ok(Vec::new())
-        }
+    fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
+        parse_repeating_scalar(segment, field_num, seg_id, "bool", parse_hl7_bool)
     }
 }
 
@@ -4197,5 +4218,129 @@ mod tests {
         assert!(parse_hl7_date("20240315").is_some());
         assert_eq!(parse_hl7_time("1234é"), None);
         assert!(parse_hl7_time("143045").is_some());
+    }
+
+    #[test]
+    fn test_vec_u32_parse_invalid_repetition_errors() {
+        use vyna_hl7_core::{Field, Repetition};
+
+        let mut segment = Segment::new("TEST");
+        let mut field = Field::new();
+        field.add_repetition(Repetition::from_value("10"));
+        field.add_repetition(Repetition::from_value("abc"));
+        field.add_repetition(Repetition::from_value("30"));
+        segment.set_field(1, field).unwrap();
+
+        let err = Vec::<u32>::parse_field(&segment, 1, "TEST").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("2"), "names repetition index: {msg}");
+        assert!(msg.contains("abc"), "names offending value: {msg}");
+    }
+
+    #[test]
+    fn test_vec_i32_parse_invalid_repetition_errors() {
+        use vyna_hl7_core::{Field, Repetition};
+
+        let mut segment = Segment::new("TEST");
+        let mut field = Field::new();
+        field.add_repetition(Repetition::from_value("1"));
+        field.add_repetition(Repetition::from_value("nope"));
+        segment.set_field(1, field).unwrap();
+
+        let err = Vec::<i32>::parse_field(&segment, 1, "TEST").unwrap_err();
+        assert!(err.to_string().contains("nope"));
+    }
+
+    #[test]
+    fn test_vec_i64_parse_invalid_repetition_errors() {
+        use vyna_hl7_core::{Field, Repetition};
+
+        let mut segment = Segment::new("TEST");
+        let mut field = Field::new();
+        field.add_repetition(Repetition::from_value("nope"));
+        segment.set_field(1, field).unwrap();
+
+        assert!(Vec::<i64>::parse_field(&segment, 1, "TEST").is_err());
+    }
+
+    #[test]
+    fn test_vec_f64_parse_invalid_repetition_errors() {
+        use vyna_hl7_core::{Field, Repetition};
+
+        let mut segment = Segment::new("TEST");
+        let mut field = Field::new();
+        field.add_repetition(Repetition::from_value("1.5"));
+        field.add_repetition(Repetition::from_value("nope"));
+        segment.set_field(1, field).unwrap();
+
+        assert!(Vec::<f64>::parse_field(&segment, 1, "TEST").is_err());
+    }
+
+    #[test]
+    fn test_vec_bool_parse_invalid_repetition_errors() {
+        use vyna_hl7_core::{Field, Repetition};
+
+        let mut segment = Segment::new("TEST");
+        let mut field = Field::new();
+        field.add_repetition(Repetition::from_value("Y"));
+        field.add_repetition(Repetition::from_value("maybe"));
+        segment.set_field(1, field).unwrap();
+
+        let err = Vec::<bool>::parse_field(&segment, 1, "TEST").unwrap_err();
+        assert!(err.to_string().contains("maybe"));
+    }
+
+    #[test]
+    fn test_vec_u32_skips_empty_repetitions() {
+        use vyna_hl7_core::{Field, Repetition};
+
+        let mut segment = Segment::new("TEST");
+        let mut field = Field::new();
+        field.add_repetition(Repetition::from_value("10"));
+        field.add_repetition(Repetition::from_value(""));
+        field.add_repetition(Repetition::from_value("30"));
+        segment.set_field(1, field).unwrap();
+
+        let result = Vec::<u32>::parse_field(&segment, 1, "TEST").unwrap();
+        assert_eq!(result, vec![10, 30]);
+    }
+
+    #[test]
+    fn test_string_parse_rejects_composite_value() {
+        use vyna_hl7_core::Field;
+
+        let mut segment = Segment::new("TEST");
+        segment
+            .set_field(1, Field::from_delimited("DOE^JOHN"))
+            .unwrap();
+
+        let err = String::parse_field(&segment, 1, "TEST").unwrap_err();
+        assert!(err.to_string().contains("TEST-1"));
+    }
+
+    #[test]
+    fn test_option_string_parse_rejects_composite_value() {
+        use vyna_hl7_core::Field;
+
+        let mut segment = Segment::new("TEST");
+        segment
+            .set_field(1, Field::from_delimited("DOE^JOHN"))
+            .unwrap();
+
+        assert!(Option::<String>::parse_field(&segment, 1, "TEST").is_err());
+    }
+
+    #[test]
+    fn test_string_parse_simple_value_still_works() {
+        use vyna_hl7_core::Field;
+
+        let mut segment = Segment::new("TEST");
+        segment.set_field(1, Field::from_value("PLAIN")).unwrap();
+
+        assert_eq!(String::parse_field(&segment, 1, "TEST").unwrap(), "PLAIN");
+        assert_eq!(
+            Option::<String>::parse_field(&segment, 1, "TEST").unwrap(),
+            Some("PLAIN".to_string())
+        );
     }
 }

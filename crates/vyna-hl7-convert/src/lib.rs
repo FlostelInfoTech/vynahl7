@@ -8,6 +8,8 @@
 //!   renames (number wins).
 //! - Number missing in the target: moved to the target field with the same
 //!   name when one exists, otherwise dropped and reported.
+//! - A move whose target already holds the segment's own copied value
+//!   appends as extra repetitions so both values survive.
 //! - Segments unknown to the *source* schema (Z-segments and local
 //!   extensions) pass through verbatim in both directions.
 //! - Segments known to the source but absent in the target are dropped and
@@ -33,7 +35,7 @@
 
 use std::collections::HashMap;
 use thiserror::Error;
-use vyna_hl7_core::{Message, Segment, Version};
+use vyna_hl7_core::{Field, Message, Segment, Version};
 use vyna_hl7_validator::{MessageSchema, SegmentDefinition, load_schema};
 
 /// Conversion failure.
@@ -169,28 +171,37 @@ pub fn convert_with_schemas(
         }
 
         let mut converted = Segment::new(&segment.id);
+        // Pass 1: copy same-number fields so a segment's own values land
+        // first; moves merge into them in pass 2 instead of colliding.
+        let mut pending: Vec<(usize, &Field)> = Vec::new();
         let mut field_number = 1;
         while let Some(field) = segment.get_field(field_number) {
             if to_def.fields.contains_key(&field_number) {
                 // Same number on both sides: copy, tolerating renames.
                 // Empty fields copy too so positions never shift.
                 let _ = converted.set_field(field_number, field.clone());
-            } else if !field_has_data(field) {
+            } else {
+                pending.push((field_number, field));
+            }
+            field_number += 1;
+        }
+        // Pass 2: move by name, or drop with a report.
+        for (number, field) in pending {
+            if !field_has_data(field) {
                 // No data to lose: skip silently.
-            } else if let Some(moved_to) = find_same_name(from_def, to_def, field_number)
+            } else if let Some(moved_to) = find_same_name(from_def, to_def, number)
                 && moved_to != 0
             // field 0 is the segment id: unmappable
             {
-                let _ = converted.set_field(moved_to, field.clone());
+                merge_moved_field(&mut converted, moved_to, field);
                 report
                     .moved_fields
-                    .push(format!("{}[{here}]-{field_number}->{moved_to}", segment.id));
+                    .push(format!("{}[{here}]-{number}->{moved_to}", segment.id));
             } else {
                 report
                     .dropped_fields
-                    .push(format!("{}[{here}]-{field_number}", segment.id));
+                    .push(format!("{}[{here}]-{number}", segment.id));
             }
-            field_number += 1;
         }
         out.add_segment(converted);
     }
@@ -258,6 +269,25 @@ fn field_has_data(field: &vyna_hl7_core::Field) -> bool {
         .repetitions
         .iter()
         .any(|r| r.full_value().is_some_and(|v| !v.is_empty()))
+}
+
+/// Place a moved field, appending as extra repetitions when the target
+/// slot already holds the segment's own value so neither value is lost.
+///
+/// Choice: keep both values (own value first, moved value appended)
+/// rather than drop either; the move stays recorded in `moved_fields`,
+/// so no separate collision report is needed.
+fn merge_moved_field(converted: &mut Segment, number: usize, field: &Field) {
+    let occupied = converted.get_field(number).is_some_and(field_has_data);
+    if !occupied {
+        let _ = converted.set_field(number, field.clone());
+        return;
+    }
+    if let Some(existing) = converted.get_field_mut(number) {
+        for repetition in &field.repetitions {
+            existing.add_repetition(repetition.clone());
+        }
+    }
 }
 
 /// Target field number holding the same name as source `field_number`.
@@ -512,6 +542,54 @@ mod tests {
                 .get_field_value(2),
             None
         );
+    }
+
+    #[test]
+    fn move_into_occupied_target_appends_repetition() {
+        // Target field 2 already holds the segment's own value when the
+        // move from field 6 lands: both values must survive.
+        let from = schema(&[
+            (1, "Set ID", false),
+            (2, "Given", false),
+            (6, "Nick", false),
+        ]);
+        let to = schema(&[(1, "Set ID", false), (2, "Nick", false)]);
+        let message =
+            parse_message("MSH|^~\\&|A|B|C|D|20240101||TST^T01|1|P|2.5\rPID|1|OwnTwo||||Bobby\r")
+                .unwrap();
+
+        let (converted, report) = convert_with_schemas(&message, &from, &to, Version::V2_5);
+
+        assert_eq!(report.moved_fields, vec!["PID[0]-6->2"]);
+        let field = converted
+            .get_segment_by_id("PID")
+            .unwrap()
+            .get_field(2)
+            .unwrap();
+        let values: Vec<&str> = field.repetitions.iter().filter_map(|r| r.value()).collect();
+        assert_eq!(values, vec!["OwnTwo", "Bobby"]);
+    }
+
+    #[test]
+    fn earlier_move_survives_later_same_number_copy() {
+        // The move from field 2 lands before field 4's own value is
+        // copied: the moved value must not be overwritten.
+        let from = schema(&[(1, "Set ID", false), (2, "Nick", false), (4, "Own", false)]);
+        let to = schema(&[(1, "Set ID", false), (4, "Nick", false)]);
+        let message =
+            parse_message("MSH|^~\\&|A|B|C|D|20240101||TST^T01|1|P|2.5\rPID|1|Bobby||OwnValue\r")
+                .unwrap();
+
+        let (converted, report) = convert_with_schemas(&message, &from, &to, Version::V2_5);
+
+        assert_eq!(report.moved_fields, vec!["PID[0]-2->4"]);
+        let field = converted
+            .get_segment_by_id("PID")
+            .unwrap()
+            .get_field(4)
+            .unwrap();
+        let values: Vec<&str> = field.repetitions.iter().filter_map(|r| r.value()).collect();
+        assert_eq!(values, vec!["OwnValue", "Bobby"]);
     }
 
     #[test]

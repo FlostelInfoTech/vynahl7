@@ -118,6 +118,7 @@ impl HttpClient {
     ///
     /// When enabled, the client will only use HTTP/2 protocol.
     /// By default, the client uses HTTP/1.1 with HTTP/2 upgrade.
+    /// Any TLS configuration set via `with_tls` is preserved.
     ///
     /// # Example
     ///
@@ -131,18 +132,36 @@ impl HttpClient {
     /// # }
     /// ```
     pub fn with_http2_only(mut self) -> Result<Self> {
-        // Rebuild client with HTTP/2 only
-        let client = ClientBuilder::new()
-            .timeout(Duration::from_secs(30))
-            .http2_prior_knowledge()
-            .build()?;
-
-        self.client = client;
         self.http2_only = true;
+        self.client = self.rebuild_client(Duration::from_secs(30))?;
         Ok(self)
     }
 
+    /// Rebuild the inner client from the stored settings so builder calls
+    /// never drop each other's configuration (TLS, HTTP/2) by call order.
+    fn rebuild_client(&self, timeout: Duration) -> Result<Client> {
+        let mut builder = ClientBuilder::new().timeout(timeout);
+
+        if self.http2_only {
+            builder = builder.http2_prior_knowledge();
+        }
+
+        // reqwest downcasts the preconfigured backend to an owned
+        // `rustls::ClientConfig`, so the shared Arc must be unwrapped (or
+        // cloned) first — passing the Arc fails with "Unknown TLS backend".
+        #[cfg(feature = "tls")]
+        if let Some(ref tls_config) = self.tls_config {
+            let rustls_config = std::sync::Arc::try_unwrap(tls_config.config.clone())
+                .unwrap_or_else(|shared| (*shared).clone());
+            builder = builder.use_preconfigured_tls(rustls_config);
+        }
+
+        Ok(builder.build()?)
+    }
+
     /// Configure TLS/mTLS for the HTTP client
+    ///
+    /// The HTTP/2-only flag set via `with_http2_only` is preserved.
     ///
     /// # Arguments
     /// * `tls_config` - TLS configuration including optional client certificates
@@ -169,19 +188,8 @@ impl HttpClient {
     /// ```
     #[cfg(feature = "tls")]
     pub fn with_tls(mut self, tls_config: TlsClientConfig) -> Result<Self> {
-        // Rebuild client with TLS configuration. reqwest downcasts the
-        // preconfigured backend to an owned `rustls::ClientConfig`, so the
-        // shared Arc must be unwrapped (or cloned) first — passing the Arc
-        // fails the build with "Unknown TLS backend".
-        let rustls_config = std::sync::Arc::try_unwrap(tls_config.config.clone())
-            .unwrap_or_else(|shared| (*shared).clone());
-        let client = ClientBuilder::new()
-            .timeout(Duration::from_secs(30))
-            .use_preconfigured_tls(rustls_config)
-            .build()?;
-
-        self.client = client;
         self.tls_config = Some(tls_config);
+        self.client = self.rebuild_client(Duration::from_secs(30))?;
         Ok(self)
     }
 
@@ -255,23 +263,7 @@ impl HttpClient {
     /// This method rebuilds the HTTP client while preserving existing configuration
     /// (TLS, HTTP/2, etc.) to avoid losing settings.
     pub fn with_timeout(mut self, timeout: Duration) -> Result<Self> {
-        let mut builder = ClientBuilder::new().timeout(timeout);
-
-        // Preserve HTTP/2 setting
-        if self.http2_only {
-            builder = builder.http2_prior_knowledge();
-        }
-
-        // Preserve TLS configuration (unwrapping the shared Arc, as in
-        // with_tls, or reqwest rejects the preconfigured backend).
-        #[cfg(feature = "tls")]
-        if let Some(ref tls_config) = self.tls_config {
-            let rustls_config = std::sync::Arc::try_unwrap(tls_config.config.clone())
-                .unwrap_or_else(|shared| (*shared).clone());
-            builder = builder.use_preconfigured_tls(rustls_config);
-        }
-
-        self.client = builder.build()?;
+        self.client = self.rebuild_client(timeout)?;
         Ok(self)
     }
 
@@ -540,5 +532,214 @@ mod tests {
         let default = HttpClient::new(format!("http://{addr}")).unwrap();
         let body = default.send_message_raw("MSH|^~\\&|A\r").await.unwrap();
         assert_eq!(body.len(), 2048);
+    }
+
+    /// Generate a CA plus a server certificate signed by it (requires
+    /// openssl), mirroring the proven flow in `testing.rs`. Returns
+    /// `(ca_cert, server_cert, server_key)`.
+    #[cfg(feature = "tls")]
+    fn generate_probe_certs(dir: &std::path::Path) -> (String, String, String) {
+        use std::process::Command;
+
+        let path = |name: &str| dir.join(name).to_str().unwrap().to_string();
+        let (ca_key, ca_cert) = (path("ca-key.pem"), path("ca-cert.pem"));
+        let (srv_key, srv_csr, srv_cert, srv_ext) = (
+            path("srv-key.pem"),
+            path("srv.csr"),
+            path("srv-cert.pem"),
+            path("srv-ext.cnf"),
+        );
+        std::fs::write(
+            &srv_ext,
+            "[v3_req]\nbasicConstraints = CA:FALSE\n\
+             keyUsage = digitalSignature, keyEncipherment\n\
+             extendedKeyUsage = serverAuth\n\
+             subjectAltName = DNS:localhost,IP:127.0.0.1\n",
+        )
+        .unwrap();
+        let run = |args: &[&str]| {
+            let status = Command::new("openssl")
+                .args(args)
+                .status()
+                .expect("openssl must be installed for TLS tests");
+            assert!(status.success(), "openssl {args:?} failed");
+        };
+        run(&[
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            &ca_key,
+            "-out",
+            &ca_cert,
+            "-days",
+            "2",
+            "-subj",
+            "/CN=Probe CA",
+        ]);
+        run(&[
+            "req",
+            "-new",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            &srv_key,
+            "-out",
+            &srv_csr,
+            "-subj",
+            "/CN=localhost",
+        ]);
+        run(&[
+            "x509",
+            "-req",
+            "-in",
+            &srv_csr,
+            "-CA",
+            &ca_cert,
+            "-CAkey",
+            &ca_key,
+            "-CAcreateserial",
+            "-out",
+            &srv_cert,
+            "-days",
+            "2",
+            "-extfile",
+            &srv_ext,
+            "-extensions",
+            "v3_req",
+        ]);
+        (ca_cert, srv_cert, srv_key)
+    }
+
+    /// What the probe TLS server observed for one connection.
+    #[cfg(feature = "tls")]
+    #[derive(Debug)]
+    enum ProbeOutcome {
+        /// The TLS handshake failed (e.g. the client did not trust us).
+        HandshakeFailed,
+        /// The handshake succeeded; the client's first application bytes
+        /// (`PRI * HTTP/2.0...` for HTTP/2 prior knowledge, `POST ...`
+        /// for HTTP/1.1).
+        FirstBytes(Vec<u8>),
+    }
+
+    /// Run one client built by `build` against a probe TLS server and report
+    /// what the server observed. The client's request always fails (the probe
+    /// answers no HTTP); assertions are on the server-side observation.
+    #[cfg(feature = "tls")]
+    async fn probe_client(
+        build: impl FnOnce(String) -> HttpClient,
+        cert: &str,
+        key: &str,
+    ) -> ProbeOutcome {
+        use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
+        use tokio::io::AsyncReadExt;
+
+        let certs: Vec<CertificateDer<'static>> =
+            CertificateDer::pem_slice_iter(&std::fs::read(cert).unwrap())
+                .map(|r| r.unwrap().into_owned())
+                .collect();
+        let key = PrivateKeyDer::pem_slice_iter(&std::fs::read(key).unwrap())
+            .next()
+            .unwrap()
+            .unwrap()
+            .clone_key();
+        let config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)
+            .unwrap();
+        let acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(config));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let client = build(format!("https://{addr}"));
+
+        let server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let accepted =
+                tokio::time::timeout(Duration::from_secs(10), acceptor.accept(tcp)).await;
+            let mut tls = match accepted {
+                Ok(Ok(tls)) => tls,
+                _ => return ProbeOutcome::HandshakeFailed,
+            };
+            let mut buf = [0u8; 64];
+            match tokio::time::timeout(Duration::from_secs(10), tls.read(&mut buf)).await {
+                Ok(Ok(n)) => ProbeOutcome::FirstBytes(buf[..n].to_vec()),
+                _ => ProbeOutcome::FirstBytes(Vec::new()),
+            }
+        });
+
+        let _ = tokio::time::timeout(
+            Duration::from_secs(15),
+            client.send_message_raw("MSH|^~\\&|A\r"),
+        )
+        .await;
+        server.await.unwrap()
+    }
+
+    #[cfg(feature = "tls")]
+    #[tokio::test]
+    async fn tls_and_http2_builder_calls_preserve_each_other() {
+        use crate::tls::TlsClientConfig;
+
+        let dir = std::env::temp_dir().join(format!(
+            "vyna_http_probe_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (ca_cert, srv_cert, srv_key) = generate_probe_certs(&dir);
+
+        // `with_tls` after `with_http2_only` must keep HTTP/2 enabled:
+        // the probe must see the HTTP/2 preface, not an HTTP/1.1 request.
+        let outcome = probe_client(
+            |url| {
+                HttpClient::new(url)
+                    .unwrap()
+                    .with_http2_only()
+                    .unwrap()
+                    .with_tls(TlsClientConfig::with_ca_cert(&ca_cert).unwrap())
+                    .unwrap()
+            },
+            &srv_cert,
+            &srv_key,
+        )
+        .await;
+        assert!(
+            matches!(
+                outcome,
+                ProbeOutcome::FirstBytes(ref b) if b.starts_with(b"PRI * HTTP/2.0")
+            ),
+            "`with_tls` dropped the HTTP/2 setting: {outcome:?}"
+        );
+
+        // `with_http2_only` after `with_tls` must keep the pinned CA: the
+        // probe's certificate must verify, so the handshake must succeed
+        // (it fails when the client falls back to system roots).
+        let outcome = probe_client(
+            |url| {
+                HttpClient::new(url)
+                    .unwrap()
+                    .with_tls(TlsClientConfig::with_ca_cert(&ca_cert).unwrap())
+                    .unwrap()
+                    .with_http2_only()
+                    .unwrap()
+            },
+            &srv_cert,
+            &srv_key,
+        )
+        .await;
+        assert!(
+            matches!(outcome, ProbeOutcome::FirstBytes(_)),
+            "`with_http2_only` dropped the pinned TLS config: {outcome:?}"
+        );
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

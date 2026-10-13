@@ -176,6 +176,9 @@ impl RetryPolicy {
     pub fn is_retryable(&self, error: &Error) -> bool {
         match error {
             Error::Io(_) => true,
+            // Transport failures (connect errors, timeouts, broken body
+            // streams) are the primary retry case for this client.
+            Error::Network(_) => true,
             Error::Http(msg) => {
                 // Retry on 5xx server errors
                 msg.contains("500") || msg.contains("502") || msg.contains("503") || msg.contains("504")
@@ -392,5 +395,54 @@ mod tests {
 
         assert!(backoff2 <= Duration::from_millis(300));
         assert_eq!(backoff10, Duration::from_millis(300));
+    }
+
+    #[tokio::test]
+    async fn network_and_timeout_errors_are_retryable() {
+        let policy = RetryPolicy::exponential();
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_millis(200))
+            .build()
+            .unwrap();
+
+        // A reqwest timeout: the documented primary retry case.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (_socket, _peer) = listener.accept().await.unwrap();
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        });
+        let err = client.get(format!("http://{addr}/")).send().await.unwrap_err();
+        assert!(err.is_timeout(), "expected a timeout, got: {err}");
+        assert!(
+            policy.is_retryable(&Error::Network(err)),
+            "timeout errors must be retryable"
+        );
+
+        // A refused connection is retryable too.
+        let port = {
+            let probe = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .unwrap();
+            probe.local_addr().unwrap().port()
+        }; // dropped: nothing listens here now
+        let err = client
+            .get(format!("http://127.0.0.1:{port}/"))
+            .send()
+            .await
+            .unwrap_err();
+        assert!(
+            policy.is_retryable(&Error::Network(err)),
+            "connection errors must be retryable"
+        );
+
+        // Non-transient errors stay non-retryable.
+        assert!(!policy.is_retryable(&Error::Http("HTTP 400 Bad Request".into())));
+        assert!(!policy.is_retryable(&Error::Auth("bad credentials".into())));
+        assert!(!policy.is_retryable(&Error::InvalidUrl("ftp://x".into())));
+        // Existing 5xx behavior is unchanged.
+        assert!(policy.is_retryable(&Error::Http("HTTP 503 Unavailable".into())));
     }
 }

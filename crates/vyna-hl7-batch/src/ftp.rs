@@ -179,6 +179,10 @@ impl FtpTransport {
             if base.is_empty() || base == "." || base == ".." {
                 continue;
             }
+            // Skip before the SIZE/MDTM round trips below.
+            if is_staged_upload(base) {
+                continue;
+            }
             let path = match dir {
                 Some(d) => format!("{d}/{base}"),
                 None => base.to_string(),
@@ -210,6 +214,48 @@ fn is_file_unavailable(e: &FtpError) -> bool {
     )
 }
 
+/// Staging name for an upload: a sibling of `path` carrying the `.tmp-`
+/// prefix, so pollers skip it via [`is_staged_upload`] (the same skip
+/// convention the filesystem transport uses).
+fn staging_temp_name(path: &str, counter: u64) -> String {
+    let (parent, base) = match path.rsplit_once('/') {
+        Some((parent, base)) => (parent, base),
+        None => ("", path),
+    };
+    let pid = std::process::id();
+    if parent.is_empty() {
+        format!(".tmp-{pid}-{counter}-{base}")
+    } else {
+        format!("{parent}/.tmp-{pid}-{counter}-{base}")
+    }
+}
+
+/// True for staged-upload names, which listings must hide from pollers.
+///
+/// Current staging names carry the `.tmp-` prefix (see
+/// [`staging_temp_name`]); `{name}.tmp-{pid}-{counter}` covers crash
+/// leftovers staged by older versions.
+fn is_staged_upload(path: &str) -> bool {
+    let base = path.rsplit('/').next().unwrap_or(path);
+    if base.starts_with(".tmp-") {
+        return true;
+    }
+    match base.rsplit_once(".tmp-") {
+        Some((_, suffix)) => {
+            let mut chunks = suffix.split('-');
+            matches!(
+                (chunks.next(), chunks.next(), chunks.next()),
+                (Some(a), Some(b), None)
+                    if !a.is_empty()
+                        && !b.is_empty()
+                        && a.bytes().all(|c| c.is_ascii_digit())
+                        && b.bytes().all(|c| c.is_ascii_digit())
+            )
+        }
+        None => false,
+    }
+}
+
 /// Parse MLSD lines into entries, skipping directories and unparseable
 /// lines. A missing `modify` fact parses as the Unix epoch, which is
 /// reported as unknown rather than as a bogus 1970 timestamp.
@@ -222,6 +268,9 @@ fn parse_mlsd_entries(dir: Option<&str>, lines: &[String]) -> Vec<FileEntry> {
             continue;
         };
         if !file.is_file() {
+            continue;
+        }
+        if is_staged_upload(file.name()) {
             continue;
         }
         let path = match dir {
@@ -324,7 +373,7 @@ impl FileTransport for FtpTransport {
             self.mkdir_p(&parent).await?;
         }
         self.temp_counter += 1;
-        let temp = format!("{path}.tmp-{}-{}", std::process::id(), self.temp_counter);
+        let temp = staging_temp_name(path, self.temp_counter);
         let mut cursor = std::io::Cursor::new(data);
         let timeout = self.config.command_timeout;
         if let Err(e) = crate::timed(timeout, self.stream()?.put_file(&temp, &mut cursor)).await {
@@ -417,6 +466,111 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].path, "b.hl7");
         assert_eq!(entries[0].modified_ms, None);
+    }
+
+    #[test]
+    fn mlsd_listing_hides_staged_uploads() {
+        let lines = vec![
+            "type=file;size=57;modify=20240101120000; a.hl7".to_string(),
+            // In-progress staged upload (current naming).
+            "type=file;size=12;modify=20240101120000; .tmp-123-1-b.hl7".to_string(),
+            // Crash leftover staged by an older version (legacy naming).
+            "type=file;size=12;modify=20240101120000; b.hl7.tmp-123-1".to_string(),
+        ];
+        let entries = parse_mlsd_entries(Some("inbox"), &lines);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].path, "inbox/a.hl7");
+    }
+
+    #[test]
+    fn staged_upload_names_are_detected() {
+        // Current staging names: `.tmp-{pid}-{counter}-{file}`.
+        assert!(is_staged_upload("inbox/.tmp-123-1-a.hl7"));
+        assert!(is_staged_upload(".tmp-123-1-a.hl7"));
+        // Filesystem-style leftovers share the prefix.
+        assert!(is_staged_upload("inbox/.tmp-123-456"));
+        // Legacy staging names: `{file}.tmp-{pid}-{counter}`.
+        assert!(is_staged_upload("inbox/b.hl7.tmp-123-1"));
+        // Ordinary files are never hidden.
+        assert!(!is_staged_upload("inbox/a.hl7"));
+        assert!(!is_staged_upload("report.tmp-backup.hl7"));
+        assert!(!is_staged_upload("inbox/x.tmp-1-2-3"));
+        // The `.tmp-` prefix hides unconditionally, matching the filesystem
+        // transport's convention exactly.
+        assert!(is_staged_upload("inbox/.tmp-notes.hl7"));
+    }
+
+    #[test]
+    fn staging_temp_name_is_a_hidden_sibling() {
+        let pid = std::process::id();
+        assert_eq!(
+            staging_temp_name("inbox/a.hl7", 7),
+            format!("inbox/.tmp-{pid}-7-a.hl7")
+        );
+        assert_eq!(staging_temp_name("a.hl7", 7), format!(".tmp-{pid}-7-a.hl7"));
+        // Everything `put` stages must be invisible to `list`.
+        assert!(is_staged_upload(&staging_temp_name("inbox/a.hl7", 7)));
+        assert!(is_staged_upload(&staging_temp_name("a.hl7", 7)));
+    }
+
+    #[tokio::test]
+    async fn list_hides_staged_uploads_end_to_end() {
+        use libunftp::ServerBuilder;
+        use libunftp::auth::AnonymousAuthenticator;
+        use unftp_sbe_fs::Filesystem;
+
+        let dir = std::env::temp_dir().join(format!(
+            "vyna-ftp-staged-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        tokio::fs::create_dir_all(dir.join("inbox")).await.unwrap();
+        // A finished file plus staged-upload leftovers (current and legacy
+        // naming) planted as a crashed uploader would leave them.
+        std::fs::write(dir.join("inbox/a.hl7"), "MSH").unwrap();
+        std::fs::write(dir.join("inbox/.tmp-123-1-b.hl7"), "partial").unwrap();
+        std::fs::write(dir.join("inbox/b.hl7.tmp-123-1"), "partial").unwrap();
+
+        let root = dir.clone();
+        let server = ServerBuilder::new(Box::new(move || Filesystem::new(root.clone()).unwrap()))
+            .authenticator(std::sync::Arc::new(AnonymousAuthenticator))
+            .greeting("vyna staged test")
+            .passive_ports(33000..=33009)
+            .build()
+            .unwrap();
+        let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = probe.local_addr().unwrap();
+        drop(probe);
+        tokio::spawn(async move {
+            server.listen(addr.to_string()).await.unwrap();
+        });
+        for _ in 0..100 {
+            if tokio::net::TcpStream::connect(addr).await.is_ok() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        let config = FtpConfig::new(&addr.to_string(), "anonymous", "test");
+        let mut ftp = FtpTransport::connect(config).await.unwrap();
+        let listed: Vec<_> = ftp
+            .list("inbox")
+            .await
+            .unwrap()
+            .iter()
+            .map(|e| e.path.clone())
+            .collect();
+        assert_eq!(listed, ["inbox/a.hl7"]);
+
+        // A real upload still lands visibly and leaves no temp behind.
+        ftp.put("inbox/c.hl7", b"MSH").await.unwrap();
+        assert_eq!(ftp.list("inbox").await.unwrap().len(), 2);
+
+        ftp.close().await.unwrap();
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
     }
 
     #[tokio::test]

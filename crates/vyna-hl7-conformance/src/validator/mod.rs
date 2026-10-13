@@ -22,6 +22,7 @@ struct FieldValidationContext<'a> {
     segment_index: usize,
     field_position: usize,
     occurrence_count: usize,
+    has_content: bool,
     field_profile: &'a FieldProfile,
     message: &'a Message,
     result: &'a mut ConformanceValidationResult,
@@ -304,6 +305,9 @@ impl ConformanceValidator {
 
         // Count field occurrences (for repeating fields)
         let occurrence_count = field.map(|f| f.repetitions.len()).unwrap_or(0);
+        // Parsed empty fields still carry one empty repetition, so usage
+        // checks need content awareness beyond the repetition count.
+        let has_content = field.is_some_and(|f| !f.is_empty());
 
         // Validate field usage
         self.validate_field_usage(FieldValidationContext {
@@ -311,6 +315,7 @@ impl ConformanceValidator {
             segment_index,
             field_position,
             occurrence_count,
+            has_content,
             field_profile,
             message,
             result: &mut *result,
@@ -322,6 +327,7 @@ impl ConformanceValidator {
             segment_index,
             field_position,
             occurrence_count,
+            has_content,
             field_profile,
             message,
             result: &mut *result,
@@ -335,6 +341,7 @@ impl ConformanceValidator {
                     segment_index,
                     field_position,
                     occurrence_count,
+                    has_content,
                     field_profile,
                     message,
                     result: &mut *result,
@@ -351,6 +358,7 @@ impl ConformanceValidator {
             segment_index,
             field_position,
             occurrence_count,
+            has_content,
             field_profile,
             message,
             result,
@@ -368,16 +376,21 @@ impl ConformanceValidator {
 
         match &field_profile.usage {
             ConditionalUsage::Required => {
-                if occurrence_count == 0 {
+                if !has_content {
                     let field_name = field_profile
                         .name
                         .clone()
                         .unwrap_or_else(|| format!("Field {}", field_position));
+                    let state = if occurrence_count == 0 {
+                        "is missing"
+                    } else {
+                        "is present but empty"
+                    };
                     result.add_error(
                         ConformanceValidationError::new(
                             location,
                             ConformanceErrorType::RequiredElementMissing,
-                            format!("Required field {} is missing", field_name),
+                            format!("Required field {} {}", field_name, state),
                         )
                         .with_rule(format!("{}-{} usage=R", segment_id, field_position)),
                     );
@@ -440,6 +453,7 @@ impl ConformanceValidator {
                             segment_index,
                             field_position,
                             occurrence_count,
+                            has_content,
                             field_profile: &temp_profile,
                             message,
                             result,
@@ -746,6 +760,33 @@ mod tests {
         let validator = ConformanceValidator::new(conditional_profile("PID-3 IS VALUED"));
         let result = validator.validate(&conditional_message("PID|1"));
         assert!(result.is_valid());
+    }
+
+    #[test]
+    fn test_required_present_but_empty_field_is_error() {
+        // PID-3 parses to one empty repetition when present-but-empty;
+        // R requires non-empty content, so this must fail like absence.
+        let validator = ConformanceValidator::new(create_test_profile());
+        let result = validator.validate(&conditional_message("PID|1||"));
+        assert!(
+            result.errors.iter().any(|e| {
+                e.error_type == ConformanceErrorType::RequiredElementMissing
+                    && e.rule.as_deref() == Some("PID-3 usage=R")
+            }),
+            "expected a required-element error for PID-3, got: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_required_valued_field_passes() {
+        let validator = ConformanceValidator::new(create_test_profile());
+        let result = validator.validate(&conditional_message("PID|1||PATID1234"));
+        assert!(
+            result.is_valid(),
+            "expected valid, got: {:?}",
+            result.errors
+        );
     }
 
     #[test]

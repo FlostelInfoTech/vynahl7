@@ -394,7 +394,10 @@ impl Redactor {
 /// Shift the `YYYYMMDD` date part by `days`, preserving the remainder.
 /// Returns `None` when the value has no parseable date part.
 fn shift_date(value: &str, days: i64) -> Option<String> {
-    if value.len() < 8 || !value[..8].bytes().all(|b| b.is_ascii_digit()) {
+    // Byte-slice via `get` so short values yield `None` instead of
+    // panicking; ASCII-only prefix means index 8 is a char boundary.
+    let prefix = value.as_bytes().get(..8)?;
+    if !prefix.iter().all(|b| b.is_ascii_digit()) {
         return None;
     }
     let date = NaiveDate::parse_from_str(&value[..8], "%Y%m%d").ok()?;
@@ -428,6 +431,15 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("MRG", 5),
         ("MRG", 6),
         ("SPM", 2),
+        ("STF", 1),
+        ("STF", 2),
+        ("STF", 14),
+        ("PRD", 7),
+        ("TXA", 12),
+        ("TXA", 13),
+        ("TXA", 14),
+        ("TXA", 15),
+        ("TXA", 16),
     ];
     let removed: &[(&str, usize)] = &[
         ("PID", 5),
@@ -459,6 +471,18 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("GT1", 19),
         ("IN1", 16),
         ("MRG", 7),
+        ("DG1", 16),
+        ("STF", 3),
+        ("STF", 10),
+        ("STF", 15),
+        ("PRD", 2),
+        ("PRD", 5),
+        ("PRD", 10),
+        ("PRD", 13),
+        ("TXA", 5),
+        ("TXA", 9),
+        ("TXA", 10),
+        ("TXA", 11),
     ];
     let shifted: &[(&str, usize)] = &[
         ("MSH", 7),
@@ -500,6 +524,15 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("AL1", 6),
         ("SPM", 17),
         ("SPM", 18),
+        ("STF", 6),
+        ("STF", 12),
+        ("STF", 13),
+        ("PRD", 8),
+        ("PRD", 9),
+        ("TXA", 4),
+        ("TXA", 6),
+        ("TXA", 7),
+        ("TXA", 8),
     ];
     let mut rules = Vec::new();
     for (segment, field) in hashed {
@@ -512,8 +545,16 @@ fn safe_harbor_rules() -> Vec<Rule> {
         rules.push(Rule::field(segment, *field, DateShift));
     }
     // Addresses: drop street/city/geo, generalize ZIP to 3 digits, keep
-    // state/country/type. Applies to PID-11, NK1-4, GT1-5.
-    for (segment, field) in [("PID", 11), ("NK1", 4), ("GT1", 5)] {
+    // state/country/type. Applies to PID-11, NK1-4, GT1-5, STF-11,
+    // PRD-3, PRD-11.
+    for (segment, field) in [
+        ("PID", 11),
+        ("NK1", 4),
+        ("GT1", 5),
+        ("STF", 11),
+        ("PRD", 3),
+        ("PRD", 11),
+    ] {
         for component in [1, 2, 3, 8, 9, 10] {
             rules.push(Rule::component(segment, field, component, Remove));
         }
@@ -866,5 +907,127 @@ mod tests {
                 .unwrap_or("")
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn date_shift_never_panics_on_short_or_multibyte_values() {
+        // Byte 8 lands inside 'é': `len() >= 8`, but `[..8]` would panic.
+        assert_eq!(shift_date("1234567é8900", 30), None);
+        assert_eq!(shift_date("2024010é1", 30), None);
+        assert_eq!(shift_date("éééééééé", 30), None);
+        assert_eq!(shift_date("", 30), None);
+        assert_eq!(shift_date("2024", 30), None);
+        // End to end: the unparseable value is removed, not kept.
+        let mut message = parse_message(concat!(
+            "MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\r",
+            "PID|1||||||1234567é8900",
+        ))
+        .unwrap();
+        Redactor::new()
+            .with_rule(Rule::field("PID", 7, Strategy::DateShift))
+            .redact(&mut message)
+            .unwrap();
+        assert!(
+            message
+                .get_segment_by_id("PID")
+                .unwrap()
+                .get_field_value(7)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn safe_harbor_redacts_provider_and_staff_identifiers() {
+        let mut message = parse_message(concat!(
+            "MSH|^~\\&|A|B|C|D|20240101120000||ADT^A01|MSG001|P|2.5\r",
+            "DG1|1||I10^Hypertension^ICD10||20240101|||||||||||",
+            "DOC999^House^Greg\r",
+            "STF|KEY1|STAFF42|Nightingale^Florence|N|F|19700515|A|FT|",
+            "MED|555-0100|10 Ward Way^^Springfield^IL^62701^USA|20200101|",
+            "20250101|BACKUP1|nurse@example.com\r",
+            "PRD|PP^Primary Care|House^Greg|",
+            "221 B St^^Princeton^NJ^08540||555-0200||NPI1234567|",
+            "20200101|20250101|Princeton Hospital|",
+            "1 Hospital Dr^^Princeton^NJ^08540||555-0300\r",
+            "TXA|1|DS||20240101100000|DOC1^Author^Amy|20240101110000|",
+            "20240102120000|20240103120000|DOC2^Orig^Olive|",
+            "DOC3^Auth^Al|TR1^Trans^Tina|DOCNUM1|DOCNUM0|PLAC1|",
+            "FILL1|file001.pdf",
+        ))
+        .unwrap();
+        let key = b"site-secret";
+        Redactor::safe_harbor(key, 30).redact(&mut message).unwrap();
+
+        // Diagnosing clinician gone; code kept, date shifted.
+        let dg1 = message.get_segment_by_id("DG1").unwrap();
+        assert!(dg1.get_field_value(16).is_none());
+        assert_eq!(dg1.get_field_value(3), Some("I10"));
+        assert_eq!(dg1.get_field_value(5), Some("20240131"));
+
+        // Staff IDs hashed, name/phone/email removed, dates shifted,
+        // address generalized, sex kept.
+        let stf = message.get_segment_by_id("STF").unwrap();
+        let expect_key1 = hash_of(key, "KEY1");
+        assert_eq!(stf.get_field_value(1), Some(expect_key1.as_str()));
+        let expect_staff = hash_of(key, "STAFF42");
+        assert_eq!(stf.get_field_value(2), Some(expect_staff.as_str()));
+        assert!(stf.get_field_value(3).is_none());
+        assert_eq!(stf.get_field_value(5), Some("F"));
+        assert_eq!(stf.get_field_value(6), Some("19700614"));
+        assert!(stf.get_field_value(10).is_none());
+        assert_eq!(stf.get_field_value(12), Some("20200131"));
+        assert_eq!(stf.get_field_value(13), Some("20250131"));
+        let expect_backup = hash_of(key, "BACKUP1");
+        assert_eq!(stf.get_field_value(14), Some(expect_backup.as_str()));
+        assert!(stf.get_field_value(15).is_none());
+        let addr = stf.get_field(11).unwrap().get_repetition(0).unwrap();
+        assert_eq!(addr.get_component(0).unwrap().value(), Some(""));
+        assert_eq!(addr.get_component(4).unwrap().value(), Some("627"));
+        assert_eq!(addr.get_component(3).unwrap().value(), Some("IL"));
+
+        // Provider name/telecom/org removed, IDs hashed, dates shifted.
+        let prd = message.get_segment_by_id("PRD").unwrap();
+        assert_eq!(prd.get_field_value(1), Some("PP")); // role kept
+        assert!(prd.get_field_value(2).is_none());
+        assert!(prd.get_field_value(5).is_none());
+        let expect_npi = hash_of(key, "NPI1234567");
+        assert_eq!(prd.get_field_value(7), Some(expect_npi.as_str()));
+        assert_eq!(prd.get_field_value(8), Some("20200131"));
+        assert_eq!(prd.get_field_value(9), Some("20250131"));
+        assert!(prd.get_field_value(10).is_none());
+        assert!(prd.get_field_value(13).is_none());
+        let addr = prd.get_field(3).unwrap().get_repetition(0).unwrap();
+        assert_eq!(addr.get_component(0).unwrap().value(), Some(""));
+        assert_eq!(addr.get_component(4).unwrap().value(), Some("085"));
+        let org = prd.get_field(11).unwrap().get_repetition(0).unwrap();
+        assert_eq!(org.get_component(0).unwrap().value(), Some(""));
+        assert_eq!(org.get_component(4).unwrap().value(), Some("085"));
+
+        // Transcription authors removed, dates shifted, numbers hashed.
+        let txa = message.get_segment_by_id("TXA").unwrap();
+        assert_eq!(txa.get_field_value(1), Some("1"));
+        assert_eq!(txa.get_field_value(2), Some("DS"));
+        assert_eq!(txa.get_field_value(4), Some("20240131100000"));
+        assert!(txa.get_field_value(5).is_none());
+        assert_eq!(txa.get_field_value(6), Some("20240131110000"));
+        assert_eq!(txa.get_field_value(7), Some("20240201120000"));
+        assert_eq!(txa.get_field_value(8), Some("20240202120000"));
+        assert!(txa.get_field_value(9).is_none());
+        assert!(txa.get_field_value(10).is_none());
+        assert!(txa.get_field_value(11).is_none());
+        for (field, original) in [
+            (12, "DOCNUM1"),
+            (13, "DOCNUM0"),
+            (14, "PLAC1"),
+            (15, "FILL1"),
+            (16, "file001.pdf"),
+        ] {
+            let expected = hash_of(key, original);
+            assert_eq!(
+                txa.get_field_value(field),
+                Some(expected.as_str()),
+                "TXA-{field} must be hashed"
+            );
+        }
     }
 }

@@ -19,6 +19,7 @@
 //! ```
 
 use vyna_hl7_core::Version;
+use vyna_hl7_core::builders::generate_control_id;
 use vyna_hl7_parser::parse_message as vyna_hl7_parse;
 use vyna_hl7_terser::Terser;
 use vyna_hl7_validator::Validator;
@@ -164,7 +165,23 @@ pub fn set_terser_value(message: &mut WasmMessage, path: &str, value: &str) -> R
 pub fn validate_message(message: &WasmMessage) -> Result<WasmValidationResult, JsValue> {
     // get_version returns Option<Version>
     let version = message.inner().get_version().unwrap_or(Version::V2_5);
-    let validator = Validator::new(version);
+    // Select the message schema from MSH-9 so validation checks
+    // structure, not just the envelope (CLI/testpanel parity). ACK
+    // carries no trigger event; types without a schema fall back to
+    // structure-only validation.
+    let schema_key = message.inner().get_message_type().map(|(t, e)| {
+        if t == "ACK" {
+            (t, String::new())
+        } else {
+            (t, e)
+        }
+    });
+    let mut validator = Validator::new(version);
+    if let Some((msg_type, trigger)) = &schema_key
+        && let Ok(schema_validator) = Validator::for_message_type(version, msg_type, trigger)
+    {
+        validator = schema_validator;
+    }
     let result = validator.validate(message.inner());
 
     Ok(WasmValidationResult::from(result))
@@ -189,13 +206,18 @@ pub fn create_message(
     sending_app: &str,
     sending_fac: &str,
 ) -> Result<WasmMessage, JsValue> {
-    // Build MSH segment
+    // Build MSH segment. MSH-10 (control ID) and MSH-11 (processing
+    // ID) are required by the schemas: generate the control ID and
+    // default the processing ID to "P" (Production) like the core
+    // builders; callers can change it via setTerserValue.
+    let control_id = generate_control_id();
     let msh = format!(
-        "MSH|^~\\&|{}|{}|||{}||{}|||{}",
+        "MSH|^~\\&|{}|{}|||{}||{}|{}|P|{}",
         sending_app,
         sending_fac,
         chrono::Utc::now().format("%Y%m%d%H%M%S"),
         message_type,
+        control_id,
         version
     );
 
@@ -231,5 +253,61 @@ mod tests {
         assert_eq!(value, Some("DOE".to_string()));
         let given = get_terser_value(&msg, "PID-5-2").unwrap();
         assert_eq!(given, Some("JOHN".to_string()));
+    }
+
+    #[test]
+    fn validate_message_flags_missing_required_segments() {
+        // MSH-only ADT^A01 lacks required EVN/PID/PV1 segments. The
+        // schema selected from MSH-9 must surface that (CLI parity).
+        let msg = parse_message("MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5").unwrap();
+        let result = validate_message(&msg).unwrap();
+        assert!(!result.is_valid());
+        assert!(result.error_count() > 0);
+    }
+
+    #[test]
+    fn validate_message_accepts_complete_adt_a01() {
+        let msg = parse_message(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\r\
+             EVN||20240101\rPID|1||7||DOE^JOHN\rPV1||I\r",
+        )
+        .unwrap();
+        let result = validate_message(&msg).unwrap();
+        assert!(result.is_valid());
+        assert_eq!(result.error_count(), 0);
+    }
+
+    #[test]
+    fn validate_message_falls_back_without_schema() {
+        // Unknown message types have no schema; validation falls back
+        // to structure-only instead of erroring.
+        let msg =
+            parse_message("MSH|^~\\&|S|F|R|D|20240101||ZZZ^Z99|M1|P|2.5\rPID|1||7\r").unwrap();
+        let result = validate_message(&msg).unwrap();
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn create_message_populates_control_and_processing_ids() {
+        let msg = create_message("2.5", "ADT^A01", "SendApp", "SendFac").unwrap();
+        let control_id = msg.control_id().unwrap_or_default();
+        assert!(!control_id.is_empty(), "MSH-10 must be generated");
+        assert!(control_id.len() <= 20, "MSH-10 exceeds max length 20");
+        let terser = Terser::new(msg.inner());
+        assert_eq!(terser.get("MSH-11").unwrap(), Some("P"));
+        // Required MSH-10/MSH-11 schema violations must be gone.
+        let version = msg.inner().get_version().unwrap();
+        let (msg_type, trigger) = msg.inner().get_message_type().unwrap();
+        let validator = Validator::for_message_type(version, &msg_type, &trigger).unwrap();
+        let result = validator.validate(msg.inner());
+        assert!(
+            result
+                .errors
+                .iter()
+                .all(|e| !e.location.starts_with("MSH[0]-10")
+                    && !e.location.starts_with("MSH[0]-11")),
+            "MSH-10/MSH-11 errors remain: {:?}",
+            result.errors
+        );
     }
 }

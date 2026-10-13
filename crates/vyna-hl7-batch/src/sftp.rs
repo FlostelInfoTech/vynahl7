@@ -312,6 +312,48 @@ fn is_no_such_file(e: &russh_sftp::client::error::Error) -> bool {
     )
 }
 
+// Staging-name helpers mirror `ftp.rs` (each transport file owns its copy):
+// temp names carry the `.tmp-` prefix so pollers skip them, and listings
+// additionally hide `{name}.tmp-{pid}-{counter}` crash leftovers staged
+// by older versions.
+
+/// Staging name for an upload: a sibling of `remote` carrying the `.tmp-`
+/// prefix, so pollers skip it via [`is_staged_upload`].
+fn staging_temp_name(remote: &str, counter: u64) -> String {
+    let (parent, base) = match remote.rsplit_once('/') {
+        Some((parent, base)) => (parent, base),
+        None => ("", remote),
+    };
+    let pid = std::process::id();
+    if parent.is_empty() {
+        format!(".tmp-{pid}-{counter}-{base}")
+    } else {
+        format!("{parent}/.tmp-{pid}-{counter}-{base}")
+    }
+}
+
+/// True for staged-upload names, which listings must hide from pollers.
+fn is_staged_upload(path: &str) -> bool {
+    let base = path.rsplit('/').next().unwrap_or(path);
+    if base.starts_with(".tmp-") {
+        return true;
+    }
+    match base.rsplit_once(".tmp-") {
+        Some((_, suffix)) => {
+            let mut chunks = suffix.split('-');
+            matches!(
+                (chunks.next(), chunks.next(), chunks.next()),
+                (Some(a), Some(b), None)
+                    if !a.is_empty()
+                        && !b.is_empty()
+                        && a.bytes().all(|c| c.is_ascii_digit())
+                        && b.bytes().all(|c| c.is_ascii_digit())
+            )
+        }
+        None => false,
+    }
+}
+
 impl FileTransport for SftpTransport {
     async fn list(&mut self, dir: &str) -> Result<Vec<FileEntry>, BatchError> {
         let remote = self.remote(dir)?;
@@ -332,6 +374,9 @@ impl FileTransport for SftpTransport {
             if !self.config.root.is_empty() {
                 let prefix = format!("{}/", self.config.root);
                 path = path.strip_prefix(&prefix).unwrap_or(&path).to_string();
+            }
+            if is_staged_upload(&path) {
+                continue;
             }
             let modified_ms = meta
                 .modified()
@@ -401,7 +446,7 @@ impl FileTransport for SftpTransport {
             self.mkdir_p(parent).await?;
         }
         self.temp_counter += 1;
-        let temp = format!("{remote}.tmp-{}-{}", std::process::id(), self.temp_counter);
+        let temp = staging_temp_name(&remote, self.temp_counter);
         // `create` (not `write`) so the temp file is created and truncated.
         let timeout = self.config.command_timeout;
         let upload = async {
@@ -507,5 +552,31 @@ mod tests {
         let config = config.with_max_file_bytes(512).with_command_timeout(None);
         assert_eq!(config.max_file_bytes, 512);
         assert_eq!(config.command_timeout, None);
+    }
+
+    #[test]
+    fn staged_upload_names_are_detected() {
+        // Current staging names: `.tmp-{pid}-{counter}-{file}`.
+        assert!(is_staged_upload("inbox/.tmp-123-1-a.hl7"));
+        assert!(is_staged_upload(".tmp-123-1-a.hl7"));
+        // Legacy staging names: `{file}.tmp-{pid}-{counter}`.
+        assert!(is_staged_upload("inbox/b.hl7.tmp-123-1"));
+        // Ordinary files are never hidden.
+        assert!(!is_staged_upload("inbox/a.hl7"));
+        assert!(!is_staged_upload("report.tmp-backup.hl7"));
+        assert!(!is_staged_upload("inbox/x.tmp-1-2-3"));
+    }
+
+    #[test]
+    fn staging_temp_name_is_a_hidden_sibling() {
+        let pid = std::process::id();
+        assert_eq!(
+            staging_temp_name("root/inbox/a.hl7", 7),
+            format!("root/inbox/.tmp-{pid}-7-a.hl7")
+        );
+        assert_eq!(staging_temp_name("a.hl7", 7), format!(".tmp-{pid}-7-a.hl7"));
+        // Everything `put` stages must be invisible to `list`.
+        assert!(is_staged_upload(&staging_temp_name("root/inbox/a.hl7", 7)));
+        assert!(is_staged_upload(&staging_temp_name("a.hl7", 7)));
     }
 }

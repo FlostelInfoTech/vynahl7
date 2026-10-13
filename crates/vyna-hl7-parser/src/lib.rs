@@ -153,7 +153,6 @@ pub fn parse_message_with_config(
     }
 
     let mut message = Message::with_delimiters(delimiters);
-    let mut errors = Vec::new();
 
     for (idx, seg_str) in segment_strings.iter().enumerate() {
         // Handle trailing delimiters
@@ -176,7 +175,11 @@ pub fn parse_message_with_config(
             }
             Err(e) => {
                 if config.continue_on_error {
-                    errors.push((idx, e));
+                    warnings.push(ParseWarning {
+                        location: idx,
+                        message: format!("Skipped segment {idx}: {e}"),
+                        code: WarningCode::SkippedSegment,
+                    });
                 } else {
                     return Err(e);
                 }
@@ -1399,5 +1402,27 @@ BTS|1";
             let _ = parse_message_with_config(msg, &strict);
             let _ = parse_message_with_config(msg, &lenient);
         }
+    }
+
+    #[test]
+    fn test_continue_on_error_surfaces_segment_errors() {
+        let config = ParserConfig::strict().continue_on_error(true);
+        let msg = "MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rAB|1|2\rPID|1||7\r";
+        let result = parse_message_with_config(msg, &config).unwrap();
+
+        // Parsing continues past the bad segment ...
+        let ids: Vec<&str> = result
+            .value
+            .segments
+            .iter()
+            .map(|s| s.id.as_str())
+            .collect();
+        assert_eq!(ids, vec!["MSH", "PID"]);
+
+        // ... but the skipped segment's error must be reported, not dropped.
+        assert_eq!(result.warnings.len(), 1);
+        assert_eq!(result.warnings[0].location, 1);
+        assert_eq!(result.warnings[0].code, WarningCode::SkippedSegment);
+        assert!(result.warnings[0].message.contains("3 characters"));
     }
 }

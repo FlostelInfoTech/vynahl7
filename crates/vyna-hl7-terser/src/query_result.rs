@@ -153,8 +153,13 @@ impl<'a> QueryResultParser<'a> {
             .ok_or_else(|| Error::MissingRequiredField("QAK-1".to_string()))?
             .to_string();
 
-        // QAK-2: Query Response Status
-        let status_code = self.terser.get("QAK-2")?.unwrap_or("OK");
+        // QAK-2: Query Response Status (required). An absent or
+        // empty status must not default to success.
+        let status_code = self
+            .terser
+            .get("QAK-2")?
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| Error::MissingRequiredField("QAK-2".to_string()))?;
         let status = QueryResponseStatus::from_str(status_code);
 
         // QAK-3: Message Query Name
@@ -417,5 +422,31 @@ mod tests {
         let data_segments = parser.get_data_segments();
         assert_eq!(data_segments.len(), 2);
         assert!(data_segments.iter().all(|s| s.id == "PID"));
+    }
+
+    #[test]
+    fn test_missing_qak2_is_not_successful() {
+        let hl7 = "MSH|^~\\&|HOSPMPI|HOSP|CLIN|CLIN|20250115||RSP^K22|RSP-001|P|2.5\r\
+                   MSA|AA|Q-20231115-045\r\
+                   QAK|987654321\r\
+                   QPD|Q22^Find Candidates^HL7|987654321|@PID.5.1^SMITH\r";
+        let message = parse_message(hl7).unwrap();
+        let parser = QueryResultParser::new(&message);
+
+        assert!(!parser.is_successful());
+        assert!(parser.parse_acknowledgment().is_err());
+    }
+
+    #[test]
+    fn test_empty_qak2_is_not_successful() {
+        let hl7 = "MSH|^~\\&|HOSPMPI|HOSP|CLIN|CLIN|20250115||RSP^K22|RSP-001|P|2.5\r\
+                   MSA|AA|Q-20231115-045\r\
+                   QAK|987654321|\r\
+                   QPD|Q22^Find Candidates^HL7|987654321|@PID.5.1^SMITH\r";
+        let message = parse_message(hl7).unwrap();
+        let parser = QueryResultParser::new(&message);
+
+        assert!(!parser.is_successful());
+        assert!(parser.parse_acknowledgment().is_err());
     }
 }
