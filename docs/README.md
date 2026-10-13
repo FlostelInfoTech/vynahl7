@@ -15,7 +15,6 @@ specifications. API reference lives in rustdoc (`cargo doc`).
 | [RFCs](rfcs/) | Contributors | Design proposals for significant changes (start here before big work) |
 | [Schema provenance](../crates/vyna-hl7-validator/schemas/README.md) | Contributors | How the 310 validation schemas were produced and what the loader does |
 | [Performance](performance.md) | Integrators | Benchmark results and methodology |
-| [Blog](../blog/) | Everyone | Tutorials and background articles |
 | `rs7-*.md` (this dir) | Historians | Archived pre-fork history, preserved verbatim; not living docs |
 
 ## Living-document rules

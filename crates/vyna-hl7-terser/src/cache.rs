@@ -103,50 +103,12 @@ impl<'a> CachedTerser<'a> {
             None => return Ok(None),
         };
 
-        Ok(self.get_field_value(
+        Ok(crate::path::resolve_field_value(
             field,
             entry.path.repetition_index,
             entry.path.component_index,
             entry.path.subcomponent_index,
         ))
-    }
-
-    /// Get a field value at the specified indices
-    ///
-    /// Note: Component and subcomponent indices are 1-based (HL7 standard notation)
-    /// but internally converted to 0-based for array access.
-    #[inline]
-    fn get_field_value<'b>(
-        &self,
-        field: &'b vyna_hl7_core::field::Field,
-        rep_idx: usize,
-        comp_idx: Option<usize>,
-        sub_idx: Option<usize>,
-    ) -> Option<&'b str> {
-        let repetition = field.get_repetition(rep_idx)?;
-
-        match (comp_idx, sub_idx) {
-            (None, None) => repetition.value(),
-            (Some(c_idx), None) => {
-                // Convert 1-based HL7 to 0-based internal
-                if c_idx == 0 {
-                    return None; // Invalid: HL7 uses 1-based indexing
-                }
-                repetition.get_component(c_idx - 1)?.value()
-            }
-            (Some(c_idx), Some(s_idx)) => {
-                // Convert 1-based HL7 to 0-based internal
-                if c_idx == 0 || s_idx == 0 {
-                    return None; // Invalid: HL7 uses 1-based indexing
-                }
-                repetition
-                    .get_component(c_idx - 1)?
-                    .get_subcomponent(s_idx - 1)?
-                    .as_str()
-                    .into()
-            }
-            (None, Some(_)) => None,
-        }
     }
 
     /// Clear the cache

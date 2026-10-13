@@ -14,7 +14,7 @@ cargo install --path crates/vyna-hl7-cli --features fhir
 ## Usage
 
 ```bash
-vyna-hl7 <COMMAND> [OPTIONS]
+vynahl7 <COMMAND> [OPTIONS]
 ```
 
 ## Commands
@@ -46,21 +46,24 @@ HL7 Message Parsed Successfully
 Version: V2_5
 Message Type: ADT^A01
 Control ID: MSG123
-Segments: 5
+Segments: 4
 ```
 
-**Example Output (pretty format):**
+**Example Output (pretty format with `--detailed`):**
 ```
 Message Structure:
   Version: V2_5
   Type: ADT^A01
   Control ID: MSG123
-  Segments: 5
+  Segments: 4
 
-  1. MSH (9 fields)
-      [0]: |
-      [1]: ^~\&
-      [2]: SendApp
+  1. MSH (Message Header) - 12 fields
+      MSH-1 Field Separator (ST): |
+      MSH-2 Encoding Characters (ST): ^~\&
+      MSH-3 Sending Application (HD): SendApp
+      ...
+  2. EVN (Event Type) - 2 fields
+      EVN-1 Event Type Code (ID): A01
       ...
 ```
 
@@ -82,6 +85,7 @@ vynahl7 validate message.hl7 --format json
 **Example Output:**
 ```
 ✓ Message is valid
+Validation mode: strict (HL7 specification compliance)
 
 No issues found.
 ```
@@ -89,6 +93,7 @@ No issues found.
 **With errors:**
 ```
 ✗ Message validation failed
+Validation mode: strict (HL7 specification compliance)
 
 Errors:
   • MSH-9 - Missing required field: Message Type
@@ -96,6 +101,10 @@ Errors:
 Warnings:
   • PID-8 - Deprecated code used in Administrative Sex
 ```
+
+Validation is strict by default. `--standard` downgrades version drift
+to a warning; `--lenient` fails only on structural problems. The exit
+code is 1 when the message is invalid, so scripts can rely on it.
 
 ### Extract - Extract field values using Terser paths
 
@@ -120,10 +129,13 @@ vynahl7 extract message.hl7 PID-5 PID-3 --format json
 
 **Example Output:**
 ```
-PID-5: DOE^JOHN
+PID-5: DOE
 PID-3: MRN123
 MSH-10: MSG123
 ```
+
+A field-level path returns the field's first component; use component
+paths (e.g. `PID-5-1`, `PID-5-2`) to address the other parts.
 
 **Terser Path Syntax:**
 - `SEG-field`: Field in first occurrence of segment (e.g., `PID-5`)
@@ -207,6 +219,44 @@ Message Structure:
 Size Information:
   Encoded Size:         1024 bytes
   Average Segment Size: 128 bytes
+```
+
+### Send - Send a message and print the acknowledgment
+
+Send a message over MLLP or HTTP and print the ACK:
+
+```bash
+# Send over MLLP (intra-organization)
+vynahl7 send message.hl7 --to mllp://127.0.0.1:2575
+
+# Send over HTTP with basic auth (inter-organization)
+vynahl7 send message.hl7 --to http://127.0.0.1:8080/hl7 --user u --password p
+
+# MLLP with TLS (requires the 'tls' feature and a CA certificate)
+vynahl7 send message.hl7 --to mllp://127.0.0.1:2575 --tls --ca-cert ca.pem
+```
+
+A negative acknowledgment (anything but `AA`/`CA` in MSA-1) exits 1,
+so scripts can rely on the exit code.
+
+### Diff - Show structural differences between two messages
+
+Compare two messages field by field:
+
+```bash
+# Text output (exit 1 when the messages differ)
+vynahl7 diff old.hl7 new.hl7
+
+# JSON output
+vynahl7 diff old.hl7 new.hl7 --format json
+
+# Ignore volatile fields
+vynahl7 diff old.hl7 new.hl7 --ignore MSH-7,MSH-10
+```
+
+**Example Output:**
+```
+~ PID-5-2: JOHN -> JANE
 ```
 
 ## Input Methods
@@ -341,21 +391,23 @@ cargo build --release --package vyna-hl7-cli
 # With FHIR support
 cargo build --release --package vyna-hl7-cli --features fhir
 
-# The binary will be at: target/release/vyna-hl7
+# The binary will be at: target/release/vynahl7
 ```
 
 ## Features
 
 - **Default**: Core parsing, validation, and extraction
 - **fhir**: FHIR R4 conversion support
+- **tls**: TLS/mTLS support for `send`
 
 ## Performance
 
 The CLI is optimized for speed:
-- Parses typical messages in < 10 microseconds
-- Validates in < 100 microseconds
+- Parses small messages (ADT, 3 segments) in ~16 microseconds (~60,000 msg/sec)
 - Minimal memory footprint
 - Suitable for high-throughput batch processing
+
+See the [performance guide](../../docs/performance.md) for full benchmarks.
 
 ## License
 

@@ -14,20 +14,20 @@
 //!             "PID|1||MRN123||DOE^JOHN||19800101|M";
 //!
 //! const message = parseMessage(hl7);
-//! const patientName = getTerserValue(message, "PID-5");
-//! console.log(patientName); // "DOE^JOHN"
+//! const patientName = getTerserValue(message, "PID-5-1");
+//! console.log(patientName); // "DOE"
 //! ```
 
-use wasm_bindgen::prelude::*;
+use vyna_hl7_core::Version;
 use vyna_hl7_parser::parse_message as vyna_hl7_parse;
 use vyna_hl7_terser::Terser;
 use vyna_hl7_validator::Validator;
-use vyna_hl7_core::Version;
+use wasm_bindgen::prelude::*;
 
 mod definitions;
-mod utils;
 mod message;
 mod terser;
+mod utils;
 mod validation;
 
 pub use definitions::*;
@@ -125,7 +125,8 @@ pub fn encode_message(message: &WasmMessage) -> String {
 #[wasm_bindgen(js_name = getTerserValue)]
 pub fn get_terser_value(message: &WasmMessage, path: &str) -> Result<Option<String>, JsValue> {
     let terser = Terser::new(message.inner());
-    terser.get(path)
+    terser
+        .get(path)
         .map(|opt| opt.map(|s| s.to_string()))
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
@@ -145,7 +146,8 @@ pub fn get_terser_value(message: &WasmMessage, path: &str) -> Result<Option<Stri
 /// ```
 #[wasm_bindgen(js_name = setTerserValue)]
 pub fn set_terser_value(message: &mut WasmMessage, path: &str, value: &str) -> Result<(), JsValue> {
-    message.set_value(path, value)
+    message
+        .set_value(path, value)
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
@@ -197,8 +199,7 @@ pub fn create_message(
         version
     );
 
-    let parsed = vyna_hl7_parse(&msh)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let parsed = vyna_hl7_parse(&msh).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
     Ok(WasmMessage::from(parsed))
 }

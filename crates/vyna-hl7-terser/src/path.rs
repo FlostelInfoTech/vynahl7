@@ -3,6 +3,47 @@
 //! This module handles parsing of terser path strings like "PID-5-1" or "OBX(2)-3-1"
 
 use vyna_hl7_core::error::{Error, Result};
+use vyna_hl7_core::field::Field;
+
+/// Read one value out of a parsed field.
+///
+/// Repetition selection is 0-based (internal position); component and
+/// subcomponent selections are 1-based (HL7 notation), so `Some(0)` and a
+/// subcomponent without a component match nothing. Shared by [`crate::Terser`]
+/// and [`crate::CachedTerser`] so both keep the same contract.
+#[inline]
+pub(crate) fn resolve_field_value(
+    field: &Field,
+    rep_idx: usize,
+    comp_idx: Option<usize>,
+    sub_idx: Option<usize>,
+) -> Option<&str> {
+    let repetition = field.get_repetition(rep_idx)?;
+
+    match (comp_idx, sub_idx) {
+        (None, None) => repetition.value(),
+        (Some(c_idx), None) => {
+            if c_idx == 0 {
+                return None; // Invalid: HL7 uses 1-based indexing
+            }
+            repetition.get_component(c_idx - 1)?.value()
+        }
+        (Some(c_idx), Some(s_idx)) => {
+            if c_idx == 0 || s_idx == 0 {
+                return None; // Invalid: HL7 uses 1-based indexing
+            }
+            repetition
+                .get_component(c_idx - 1)?
+                .get_subcomponent(s_idx - 1)?
+                .as_str()
+                .into()
+        }
+        (None, Some(_)) => {
+            // Invalid: can't have subcomponent without component
+            None
+        }
+    }
+}
 
 /// Parsed terser path
 #[derive(Debug, Clone, PartialEq, Eq)]

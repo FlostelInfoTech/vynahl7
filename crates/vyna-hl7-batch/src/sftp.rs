@@ -107,8 +107,8 @@ impl std::fmt::Debug for SftpConfig {
 }
 
 impl SftpConfig {
-    /// Password authentication with pinned host keys required to be set
-    /// separately; use the builder methods to finish configuration.
+    /// Connect with the given client authentication; set host keys and
+    /// other options via the builder methods.
     pub fn new(addr: &str, username: &str, auth: SftpAuth) -> Self {
         Self {
             addr: addr.to_string(),
@@ -372,7 +372,12 @@ impl FileTransport for SftpTransport {
         .await?;
         let file = capped.into_inner();
         if buf.len() as u64 > limit {
-            let _ = file.close().await;
+            let _ = crate::timed(timeout, async {
+                file.close()
+                    .await
+                    .map_err(russh_sftp::client::error::Error::from)
+            })
+            .await;
             return Err(BatchError::TooLarge {
                 path: path.to_string(),
                 limit,
@@ -411,10 +416,13 @@ impl FileTransport for SftpTransport {
             Ok::<(), BatchError>(())
         };
         if let Err(e) = crate::timed(timeout, upload).await {
-            let _ = self.sftp()?.remove_file(&temp).await;
+            let _ = crate::timed(timeout, self.sftp()?.remove_file(&temp)).await;
             return Err(e);
         }
-        crate::timed(timeout, self.sftp()?.rename(&temp, &remote)).await?;
+        if let Err(e) = crate::timed(timeout, self.sftp()?.rename(&temp, &remote)).await {
+            let _ = crate::timed(timeout, self.sftp()?.remove_file(&temp)).await;
+            return Err(e);
+        }
         Ok(())
     }
 

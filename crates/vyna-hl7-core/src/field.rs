@@ -11,6 +11,7 @@ use crate::error::Result;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubComponent {
+    /// The decoded subcomponent text
     pub value: String,
 }
 
@@ -64,6 +65,7 @@ impl From<&str> for SubComponent {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Component {
+    /// Subcomponents split on `&` (exactly one entry when none is present)
     pub subcomponents: Vec<SubComponent>,
 }
 
@@ -134,6 +136,7 @@ impl Default for Component {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Repetition {
+    /// Components split on `^` (exactly one entry when none is present)
     pub components: Vec<Component>,
 }
 
@@ -228,6 +231,7 @@ impl Default for Repetition {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Field {
+    /// Repetitions split on `~` (exactly one entry when none is present)
     pub repetitions: Vec<Repetition>,
 }
 

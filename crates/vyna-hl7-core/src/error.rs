@@ -11,68 +11,81 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// Main error type for the vyna_hl7 library
 #[derive(Error, Debug)]
 pub enum Error {
+    /// Malformed input that could not be parsed
     #[error("Parse error: {0}")]
     Parse(String),
 
     /// Parse error with location context
     #[error("Parse error at {location}: {message}")]
     ParseWithContext {
+        /// What went wrong
         message: String,
+        /// Where in the message it went wrong
         location: Box<ErrorLocation>,
     },
 
+    /// Delimiter configuration that violates HL7 rules
     #[error("Invalid delimiter configuration: {0}")]
     InvalidDelimiters(String),
 
-    #[error("Invalid encoding: {0}")]
-    InvalidEncoding(String),
-
+    /// Segment that is missing, misplaced, or malformed
     #[error("Invalid segment: {0}")]
     InvalidSegment(String),
 
+    /// Field access by an illegal index (e.g. field 0, the segment id)
     #[error("Invalid field access: {0}")]
     InvalidFieldAccess(String),
 
+    /// Required field that is absent or empty
     #[error("Missing required field: {0}")]
     MissingRequiredField(String),
 
+    /// Message that violates its schema or the standard
     #[error("Validation error: {0}")]
     Validation(String),
 
     /// Validation error with location context
     #[error("Validation error at {location}: {message}")]
     ValidationWithContext {
+        /// What went wrong
         message: String,
+        /// Where in the message it went wrong
         location: Box<ErrorLocation>,
+        /// How severe the finding is
         severity: ErrorSeverity,
     },
 
+    /// HL7 version the library does not support
     #[error("Unsupported version: {0}")]
     UnsupportedVersion(String),
 
+    /// Unknown or unexpected message type
     #[error("Message type error: {0}")]
     MessageType(String),
 
+    /// Value that could not be encoded (e.g. an unrepresentable character)
     #[error("Encoding error: {0}")]
     Encoding(String),
 
+    /// Value that could not be decoded (e.g. an unknown character set)
     #[error("Decoding error: {0}")]
     Decoding(String),
 
+    /// Underlying I/O failure
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// MLLP framing or session failure
     #[error("MLLP error: {0}")]
     Mllp(String),
 
+    /// Network transport failure (I/O, TLS, or HTTP)
     #[error("Network error: {0}")]
     Network(String),
 
+    /// Malformed terser path or out-of-range segment index
     #[error("Terser path error: {0}")]
     TerserPath(String),
-
-    #[error("Unknown error: {0}")]
-    Unknown(String),
 }
 
 /// Location information for errors

@@ -6,9 +6,11 @@ use crate::resources::procedure::*;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
 
+/// Converter for transforming PR1 segments to FHIR Procedure resources
 pub struct ProcedureConverter;
 
 impl ProcedureConverter {
+    /// Convert all PR1 segments in message to Procedure resources
     pub fn convert_all(message: &Message) -> ConversionResult<Vec<Procedure>> {
         let pr1_segments: Vec<_> = message
             .segments
@@ -30,6 +32,11 @@ impl ProcedureConverter {
         Ok(procedures)
     }
 
+    /// Convert a specific PR1 segment to a Procedure resource
+    ///
+    /// # Arguments
+    /// * `message` - HL7 message containing PR1 segment
+    /// * `pr1_index` - 0-based index (0 = first PR1, 1 = second PR1, etc.)
     pub fn convert_single(message: &Message, pr1_index: usize) -> ConversionResult<Procedure> {
         let terser = Terser::new(message);
         let mut procedure = Procedure::new("completed".to_string());

@@ -18,6 +18,7 @@ pub struct Bundle {
     /// Resource type (always "Bundle")
     pub resource_type: String,
 
+    /// Logical id of this resource
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
 

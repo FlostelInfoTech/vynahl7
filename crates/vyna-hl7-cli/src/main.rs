@@ -129,7 +129,8 @@ enum Commands {
         #[arg(long, value_name = "SECS", default_value = "30")]
         timeout: u64,
 
-        /// Use TLS (requires --ca-cert; build with --features tls)
+        /// Custom TLS config: enables TLS for MLLP, custom CA/mTLS for HTTPS
+        /// (requires --ca-cert; build with --features tls)
         #[arg(long)]
         tls: bool,
 
@@ -438,8 +439,7 @@ fn parse_command(
                 }
             }
         }
-        _ => {
-            // Default text format
+        "text" => {
             println!("HL7 Message Parsed Successfully");
             println!(
                 "Version: {}",
@@ -470,6 +470,7 @@ fn parse_command(
                 }
             }
         }
+        other => bail!("Unknown parse format '{other}' (expected text, json, or pretty)"),
     }
 
     Ok(())
@@ -590,7 +591,7 @@ fn validate_command(
             });
             println!("{}", serde_json::to_string_pretty(&json)?);
         }
-        _ => {
+        "text" => {
             if result.is_valid() {
                 println!("{}", "✓ Message is valid".green().bold());
             } else {
@@ -629,6 +630,7 @@ fn validate_command(
                 println!("\nNo issues found.");
             }
         }
+        other => bail!("Unknown validate format '{other}' (expected text or json)"),
     }
 
     // Validation failure must fail the command so scripts and CI can rely
@@ -663,7 +665,7 @@ fn extract_command(
             }
             println!("{}", serde_json::to_string_pretty(&results)?);
         }
-        _ => {
+        "text" => {
             for path in paths {
                 let value = match terser.get(path) {
                     Ok(value) => value.unwrap_or(""),
@@ -676,6 +678,7 @@ fn extract_command(
                 }
             }
         }
+        other => bail!("Unknown extract format '{other}' (expected text or json)"),
     }
 
     Ok(())

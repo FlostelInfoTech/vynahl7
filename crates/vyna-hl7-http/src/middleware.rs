@@ -18,7 +18,9 @@ use axum::{
 #[cfg(feature = "auth")]
 #[derive(Clone)]
 pub struct BasicAuthState {
+    /// Expected username for HTTP Basic authentication
     pub username: String,
+    /// Expected password for HTTP Basic authentication
     pub password: String,
 }
 
@@ -111,7 +113,9 @@ pub async fn basic_auth_middleware(
 #[cfg(feature = "auth")]
 #[derive(Clone)]
 pub struct ApiKeyAuthState {
+    /// API keys accepted by the middleware
     pub valid_keys: Vec<String>,
+    /// Request header carrying the API key (default: `X-API-Key`)
     pub header_name: String,
 }
 
@@ -264,6 +268,7 @@ pub async fn bearer_token_middleware(
 #[cfg(feature = "oauth")]
 #[derive(Clone)]
 pub struct JwtAuthState {
+    /// JWT decoding/validation configuration shared with the middleware
     pub config: std::sync::Arc<crate::auth::JwtConfig>,
 }
 

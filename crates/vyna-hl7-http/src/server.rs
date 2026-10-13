@@ -322,7 +322,10 @@ impl HttpServer {
     }
 
     /// True when a TLS configuration was provided via `with_tls`.
-    #[cfg(feature = "tls")]
+    ///
+    /// Only used by the `testing` mock server to pick the HTTPS path, so it
+    /// is only compiled when both `tls` and `testing` are enabled.
+    #[cfg(all(feature = "tls", feature = "testing"))]
     pub(crate) fn has_tls(&self) -> bool {
         self.tls_config.is_some()
     }

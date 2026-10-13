@@ -136,7 +136,8 @@ impl MessageFilter {
         if self.matches(message) {
             Ok(())
         } else {
-            // Find which filter(s) failed for better error message
+            // A mismatch always names its failed filters: ALL mode fails at
+            // least one, ANY mode fails all of them.
             let failed_filters: Vec<&str> = self
                 .filters
                 .iter()
@@ -144,17 +145,10 @@ impl MessageFilter {
                 .map(|f| f.name.as_str())
                 .collect();
 
-            if !failed_filters.is_empty() {
-                Err(OrchestrationError::filter_failed(
-                    "MessageFilter",
-                    format!("Failed filters: {}", failed_filters.join(", ")),
-                ))
-            } else {
-                Err(OrchestrationError::filter_failed(
-                    "MessageFilter",
-                    "No filters matched (ANY mode)",
-                ))
-            }
+            Err(OrchestrationError::filter_failed(
+                "MessageFilter",
+                format!("Failed filters: {}", failed_filters.join(", ")),
+            ))
         }
     }
 

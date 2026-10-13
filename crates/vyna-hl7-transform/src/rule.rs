@@ -187,9 +187,15 @@ impl TransformationRule {
 
     /// Check if a path is a valid terser path
     fn is_valid_terser_path(&self, path: &str) -> bool {
-        // Basic validation: should match pattern like PID-5 or PID-5-1 or OBX(1)-5
-        let re = regex::Regex::new(r"^[A-Z]{2,3}(\(\d+\))?(-\d+)+(\(\d+\))?$").unwrap();
-        re.is_match(path)
+        // Basic validation: should match paths like PID-5, PID-5-1,
+        // OBX(1)-5, or PID-11(1)-1. The pattern is compiled once and
+        // mirrors what the terser accepts: an optional segment
+        // occurrence, a field with an optional repetition, then optional
+        // component/subcomponent indices.
+        static PATH_RE: std::sync::OnceLock<Option<regex::Regex>> = std::sync::OnceLock::new();
+        let compiled = PATH_RE
+            .get_or_init(|| regex::Regex::new(r"^[A-Z]{2,3}(\(\d+\))?-\d+(\(\d+\))?(-\d+)*$").ok());
+        compiled.as_ref().is_some_and(|re| re.is_match(path))
     }
 }
 
@@ -301,6 +307,26 @@ mod tests {
         assert!(rule.validate().is_err());
 
         let rule = TransformationRule::new("INVALID", "PID-5-1");
+        assert!(rule.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_repetition_paths() {
+        // Mid-path repetitions are valid terser paths.
+        let rule = TransformationRule::new("PID-11(1)-1", "PID-11(1)-1");
+        assert!(rule.validate().is_ok());
+
+        let rule = TransformationRule::new("PID-11(2)", "PID-11(2)");
+        assert!(rule.validate().is_ok());
+
+        let rule = TransformationRule::new("OBX(2)-5-1", "OBX(2)-5-1");
+        assert!(rule.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_rejects_misplaced_repetition() {
+        // A repetition marker after a component is not a terser path.
+        let rule = TransformationRule::new("PID-5-1(2)", "PID-5-1");
         assert!(rule.validate().is_err());
     }
 

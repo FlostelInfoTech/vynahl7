@@ -17,8 +17,9 @@ pub struct XmlDecoderConfig {
     /// Tolerate non-standard or misplaced elements by skipping them.
     ///
     /// When false, unknown element names, field elements outside their
-    /// own segment, and component/subcomponent numbers that disagree
-    /// with the enclosing element are errors instead of being skipped.
+    /// own segment, component/subcomponent numbers that disagree with
+    /// the enclosing element, truncated input, stray text, extra root
+    /// elements, and mixed content are errors instead of being skipped.
     pub lenient: bool,
 
     /// Strip whitespace from text content
@@ -94,6 +95,7 @@ impl XmlDecoder {
         let mut current_segment: Option<Segment> = None;
         let mut fields: BTreeMap<usize, Field> = BTreeMap::new();
         let mut stack: Vec<Frame> = Vec::new();
+        let mut seen_root = false;
         let mut depth = 0;
 
         loop {
@@ -102,8 +104,16 @@ impl XmlDecoder {
                     depth += 1;
                     self.check_depth(depth)?;
                     let name = e.name().as_ref().to_string();
-                    let frame =
-                        self.classify_start(&name, depth, &stack, current_segment.as_ref())?;
+                    let frame = self.classify_start(
+                        &name,
+                        depth,
+                        &stack,
+                        current_segment.as_ref(),
+                        seen_root,
+                    )?;
+                    if matches!(frame, Frame::Root) {
+                        seen_root = true;
+                    }
                     Self::open_frame(
                         frame,
                         &mut stack,
@@ -116,8 +126,16 @@ impl XmlDecoder {
                     depth += 1;
                     self.check_depth(depth)?;
                     let name = e.name().as_ref().to_string();
-                    let frame =
-                        self.classify_start(&name, depth, &stack, current_segment.as_ref())?;
+                    let frame = self.classify_start(
+                        &name,
+                        depth,
+                        &stack,
+                        current_segment.as_ref(),
+                        seen_root,
+                    )?;
+                    if matches!(frame, Frame::Root) {
+                        seen_root = true;
+                    }
                     // Self-closing: open, then immediately close.
                     Self::open_frame(
                         frame,
@@ -127,7 +145,7 @@ impl XmlDecoder {
                         &mut message,
                     );
                     if let Some(frame) = stack.pop() {
-                        Self::close_frame(
+                        self.close_frame(
                             frame,
                             &mut stack,
                             &mut current_segment,
@@ -139,7 +157,7 @@ impl XmlDecoder {
                 }
                 Ok(Event::End(_)) => {
                     if let Some(frame) = stack.pop() {
-                        Self::close_frame(
+                        self.close_frame(
                             frame,
                             &mut stack,
                             &mut current_segment,
@@ -158,12 +176,12 @@ impl XmlDecoder {
                         &text
                     };
                     if !trimmed.is_empty() {
-                        Self::push_text(&mut stack, trimmed);
+                        self.push_text(&mut stack, trimmed)?;
                     }
                 }
                 Ok(Event::CData(e)) => {
                     let text = e.into_inner();
-                    Self::push_text(&mut stack, &text);
+                    self.push_text(&mut stack, &text)?;
                 }
                 Ok(Event::GeneralRef(e)) => {
                     // Entity references arrive as their own events
@@ -172,7 +190,7 @@ impl XmlDecoder {
                     let name = e.into_inner();
                     let entity = format!("&{name};");
                     let resolved = unescape(&entity)?;
-                    Self::push_text(&mut stack, &resolved);
+                    self.push_text(&mut stack, &resolved)?;
                 }
                 Ok(Event::Eof) => break,
                 Ok(_) => {} // Ignore other events
@@ -180,9 +198,13 @@ impl XmlDecoder {
             }
         }
 
-        // Fold any elements left open by truncated input.
+        // Elements left open at EOF mean truncated input: strict
+        // rejects it, lenient folds what arrived (historical behavior).
+        if !stack.is_empty() {
+            self.check_context("truncated XML: unclosed element(s) at end of input".to_string())?;
+        }
         while let Some(frame) = stack.pop() {
-            Self::close_frame(
+            self.close_frame(
                 frame,
                 &mut stack,
                 &mut current_segment,
@@ -211,6 +233,7 @@ impl XmlDecoder {
         depth: usize,
         stack: &[Frame],
         current_segment: Option<&Segment>,
+        seen_root: bool,
     ) -> XmlResult<Frame> {
         // Inside skipped content: skip the whole subtree.
         if matches!(stack.last(), Some(Frame::Ignored)) {
@@ -286,6 +309,11 @@ impl XmlDecoder {
         // reached this point is unknown. Dotted names always denote
         // fields/components, never the root.
         if depth == 1 && stack.is_empty() && !name.contains('.') {
+            if seen_root {
+                // A second top-level wrapper: strict rejects it,
+                // lenient keeps merging what follows (historical).
+                self.check_context(format!("second root element <{name}>"))?;
+            }
             return Ok(Frame::Root);
         }
         self.misplaced(format!("unknown element <{name}>"))
@@ -338,19 +366,26 @@ impl XmlDecoder {
     }
 
     /// Append text to the innermost element that carries a value.
-    fn push_text(stack: &mut [Frame], text: &str) {
+    ///
+    /// Text outside field/component/subcomponent elements is dropped;
+    /// in strict mode that is an error unless the text is only
+    /// whitespace (pretty-print formatting).
+    fn push_text(&self, stack: &mut [Frame], text: &str) -> XmlResult<()> {
         match stack.last_mut() {
             Some(Frame::Field { text: buf, .. })
             | Some(Frame::Component { text: buf, .. })
             | Some(Frame::Subcomponent { text: buf, .. }) => {
                 buf.push_str(text);
+                Ok(())
             }
-            _ => {}
+            _ if text.trim().is_empty() => Ok(()),
+            _ => self.check_context(format!("text outside any value element: {text:?}")),
         }
     }
 
     /// Close a frame, folding its content into its parent.
     fn close_frame(
+        &self,
         frame: Frame,
         stack: &mut [Frame],
         current_segment: &mut Option<Segment>,
@@ -367,6 +402,14 @@ impl XmlDecoder {
                 components,
                 text,
             } => {
+                // Mixed content (text plus component children) drops
+                // the text; strict rejects it, lenient keeps the
+                // components (historical).
+                if !components.is_empty() && !text.trim().is_empty() {
+                    self.check_context(format!(
+                        "field {number} mixes text with component elements"
+                    ))?;
+                }
                 let repetition = Self::build_repetition(components, &text);
                 if let Some(field) = fields.get_mut(&number) {
                     field.add_repetition(repetition);
@@ -381,6 +424,14 @@ impl XmlDecoder {
                 subcomponents,
                 text,
             } => {
+                // Mixed content (text plus subcomponent children)
+                // drops the text; strict rejects it, lenient keeps the
+                // subcomponents (historical).
+                if !subcomponents.is_empty() && !text.trim().is_empty() {
+                    self.check_context(format!(
+                        "component {number} mixes text with subcomponent elements"
+                    ))?;
+                }
                 let component = Self::build_component(subcomponents, &text);
                 match stack.last_mut() {
                     Some(Frame::Field { components, .. }) => {
@@ -740,6 +791,78 @@ mod tests {
             ..Default::default()
         });
         assert!(decoder.decode(xml).is_err());
+    }
+
+    fn strict_decoder() -> XmlDecoder {
+        XmlDecoder::with_config(XmlDecoderConfig {
+            lenient: false,
+            ..Default::default()
+        })
+    }
+
+    #[test]
+    fn test_strict_rejects_truncated_xml() {
+        // Unclosed elements at EOF: strict errors, lenient folds what
+        // arrived (historical behavior).
+        for xml in ["<PID><PID.1>1", "<PID><PID.1>1</PID.1>"] {
+            let err = strict_decoder().decode(xml).unwrap_err();
+            assert!(
+                matches!(err, XmlError::InvalidStructure(_)),
+                "expected InvalidStructure for {xml:?}, got {err:?}"
+            );
+            let message = XmlDecoder::new().decode(xml).unwrap();
+            assert_eq!(message.segments[0].get_field_value(1), Some("1"));
+        }
+    }
+
+    #[test]
+    fn test_strict_rejects_stray_text() {
+        // Non-whitespace text outside any value element would be
+        // silently dropped: strict errors, lenient drops it.
+        let xml = r#"<PID>junk<PID.1>1</PID.1></PID>"#;
+        let err = strict_decoder().decode(xml).unwrap_err();
+        assert!(matches!(err, XmlError::InvalidStructure(_)));
+
+        let message = XmlDecoder::new().decode(xml).unwrap();
+        assert_eq!(message.segments[0].get_field_value(1), Some("1"));
+
+        // Whitespace-only text is formatting, accepted even in strict
+        // mode (also with whitespace stripping disabled).
+        let pretty = "<PID>\n  <PID.1>1</PID.1>\n</PID>";
+        assert!(strict_decoder().decode(pretty).is_ok());
+        let strict_no_strip = XmlDecoder::with_config(XmlDecoderConfig {
+            lenient: false,
+            strip_whitespace: false,
+            ..Default::default()
+        });
+        assert!(strict_no_strip.decode(pretty).is_ok());
+    }
+
+    #[test]
+    fn test_strict_rejects_second_root() {
+        let xml = "<ROOT><PID><PID.1>1</PID.1></PID></ROOT><JUNK/>";
+        let err = strict_decoder().decode(xml).unwrap_err();
+        assert!(matches!(err, XmlError::InvalidStructure(_)));
+
+        // Lenient keeps merging what follows the first root.
+        let message = XmlDecoder::new().decode(xml).unwrap();
+        assert_eq!(message.segments[0].get_field_value(1), Some("1"));
+    }
+
+    #[test]
+    fn test_strict_rejects_mixed_content() {
+        // Text alongside component children is dropped (the positioned
+        // children win): strict errors, lenient keeps the children.
+        let field_mixed = "<PID><PID.5>direct<XPN.1>Smith</XPN.1></PID.5></PID>";
+        assert!(strict_decoder().decode(field_mixed).is_err());
+        let message = XmlDecoder::new().decode(field_mixed).unwrap();
+        let rep = &message.segments[0].get_field(5).unwrap().repetitions[0];
+        assert_eq!(rep.components[0].value(), Some("Smith"));
+
+        let comp_mixed = "<PID><PID.5><PID.5.1>direct\
+                          <PID.5.1.1>x</PID.5.1.1></PID.5.1></PID.5></PID>";
+        assert!(strict_decoder().decode(comp_mixed).is_err());
+        assert!(XmlDecoder::new().decode(comp_mixed).is_ok());
     }
 
     #[test]

@@ -394,4 +394,24 @@ mod tests {
 
         assert!(transformer.validate_rules().is_err());
     }
+
+    #[test]
+    fn test_transform_repetition_path() {
+        use vyna_hl7_parser::parse_message;
+
+        let source = parse_message(
+            "MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\r\
+             PID|1||7||Smith^John||||||home^street~work^ave\r",
+        )
+        .unwrap();
+
+        let mut transformer = MessageTransformer::new();
+        transformer.add_transform("PID-11(1)-1", "PID-11(1)-1", transforms::uppercase);
+
+        let target = transformer.transform(&source).unwrap();
+
+        let terser = Terser::new(&target);
+        assert_eq!(terser.get("PID-11(1)-1").unwrap(), Some("HOME"));
+        assert_eq!(terser.get("PID-11(2)-1").unwrap(), Some("work"));
+    }
 }

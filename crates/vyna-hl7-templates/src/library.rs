@@ -229,10 +229,10 @@ impl TemplateLibrary {
 
     // ===== MDM Templates =====
 
-    /// MDM^T02 - Document Status Change
+    /// MDM^T02 - Original Document Notification and Content
     pub fn mdm_t02() -> MessageTemplate {
         let mut template = MessageTemplate::new("MDM_T02", "2.5", "MDM", "T02")
-            .with_description("Original Document Notification");
+            .with_description("Original Document Notification and Content");
 
         let mut msh = SegmentTemplate::new("MSH").required();
         msh.add_field(3, FieldTemplate::new().required().with_placeholder("{{sending_app}}"));
@@ -331,6 +331,19 @@ mod tests {
         assert!(fields.contains_key(&3));
         let field3 = &fields[&3];
         assert_eq!(field3.placeholder, Some("{{patient_id}}".to_string()));
+    }
+
+    #[test]
+    fn test_mdm_t02_identity() {
+        let template = TemplateLibrary::mdm_t02();
+        assert_eq!(template.name, "MDM_T02");
+        assert_eq!(template.message_type, "MDM");
+        assert_eq!(template.trigger_event, "T02");
+        assert_eq!(
+            template.description.as_deref(),
+            Some("Original Document Notification and Content")
+        );
+        assert!(template.segments.iter().any(|s| s.id == "TXA"));
     }
 
     #[test]

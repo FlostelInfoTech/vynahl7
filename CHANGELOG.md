@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WebhookConfig` Debug redacts header values; testpanel verifies TLS certs and SSH host keys by default with explicit opt-outs
 - Predicate parsing ignores quoted keyword/operator lookalikes; `validate` rejects unrecognized `--hl7-version` values
 - FHIR invalid-datetime rule documented (strict primary timestamps, lenient ancillary ones); stale README version pins and private-repo wording fixed
+- Minor review round: dead core error variants removed; streaming/transform panics return errors; transform path validation accepts mid-path repetitions; convert guards field-0 moves; terser value resolution deduplicated; group `from_pattern` API; MDM^T02 identity fixed; CLI rejects unknown formats; MLLP pool documents manual cleanup and gains `with_cleanup_interval`; READMEs/docs corrected (1-based terser paths, builder APIs, schema coverage, MSRV)
 
 ### Changed
 

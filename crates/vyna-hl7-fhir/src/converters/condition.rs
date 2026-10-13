@@ -6,9 +6,11 @@ use crate::resources::condition::*;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
 
+/// Converter for transforming PRB/DG1 segments to FHIR Condition resources
 pub struct ConditionConverter;
 
 impl ConditionConverter {
+    /// Convert all PRB and DG1 segments in message to Condition resources
     pub fn convert_all(message: &Message) -> ConversionResult<Vec<Condition>> {
         let prb_segments: Vec<_> = message
             .segments

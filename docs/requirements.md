@@ -163,8 +163,9 @@ pointer to the suite that proves it. Roadmap items are marked
   tracked in [performance guide](performance.md); performance-sensitive
   changes require before/after benches (`cargo bench`). Verify: benches.
 - REQ-NFR-020 (compatibility): The workspace uses Rust edition 2024 and
-  sets no `rust-version` pin; behavior changes follow semantic versioning
-  with CHANGELOG entries. Verify: release review.
+  declares MSRV Rust 1.91 (`rust-version` in every manifest); behavior
+  changes follow semantic versioning with CHANGELOG entries. Verify:
+  release review.
 - REQ-NFR-030 (supply chain): Dependencies are declared in
   `Cargo.toml`; a CycloneDX SBOM is generated per release (see
   [SBOM](sbom/)). Verify: SBOM regeneration.
@@ -188,6 +189,6 @@ pointer to the suite that proves it. Roadmap items are marked
 - QBP/RSP/batch message schemas (validator falls back honestly today).
 - Full CVX (0292) registry refresh from the CDC source (covers 01–122,
   141, 998–999 today).
-- CI wiring (build/test/clippy/fmt gates) and a declared MSRV.
+- CI wiring (build/test/clippy/fmt gates).
 - Repo-wide `rustfmt` normalization (large pre-existing baseline drift).
 

@@ -32,8 +32,9 @@ vyna-hl7-mllp = { version = "0.9", features = ["testing"] }
 ## Quick Start - Client
 
 ```rust
+use vyna_hl7_core::builders::adt::AdtBuilder;
+use vyna_hl7_core::Version;
 use vyna_hl7_mllp::MllpClient;
-use vyna_hl7_core::builders::adt::AdtA01Builder;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -41,12 +42,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = MllpClient::connect("127.0.0.1:2575").await?;
 
     // Create an HL7 message
-    let message = AdtA01Builder::new()
-        .msh_sending_application("MY_APP")
-        .msh_receiving_application("EMR")
-        .pid_patient_id("12345", "MR", "HOSPITAL")
-        .pid_patient_name("Doe", "John", "M")
-        .build();
+    let message = AdtBuilder::a01(Version::V2_5)
+        .sending_application("MY_APP")
+        .patient_id("12345")
+        .patient_name("Doe", "John")
+        .build()?;
 
     // Send message and wait for ACK
     let ack = client.send_message(&message).await?;
@@ -63,28 +63,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Quick Start - Server
 
 ```rust
+use vyna_hl7_core::builders::ack::AckBuilder;
 use vyna_hl7_mllp::MllpServer;
-use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Bind to port
-    let listener = TcpListener::bind("0.0.0.0:2575").await?;
+    let server = MllpServer::bind("0.0.0.0:2575").await?;
     println!("MLLP server listening on port 2575");
 
-    // Define message handler
-    let handler = |message| {
-        println!("Received message type: {}",
-            message.message_type().unwrap_or("Unknown"));
+    // Accept connections indefinitely
+    loop {
+        let mut conn = server.accept().await?;
 
-        // Process message and return ACK
-        vyna_hl7_core::ack::create_ack(&message, "AA", "Message accepted")
-    };
+        tokio::spawn(async move {
+            while let Ok(message) = conn.receive_message().await {
+                println!(
+                    "Received message type: {:?}",
+                    message.get_message_type()
+                );
 
-    // Serve indefinitely
-    MllpServer::serve(listener, handler).await?;
-
-    Ok(())
+                // Process message and return ACK
+                let ack = match AckBuilder::for_message(&message)
+                    .accept()
+                    .text_message("Message accepted")
+                    .build()
+                {
+                    Ok(ack) => ack,
+                    Err(e) => {
+                        eprintln!("Failed to build ACK: {e}");
+                        break;
+                    }
+                };
+                if let Err(e) = conn.send_message(&ack).await {
+                    eprintln!("Failed to send ACK: {e}");
+                    break;
+                }
+            }
+        });
+    }
 }
 ```
 
@@ -94,7 +111,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ```rust
 use vyna_hl7_mllp::{MllpServer, tls::TlsServerConfig};
-use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -104,19 +120,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "server-key.pem"
     )?;
 
-    let listener = TcpListener::bind("0.0.0.0:2576").await?;
+    // Bind with TLS (accepting connections works like plain TCP)
+    let server = MllpServer::bind_tls("0.0.0.0:2576", tls_config).await?;
     println!("Secure MLLP server listening on port 2576");
 
-    // Serve with TLS
-    MllpServer::serve_tls(listener, tls_config, handler).await?;
-
-    Ok(())
+    loop {
+        let mut conn = server.accept().await?;
+        // ... receive_message / send_message as in the plain server
+    }
 }
 ```
 
 ### TLS Client
 
 ```rust
+use vyna_hl7_core::builders::adt::AdtBuilder;
+use vyna_hl7_core::Version;
 use vyna_hl7_mllp::{MllpClient, tls::TlsClientConfig};
 
 #[tokio::main]
@@ -132,6 +151,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ).await?;
 
     // Send messages securely
+    let message = AdtBuilder::a01(Version::V2_5)
+        .patient_id("12345")
+        .build()?;
     let ack = client.send_message(&message).await?;
 
     Ok(())
@@ -161,6 +183,9 @@ let client_config = TlsClientConfig::with_mtls(
 ## Testing with MockMllpServer
 
 ```rust
+use vyna_hl7_core::builders::ack::AckBuilder;
+use vyna_hl7_core::builders::adt::AdtBuilder;
+use vyna_hl7_core::Version;
 use vyna_hl7_mllp::testing::MockMllpServer;
 use vyna_hl7_mllp::MllpClient;
 
@@ -170,7 +195,10 @@ async fn test_hl7_integration() {
     let server = MockMllpServer::new()
         .with_handler(|msg| {
             // Custom ACK logic
-            vyna_hl7_core::ack::create_ack(&msg, "AA", "Test passed")
+            AckBuilder::for_message(&msg)
+                .accept()
+                .text_message("Test passed")
+                .build()
         })
         .start()
         .await
@@ -180,6 +208,10 @@ async fn test_hl7_integration() {
     let mut client = MllpClient::connect(&server.url()).await.unwrap();
 
     // Send test message
+    let test_message = AdtBuilder::a01(Version::V2_5)
+        .patient_id("12345")
+        .build()
+        .unwrap();
     let ack = client.send_message(&test_message).await.unwrap();
 
     // Verify ACK
@@ -207,20 +239,21 @@ The library handles all framing automatically.
 ## Error Handling
 
 ```rust
-use vyna_hl7_mllp::{MllpClient, Error};
+use vyna_hl7_core::error::Error;
+use vyna_hl7_mllp::MllpClient;
 
 match MllpClient::connect("127.0.0.1:2575").await {
     Ok(client) => {
         // Use client
     }
     Err(Error::Network(e)) => {
-        eprintln!("Network error: {}", e);
+        eprintln!("Network error: {e}");
     }
-    Err(Error::Timeout) => {
-        eprintln!("Connection timeout");
+    Err(Error::Mllp(e)) => {
+        eprintln!("MLLP protocol error: {e}");
     }
     Err(e) => {
-        eprintln!("Error: {:?}", e);
+        eprintln!("Error: {e:?}");
     }
 }
 ```
@@ -244,6 +277,7 @@ client.set_write_timeout(Duration::from_secs(10));
 
 ```rust
 use tokio::task;
+use vyna_hl7_core::error::Error;
 
 let mut handles = vec![];
 

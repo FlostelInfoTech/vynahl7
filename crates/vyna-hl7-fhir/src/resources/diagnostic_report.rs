@@ -7,11 +7,14 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticReport {
+    /// Resource type (always "DiagnosticReport")
     pub resource_type: String,
 
+    /// Logical id of this resource
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
 
+    /// Business identifiers for this report
     #[serde(skip_serializing_if = "Option::is_none")]
     pub identifier: Option<Vec<Identifier>>,
 
@@ -59,6 +62,7 @@ pub struct DiagnosticReport {
 }
 
 impl DiagnosticReport {
+    /// Create a new DiagnosticReport with the given status and code
     pub fn new(status: String, code: CodeableConcept) -> Self {
         Self {
             resource_type: "DiagnosticReport".to_string(),

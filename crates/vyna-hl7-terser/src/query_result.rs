@@ -206,8 +206,10 @@ impl<'a> QueryResultParser<'a> {
 
     /// Get all data segments (everything after QPD)
     ///
-    /// Returns segment IDs and their segments. Common segments in RSP messages include:
-    /// PID (patient demographics), ORC (order), RXA (administration), OBX (observation)
+    /// The continuation pointer (`DSC`) is excluded; when the message has no
+    /// `QPD`, segments after `QAK` are returned instead. Common segments in
+    /// RSP messages include: PID (patient demographics), ORC (order), RXA
+    /// (administration), OBX (observation)
     pub fn get_data_segments(&self) -> Vec<&vyna_hl7_core::segment::Segment> {
         // Find the index of QPD segment
         let qpd_index = self.message.segments.iter().position(|s| s.id == "QPD");

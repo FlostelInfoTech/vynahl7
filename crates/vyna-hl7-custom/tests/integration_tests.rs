@@ -257,6 +257,26 @@ fn test_validation_on_build() {
 }
 
 #[test]
+fn test_set_custom_segment_rejects_invalid() {
+    let hl7_message = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315143000||DFT^P03|MSG008|P|2.5\r\
+                       PID|1|12345|67890^^^MRN|DOE^JOHN^A||19800101|M";
+
+    let mut message = parse_message(hl7_message).expect("Failed to parse message");
+
+    // The builder refuses invalid data, so construct it directly.
+    let invalid = IntegrationZCU {
+        customer_id: "CUST001".to_string(),
+        account_number: "ACC-001".to_string(),
+        balance: Some(-100.50),
+        credit_limit: Some(5000.00),
+    };
+
+    // set_custom_segment validates: rejected, message unchanged.
+    assert!(message.set_custom_segment(invalid).is_err());
+    assert!(!message.has_custom_segment::<IntegrationZCU>());
+}
+
+#[test]
 fn test_builder_missing_required_field() {
     // Try to build without required field
     let result = IntegrationZPV::builder()

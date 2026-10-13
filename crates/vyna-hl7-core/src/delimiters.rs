@@ -2,11 +2,15 @@
 
 use crate::error::{Error, Result};
 
-/// Default HL7 delimiters as defined in the standard
+/// Default HL7 field separator as defined in the standard
 pub const DEFAULT_FIELD_SEPARATOR: char = '|';
+/// Default HL7 component separator as defined in the standard
 pub const DEFAULT_COMPONENT_SEPARATOR: char = '^';
+/// Default HL7 repetition separator as defined in the standard
 pub const DEFAULT_REPETITION_SEPARATOR: char = '~';
+/// Default HL7 escape character as defined in the standard
 pub const DEFAULT_ESCAPE_CHARACTER: char = '\\';
+/// Default HL7 subcomponent separator as defined in the standard
 pub const DEFAULT_SUBCOMPONENT_SEPARATOR: char = '&';
 
 /// HL7 message delimiters and encoding characters
@@ -20,10 +24,15 @@ pub const DEFAULT_SUBCOMPONENT_SEPARATOR: char = '&';
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Delimiters {
+    /// Separates fields in a segment (MSH-1)
     pub field_separator: char,
+    /// Separates components within a field (MSH-2, first character)
     pub component_separator: char,
+    /// Separates repeated field values (MSH-2, second character)
     pub repetition_separator: char,
+    /// Introduces escape sequences (MSH-2, third character)
     pub escape_character: char,
+    /// Separates subcomponents within a component (MSH-2, fourth character)
     pub subcomponent_separator: char,
 }
 

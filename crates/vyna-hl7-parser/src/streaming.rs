@@ -241,8 +241,9 @@ impl<'a> StreamingParser<'a> {
     /// Parse MSH fields (special handling for field separator)
     fn parse_msh_field(&mut self) -> Option<Result<SegmentEvent<'a>>> {
         let line = self.lines[self.line_index];
-        let delims = self.delimiters.as_ref().unwrap();
-        let (Some(msh_sep), Some(msh_enc)) = (self.msh_sep, self.msh_enc) else {
+        let (Some(delims), Some(msh_sep), Some(msh_enc)) =
+            (self.delimiters.as_ref(), self.msh_sep, self.msh_enc)
+        else {
             return Some(Err(Error::parse_at(
                 "Streaming parser in invalid state",
                 ErrorLocation::new().line(self.current_line),
@@ -904,5 +905,15 @@ mod tests {
             }
         }
         assert!(saw_error);
+    }
+
+    #[test]
+    fn test_msh_state_without_delimiters_returns_error() {
+        // A parser forced into MSH-field state without delimiters must
+        // report an invalid-state error instead of panicking.
+        let mut parser = StreamingParser::new("MSH|^~\\&|APP\r");
+        parser.state = ParserState::InMsh;
+        let event = parser.next_event().expect("expected an event");
+        assert!(event.is_err());
     }
 }

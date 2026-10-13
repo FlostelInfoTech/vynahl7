@@ -57,7 +57,11 @@ impl ConformanceValidator {
     }
 
     /// Validate overall message structure
-    fn validate_message_structure(&self, _message: &Message, result: &mut ConformanceValidationResult) {
+    fn validate_message_structure(
+        &self,
+        _message: &Message,
+        result: &mut ConformanceValidationResult,
+    ) {
         // Check message type matches profile
         let _profile = &self.profile.message;
 
@@ -161,7 +165,12 @@ impl ConformanceValidator {
         let occurrence_count = segments.len();
 
         // Validate segment usage
-        self.validate_segment_usage(&segment_profile.name, occurrence_count, segment_profile, result);
+        self.validate_segment_usage(
+            &segment_profile.name,
+            occurrence_count,
+            segment_profile,
+            result,
+        );
 
         // Validate segment cardinality
         self.validate_segment_cardinality(
@@ -202,10 +211,7 @@ impl ConformanceValidator {
                 if occurrence_count == 0 {
                     result.add_warning(ConformanceValidationWarning {
                         location: ValidationLocation::segment(segment_name.to_string()),
-                        message: format!(
-                            "Required if known segment {} is missing",
-                            segment_name
-                        ),
+                        message: format!("Required if known segment {} is missing", segment_name),
                         rule: Some(format!("{} usage=RE", segment_name)),
                     });
                 }
@@ -410,30 +416,45 @@ impl ConformanceValidator {
                 // No validation needed
             }
             ConditionalUsage::Conditional(predicate) => {
-                // Evaluate predicate to determine actual usage
-                if let Ok(actual_usage) = crate::predicate::PredicateEvaluator::evaluate(predicate, message) {
-                    // Recursively validate with the evaluated usage
-                    let temp_profile = FieldProfile {
-                        position: field_profile.position,
-                        name: field_profile.name.clone(),
-                        usage: ConditionalUsage::from_usage(actual_usage),
-                        cardinality: field_profile.cardinality,
-                        datatype: field_profile.datatype.clone(),
-                        length: field_profile.length,
-                        table_id: field_profile.table_id.clone(),
-                        components: field_profile.components.clone(),
-                        value_set: field_profile.value_set.clone(),
-                        item_no: field_profile.item_no.clone(),
-                    };
-                    self.validate_field_usage(FieldValidationContext {
-                        segment_id,
-                        segment_index,
-                        field_position,
-                        occurrence_count,
-                        field_profile: &temp_profile,
-                        message,
-                        result,
-                    });
+                // Evaluate predicate to determine actual usage. A
+                // predicate that fails to parse is a profile bug, not a
+                // message fault: warn so it is visible without failing
+                // an otherwise conformant message.
+                match crate::predicate::PredicateEvaluator::evaluate(predicate, message) {
+                    Ok(actual_usage) => {
+                        // Recursively validate with the evaluated usage
+                        let temp_profile = FieldProfile {
+                            position: field_profile.position,
+                            name: field_profile.name.clone(),
+                            usage: ConditionalUsage::from_usage(actual_usage),
+                            cardinality: field_profile.cardinality,
+                            datatype: field_profile.datatype.clone(),
+                            length: field_profile.length,
+                            table_id: field_profile.table_id.clone(),
+                            components: field_profile.components.clone(),
+                            value_set: field_profile.value_set.clone(),
+                            item_no: field_profile.item_no.clone(),
+                        };
+                        self.validate_field_usage(FieldValidationContext {
+                            segment_id,
+                            segment_index,
+                            field_position,
+                            occurrence_count,
+                            field_profile: &temp_profile,
+                            message,
+                            result,
+                        });
+                    }
+                    Err(error) => {
+                        result.add_warning(ConformanceValidationWarning {
+                            location,
+                            message: format!(
+                                "Conditional predicate for {}-{} could not be evaluated: {}",
+                                segment_id, field_position, error
+                            ),
+                            rule: Some(format!("{}-{} usage=C", segment_id, field_position)),
+                        });
+                    }
                 }
             }
         }
@@ -476,9 +497,7 @@ impl ConformanceValidator {
                     )
                     .with_rule(format!(
                         "{}-{} cardinality={}",
-                        segment_id,
-                        field_position,
-                        cardinality
+                        segment_id, field_position, cardinality
                     )),
                 );
             } else if let Some(max) = cardinality.max {
@@ -493,9 +512,7 @@ impl ConformanceValidator {
                     )
                     .with_rule(format!(
                         "{}-{} cardinality={}",
-                        segment_id,
-                        field_position,
-                        cardinality
+                        segment_id, field_position, cardinality
                     )),
                 );
             }
@@ -503,11 +520,7 @@ impl ConformanceValidator {
     }
 
     /// Validate field length
-    fn validate_field_length(
-        &self,
-        ctx: FieldValidationContext<'_>,
-        field: &vyna_hl7_core::Field,
-    ) {
+    fn validate_field_length(&self, ctx: FieldValidationContext<'_>, field: &vyna_hl7_core::Field) {
         let FieldValidationContext {
             segment_id,
             segment_index,
@@ -568,42 +581,27 @@ impl ConformanceValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::profile::{Cardinality, MessageProfile, ProfileMetadata};
+    use crate::profile::{
+        Cardinality, ConditionalUsage, FieldProfile, MessageProfile, Predicate, ProfileMetadata,
+        SegmentProfile, Usage,
+    };
     use vyna_hl7_core::Version;
+    use vyna_hl7_parser::parse_message;
 
     fn create_test_profile() -> ConformanceProfile {
-        let metadata = ProfileMetadata::new(
-            "Test Profile".to_string(),
-            "1.0".to_string(),
-            Version::V2_5,
-        );
+        let metadata =
+            ProfileMetadata::new("Test Profile".to_string(), "1.0".to_string(), Version::V2_5);
 
         let mut message = MessageProfile::new("ADT".to_string(), "A01".to_string());
 
         // MSH segment - required, exactly one
-        let mut msh = SegmentProfile::new(
-            "MSH".to_string(),
-            Usage::Required,
-            Cardinality::one(),
-        );
-        msh.add_field(FieldProfile::new(
-            9,
-            Usage::Required,
-            Cardinality::one(),
-        ));
+        let mut msh = SegmentProfile::new("MSH".to_string(), Usage::Required, Cardinality::one());
+        msh.add_field(FieldProfile::new(9, Usage::Required, Cardinality::one()));
         message.add_segment(msh);
 
         // PID segment - required, exactly one
-        let mut pid = SegmentProfile::new(
-            "PID".to_string(),
-            Usage::Required,
-            Cardinality::one(),
-        );
-        pid.add_field(FieldProfile::new(
-            3,
-            Usage::Required,
-            Cardinality::one(),
-        ));
+        let mut pid = SegmentProfile::new("PID".to_string(), Usage::Required, Cardinality::one());
+        pid.add_field(FieldProfile::new(3, Usage::Required, Cardinality::one()));
         message.add_segment(pid);
 
         ConformanceProfile::new(metadata, message)
@@ -698,5 +696,73 @@ mod tests {
                 .any(|e| e.error_type == ConformanceErrorType::ValueNotInValueSet),
             "expected an unsupported-charset error, got: {errors:?}"
         );
+    }
+
+    /// Profile with one conditional field: PID-5 is required when
+    /// `condition` holds, optional otherwise.
+    fn conditional_profile(condition: &str) -> ConformanceProfile {
+        let metadata =
+            ProfileMetadata::new("Conditional".to_string(), "1.0".to_string(), Version::V2_5);
+        let mut message = MessageProfile::new("ADT".to_string(), "A01".to_string());
+        let mut pid = SegmentProfile::new("PID".to_string(), Usage::Required, Cardinality::one());
+        pid.add_field(FieldProfile::with_conditional_usage(
+            5,
+            ConditionalUsage::Conditional(Predicate::new(
+                condition.to_string(),
+                Usage::Required,
+                Usage::Optional,
+            )),
+            Cardinality::new(0, Some(1)).unwrap(),
+        ));
+        message.add_segment(pid);
+        ConformanceProfile::new(metadata, message)
+    }
+
+    fn conditional_message(pid: &str) -> Message {
+        parse_message(&format!(
+            "MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\r{pid}"
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn test_conditional_true_enforces_required() {
+        // PID-3 valued, PID-5 absent: condition holds, PID-5 required.
+        let validator = ConformanceValidator::new(conditional_profile("PID-3 IS VALUED"));
+        let result = validator.validate(&conditional_message("PID|1||PATID1234"));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.error_type == ConformanceErrorType::RequiredElementMissing),
+            "expected a required-element error, got: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_conditional_false_skips_required() {
+        // PID-3 absent, PID-5 absent: condition fails, PID-5 optional.
+        let validator = ConformanceValidator::new(conditional_profile("PID-3 IS VALUED"));
+        let result = validator.validate(&conditional_message("PID|1"));
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn test_conditional_unparseable_predicate_warns() {
+        // A broken predicate is a profile bug: warn, but do not fail an
+        // otherwise conformant message.
+        let validator = ConformanceValidator::new(conditional_profile("PID-3 ~~ 'M'"));
+        let result = validator.validate(&conditional_message("PID|1"));
+        assert!(result.is_valid());
+        assert_eq!(result.warnings.len(), 1);
+        assert!(
+            result.warnings[0]
+                .message
+                .contains("could not be evaluated"),
+            "unexpected warning: {}",
+            result.warnings[0].message
+        );
+        assert_eq!(result.warnings[0].rule.as_deref(), Some("PID-5 usage=C"));
     }
 }

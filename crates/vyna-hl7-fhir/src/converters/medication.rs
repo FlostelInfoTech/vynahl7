@@ -6,9 +6,11 @@ use crate::resources::medication::*;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
 
+/// Converter for transforming RXA segments to FHIR MedicationAdministration resources
 pub struct MedicationConverter;
 
 impl MedicationConverter {
+    /// Convert all RXA segments in message to MedicationAdministration resources
     pub fn convert_all(message: &Message) -> ConversionResult<Vec<MedicationAdministration>> {
         let rxa_segments: Vec<_> = message
             .segments
@@ -30,6 +32,11 @@ impl MedicationConverter {
         Ok(administrations)
     }
 
+    /// Convert a specific RXA segment to a MedicationAdministration resource
+    ///
+    /// # Arguments
+    /// * `message` - HL7 message containing RXA segment
+    /// * `rxa_index` - 0-based index (0 = first RXA, 1 = second RXA, etc.)
     pub fn convert_single(
         message: &Message,
         rxa_index: usize,
@@ -105,14 +112,11 @@ impl MedicationConverter {
                     amount.to_string(),
                 )
             })?;
-            let mut dosage = MedicationAdministrationDosage {
-                route: None,
-                dose: Some(Quantity {
-                    value: Some(value),
-                    unit: None,
-                    system: None,
-                    code: None,
-                }),
+            let mut dose = Quantity {
+                value: Some(value),
+                unit: None,
+                system: None,
+                code: None,
             };
 
             // RXA-7: Administered Units
@@ -122,10 +126,13 @@ impl MedicationConverter {
                 format!("RXA({})-7", rxa_index + 1)
             };
             if let Ok(Some(units)) = terser.get(&units_path) {
-                dosage.dose.as_mut().unwrap().unit = Some(units.to_string());
+                dose.unit = Some(units.to_string());
             }
 
-            admin.dosage = Some(dosage);
+            admin.dosage = Some(MedicationAdministrationDosage {
+                route: None,
+                dose: Some(dose),
+            });
         }
 
         // Link to patient

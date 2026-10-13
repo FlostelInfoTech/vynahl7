@@ -4,10 +4,10 @@
 //! features like message browsers, field reference lookups, and vocabulary
 //! table exploration in the frontend.
 
-use vyna_hl7_core::Version;
-use vyna_hl7_validator::{SegmentDefinition, TableRegistry, list_available_schemas, load_schema};
 use serde::Serialize;
 use std::collections::HashMap;
+use vyna_hl7_core::Version;
+use vyna_hl7_validator::{SegmentDefinition, TableRegistry, list_available_schemas, load_schema};
 use wasm_bindgen::prelude::*;
 
 /// Supported HL7 versions exposed to JavaScript
@@ -106,7 +106,7 @@ fn get_message_description(message_type: &str, trigger_event: &str) -> &'static 
 ///
 /// # Returns
 ///
-/// A JavaScript array of version strings: `["2.3", "2.4", "2.5", "2.6", "2.7", "2.8"]`
+/// A JavaScript array of version strings from `"2.1"` through `"2.8"`.
 #[wasm_bindgen(js_name = listHL7Versions)]
 pub fn list_hl7_versions() -> Result<JsValue, JsValue> {
     serde_wasm_bindgen::to_value(&SUPPORTED_VERSIONS).map_err(|e| JsValue::from_str(&e.to_string()))
@@ -321,9 +321,10 @@ pub fn get_segment_definition(version: &str, segment_id: &str) -> Result<JsValue
 
     for (msg_type, trigger) in search_schemas {
         if let Ok(schema) = load_schema(v, msg_type, trigger)
-            && let Some(seg_def) = schema.segments.get(segment_id) {
-                return serialize_segment_definition(segment_id, seg_def);
-            }
+            && let Some(seg_def) = schema.segments.get(segment_id)
+        {
+            return serialize_segment_definition(segment_id, seg_def);
+        }
     }
 
     Err(JsValue::from_str(&format!(
@@ -403,7 +404,7 @@ fn serialize_segment_definition(
 ///
 /// ```javascript
 /// const table = getVocabularyTable("0001");
-/// // { tableId: "0001", name: "Administrative Sex", description: "...",
+/// // { table_id: "0001", name: "Administrative Sex", description: "...",
 /// //   values: { F: { code: "F", description: "Female", deprecated: false }, ... } }
 /// ```
 #[wasm_bindgen(js_name = getVocabularyTable)]
@@ -484,16 +485,17 @@ pub fn search_definitions(version: &str, query: &str) -> Result<JsValue, JsValue
             // Check segment name match
             if (seg_def.name.to_lowercase().contains(&query_lower)
                 || seg_id.to_lowercase().contains(&query_lower))
-                && seen_segments.insert(seg_id.clone()) {
-                    results.push(SearchResult {
-                        segment_id: seg_id.clone(),
-                        field_index: None,
-                        name: seg_def.name.clone(),
-                        match_type: "segment".to_string(),
-                        path: seg_id.clone(),
-                        data_type: None,
-                    });
-                }
+                && seen_segments.insert(seg_id.clone())
+            {
+                results.push(SearchResult {
+                    segment_id: seg_id.clone(),
+                    field_index: None,
+                    name: seg_def.name.clone(),
+                    match_type: "segment".to_string(),
+                    path: seg_id.clone(),
+                    data_type: None,
+                });
+            }
 
             // Check field name matches
             for (field_idx, field_def) in &seg_def.fields {

@@ -6,7 +6,7 @@ A comprehensive Rust library for parsing, validating, and creating HL7 v2.x heal
 
 - **🖥️ GUI Test Panel**: Interactive workbench for parsing, building, validating, and testing HL7 messages
 - **✅ Parsing and Serialization**: Parse HL7 pipe-delimited messages into structured data and serialize back
-- **✅ Multiple HL7 Versions**: Support for HL7 v2.3, v2.4, v2.5, v2.6, v2.7, v2.7.1, v2.8, v2.8.1, and v2.8.2
+- **✅ Multiple HL7 Versions**: Support for HL7 v2.1 through v2.8.2 (2.1, 2.2, 2.3, 2.3.1, 2.4, 2.5, 2.5.1, 2.6, 2.7, 2.7.1, 2.8, 2.8.1, 2.8.2)
 - **✅ Message Validation**: Validate messages against HL7 standards with detailed error reporting
 - **✅ Schema-Based Validation**: Comprehensive schemas for all HL7 versions (2.3-2.8) with complete field and component definitions
 - **✅ Data Type Validation**: Format checking for all HL7 data types (dates, times, numerics, coded values, etc.)
@@ -71,6 +71,8 @@ vyna-hl7/
 | **Terser** | Extract and modify fields using path notation (e.g., `PID-5-1`, `OBX(2)-5`) |
 | **Validator** | Validate messages against HL7 schemas with detailed error reporting |
 | **MLLP** | Send/receive messages via MLLP protocol with built-in server and client |
+| **HTTP** | Send/receive messages over HL7-over-HTTP with auth and TLS options |
+| **FTP** | Transfer HL7 files via FTP/SFTP (client and server) |
 | **FHIR** | Convert HL7 v2 messages to FHIR R4 resources with live preview |
 | **XML** | Convert between HL7 pipe-delimited (ER7) and XML formats |
 
@@ -651,9 +653,6 @@ println!("{}", json);
 - **Immunization (RXA → Immunization)** ✨ NEW
 - **ServiceRequest (ORC/OBR → ServiceRequest)** ✨ NEW
 - **Specimen (SPM → Specimen)** ✨ NEW
-- MedicationAdministration (RXA → MedicationAdministration)
-- Condition (PRB/DG1 → Condition)
-- Procedure (PR1 → Procedure)
 
 See [vyna-hl7-fhir/README.md](crates/vyna-hl7-fhir/README.md) for complete documentation.
 
@@ -806,8 +805,8 @@ const hl7 = `MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2
 PID|1||MRN123||DOE^JOHN||19800101|M`;
 
 const message = parseMessage(hl7);
-const patientName = getTerserValue(message, "PID-5");
-console.log(patientName); // "DOE^JOHN"
+const familyName = getTerserValue(message, "PID-5-1");
+console.log(familyName); // "DOE"
 ```
 
 **Features:**
@@ -840,6 +839,12 @@ vynahl7 convert message.hl7 --to json --pretty
 
 # Display comprehensive message info
 vynahl7 info message.hl7
+
+# Send a message and print the acknowledgment (exit 1 on NACK)
+vynahl7 send message.hl7 --to mllp://127.0.0.1:2575
+
+# Show structural differences between two messages (exit 1 when different)
+vynahl7 diff old.hl7 new.hl7
 ```
 
 **Commands:**
@@ -848,6 +853,8 @@ vynahl7 info message.hl7
 - `extract` - Extract field values using Terser paths (supports indexing like `OBX(1)-5`)
 - `convert` - Convert to JSON or FHIR R4 format
 - `info` - Display comprehensive message information and statistics
+- `send` - Send a message over MLLP or HTTP and print the acknowledgment
+- `diff` - Show structural differences between two messages (text, JSON formats)
 
 **Features:**
 - Colored terminal output for enhanced readability
@@ -1103,7 +1110,7 @@ Contributions are welcome. To contribute, please:
 - [x] HL7 FHIR conversion utilities ✅ (12 forward + 4 reverse converters complete - see vyna-hl7-fhir/README.md)
 - [x] Performance optimizations ✅ (Cached Terser, optimized parsers, benchmarking suite)
 - [x] WebAssembly support ✅ (Full JavaScript/TypeScript bindings - see vyna-hl7-wasm/README.md)
-- [x] CLI tool for message analysis ✅ (5 commands: parse, validate, extract, convert, info - see vyna-hl7-cli/README.md)
+- [x] CLI tool for message analysis ✅ (7 commands: parse, validate, extract, convert, info, send, diff - see vyna-hl7-cli/README.md)
 - [x] HTTP transport support ✅ (HL7-over-HTTP for inter-organization communication - see vyna-hl7-http/README.md)
 - [x] Custom Z-segment framework ✅ (Type-safe custom segment support with validation - see vyna-hl7-custom/README.md)
 - [x] Conformance profile validation ✅ (XML-based conformance profiles with usage, cardinality, and length validation - see vyna-hl7-conformance crate)
@@ -1112,7 +1119,7 @@ Contributions are welcome. To contribute, please:
 
 ## Acknowledgments
 
-Developed with AI-assisted tooling ([Claude Code](https://claude.ai/code) and [Muse Code](https://www.muse.dev/)) alongside human design, review, and testing.
+Developed with AI-assisted tooling ([Claude Code](https://claude.ai/code) and [Muse Code](https://www.muse.dev/)) alongside human design, review, and testing. Inspired by the excellent [HAPI library](https://hapifhir.github.io/hapi-hl7v2/) for Java.
 
 ## License
 
@@ -1146,10 +1153,6 @@ Licensed under the MIT License — see the [LICENSE](LICENSE) file.
 - 🔧 **Advanced orchestration** built-in (routing, filtering, workflows)
 - 📋 **Flexible rules engine** for business validation
 - 🎯 **Type safety** throughout the API
-
-## Acknowledgments
-
-Inspired by the excellent [HAPI library](https://hapifhir.github.io/hapi-hl7v2/) for Java.
 
 ## Resources
 

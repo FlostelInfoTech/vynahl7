@@ -63,7 +63,10 @@ pub struct PoolConfig {
     pub idle_timeout: Duration,
     /// Maximum lifetime of a connection (default: 30 minutes)
     pub max_lifetime: Duration,
-    /// How often to check for idle connections (default: 60 seconds)
+    /// How often to check for idle connections (default: 60 seconds).
+    ///
+    /// There is no background reaper; call [`MllpPool::cleanup`] on this
+    /// schedule to evict idle and expired connections.
     pub cleanup_interval: Duration,
     /// MLLP configuration for connections
     pub mllp_config: MllpConfig,
@@ -119,6 +122,12 @@ impl PoolConfig {
     /// Set the maximum connection lifetime
     pub fn with_max_lifetime(mut self, lifetime: Duration) -> Self {
         self.max_lifetime = lifetime;
+        self
+    }
+
+    /// Set how often idle connections should be cleaned up
+    pub fn with_cleanup_interval(mut self, interval: Duration) -> Self {
+        self.cleanup_interval = interval;
         self
     }
 
@@ -520,12 +529,18 @@ mod tests {
             .with_max_connections(20)
             .with_min_connections(5)
             .with_acquire_timeout(Duration::from_secs(60))
-            .with_idle_timeout(Duration::from_secs(120));
+            .with_idle_timeout(Duration::from_secs(120))
+            .with_max_lifetime(Duration::from_secs(600))
+            .with_cleanup_interval(Duration::from_secs(30))
+            .with_test_on_acquire(true);
 
         assert_eq!(config.max_connections, 20);
         assert_eq!(config.min_connections, 5);
         assert_eq!(config.acquire_timeout, Duration::from_secs(60));
         assert_eq!(config.idle_timeout, Duration::from_secs(120));
+        assert_eq!(config.max_lifetime, Duration::from_secs(600));
+        assert_eq!(config.cleanup_interval, Duration::from_secs(30));
+        assert!(config.test_on_acquire);
     }
 
     #[test]

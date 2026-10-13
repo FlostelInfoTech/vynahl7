@@ -306,6 +306,21 @@ fn test_message_from_message_missing_required() {
 }
 
 #[test]
+fn test_message_try_from_error_names_message_type() {
+    use std::convert::TryFrom;
+
+    // No PID segment: the conversion fails naming ADT^A01 in HL7 form.
+    let mut message = Message::new();
+    message.add_segment(sample_obx_segment("1", "100"));
+
+    let err = AdtA01::try_from(&message).unwrap_err();
+    assert!(
+        err.to_string().contains("ADT^A01"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn test_message_from_message_optional_absent() {
     let mut message = Message::new();
     message.add_segment(sample_pid_segment());

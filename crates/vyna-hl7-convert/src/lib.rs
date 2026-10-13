@@ -177,7 +177,10 @@ pub fn convert_with_schemas(
                 let _ = converted.set_field(field_number, field.clone());
             } else if !field_has_data(field) {
                 // No data to lose: skip silently.
-            } else if let Some(moved_to) = find_same_name(from_def, to_def, field_number) {
+            } else if let Some(moved_to) = find_same_name(from_def, to_def, field_number)
+                && moved_to != 0
+            // field 0 is the segment id: unmappable
+            {
                 let _ = converted.set_field(moved_to, field.clone());
                 report
                     .moved_fields
@@ -485,6 +488,29 @@ mod tests {
                 .unwrap()
                 .get_field_value(4),
             Some("Bobby")
+        );
+    }
+
+    #[test]
+    fn move_to_field_zero_is_reported_dropped() {
+        // Synthetic schemas: "Nickname" lives at 2 in source, 0 in target.
+        // Field 0 cannot hold a value, so the field must be reported
+        // dropped rather than moved-into-the-void.
+        let from = schema(&[(1, "Set ID", false), (2, "Nickname", false)]);
+        let to = schema(&[(1, "Set ID", false), (0, "Nickname", false)]);
+        let message =
+            parse_message("MSH|^~\\&|A|B|C|D|20240101||TST^T01|1|P|2.5\rPID|1|Bobby\r").unwrap();
+
+        let (converted, report) = convert_with_schemas(&message, &from, &to, Version::V2_5);
+
+        assert!(report.moved_fields.is_empty());
+        assert_eq!(report.dropped_fields, vec!["PID[0]-2"]);
+        assert_eq!(
+            converted
+                .get_segment_by_id("PID")
+                .unwrap()
+                .get_field_value(2),
+            None
         );
     }
 

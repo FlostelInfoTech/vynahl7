@@ -6,6 +6,7 @@ use crate::resources::immunization::*;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
 
+/// Converter for transforming RXA segments to FHIR Immunization resources
 pub struct ImmunizationConverter;
 
 impl ImmunizationConverter {

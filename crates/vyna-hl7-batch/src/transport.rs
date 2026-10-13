@@ -136,6 +136,10 @@ impl FilesystemTransport {
                 continue;
             }
             let name = entry.file_name().to_string_lossy().into_owned();
+            // Crash leftovers and concurrent uploads are never consumable.
+            if name.starts_with(".tmp-") {
+                continue;
+            }
             let meta = entry.metadata()?;
             let path = if prefix.is_empty() {
                 name
@@ -309,6 +313,21 @@ mod tests {
             Err(BatchError::Invalid(_))
         ));
         assert!(t.list("missing").await.unwrap().is_empty());
+
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn list_skips_temp_leftovers() {
+        let dir = scratch_dir();
+        let mut t = FilesystemTransport::open(&dir).unwrap();
+        t.put("inbox/a.hl7", b"MSH").await.unwrap();
+        // Simulate a crash between temp write and rename.
+        std::fs::write(dir.join("inbox").join(".tmp-123-456"), b"partial").unwrap();
+
+        let entries = t.list("inbox").await.unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].path, "inbox/a.hl7");
 
         tokio::fs::remove_dir_all(&dir).await.unwrap();
     }

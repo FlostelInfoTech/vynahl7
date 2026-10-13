@@ -84,7 +84,6 @@ impl MessageTemplate {
     ///
     /// ```
     /// use vyna_hl7_templates::MessageTemplate;
-    /// use vyna_hl7_core::Version;
     ///
     /// let template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
     /// let yaml = template.to_yaml().unwrap();
@@ -100,7 +99,6 @@ impl MessageTemplate {
     ///
     /// ```no_run
     /// use vyna_hl7_templates::MessageTemplate;
-    /// use vyna_hl7_core::Version;
     ///
     /// let template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
     /// template.to_yaml_file("output/template.yaml").unwrap();
@@ -117,7 +115,6 @@ impl MessageTemplate {
     ///
     /// ```
     /// use vyna_hl7_templates::MessageTemplate;
-    /// use vyna_hl7_core::Version;
     ///
     /// let template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
     /// let json = template.to_json().unwrap();
@@ -133,7 +130,6 @@ impl MessageTemplate {
     ///
     /// ```
     /// use vyna_hl7_templates::MessageTemplate;
-    /// use vyna_hl7_core::Version;
     ///
     /// let template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
     /// let json = template.to_json_pretty().unwrap();
@@ -149,7 +145,6 @@ impl MessageTemplate {
     ///
     /// ```no_run
     /// use vyna_hl7_templates::MessageTemplate;
-    /// use vyna_hl7_core::Version;
     ///
     /// let template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
     /// template.to_json_file("output/template.json").unwrap();

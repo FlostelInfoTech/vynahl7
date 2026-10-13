@@ -586,7 +586,7 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
             /// The HL7 segment ID for this type
             pub const SEGMENT_ID: &'static str = #segment_id;
 
-            /// Create from an vyna_hl7_core Segment
+            /// Create from a vyna_hl7_core Segment
             pub fn from_segment(segment: &vyna_hl7_core::segment::Segment) -> Option<Self> {
                 if segment.id != #segment_id {
                     return None;
@@ -597,7 +597,7 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
                 })
             }
 
-            /// Convert to an vyna_hl7_core Segment
+            /// Convert to a vyna_hl7_core Segment
             pub fn to_segment(&self) -> vyna_hl7_core::segment::Segment {
                 let mut segment = vyna_hl7_core::segment::Segment::new(#segment_id);
                 #(#to_segment_fields)*
@@ -872,7 +872,7 @@ fn derive_message_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
                 })
             }
 
-            /// Convert to an vyna_hl7_core Message
+            /// Convert to a vyna_hl7_core Message
             pub fn to_message(&self) -> vyna_hl7_core::message::Message {
                 let mut message = vyna_hl7_core::message::Message::new();
                 #(#to_message_fields)*
@@ -892,7 +892,7 @@ fn derive_message_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
             fn try_from(message: &vyna_hl7_core::message::Message) -> Result<Self, Self::Error> {
                 Self::from_message(message).ok_or_else(|| {
                     vyna_hl7_core::error::Error::MessageType(format!(
-                        "Message is missing required segments for {}^ {}",
+                        "Message is missing required segments for {}^{}",
                         #message_type, #trigger_event
                     ))
                 })
@@ -1098,14 +1098,14 @@ fn hl7_type_impl(attr_meta: Meta, input: DeriveInput) -> syn::Result<proc_macro2
             /// The HL7 data type code
             pub const DATA_TYPE: &'static str = #data_type;
 
-            /// Create from an vyna_hl7_core Repetition
+            /// Create from a vyna_hl7_core Repetition
             pub fn from_repetition(repetition: &vyna_hl7_core::field::Repetition) -> Self {
                 Self {
                     #(#from_rep_fields),*
                 }
             }
 
-            /// Convert to an vyna_hl7_core Repetition
+            /// Convert to a vyna_hl7_core Repetition
             pub fn to_repetition(&self) -> vyna_hl7_core::field::Repetition {
                 let mut repetition = vyna_hl7_core::field::Repetition::new();
                 #(#to_rep_fields)*

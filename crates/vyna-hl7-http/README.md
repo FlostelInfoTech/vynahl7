@@ -315,7 +315,8 @@ use vyna_hl7_http::queue::MessageQueue;
 let queue = MessageQueue::bounded(1000);
 
 // Producer
-queue.send(message).await?;
+let sender = queue.sender();
+sender.send(message).await?;
 
 // Consumer
 let receiver = queue.receiver();
@@ -495,7 +496,7 @@ Built with modern, well-maintained crates:
 - `axum` 0.8 - Web framework
 - `tokio` - Async runtime
 - `rustls` 0.23 - TLS implementation
-- `reqwest` 0.12 - HTTP client
+- `reqwest` 0.13 - HTTP client
 - `tracing` - Structured logging
 - `metrics` - Metrics collection
 

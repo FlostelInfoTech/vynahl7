@@ -22,7 +22,7 @@ vyna-hl7-terser.workspace = true
 vyna-hl7-validator.workspace = true
 
 # WebAssembly
-wasm-bindgen = "0.2"
+wasm-bindgen.workspace = true
 serde-wasm-bindgen = "0.6"
 serde.workspace = true
 serde_json.workspace = true

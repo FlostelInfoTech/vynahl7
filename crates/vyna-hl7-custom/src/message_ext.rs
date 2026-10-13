@@ -90,9 +90,18 @@ pub trait MessageExt {
     /// If a segment with the same ID already exists, the first occurrence is replaced.
     /// Otherwise, the segment is added to the message.
     ///
+    /// The segment is validated before it is stored: an invalid segment
+    /// is rejected and the message is left unchanged. Unlike
+    /// [`add_custom_segment`](Self::add_custom_segment), which stores
+    /// without validating.
+    ///
     /// # Arguments
     ///
     /// * `segment` - The custom segment to add or replace
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when [`CustomSegment::validate`] fails.
     ///
     /// # Example
     ///
@@ -110,6 +119,10 @@ pub trait MessageExt {
     ///
     /// Unlike `set_custom_segment`, this always adds a new segment even if one
     /// with the same ID already exists.
+    ///
+    /// The segment is stored without validation; use
+    /// [`set_custom_segment`](Self::set_custom_segment) when invalid
+    /// segments must be rejected.
     ///
     /// # Arguments
     ///

@@ -59,7 +59,7 @@ pub mod testing;
 
 pub use builder::BatchFileBuilder;
 pub use intake::{Intake, IntakeBatch, IntakeMessage};
-pub use poller::{PollReport, PolledFile, Poller, SkippedFile};
+pub use poller::{PollFileError, PollReport, PolledFile, Poller, SkippedFile};
 pub use transport::{FileEntry, FileTransport, FilesystemTransport};
 
 /// Errors from batch building, intake parsing, and file transports.

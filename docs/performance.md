@@ -62,7 +62,7 @@ PID|1||MRN12345^^^Hospital^MR||DOE^JOHN^ALLEN||19800315|M|||123 MAIN ST^^BOSTON^
 PV1|1|I|ICU^101^A^Hospital||||1234567^SMITH^JANE^M^MD^^MD|||||||||VIP|||||||||||||||||||||||||20240315140000
 ```
 
-**ORU^R01 Medium (814 bytes, 13 segments):**
+**ORU^R01 Medium (1,086 bytes, 13 segments):**
 ```
 MSH|^~\&|LAB|Hospital|EMR|Hospital|20240315143000||ORU^R01^ORU_R01|MSG00002|P|2.5|||AL|NE
 PID|1||MRN12345^^^Hospital^MR||DOE^JOHN^ALLEN||19800315|M|||123 MAIN ST^^BOSTON^MA^02101^USA
@@ -203,7 +203,7 @@ cargo run --release --features testing --example e2e_benchmark
 | Message Type | Size | E2E Latency (p50) | E2E Latency (p99) | Throughput |
 |--------------|------|-------------------|-------------------|------------|
 | ADT^A01 | 316 B | 0.14 ms | 0.34 ms | **5,831 msg/s** |
-| ORU^R01 | 814 B | 0.28 ms | 0.55 ms | **3,353 msg/s** |
+| ORU^R01 | 1,086 B | 0.28 ms | 0.55 ms | **3,353 msg/s** |
 
 ### Concurrent Client Scaling
 
@@ -325,7 +325,7 @@ For predictable access patterns, pre-warm the cache:
 
 ```rust
 terser.warm_cache(&[
-    "PID-5", "PID-5-0", "PID-5-1",
+    "PID-5", "PID-5-1", "PID-5-2",
     "PID-7", "PID-8", "PV1-2", "PV1-7"
 ])?;
 
@@ -535,7 +535,7 @@ cargo flamegraph --example your_example
 ║  Test                    │ Clients │ Throughput  │ p50 Latency │ p99 Latency║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  ADT^A01 (316B)          │ 1       │ 5,831/s     │ 0.14 ms     │ 0.34 ms   ║
-║  ORU^R01 (814B)          │ 1       │ 3,353/s     │ 0.28 ms     │ 0.55 ms   ║
+║  ORU^R01 (1,086B)        │ 1       │ 3,353/s     │ 0.28 ms     │ 0.55 ms   ║
 ║  ADT^A01 Concurrent      │ 4       │ 29,328/s    │ 0.13 ms     │ 0.29 ms   ║
 ║  ADT^A01 Concurrent      │ 8       │ 49,311/s    │ 0.15 ms     │ 0.38 ms   ║
 ║  Sustained (30 sec)      │ 1       │ 5,703/s     │ -           │ -          ║
@@ -616,7 +616,7 @@ If you encounter performance issues:
 1. Run benchmarks to identify bottlenecks
 2. Profile your application
 3. Check this guide for optimization strategies
-4. Open an issue on the internal tracker with benchmark results
+4. Open an issue on GitHub with benchmark results
 
 ## Contributing
 

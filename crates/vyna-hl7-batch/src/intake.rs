@@ -137,12 +137,20 @@ impl Intake {
 
     /// Number of successfully parsed messages.
     pub fn ok_count(&self) -> usize {
-        self.ok_messages().len()
+        self.batches
+            .iter()
+            .flat_map(|b| b.messages.iter())
+            .filter(|m| m.result.is_ok())
+            .count()
     }
 
     /// Number of failed message slots.
     pub fn error_count(&self) -> usize {
-        self.errors().len()
+        self.batches
+            .iter()
+            .flat_map(|b| b.messages.iter())
+            .filter(|m| m.result.is_err())
+            .count()
     }
 
     /// Check declared trailer counts against actual content. Missing trailers

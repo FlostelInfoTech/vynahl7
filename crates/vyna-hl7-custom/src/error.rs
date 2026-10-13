@@ -14,13 +14,21 @@ pub enum CustomSegmentError {
 
     /// Required field is missing
     #[error("Missing required field {field} in segment {segment}")]
-    MissingField { field: String, segment: String },
+    MissingField {
+        /// Field reference (e.g. "ZPV-1")
+        field: String,
+        /// Segment ID the field belongs to
+        segment: String,
+    },
 
     /// Field value is invalid
     #[error("Invalid value for field {field} in segment {segment}: {reason}")]
     InvalidFieldValue {
+        /// Field reference (e.g. "ZPV-3")
         field: String,
+        /// Segment ID the field belongs to
         segment: String,
+        /// Why the value was rejected
         reason: String,
     },
 
@@ -30,19 +38,28 @@ pub enum CustomSegmentError {
 
     /// Segment validation failed
     #[error("Validation failed for segment {segment}: {reason}")]
-    ValidationFailed { segment: String, reason: String },
+    ValidationFailed {
+        /// Segment ID that failed validation
+        segment: String,
+        /// Why validation failed
+        reason: String,
+    },
 
     /// Failed to parse segment from HL7 structure
     #[error("Failed to parse {segment_id}: {reason}")]
     ParseError {
+        /// Segment ID that failed to parse
         segment_id: String,
+        /// Why parsing failed
         reason: String,
     },
 
     /// Failed to convert segment to HL7 structure
     #[error("Failed to encode {segment_id}: {reason}")]
     EncodeError {
+        /// Segment ID that failed to encode
         segment_id: String,
+        /// Why encoding failed
         reason: String,
     },
 

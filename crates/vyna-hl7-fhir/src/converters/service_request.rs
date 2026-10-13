@@ -6,6 +6,7 @@ use crate::resources::service_request::*;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
 
+/// Converter for transforming ORC/OBR segments to FHIR ServiceRequest resources
 pub struct ServiceRequestConverter;
 
 impl ServiceRequestConverter {

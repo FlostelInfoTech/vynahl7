@@ -10,12 +10,19 @@ use std::collections::HashMap;
 /// Result of vocabulary validation
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VocabularyValidation {
+    /// The code is in the table (or the value is empty)
     Valid,
-    Invalid { reason: String },
-    NotApplicable, // Field doesn't require vocabulary validation
+    /// The code is unknown or deprecated in the table
+    Invalid {
+        /// Why the code failed
+        reason: String,
+    },
+    /// The field has no table, so there is nothing to check
+    NotApplicable,
 }
 
 impl VocabularyValidation {
+    /// True for [`VocabularyValidation::Valid`] and [`VocabularyValidation::NotApplicable`]
     pub fn is_valid(&self) -> bool {
         matches!(
             self,
@@ -23,6 +30,7 @@ impl VocabularyValidation {
         )
     }
 
+    /// Why the code failed, or `None` when it passed or did not apply
     pub fn error_message(&self) -> Option<&str> {
         match self {
             VocabularyValidation::Invalid { reason } => Some(reason),
@@ -34,9 +42,13 @@ impl VocabularyValidation {
 /// HL7 Table definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Hl7Table {
+    /// HL7 table number (e.g. `0001`)
     pub table_id: String,
+    /// Short table name (e.g. `Administrative Sex`)
     pub name: String,
+    /// Longer description of what the table covers
     pub description: String,
+    /// Known codes keyed by code value (e.g. `M`)
     pub values: HashMap<String, TableValue>,
     /// Open-ended code patterns in HL7 spelling (e.g. `NNxxx`, `HL7nnnn`,
     /// `Q<integer>D`, `>=2`). See [`Hl7Table::add_pattern`].
@@ -47,8 +59,11 @@ pub struct Hl7Table {
 /// A value within an HL7 table
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableValue {
+    /// The code as it appears in the message (e.g. `M`)
     pub code: String,
+    /// What the code means (e.g. `Male`)
     pub description: String,
+    /// Deprecated codes fail validation even though they are known
     pub deprecated: bool,
 }
 

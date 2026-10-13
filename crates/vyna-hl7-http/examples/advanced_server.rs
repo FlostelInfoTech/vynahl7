@@ -241,6 +241,7 @@ async fn main() -> Result<()> {
     }
 
     // Build HTTP server
+    #[cfg_attr(not(any(feature = "compression", feature = "auth")), allow(unused_mut))]
     let mut http_server = HttpServer::new().with_handler(handler.clone());
 
     // Enable compression

@@ -4,10 +4,20 @@
 //! embedded in the binary at compile time.
 
 use crate::MessageSchema;
-use vyna_hl7_core::{error::Result, Version};
+use vyna_hl7_core::{Version, error::Result};
 
 /// Load a schema for a specific message type and version
-pub fn load_schema(version: Version, message_type: &str, trigger_event: &str) -> Result<MessageSchema> {
+///
+/// Message types introduced after 2.2 (VXU, PPR, OMP, ...) have no
+/// v2.1/v2.2 definition: for those versions the v2.3 structure is
+/// returned instead. Callers that must know which structure they got
+/// (e.g. version conversion stamping MSH-12) should compare
+/// [`MessageSchema::version`] against the requested version.
+pub fn load_schema(
+    version: Version,
+    message_type: &str,
+    trigger_event: &str,
+) -> Result<MessageSchema> {
     let version_str = match version {
         Version::V2_1 => "v2_1",
         Version::V2_2 => "v2_2",
@@ -26,9 +36,7 @@ pub fn load_schema(version: Version, message_type: &str, trigger_event: &str) ->
         format!("{}_{}", message_type, trigger_event)
     };
 
-    // Try to load embedded schema. Message types introduced after 2.2
-    // (VXU, PPR, OMP, ...) have no v2.1/v2.2 definition and fall back
-    // to the v2.3 structure.
+    // Try to load the embedded schema (see doc comment for the legacy fallback).
     let schema = load_embedded_schema(version_str, &schema_key).or_else(|| {
         matches!(version, Version::V2_1 | Version::V2_2)
             .then(|| load_embedded_schema("v2_3", &schema_key))
@@ -38,7 +46,9 @@ pub fn load_schema(version: Version, message_type: &str, trigger_event: &str) ->
         Some(schema) => Ok(schema),
         None => Err(vyna_hl7_core::error::Error::Validation(format!(
             "Schema not found for {} {} version {}",
-            message_type, trigger_event, version.as_str()
+            message_type,
+            trigger_event,
+            version.as_str()
         ))),
     }
 }
@@ -392,32 +402,58 @@ fn parse_schema_json(json: &str) -> Option<MessageSchema> {
 pub fn list_available_schemas(version: Version) -> Vec<String> {
     let schemas = vec![
         // ADT messages
-        "ADT^A01".to_string(), "ADT^A02".to_string(), "ADT^A03".to_string(),
-        "ADT^A04".to_string(), "ADT^A05".to_string(), "ADT^A06".to_string(),
-        "ADT^A07".to_string(), "ADT^A08".to_string(), "ADT^A09".to_string(),
-        "ADT^A10".to_string(), "ADT^A11".to_string(), "ADT^A12".to_string(),
-        "ADT^A13".to_string(), "ADT^A17".to_string(), "ADT^A28".to_string(),
-        "ADT^A31".to_string(), "ADT^A34".to_string(), "ADT^A40".to_string(),
+        "ADT^A01".to_string(),
+        "ADT^A02".to_string(),
+        "ADT^A03".to_string(),
+        "ADT^A04".to_string(),
+        "ADT^A05".to_string(),
+        "ADT^A06".to_string(),
+        "ADT^A07".to_string(),
+        "ADT^A08".to_string(),
+        "ADT^A09".to_string(),
+        "ADT^A10".to_string(),
+        "ADT^A11".to_string(),
+        "ADT^A12".to_string(),
+        "ADT^A13".to_string(),
+        "ADT^A17".to_string(),
+        "ADT^A28".to_string(),
+        "ADT^A31".to_string(),
+        "ADT^A34".to_string(),
+        "ADT^A40".to_string(),
         // Order messages
         "ORU^R01".to_string(),
         "ORM^O01".to_string(),
         // Acknowledgment
         "ACK".to_string(),
         // Scheduling
-        "SIU^S12".to_string(), "SIU^S13".to_string(), "SIU^S14".to_string(), "SIU^S15".to_string(),
+        "SIU^S12".to_string(),
+        "SIU^S13".to_string(),
+        "SIU^S14".to_string(),
+        "SIU^S15".to_string(),
         // Medical Document Management
-        "MDM^T01".to_string(), "MDM^T02".to_string(), "MDM^T04".to_string(),
+        "MDM^T01".to_string(),
+        "MDM^T02".to_string(),
+        "MDM^T04".to_string(),
         // Financial
-        "DFT^P03".to_string(), "DFT^P11".to_string(),
+        "DFT^P03".to_string(),
+        "DFT^P11".to_string(),
         // Query
-        "QRY^A19".to_string(), "QRY^Q01".to_string(), "QRY^Q02".to_string(),
+        "QRY^A19".to_string(),
+        "QRY^Q01".to_string(),
+        "QRY^Q02".to_string(),
         // Billing
-        "BAR^P01".to_string(), "BAR^P02".to_string(),
+        "BAR^P01".to_string(),
+        "BAR^P02".to_string(),
         // Pharmacy
-        "RDE^O11".to_string(), "RAS^O17".to_string(), "RDS^O13".to_string(),
-        "RGV^O15".to_string(), "RRD^O14".to_string(), "RRA^O18".to_string(),
+        "RDE^O11".to_string(),
+        "RAS^O17".to_string(),
+        "RDS^O13".to_string(),
+        "RGV^O15".to_string(),
+        "RRD^O14".to_string(),
+        "RRA^O18".to_string(),
         // Laboratory
-        "OUL^R21".to_string(), "OML^O21".to_string(),
+        "OUL^R21".to_string(),
+        "OML^O21".to_string(),
         // Master File
         "MFN^M01".to_string(),
         // Immunization
@@ -579,14 +615,27 @@ mod tests {
     #[test]
     fn test_load_new_schemas_all_versions() {
         // Test BAR_P01 across all versions
-        for version in [Version::V2_3, Version::V2_4, Version::V2_5, Version::V2_6, Version::V2_7, Version::V2_8] {
+        for version in [
+            Version::V2_3,
+            Version::V2_4,
+            Version::V2_5,
+            Version::V2_6,
+            Version::V2_7,
+            Version::V2_8,
+        ] {
             let schema = load_schema(version, "BAR", "P01").unwrap();
             assert_eq!(schema.message_type, "BAR");
             assert_eq!(schema.trigger_event, "P01");
         }
 
         // Test RDE_O11 across all versions
-        for version in [Version::V2_4, Version::V2_5, Version::V2_6, Version::V2_7, Version::V2_8] {
+        for version in [
+            Version::V2_4,
+            Version::V2_5,
+            Version::V2_6,
+            Version::V2_7,
+            Version::V2_8,
+        ] {
             let schema = load_schema(version, "RDE", "O11").unwrap();
             assert_eq!(schema.message_type, "RDE");
             assert_eq!(schema.trigger_event, "O11");
@@ -722,21 +771,39 @@ mod tests {
     #[test]
     fn test_load_pharmacy_schemas_all_versions() {
         // Test RGV_O15 across all versions
-        for version in [Version::V2_4, Version::V2_5, Version::V2_6, Version::V2_7, Version::V2_8] {
+        for version in [
+            Version::V2_4,
+            Version::V2_5,
+            Version::V2_6,
+            Version::V2_7,
+            Version::V2_8,
+        ] {
             let schema = load_schema(version, "RGV", "O15").unwrap();
             assert_eq!(schema.message_type, "RGV");
             assert_eq!(schema.trigger_event, "O15");
         }
 
         // Test RRD_O14 across all versions
-        for version in [Version::V2_4, Version::V2_5, Version::V2_6, Version::V2_7, Version::V2_8] {
+        for version in [
+            Version::V2_4,
+            Version::V2_5,
+            Version::V2_6,
+            Version::V2_7,
+            Version::V2_8,
+        ] {
             let schema = load_schema(version, "RRD", "O14").unwrap();
             assert_eq!(schema.message_type, "RRD");
             assert_eq!(schema.trigger_event, "O14");
         }
 
         // Test RRA_O18 across all versions
-        for version in [Version::V2_4, Version::V2_5, Version::V2_6, Version::V2_7, Version::V2_8] {
+        for version in [
+            Version::V2_4,
+            Version::V2_5,
+            Version::V2_6,
+            Version::V2_7,
+            Version::V2_8,
+        ] {
             let schema = load_schema(version, "RRA", "O18").unwrap();
             assert_eq!(schema.message_type, "RRA");
             assert_eq!(schema.trigger_event, "O18");
@@ -779,7 +846,13 @@ mod tests {
         }
 
         // Test OML_O21 across all versions
-        for version in [Version::V2_4, Version::V2_5, Version::V2_6, Version::V2_7, Version::V2_8] {
+        for version in [
+            Version::V2_4,
+            Version::V2_5,
+            Version::V2_6,
+            Version::V2_7,
+            Version::V2_8,
+        ] {
             let schema = load_schema(version, "OML", "O21").unwrap();
             assert_eq!(schema.message_type, "OML");
             assert_eq!(schema.trigger_event, "O21");

@@ -6,9 +6,11 @@ use crate::resources::common::*;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
 
+/// Converter for transforming AL1 segments to FHIR AllergyIntolerance resources
 pub struct AllergyIntoleranceConverter;
 
 impl AllergyIntoleranceConverter {
+    /// Convert all AL1 segments in message to AllergyIntolerance resources
     pub fn convert_all(message: &Message) -> ConversionResult<Vec<AllergyIntolerance>> {
         let al1_segments: Vec<_> = message
             .segments
@@ -30,6 +32,11 @@ impl AllergyIntoleranceConverter {
         Ok(allergies)
     }
 
+    /// Convert a specific AL1 segment to an AllergyIntolerance resource
+    ///
+    /// # Arguments
+    /// * `message` - HL7 message containing AL1 segment
+    /// * `al1_index` - 0-based index (0 = first AL1, 1 = second AL1, etc.)
     pub fn convert_single(
         message: &Message,
         al1_index: usize,

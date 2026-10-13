@@ -395,6 +395,7 @@ impl MessageQueue for MemoryQueue {
             entry.state = EntryState::Dead {
                 last_error: error.map(str::to_string),
             };
+            self.order.retain(|queued| queued != id);
             self.live = self.live.saturating_sub(1);
             Ok(NackOutcome::DeadLettered)
         } else {
@@ -547,13 +548,36 @@ impl FileQueue {
         Ok(list_ids(&self.pending)?.len() + list_ids(&self.inflight)?.len())
     }
 
-    /// Crash recovery: stale leases return to pending, corrupt entries are
-    /// quarantined under `dead/`.
+    /// Crash recovery: stale leases return to pending, corrupt or
+    /// bodyless entries are quarantined under `dead/`.
     fn recover(&self) -> Result<RecoveryReport, QueueError> {
         let mut report = RecoveryReport::default();
         let now = self.clock.now_ms();
+        // Quarantine corrupt pending/dead entries first, so one bad file can
+        // never brick the queue. Dead is scanned before pending, and both
+        // before inflight, so newly quarantined entries are never reported
+        // twice. A valid meta without its body (crash between the two
+        // writes) is unrecoverable and quarantines like a corrupt meta.
+        for dir in [&self.dead, &self.pending] {
+            for id in list_ids(dir)? {
+                let corrupt = match read_meta(dir, &id)? {
+                    None => true,
+                    Some(_) => read_body(dir, &id)?.is_none(),
+                };
+                if corrupt {
+                    report.skipped.push(format!("{}/{}", dir_name(dir), id));
+                    if dir != &self.dead {
+                        quarantine(dir, &self.dead, &id)?;
+                    }
+                }
+            }
+        }
         for id in list_ids(&self.inflight)? {
             match read_meta(&self.inflight, &id)? {
+                Some(_) if read_body(&self.inflight, &id)?.is_none() => {
+                    report.skipped.push(id.clone());
+                    quarantine(&self.inflight, &self.dead, &id)?;
+                }
                 Some(mut meta) if meta.leased_until_ms <= now => {
                     meta.visible_at_ms = now;
                     meta.leased_until_ms = 0;
@@ -564,19 +588,6 @@ impl FileQueue {
                 None => {
                     report.skipped.push(id.clone());
                     quarantine(&self.inflight, &self.dead, &id)?;
-                }
-            }
-        }
-        // Quarantine corrupt pending/dead entries too, so one bad file can
-        // never brick the queue. Dead is scanned first so newly quarantined
-        // entries are not reported twice.
-        for dir in [&self.dead, &self.pending] {
-            for id in list_ids(dir)? {
-                if read_meta(dir, &id)?.is_none() {
-                    report.skipped.push(format!("{}/{}", dir_name(dir), id));
-                    if dir != &self.dead {
-                        quarantine(dir, &self.dead, &id)?;
-                    }
                 }
             }
         }
@@ -1161,6 +1172,58 @@ mod tests {
         assert_eq!(report.skipped.len(), 1);
         assert_eq!(report.pending, 0);
         assert_eq!(queue.stats().unwrap().dead, 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn file_corrupt_inflight_reported_once() {
+        let dir = scratch_dir();
+        let id = {
+            let (mut queue, _) = FileQueue::open(&dir).unwrap();
+            let id = queue.enqueue(b"MSH", HashMap::new()).unwrap();
+            queue.dequeue().unwrap().unwrap();
+            id
+        };
+        let meta = dir.join("inflight").join(format!("{id}.meta.json"));
+        std::fs::write(&meta, b"{not valid json").unwrap();
+
+        let (queue, report) = FileQueue::open(&dir).unwrap();
+        assert_eq!(report.skipped, vec![id]);
+        assert_eq!(report.pending, 0);
+        assert_eq!(queue.stats().unwrap().dead, 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn file_bodyless_pending_quarantines_to_dead() {
+        let dir = scratch_dir();
+        let first = {
+            let (mut queue, _) = FileQueue::open(&dir).unwrap();
+            let first = queue.enqueue(b"first", HashMap::new()).unwrap();
+            queue.enqueue(b"second", HashMap::new()).unwrap();
+            first
+        };
+        std::fs::remove_file(dir.join("pending").join(format!("{first}.body"))).unwrap();
+
+        let (mut queue, report) = FileQueue::open(&dir).unwrap();
+        assert_eq!(report.skipped.len(), 1);
+        assert!(report.skipped[0].contains(&first));
+        assert_eq!(report.pending, 1);
+        assert_eq!(report.dead, 1);
+
+        // The survivor still dequeues; the bodyless entry never reappears.
+        let leased = queue.dequeue().unwrap().unwrap();
+        assert_eq!(leased.body, b"second");
+        queue.ack(&leased.id).unwrap();
+        assert!(queue.dequeue().unwrap().is_none());
+        assert_eq!(
+            queue.stats().unwrap(),
+            QueueStats {
+                pending: 0,
+                inflight: 0,
+                dead: 1
+            }
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

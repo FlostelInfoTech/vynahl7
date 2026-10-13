@@ -261,7 +261,7 @@ The Terser API uses simple path notation to access fields:
 
 | Path | Description |
 |------|-------------|
-| `PID-5` | PID segment, field 5 (full field) |
+| `PID-5` | PID segment, field 5 (first component) |
 | `PID-5-1` | PID segment, field 5, component 1 (1-indexed) |
 | `PID-5-2` | PID segment, field 5, component 2 |
 | `OBX(2)-5` | Second OBX segment (1-indexed), field 5 |
@@ -311,12 +311,9 @@ VynaHL7-WASM benefits from Rust's performance and WebAssembly's near-native spee
 
 ## Examples
 
-See the `examples/` directory for complete working examples:
+See the `examples/` directory for a complete working example:
 
 - `browser.html` - Browser usage with vanilla JavaScript
-- `node-example.js` - Node.js usage
-- `typescript-example.ts` - TypeScript usage
-- `react-example.tsx` - React component example
 
 ## Browser Compatibility
 

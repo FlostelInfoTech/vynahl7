@@ -39,6 +39,10 @@ CRATES=(
 
 VERSION="$(cargo metadata --format-version 1 --no-deps --offline 2>/dev/null \
   | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "vyna-hl7-core"))')"
+if [ -z "$VERSION" ]; then
+  echo "error: could not determine workspace version (run from the workspace root with python3 installed)" >&2
+  exit 1
+fi
 echo "Publishing ${#CRATES[@]} crates at v$VERSION"
 
 already_published() {

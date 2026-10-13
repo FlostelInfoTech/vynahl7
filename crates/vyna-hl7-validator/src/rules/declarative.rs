@@ -69,21 +69,27 @@ use std::path::Path;
 /// Error type for declarative rule parsing
 #[derive(Debug, thiserror::Error)]
 pub enum DeclarativeError {
+    /// Rule file could not be read
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// Rule file is not valid YAML
     #[error("YAML parsing error: {0}")]
     Yaml(#[from] serde_yaml::Error),
 
+    /// Rule file is not valid JSON
     #[error("JSON parsing error: {0}")]
     Json(#[from] serde_json::Error),
 
+    /// `severity` is not a severity name (`error`, `warning`, `info`, or short forms)
     #[error("Invalid severity: {0}")]
     InvalidSeverity(String),
 
+    /// A condition is missing a key its type requires (e.g. `then_field`)
     #[error("Missing required field in condition: {0}")]
     MissingField(String),
 
+    /// A condition `type` matches no known condition
     #[error("Unknown condition type: {0}")]
     UnknownConditionType(String),
 }
@@ -120,40 +126,51 @@ pub struct RuleDefinition {
 pub enum ConditionConfig {
     /// Field must be valued
     FieldValued {
+        /// Terser path of the field that must carry a value
         field: String,
     },
 
     /// If-then conditional
     IfThen {
+        /// Terser path of the field to test
         if_field: String,
+        /// Value that triggers the requirement
         if_value: String,
+        /// Terser path of the field required when triggered
         then_field: String,
     },
 
     /// Mutually exclusive fields
     MutuallyExclusive {
+        /// Terser paths of which at most one may be valued
         fields: Vec<String>,
     },
 
     /// At least one field must be valued
     AtLeastOne {
+        /// Terser paths of which at least one must be valued
         fields: Vec<String>,
     },
 
     /// All fields valued or all empty
     AllOrNone {
+        /// Terser paths that must be valued together or all empty
         fields: Vec<String>,
     },
 
     /// Field value must be in set
     FieldInSet {
+        /// Terser path of the field to test
         field: String,
+        /// Allowed values
         values: Vec<String>,
     },
 
     /// Dependent fields
     DependentFields {
+        /// Terser path of the field that requires the dependent one
         primary_field: String,
+        /// Terser path of the field required when the primary is valued
         dependent_field: String,
     },
 }
@@ -166,24 +183,21 @@ impl RuleDefinition {
 
         let rule = match self.condition {
             ConditionConfig::FieldValued { field } => {
-                CrossFieldValidator::field_valued(
-                    self.name,
-                    self.description,
-                    severity,
-                    field,
-                )
+                CrossFieldValidator::field_valued(self.name, self.description, severity, field)
             }
 
-            ConditionConfig::IfThen { if_field, if_value, then_field } => {
-                CrossFieldValidator::if_then(
-                    self.name,
-                    self.description,
-                    severity,
-                    if_field,
-                    if_value,
-                    then_field,
-                )
-            }
+            ConditionConfig::IfThen {
+                if_field,
+                if_value,
+                then_field,
+            } => CrossFieldValidator::if_then(
+                self.name,
+                self.description,
+                severity,
+                if_field,
+                if_value,
+                then_field,
+            ),
 
             ConditionConfig::MutuallyExclusive { fields } => {
                 CrossFieldValidator::mutually_exclusive(
@@ -195,42 +209,31 @@ impl RuleDefinition {
             }
 
             ConditionConfig::AtLeastOne { fields } => {
-                CrossFieldValidator::at_least_one(
-                    self.name,
-                    self.description,
-                    severity,
-                    fields,
-                )
+                CrossFieldValidator::at_least_one(self.name, self.description, severity, fields)
             }
 
             ConditionConfig::AllOrNone { fields } => {
-                CrossFieldValidator::all_or_none(
-                    self.name,
-                    self.description,
-                    severity,
-                    fields,
-                )
+                CrossFieldValidator::all_or_none(self.name, self.description, severity, fields)
             }
 
-            ConditionConfig::FieldInSet { field, values } => {
-                CrossFieldValidator::field_in_set(
-                    self.name,
-                    self.description,
-                    severity,
-                    field,
-                    values,
-                )
-            }
+            ConditionConfig::FieldInSet { field, values } => CrossFieldValidator::field_in_set(
+                self.name,
+                self.description,
+                severity,
+                field,
+                values,
+            ),
 
-            ConditionConfig::DependentFields { primary_field, dependent_field } => {
-                CrossFieldValidator::dependent_fields(
-                    self.name,
-                    self.description,
-                    severity,
-                    primary_field,
-                    dependent_field,
-                )
-            }
+            ConditionConfig::DependentFields {
+                primary_field,
+                dependent_field,
+            } => CrossFieldValidator::dependent_fields(
+                self.name,
+                self.description,
+                severity,
+                primary_field,
+                dependent_field,
+            ),
         };
 
         Ok(rule)
@@ -314,7 +317,11 @@ rules:
         assert_eq!(rule.name, "male_requires_ssn");
 
         match &rule.condition {
-            ConditionConfig::IfThen { if_field, if_value, then_field } => {
+            ConditionConfig::IfThen {
+                if_field,
+                if_value,
+                then_field,
+            } => {
                 assert_eq!(if_field, "PID-8");
                 assert_eq!(if_value, "M");
                 assert_eq!(then_field, "PID-19");
@@ -452,7 +459,10 @@ rules:
 
         let config = RuleConfig::from_yaml_str(yaml).unwrap();
         match &config.rules[0].condition {
-            ConditionConfig::DependentFields { primary_field, dependent_field } => {
+            ConditionConfig::DependentFields {
+                primary_field,
+                dependent_field,
+            } => {
                 assert_eq!(primary_field, "PID-13");
                 assert_eq!(dependent_field, "PID-13-2");
             }

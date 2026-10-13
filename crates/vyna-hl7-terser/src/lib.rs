@@ -86,7 +86,7 @@ impl<'a> Terser<'a> {
         };
 
         // Navigate to the value
-        let value = self.get_field_value(
+        let value = path::resolve_field_value(
             field,
             parsed_path.repetition_index,
             parsed_path.component_index,
@@ -94,49 +94,6 @@ impl<'a> Terser<'a> {
         );
 
         Ok(value)
-    }
-
-    /// Get a field value at the specified indices
-    ///
-    /// Note: Component and subcomponent indices are 1-based (HL7 standard notation)
-    /// but internally converted to 0-based for array access.
-    fn get_field_value<'b>(
-        &self,
-        field: &'b Field,
-        rep_idx: usize,
-        comp_idx: Option<usize>,
-        sub_idx: Option<usize>,
-    ) -> Option<&'b str> {
-        let repetition = field.get_repetition(rep_idx)?;
-
-        match (comp_idx, sub_idx) {
-            (None, None) => {
-                // Just the field value
-                repetition.value()
-            }
-            (Some(c_idx), None) => {
-                // Component value (convert 1-based HL7 to 0-based internal)
-                if c_idx == 0 {
-                    return None; // Invalid: HL7 uses 1-based indexing
-                }
-                repetition.get_component(c_idx - 1)?.value()
-            }
-            (Some(c_idx), Some(s_idx)) => {
-                // Subcomponent value (convert 1-based HL7 to 0-based internal)
-                if c_idx == 0 || s_idx == 0 {
-                    return None; // Invalid: HL7 uses 1-based indexing
-                }
-                repetition
-                    .get_component(c_idx - 1)?
-                    .get_subcomponent(s_idx - 1)?
-                    .as_str()
-                    .into()
-            }
-            (None, Some(_)) => {
-                // Invalid: can't have subcomponent without component
-                None
-            }
-        }
     }
 }
 

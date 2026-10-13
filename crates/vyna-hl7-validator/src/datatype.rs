@@ -19,15 +19,22 @@ fn parse_reason(error: CoreError) -> String {
 /// Result of data type validation
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DataTypeValidation {
+    /// The value matches the data type format
     Valid,
-    Invalid { reason: String },
+    /// The value does not match the data type format
+    Invalid {
+        /// Why the value failed
+        reason: String,
+    },
 }
 
 impl DataTypeValidation {
+    /// True when the value matches the data type format
     pub fn is_valid(&self) -> bool {
         matches!(self, DataTypeValidation::Valid)
     }
 
+    /// Why the value failed, or `None` when it passed
     pub fn error_message(&self) -> Option<&str> {
         match self {
             DataTypeValidation::Invalid { reason } => Some(reason),

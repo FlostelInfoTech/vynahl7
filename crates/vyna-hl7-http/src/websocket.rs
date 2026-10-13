@@ -35,8 +35,11 @@ pub type WsMessageHandler = Arc<dyn Fn(Message) -> Result<Message> + Send + Sync
 #[cfg(feature = "websocket")]
 #[derive(Clone)]
 pub struct WebSocketConfig {
+    /// Handler invoked for each incoming HL7 message
     pub handler: WsMessageHandler,
+    /// Maximum accepted message size in bytes (default: 1 MB)
     pub max_message_size: usize,
+    /// Broadcast each message to all connected clients
     pub enable_broadcast: bool,
 }
 

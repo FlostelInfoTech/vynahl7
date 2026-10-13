@@ -6,6 +6,7 @@ use crate::resources::specimen::*;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
 
+/// Converter for transforming SPM segments to FHIR Specimen resources
 pub struct SpecimenConverter;
 
 impl SpecimenConverter {

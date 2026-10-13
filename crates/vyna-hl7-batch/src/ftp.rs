@@ -106,17 +106,19 @@ impl FtpTransport {
     }
 
     async fn reconnect(&mut self) -> Result<(), BatchError> {
-        let addr: std::net::SocketAddr = tokio::net::lookup_host(&self.config.addr)
-            .await
-            .map_err(FtpError::ConnectionError)
-            .map_err(BatchError::from)?
-            .next()
-            .ok_or_else(|| {
-                BatchError::from(FtpError::ConnectionError(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("could not resolve '{}'", self.config.addr),
-                )))
-            })?;
+        let connect_timeout = self.config.connect_timeout;
+        let mut addrs =
+            tokio::time::timeout(connect_timeout, tokio::net::lookup_host(&self.config.addr))
+                .await
+                .map_err(|_| BatchError::Timeout(connect_timeout))?
+                .map_err(FtpError::ConnectionError)
+                .map_err(BatchError::from)?;
+        let addr: std::net::SocketAddr = addrs.next().ok_or_else(|| {
+            BatchError::from(FtpError::ConnectionError(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("could not resolve '{}'", self.config.addr),
+            )))
+        })?;
         let mut stream = AsyncFtpStream::connect_timeout(addr, self.config.connect_timeout).await?;
         let timeout = self.config.command_timeout;
         crate::timed(
@@ -329,7 +331,10 @@ impl FileTransport for FtpTransport {
             let _ = crate::timed(timeout, self.stream()?.rm(&temp)).await;
             return Err(e);
         }
-        crate::timed(timeout, self.stream()?.rename(temp.as_str(), path)).await?;
+        if let Err(e) = crate::timed(timeout, self.stream()?.rename(temp.as_str(), path)).await {
+            let _ = crate::timed(timeout, self.stream()?.rm(&temp)).await;
+            return Err(e);
+        }
         Ok(())
     }
 

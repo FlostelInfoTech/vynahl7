@@ -23,22 +23,22 @@ pub mod tls;
 #[cfg(feature = "testing")]
 pub mod testing;
 
+use std::time::Duration;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+};
 use vyna_hl7_core::{
     charset::CharacterSet,
     error::{Error, Result},
     message::Message,
 };
 use vyna_hl7_parser::parse_message;
-use std::time::Duration;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
-};
 
 #[cfg(feature = "tls")]
-use tokio_rustls::{TlsConnector, TlsAcceptor};
-#[cfg(feature = "tls")]
 use rustls::pki_types::ServerName;
+#[cfg(feature = "tls")]
+use tokio_rustls::{TlsAcceptor, TlsConnector};
 
 // Stream wrapper to support both plain TCP and TLS
 enum MllpStream {
@@ -94,10 +94,12 @@ impl MllpStream {
 // Re-export pool types
 pub use pool::{MllpPool, PoolConfig, PoolStats};
 
-/// MLLP frame markers
-pub const START_OF_BLOCK: u8 = 0x0B; // Vertical Tab (VT)
-pub const END_OF_BLOCK: u8 = 0x1C; // File Separator (FS)
-pub const CARRIAGE_RETURN: u8 = 0x0D; // Carriage Return (CR)
+/// MLLP start-of-block marker: Vertical Tab (VT), `0x0B`
+pub const START_OF_BLOCK: u8 = 0x0B;
+/// MLLP end-of-block marker: File Separator (FS), `0x1C`
+pub const END_OF_BLOCK: u8 = 0x1C;
+/// MLLP frame terminator: Carriage Return (CR), `0x0D`
+pub const CARRIAGE_RETURN: u8 = 0x0D;
 
 /// Default maximum message size (10 MB)
 /// This prevents DoS attacks via unbounded buffer growth
@@ -275,16 +277,19 @@ impl MllpClient {
 
     /// Connect to an MLLP server with custom configuration
     pub async fn connect_with_config(addr: &str, config: MllpConfig) -> Result<Self> {
-        let tcp_stream = tokio::time::timeout(
-            config.connect_timeout,
-            TcpStream::connect(addr)
-        )
-        .await
-        .map_err(|_| Error::Network(format!("Connection timeout after {:?}", config.connect_timeout)))?
-        .map_err(|e| Error::Network(format!("Failed to connect: {}", e)))?;
+        let tcp_stream = tokio::time::timeout(config.connect_timeout, TcpStream::connect(addr))
+            .await
+            .map_err(|_| {
+                Error::Network(format!(
+                    "Connection timeout after {:?}",
+                    config.connect_timeout
+                ))
+            })?
+            .map_err(|e| Error::Network(format!("Failed to connect: {}", e)))?;
 
         // Disable Nagle's algorithm for low-latency messaging
-        tcp_stream.set_nodelay(true)
+        tcp_stream
+            .set_nodelay(true)
             .map_err(|e| Error::Network(format!("Failed to set TCP_NODELAY: {}", e)))?;
 
         Ok(Self {
@@ -381,13 +386,15 @@ impl MllpClient {
         config: MllpConfig,
     ) -> Result<Self> {
         // Establish TCP connection first
-        let tcp_stream = tokio::time::timeout(
-            config.connect_timeout,
-            TcpStream::connect(addr)
-        )
-        .await
-        .map_err(|_| Error::Network(format!("Connection timeout after {:?}", config.connect_timeout)))?
-        .map_err(|e| Error::Network(format!("Failed to connect: {}", e)))?;
+        let tcp_stream = tokio::time::timeout(config.connect_timeout, TcpStream::connect(addr))
+            .await
+            .map_err(|_| {
+                Error::Network(format!(
+                    "Connection timeout after {:?}",
+                    config.connect_timeout
+                ))
+            })?
+            .map_err(|e| Error::Network(format!("Failed to connect: {}", e)))?;
 
         // Perform TLS handshake
         let connector = TlsConnector::from(tls_config.config.clone());
@@ -442,13 +449,10 @@ impl MllpClient {
         let framed = MllpFrame::wrap_bytes(&hl7_bytes);
 
         // Send with timeout
-        tokio::time::timeout(
-            self.write_timeout,
-            async {
-                self.stream.write_all(&framed).await?;
-                self.stream.flush().await
-            }
-        )
+        tokio::time::timeout(self.write_timeout, async {
+            self.stream.write_all(&framed).await?;
+            self.stream.flush().await
+        })
         .await
         .map_err(|_| Error::Network(format!("Write timeout after {:?}", self.write_timeout)))?
         .map_err(|e| Error::Network(format!("Failed to send: {}", e)))?;
@@ -459,12 +463,9 @@ impl MllpClient {
 
     /// Receive a message with timeout and size limit
     pub async fn receive_message(&mut self) -> Result<Message> {
-        tokio::time::timeout(
-            self.read_timeout,
-            self.receive_message_internal()
-        )
-        .await
-        .map_err(|_| Error::Network(format!("Read timeout after {:?}", self.read_timeout)))?
+        tokio::time::timeout(self.read_timeout, self.receive_message_internal())
+            .await
+            .map_err(|_| Error::Network(format!("Read timeout after {:?}", self.read_timeout)))?
     }
 
     /// Internal method to receive a message with buffer size protection
@@ -474,7 +475,8 @@ impl MllpClient {
         let mut found_start = false;
 
         loop {
-            let n = self.stream
+            let n = self
+                .stream
                 .read(&mut chunk)
                 .await
                 .map_err(|e| Error::Network(format!("Failed to read: {}", e)))?;
@@ -484,7 +486,6 @@ impl MllpClient {
             }
 
             for &byte in &chunk[..n] {
-
                 if !found_start {
                     if byte == START_OF_BLOCK {
                         found_start = true;
@@ -583,10 +584,7 @@ impl MllpServer {
     /// # }
     /// ```
     #[cfg(feature = "tls")]
-    pub async fn bind_tls(
-        addr: &str,
-        tls_config: crate::tls::TlsServerConfig,
-    ) -> Result<Self> {
+    pub async fn bind_tls(addr: &str, tls_config: crate::tls::TlsServerConfig) -> Result<Self> {
         Self::bind_tls_with_config(addr, tls_config, MllpConfig::default()).await
     }
 
@@ -650,7 +648,8 @@ impl MllpServer {
             .map_err(|e| Error::Network(format!("Failed to accept: {}", e)))?;
 
         // Disable Nagle's algorithm for low-latency messaging
-        tcp_stream.set_nodelay(true)
+        tcp_stream
+            .set_nodelay(true)
             .map_err(|e| Error::Network(format!("Failed to set TCP_NODELAY: {}", e)))?;
 
         #[cfg(feature = "tls")]
@@ -697,12 +696,9 @@ pub struct MllpConnection {
 impl MllpConnection {
     /// Receive a message with timeout and size limit
     pub async fn receive_message(&mut self) -> Result<Message> {
-        tokio::time::timeout(
-            self.read_timeout,
-            self.receive_message_internal()
-        )
-        .await
-        .map_err(|_| Error::Network(format!("Read timeout after {:?}", self.read_timeout)))?
+        tokio::time::timeout(self.read_timeout, self.receive_message_internal())
+            .await
+            .map_err(|_| Error::Network(format!("Read timeout after {:?}", self.read_timeout)))?
     }
 
     /// Internal method to receive a message with buffer size protection
@@ -712,7 +708,8 @@ impl MllpConnection {
         let mut found_start = false;
 
         loop {
-            let n = self.stream
+            let n = self
+                .stream
                 .read(&mut chunk)
                 .await
                 .map_err(|e| Error::Network(format!("Failed to read: {}", e)))?;
@@ -722,7 +719,6 @@ impl MllpConnection {
             }
 
             for &byte in &chunk[..n] {
-
                 if !found_start {
                     if byte == START_OF_BLOCK {
                         found_start = true;
@@ -763,13 +759,10 @@ impl MllpConnection {
         let hl7_bytes = message.encode_bytes()?;
         let framed = MllpFrame::wrap_bytes(&hl7_bytes);
 
-        tokio::time::timeout(
-            self.write_timeout,
-            async {
-                self.stream.write_all(&framed).await?;
-                self.stream.flush().await
-            }
-        )
+        tokio::time::timeout(self.write_timeout, async {
+            self.stream.write_all(&framed).await?;
+            self.stream.flush().await
+        })
         .await
         .map_err(|_| Error::Network(format!("Write timeout after {:?}", self.write_timeout)))?
         .map_err(|e| Error::Network(format!("Failed to send: {}", e)))
@@ -831,8 +824,7 @@ mod tests {
     #[test]
     fn test_wrap_unwrap_with_charset_round_trip() {
         let hl7 = "MSH|^~\\&|SND|FAC|RCV|RFAC|20240115120000||ADT^A01|1|P|2.5.1||||||8859/1\rPID|1||12345^^^FAC^MR||Müller||19800101|M\r";
-        let framed =
-            MllpFrame::wrap_with_charset(hl7, CharacterSet::Iso8859(1)).unwrap();
+        let framed = MllpFrame::wrap_with_charset(hl7, CharacterSet::Iso8859(1)).unwrap();
 
         // Latin-1 0xFC on the wire, not the UTF-8 sequence 0xC3 0xBC.
         assert!(framed.contains(&0xFC));
@@ -888,10 +880,7 @@ mod tests {
     fn test_charset_override_defaults_to_none() {
         assert!(MllpConfig::default().charset_override.is_none());
         let config = MllpConfig::new().with_charset_override(CharacterSet::Iso8859(1));
-        assert_eq!(
-            config.charset_override,
-            Some(CharacterSet::Iso8859(1))
-        );
+        assert_eq!(config.charset_override, Some(CharacterSet::Iso8859(1)));
     }
 
     #[test]
@@ -905,8 +894,7 @@ mod tests {
         let framed = MllpFrame::wrap_bytes(&payload);
 
         assert!(MllpFrame::unwrap(&framed).is_err());
-        let text =
-            MllpFrame::unwrap_with_charset(&framed, CharacterSet::Iso8859(1)).unwrap();
+        let text = MllpFrame::unwrap_with_charset(&framed, CharacterSet::Iso8859(1)).unwrap();
         assert!(text.contains("Müller"));
     }
 

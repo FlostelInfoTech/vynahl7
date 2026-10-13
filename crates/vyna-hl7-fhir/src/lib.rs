@@ -14,11 +14,11 @@
 //!
 //! Converters are strict about a resource's *primary* timestamp and lenient
 //! about *ancillary* ones. An invalid primary timestamp (the instant the
-//! clinical event happened, e.g. OBX-14, OBR-7, RXA-3) fails the conversion
-//! with [`ConversionError::InvalidFormat`]: the source data is corrupt at
-//! its core. An invalid ancillary timestamp is dropped while the resource
-//! (and every other field) still converts, preserving the clinically
-//! meaningful remainder:
+//! clinical event happened, e.g. OBX-14, OBR-7, OBR-22, RXA-3) fails the
+//! conversion with [`ConversionError::InvalidFormat`]: the source data is
+//! corrupt at its core. An invalid ancillary timestamp is dropped while the
+//! resource (and every other field) still converts, preserving the
+//! clinically meaningful remainder:
 //!
 //! - Encounter period bounds (PV1-44, PV1-45)
 //! - Specimen collection/received times (SPM-17, SPM-18)

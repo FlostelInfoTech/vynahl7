@@ -12,9 +12,11 @@ pub struct Patient {
     /// Resource type (always "Patient")
     pub resource_type: String,
 
+    /// Logical id of this resource
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
 
+    /// Metadata about the resource
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meta: Option<Meta>,
 
@@ -46,6 +48,7 @@ pub struct Patient {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deceased_boolean: Option<bool>,
 
+    /// Date/time of death, when known
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deceased_date_time: Option<String>,
 
@@ -61,6 +64,7 @@ pub struct Patient {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub multiple_birth_boolean: Option<bool>,
 
+    /// Birth order in a multiple birth
     #[serde(skip_serializing_if = "Option::is_none")]
     pub multiple_birth_integer: Option<i32>,
 

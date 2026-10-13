@@ -127,9 +127,9 @@ validator crate to avoid a core→validator dependency cycle.
 
 - **FHIR**: hand-written v2→R4 converters per resource (12 forward:
   Patient, Observation, Encounter, DiagnosticReport, Practitioner,
-  AllergyIntolerance, MedicationAdministration, Condition, Procedure,
-  Immunization, Medication, ServiceRequest, Specimen; 4 reverse:
-  Patient, Observation, Encounter, Practitioner) with Bundle assembly.
+  AllergyIntolerance, Condition, Procedure, Immunization, Medication,
+  ServiceRequest, Specimen; 4 reverse: Patient, Observation, Encounter,
+  Practitioner) with Bundle assembly.
 - **XML**: direct ER7 ↔ XML transcoding functions.
 - **convert**: schema-driven cross-version conversion reporting a
   `ConversionReport`.

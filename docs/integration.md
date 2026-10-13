@@ -1,8 +1,8 @@
 # Integration Guide — VynaHL7
 
 How to embed VynaHL7 (0.9.0) in a Rust service. Every Rust snippet below
-is executed as a test before release (see the guide verification crate);
-shell snippets mirror the CLI's own integration tests.
+is executed as a test before release; shell snippets mirror the CLI's
+own integration tests.
 
 ## 1. Install
 
@@ -17,10 +17,11 @@ vyna-hl7-mllp = "0.9"   # intra-organization, Tokio-based
 vyna-hl7-http = "0.9"   # inter-organization, HL7-over-HTTP
 ```
 
-Edition 2024, no `rust-version` pin. Transports need Tokio at your
-binary (`tokio = { version = "1", features = ["full"] }` covers the
-examples here). Feature flags: `tls` (TLS/mTLS), `testing` (mock
-servers for your own integration tests).
+Edition 2024, Rust 1.91 or later (`rust-version` 1.91 in every
+manifest). Transports need Tokio at your binary (`tokio = { version =
+"1", features = ["full"] }` covers the examples here). Feature flags:
+`tls` (TLS/mTLS), `testing` (mock servers for your own integration
+tests).
 
 ## 2. Parse and strictly validate
 

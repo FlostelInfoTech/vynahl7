@@ -98,7 +98,7 @@ CachedTerser speeds up repeated access to the same fields by caching parsed path
 ```rust
 use vyna_hl7_terser::CachedTerser;
 
-let terser = CachedTerser::new(&message);
+let mut terser = CachedTerser::new(&message);
 
 // These lookups are cached and very fast on repeated access
 for _ in 0..1000 {
@@ -279,23 +279,25 @@ let value = query.get_if("PID-5", |terser| {
 
 ## Examples
 
-See the `examples/` directory for complete working examples:
+Every API above ships runnable doctests; run them all with:
 
-- `cached_terser.rs` - Performance comparison between Terser and CachedTerser
-- `enhanced_terser.rs` - Comprehensive examples of BulkTerser, iterators, and queries
-
-Run examples with:
 ```bash
-cargo run --example cached_terser
-cargo run --example enhanced_terser
+cargo test -p vyna-hl7-terser --doc
+```
+
+The `benches/` directory holds Criterion benchmarks comparing `Terser`
+and `CachedTerser` on realistic clinical messages:
+
+```bash
+cargo bench -p vyna-hl7-terser --bench cached_terser_bench
 ```
 
 ## Performance Considerations
 
 | API | Use Case | Performance |
 |-----|----------|-------------|
-| `Terser` | Simple field access, one-off lookups | ~200-300 ns/lookup |
-| `CachedTerser` | Repeated access, batch processing | ~20-40 ns/lookup (cached) |
+| `Terser` | Simple field access, one-off lookups | ~80 ns/lookup |
+| `CachedTerser` | Repeated access, batch processing | ~60 ns/lookup (cached, ~1.4x faster) |
 | `BulkTerser` | Multiple fields at once | Efficient for bulk operations |
 | Iterators | Traversing repeating segments | Zero-allocation iteration |
 | `TerserQuery` | Filtering and searching | Optimized for complex queries |

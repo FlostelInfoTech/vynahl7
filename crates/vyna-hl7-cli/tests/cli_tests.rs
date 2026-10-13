@@ -1,4 +1,4 @@
-//! End-to-end CLI tests: `diff` and `send` against mock servers.
+//! End-to-end CLI tests: `diff`, `send`, `validate`, and `extract`.
 
 use std::io::Write;
 use std::process::Command;
@@ -125,6 +125,32 @@ fn diff_rejects_unknown_format() {
         .unwrap();
     assert!(!output.status.success());
     std::fs::remove_file(a).unwrap();
+}
+
+#[test]
+fn parse_validate_extract_reject_unknown_format() {
+    // A typo'd --format must fail loudly, never silently render text.
+    let file = write_temp("fmt.hl7", ADT_A);
+    let path = file.to_str().unwrap();
+    for (command, path_arg, expected) in [
+        ("parse", None, "Unknown parse format"),
+        ("validate", None, "Unknown validate format"),
+        ("extract", Some("PID-5"), "Unknown extract format"),
+    ] {
+        let mut args = vec![command, path];
+        if let Some(p) = path_arg {
+            args.push(p);
+        }
+        args.extend(["--format", "yaml"]);
+        let output = vynahl7().args(&args).output().unwrap();
+        assert!(!output.status.success(), "command={command}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains(expected),
+            "command={command} stderr={stderr}"
+        );
+    }
+    std::fs::remove_file(file).unwrap();
 }
 
 const ACK_AA: &str = "MSH|^~\\&|R|D|S|F|20240101||ACK^A01^ACK|M9|P|2.5\rMSA|AA|M1\r";

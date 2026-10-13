@@ -1,19 +1,22 @@
 //! Validation for HL7 messages
 //!
 //! This crate provides validation functionality for HL7 v2.x messages
-//! against their respective standards (v2.3, v2.4, v2.5, v2.6, v2.7, v2.8).
+//! against their respective standards (v2.1 through v2.8).
 //!
 //! ## Supported Message Schemas
 //!
-//! The validator includes 43 message schemas across 6 HL7 versions:
-//! - **ADT** (17 schemas): A01-A13, A17, A28, A31, A40
-//! - **SIU** (4 schemas): S12-S15 (Scheduling)
-//! - **MDM** (3 schemas): T01, T02, T04 (Medical Documents)
-//! - **DFT** (2 schemas): P03, P11 (Financial Transactions)
-//! - **QRY** (3 schemas): A19, Q01, Q02 (Query Messages)
-//! - **ORU** (1 schema): R01 (Observation Results)
-//! - **ORM** (1 schema): O01 (Orders)
-//! - **ACK** (1 schema): General Acknowledgment
+//! The validator embeds versioned JSON schemas for ADT (A01-A13, A17,
+//! A28, A31, A34, A40), SIU (S12-S15), MDM (T01, T02, T04), DFT (P03,
+//! P11), QRY (A19, Q01, Q02), BAR (P01, P02), pharmacy (RDE, RDS, RRD,
+//! RGV, RAS, RRA, OMP), laboratory (OML, OUL), ORU (R01), ORM (O01),
+//! ACK, MFN (M01), VXU (V04), and PPR (PC1). Coverage varies by
+//! version: DFT (P11) and the pharmacy/laboratory order triggers
+//! postdate v2.3, while QRY, ORM, MFN (M01), and OUL (R21) were
+//! withdrawn in v2.7+. Use [`list_available_schemas`] for the exact
+//! per-version list.
+//!
+//! Message types introduced after 2.2 (VXU, PPR, ...) have no v2.1/v2.2
+//! definition and validate against the v2.3 structure; see [`load_schema`].
 //!
 //! ## Data Type Validation
 //!
@@ -53,28 +56,31 @@ pub mod rules;
 pub mod schema_loader;
 pub mod vocabulary;
 
-use vyna_hl7_core::{
-    charset::CharacterSet,
-    error::Result,
-    message::Message,
-    segment::Segment,
-    types::DataType,
-    Version,
-};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use vyna_hl7_core::{
+    Version, charset::CharacterSet, error::Result, message::Message, segment::Segment,
+    types::DataType,
+};
 
 pub use context::{Severity, ValidationContext};
-pub use datatype::{validate_data_type, DataTypeValidation};
-pub use rules::{BuiltinRules, CrossFieldValidator, RulesEngine, RulesValidationResult, RuleSeverity, RuleViolation, ValidationRule, RuleConfig, RuleDefinition, ConditionConfig, DeclarativeError};
-pub use schema_loader::{load_schema, list_available_schemas};
-pub use vocabulary::{TableRegistry, Hl7Table, VocabularyValidation};
+pub use datatype::{DataTypeValidation, validate_data_type};
+pub use rules::{
+    BuiltinRules, ConditionConfig, CrossFieldValidator, DeclarativeError, RuleConfig,
+    RuleDefinition, RuleSeverity, RuleViolation, RulesEngine, RulesValidationResult,
+    ValidationRule,
+};
+pub use schema_loader::{list_available_schemas, load_schema};
+pub use vocabulary::{Hl7Table, TableRegistry, VocabularyValidation};
 
 /// Validation result
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationResult {
+    /// False once any error is recorded; warnings alone keep this true
     pub is_valid: bool,
+    /// Findings that fail validation
     pub errors: Vec<ValidationError>,
+    /// Non-failing findings
     pub warnings: Vec<ValidationWarning>,
 }
 
@@ -114,12 +120,16 @@ impl Default for ValidationResult {
 /// Validation error
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationError {
+    /// Terser-style location of the finding (e.g. `PID-5`)
     pub location: String,
+    /// Human-readable description of the finding
     pub message: String,
+    /// Machine-readable class of the finding
     pub error_type: ValidationErrorType,
 }
 
 impl ValidationError {
+    /// Record a validation error at `location` with the given class
     pub fn new(location: String, message: String, error_type: ValidationErrorType) -> Self {
         Self {
             location,
@@ -132,22 +142,31 @@ impl ValidationError {
 /// Type of validation error
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValidationErrorType {
+    /// A required segment, field, or component is absent or empty
     MissingRequiredField,
+    /// A value does not match its HL7 data type format
     InvalidDataType,
+    /// A value exceeds its schema `max_length`
     InvalidLength,
+    /// Reserved for schema cardinality violations (wrong repetition counts)
     InvalidCardinality,
+    /// A vocabulary, coded-value, character-set, or version-drift problem
     InvalidValue,
+    /// The message shape itself is wrong (empty, first segment not MSH)
     StructuralError,
 }
 
 /// Validation warning
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationWarning {
+    /// Terser-style location of the finding (e.g. `PID-5`)
     pub location: String,
+    /// Human-readable description of the finding
     pub message: String,
 }
 
 impl ValidationWarning {
+    /// Record a non-failing validation finding at `location`
     pub fn new(location: String, message: String) -> Self {
         Self { location, message }
     }
@@ -186,7 +205,11 @@ impl Validator {
     }
 
     /// Create a validator with auto-loaded schema for a specific message type
-    pub fn for_message_type(version: Version, message_type: &str, trigger_event: &str) -> Result<Self> {
+    pub fn for_message_type(
+        version: Version,
+        message_type: &str,
+        trigger_event: &str,
+    ) -> Result<Self> {
         let schema = load_schema(version, message_type, trigger_event)?;
         Ok(Self {
             version,
@@ -395,17 +418,18 @@ impl Validator {
 
         // Check version matches
         if let Some(msg_version) = message.get_version()
-            && msg_version != self.version {
-                self.emit_version_mismatch(
-                    result,
-                    "MSH-12".to_string(),
-                    format!(
-                        "Message version ({}) differs from validator version ({})",
-                        msg_version.as_str(),
-                        self.version.as_str()
-                    ),
-                );
-            }
+            && msg_version != self.version
+        {
+            self.emit_version_mismatch(
+                result,
+                "MSH-12".to_string(),
+                format!(
+                    "Message version ({}) differs from validator version ({})",
+                    msg_version.as_str(),
+                    self.version.as_str()
+                ),
+            );
+        }
     }
 
     /// Validate the MSH-18 character set declaration against the content
@@ -441,9 +465,7 @@ impl Validator {
                 for repetition in &field.repetitions {
                     for component in &repetition.components {
                         for subcomponent in &component.subcomponents {
-                            if let Some(offender) =
-                                charset.find_unmappable(&subcomponent.value)
-                            {
+                            if let Some(offender) = charset.find_unmappable(&subcomponent.value) {
                                 self.emit(
                                     result,
                                     format!("{}-{}", segment.id, field_index + 1),
@@ -539,8 +561,7 @@ impl Validator {
                             field_location.clone(),
                             format!(
                                 "Field exceeds maximum length ({} > {})",
-                                field_length,
-                                max_len
+                                field_length, max_len
                             ),
                             ValidationErrorType::InvalidLength,
                         );
@@ -616,8 +637,7 @@ impl Validator {
                 let comp_location = format!("{}-{}", field_location, comp_idx);
 
                 // Check required components
-                let comp_empty = component.is_none()
-                    || component.unwrap().is_empty();
+                let comp_empty = component.is_none() || component.unwrap().is_empty();
                 if comp_def.required && comp_empty {
                     self.emit(
                         result,
@@ -639,17 +659,21 @@ impl Validator {
 
                     // Validate component max length
                     if let Some(max_len) = comp_def.max_length
-                        && comp_value.len() > max_len {
-                            self.emit(
-                                result,
-                                comp_location.clone(),
-                                format!(
-                                    "Component {} ({}) exceeds maximum length ({} > {})",
-                                    comp_idx, comp_def.name, comp_value.len(), max_len
-                                ),
-                                ValidationErrorType::InvalidLength,
-                            );
-                        }
+                        && comp_value.len() > max_len
+                    {
+                        self.emit(
+                            result,
+                            comp_location.clone(),
+                            format!(
+                                "Component {} ({}) exceeds maximum length ({} > {})",
+                                comp_idx,
+                                comp_def.name,
+                                comp_value.len(),
+                                max_len
+                            ),
+                            ValidationErrorType::InvalidLength,
+                        );
+                    }
 
                     // Validate component data type
                     if let Some(data_type) = DataType::from_str(&comp_def.data_type) {
@@ -672,8 +696,7 @@ impl Validator {
 
                     // Validate component vocabulary/code set
                     if let Some(table_id) = &comp_def.table_id {
-                        let vocab_validation =
-                            self.table_registry.validate(table_id, comp_value);
+                        let vocab_validation = self.table_registry.validate(table_id, comp_value);
                         if !vocab_validation.is_valid()
                             && let Some(err_msg) = vocab_validation.error_message()
                         {
@@ -842,31 +865,46 @@ fn is_composite_datatype(data_type: &str) -> bool {
 /// Message schema definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageSchema {
+    /// HL7 message type (MSH-9.1, e.g. `ADT`)
     pub message_type: String,
+    /// Trigger event (MSH-9.2, e.g. `A01`; empty for trigger-less types like `ACK`)
     pub trigger_event: String,
+    /// HL7 version this structure was written against (e.g. `2.5`)
     pub version: String,
+    /// Segment definitions keyed by segment id (e.g. `PID`)
     pub segments: HashMap<String, SegmentDefinition>,
 }
 
 /// Segment definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SegmentDefinition {
+    /// Human-readable segment name (e.g. `Patient Identification`)
     pub name: String,
+    /// Whether the message must contain this segment
     pub required: bool,
+    /// Whether the segment may repeat
     pub repeating: bool,
+    /// Field definitions keyed by 1-based field number
     pub fields: HashMap<usize, FieldDefinition>,
 }
 
 /// Field definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldDefinition {
+    /// Human-readable field name (e.g. `Patient Name`)
     pub name: String,
+    /// HL7 data type code (e.g. `XPN`, `NM`, `DTM`)
     pub data_type: String,
+    /// Whether the field must carry a value
     pub required: bool,
+    /// Whether the field may repeat (`~`-separated values)
     pub repeating: bool,
+    /// Maximum value length, when the standard sets one
     pub max_length: Option<usize>,
+    /// HL7 table id for coded values, when one applies (e.g. `0001`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub table_id: Option<String>,
+    /// Component definitions for composite types, keyed by 1-based position
     #[serde(skip_serializing_if = "Option::is_none")]
     pub components: Option<HashMap<String, ComponentDefinition>>,
 }
@@ -874,12 +912,17 @@ pub struct FieldDefinition {
 /// Component definition for composite data types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComponentDefinition {
+    /// Human-readable component name (e.g. `Family Name`)
     pub name: String,
+    /// HL7 data type code (e.g. `FN`, `ST`)
     pub data_type: String,
+    /// Whether the component must carry a value
     #[serde(default)]
     pub required: bool,
+    /// Maximum value length, when the standard sets one
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_length: Option<usize>,
+    /// HL7 table id for coded values, when one applies (e.g. `0001`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub table_id: Option<String>,
 }
@@ -1124,8 +1167,7 @@ mod tests {
             .errors
             .iter()
             .filter(|e| {
-                e.location.contains("-3-1")
-                    && e.error_type == ValidationErrorType::InvalidLength
+                e.location.contains("-3-1") && e.error_type == ValidationErrorType::InvalidLength
             })
             .collect();
         assert_eq!(
@@ -1201,8 +1243,7 @@ mod tests {
             .errors
             .iter()
             .filter(|e| {
-                e.location.contains("-3-1")
-                    && e.error_type == ValidationErrorType::InvalidDataType
+                e.location.contains("-3-1") && e.error_type == ValidationErrorType::InvalidDataType
             })
             .collect();
         assert_eq!(
@@ -1224,15 +1265,24 @@ mod tests {
         let msh_def = schema.segments.get("MSH").unwrap();
         let msh9 = msh_def.fields.get(&9).unwrap();
         let components = msh9.components.as_ref().unwrap();
-        assert!(components.get("1").unwrap().required, "MSH-9-1 should be required");
-        assert!(components.get("2").unwrap().required, "MSH-9-2 should be required");
+        assert!(
+            components.get("1").unwrap().required,
+            "MSH-9-1 should be required"
+        );
+        assert!(
+            components.get("2").unwrap().required,
+            "MSH-9-2 should be required"
+        );
 
         // Verify PID-3 components exist
         let pid_def = schema.segments.get("PID").unwrap();
         let pid3 = pid_def.fields.get(&3).unwrap();
         let pid3_comps = pid3.components.as_ref().unwrap();
         assert_eq!(pid3_comps.len(), 10, "PID-3 (CX) should have 10 components");
-        assert!(pid3_comps.get("1").unwrap().required, "PID-3-1 (ID Number) should be required");
+        assert!(
+            pid3_comps.get("1").unwrap().required,
+            "PID-3-1 (ID Number) should be required"
+        );
         assert_eq!(pid3_comps.get("5").unwrap().data_type, "ID");
         assert_eq!(
             pid3_comps.get("5").unwrap().table_id.as_deref(),
@@ -1719,12 +1769,7 @@ mod tests {
         let validator = Validator::for_message_type(Version::V2_5, "VXU", "V04").unwrap();
         let result = validator.validate(&message);
         assert!(!result.is_valid());
-        assert!(
-            result
-                .errors
-                .iter()
-                .any(|e| e.message.contains("PID"))
-        );
+        assert!(result.errors.iter().any(|e| e.message.contains("PID")));
     }
 
     #[test]

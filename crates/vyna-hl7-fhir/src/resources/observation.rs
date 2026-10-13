@@ -12,9 +12,11 @@ pub struct Observation {
     /// Resource type (always "Observation")
     pub resource_type: String,
 
+    /// Logical id of this resource
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
 
+    /// Metadata about the resource
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meta: Option<Meta>,
 
@@ -44,6 +46,7 @@ pub struct Observation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effective_date_time: Option<String>,
 
+    /// Clinically relevant time period for the observation
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effective_period: Option<Period>,
 
@@ -59,30 +62,39 @@ pub struct Observation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_quantity: Option<Quantity>,
 
+    /// Result as a coded value
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_codeable_concept: Option<CodeableConcept>,
 
+    /// Result as plain text
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_string: Option<String>,
 
+    /// Result as true/false
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_boolean: Option<bool>,
 
+    /// Result as a whole number
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_integer: Option<i32>,
 
+    /// Result as a range
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_range: Option<Range>,
 
+    /// Result as a ratio
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_ratio: Option<Ratio>,
 
+    /// Result as a time of day
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_time: Option<String>,
 
+    /// Result as a date/time
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_date_time: Option<String>,
 
+    /// Result as a time period
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_period: Option<Period>,
 
@@ -119,15 +131,19 @@ pub struct Observation {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ObservationReferenceRange {
+    /// Lower bound of the reference range
     #[serde(skip_serializing_if = "Option::is_none")]
     pub low: Option<Quantity>,
 
+    /// Upper bound of the reference range
     #[serde(skip_serializing_if = "Option::is_none")]
     pub high: Option<Quantity>,
 
+    /// Type of reference range (normal, therapeutic, ...)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub type_: Option<CodeableConcept>,
 
+    /// Text description of the range
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
 }
@@ -136,31 +152,39 @@ pub struct ObservationReferenceRange {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ObservationComponent {
+    /// Type of the component result
     pub code: CodeableConcept,
 
+    /// Component result as a quantity
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_quantity: Option<Quantity>,
 
+    /// Component result as a coded value
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_codeable_concept: Option<CodeableConcept>,
 
+    /// Component result as plain text
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_string: Option<String>,
 
+    /// High, low, normal, etc. for this component
     #[serde(skip_serializing_if = "Option::is_none")]
     pub interpretation: Option<Vec<CodeableConcept>>,
 
+    /// Reference ranges for this component
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reference_range: Option<Vec<ObservationReferenceRange>>,
 }
 
-/// Time period
+/// Time period with optional start and end instants
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Period {
+    /// Start of the period
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start: Option<String>,
 
+    /// End of the period
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end: Option<String>,
 }
@@ -169,9 +193,11 @@ pub struct Period {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Range {
+    /// Lower bound of the range
     #[serde(skip_serializing_if = "Option::is_none")]
     pub low: Option<Quantity>,
 
+    /// Upper bound of the range
     #[serde(skip_serializing_if = "Option::is_none")]
     pub high: Option<Quantity>,
 }
@@ -180,26 +206,32 @@ pub struct Range {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Ratio {
+    /// Numerator of the ratio
     #[serde(skip_serializing_if = "Option::is_none")]
     pub numerator: Option<Quantity>,
 
+    /// Denominator of the ratio
     #[serde(skip_serializing_if = "Option::is_none")]
     pub denominator: Option<Quantity>,
 }
 
-/// Annotation
+/// Text note with attribution
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Annotation {
+    /// Practitioner or organization that authored the note
     #[serde(skip_serializing_if = "Option::is_none")]
     pub author_reference: Option<Reference>,
 
+    /// Author name when no reference is available
     #[serde(skip_serializing_if = "Option::is_none")]
     pub author_string: Option<String>,
 
+    /// When the note was made
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time: Option<String>,
 
+    /// The note text
     pub text: String,
 }
 

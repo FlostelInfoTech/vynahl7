@@ -126,7 +126,8 @@ pub enum GroupPattern {
     Procedure,
     /// DIAGNOSIS: DG1 as header
     Diagnosis,
-    /// Custom group with user-defined header and child segment IDs
+    /// Placeholder for user-defined groups, which carry no predefined
+    /// shape; see [`GroupNavigator::custom_groups`] instead.
     Custom,
 }
 
@@ -202,6 +203,32 @@ impl GroupConfig {
             .with_terminators(&["ORC", "PID", "MSH"])
     }
 
+    /// Build the configuration for a [`GroupPattern`]
+    ///
+    /// Returns `None` for [`GroupPattern::Custom`], which has no predefined
+    /// shape; use [`GroupNavigator::custom_groups`] for user-defined groups.
+    pub fn from_pattern(pattern: GroupPattern) -> Option<Self> {
+        match pattern {
+            GroupPattern::OrderObservation => Some(Self::order_observation()),
+            GroupPattern::Patient => Some(Self::patient()),
+            GroupPattern::Specimen => Some(Self::specimen()),
+            GroupPattern::Insurance => Some(Self::insurance()),
+            GroupPattern::Order => Some(Self::order()),
+            GroupPattern::Timing => Some(
+                Self::new("TQ1")
+                    .with_children(&["TQ2"])
+                    .with_terminators(&["TQ1", "ORC", "OBR", "PID", "MSH"]),
+            ),
+            GroupPattern::Procedure => {
+                Some(Self::new("PR1").with_terminators(&["PR1", "ORC", "OBR", "PID", "MSH"]))
+            }
+            GroupPattern::Diagnosis => {
+                Some(Self::new("DG1").with_terminators(&["DG1", "ORC", "OBR", "PID", "MSH"]))
+            }
+            GroupPattern::Custom => None,
+        }
+    }
+
     /// Check if a segment ID is a valid child
     pub fn is_child(&self, segment_id: &str) -> bool {
         self.child_ids.iter().any(|id| id == segment_id)
@@ -242,7 +269,9 @@ impl<'a> GroupNavigator<'a> {
                     group.add_child(segment, idx);
                 } else if config.is_terminator(&segment.id) {
                     // Save current group and stop
-                    groups.push(current_group.take().unwrap());
+                    if let Some(group) = current_group.take() {
+                        groups.push(group);
+                    }
                 }
             }
         }
@@ -599,5 +628,36 @@ OBR|1||ORDER001|CBC";
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].child_count(), 0);
         assert!(!groups[0].has_children());
+    }
+
+    #[test]
+    fn test_from_pattern_maps_known_patterns() {
+        let cases = [
+            (GroupPattern::OrderObservation, "OBR"),
+            (GroupPattern::Patient, "PID"),
+            (GroupPattern::Specimen, "SPM"),
+            (GroupPattern::Insurance, "IN1"),
+            (GroupPattern::Order, "ORC"),
+            (GroupPattern::Timing, "TQ1"),
+            (GroupPattern::Procedure, "PR1"),
+            (GroupPattern::Diagnosis, "DG1"),
+        ];
+        for (pattern, header_id) in cases {
+            let config = GroupConfig::from_pattern(pattern).unwrap();
+            assert_eq!(config.header_id, header_id);
+        }
+
+        assert!(GroupConfig::from_pattern(GroupPattern::Custom).is_none());
+    }
+
+    #[test]
+    fn test_from_pattern_config_extracts_groups() {
+        let message = sample_oru_message();
+        let navigator = GroupNavigator::new(&message);
+
+        let config = GroupConfig::from_pattern(GroupPattern::OrderObservation).unwrap();
+        let groups = navigator.extract_groups(&config);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].child_count(), 4);
     }
 }

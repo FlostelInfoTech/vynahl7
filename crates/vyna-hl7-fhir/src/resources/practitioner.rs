@@ -12,9 +12,11 @@ pub struct Practitioner {
     /// Resource type (always "Practitioner")
     pub resource_type: String,
 
+    /// Logical id of this resource
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
 
+    /// Metadata about the resource
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meta: Option<Meta>,
 
@@ -75,13 +77,15 @@ pub struct PractitionerQualification {
     pub issuer: Option<Reference>,
 }
 
-/// Time period
+/// Time period with optional start and end instants
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Period {
+    /// Start of the period
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start: Option<String>,
 
+    /// End of the period
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end: Option<String>,
 }

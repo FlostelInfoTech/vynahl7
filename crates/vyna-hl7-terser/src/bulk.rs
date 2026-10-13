@@ -48,7 +48,9 @@ impl<'a> BulkTerser<'a> {
     /// Extract multiple field values at once
     ///
     /// Returns a HashMap where keys are the paths and values are the extracted field values.
-    /// If a path is invalid or the field doesn't exist, the value will be None.
+    /// A path addressing a missing field yields `None`; a malformed path
+    /// (or an out-of-range segment index) returns `Err`, matching
+    /// [`Terser::get`](crate::Terser::get).
     ///
     /// # Examples
     ///

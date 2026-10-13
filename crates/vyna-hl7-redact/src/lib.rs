@@ -568,6 +568,51 @@ mod tests {
     }
 
     #[test]
+    fn unmatched_rules_lists_wildcard_only_for_empty_messages() {
+        let redactor = Redactor::new().with_rule(Rule::field("*", 3, Strategy::Mask));
+
+        // No segments at all: even "*" matches nothing.
+        let empty = Message::new();
+        assert_eq!(redactor.unmatched_rules(&empty).len(), 1);
+
+        // Any segment satisfies a wildcard rule.
+        let message =
+            parse_message("MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1\r").unwrap();
+        assert!(redactor.unmatched_rules(&message).is_empty());
+    }
+
+    #[test]
+    fn whole_field_remove_clears_every_repetition() {
+        let mut message =
+            parse_message("MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1||AAA~BBB\r").unwrap();
+        let redactor = Redactor::new().with_rule(Rule::field("PID", 3, Strategy::Remove));
+        let report = redactor.redact(&mut message).unwrap();
+
+        // One report entry for the field, both repetitions gone.
+        assert_eq!(report.len(), 1);
+        assert_eq!(report[0].path, "PID[0]-3");
+        let pid = message.get_segment_by_id("PID").unwrap();
+        assert!(pid.get_field(3).unwrap().is_empty());
+    }
+
+    #[test]
+    fn out_of_range_component_rule_is_a_quiet_noop() {
+        let mut message =
+            parse_message("MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1||||Smith^John\r")
+                .unwrap();
+        // PID-5 has 2 components; component 9 exists nowhere.
+        let redactor = Redactor::new().with_rule(Rule::component("PID", 5, 9, Strategy::Remove));
+        let report = redactor.redact(&mut message).unwrap();
+
+        assert!(report.is_empty());
+        let pid = message.get_segment_by_id("PID").unwrap();
+        let value = pid.get_field(5).unwrap().repetitions[0]
+            .full_value()
+            .unwrap();
+        assert_eq!(value, "Smith^John");
+    }
+
+    #[test]
     fn unmatched_rules_flags_typos_but_not_absent_fields() {
         let message =
             parse_message("MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1\r").unwrap();

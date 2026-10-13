@@ -224,7 +224,36 @@ impl FieldDefinitionBuilder {
         self
     }
 
+    /// Build the field definition, failing when a required part is missing.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CustomSegmentError::MissingField`](crate::error::CustomSegmentError)
+    /// when the field number, name, or data type was never set.
+    pub fn try_build(self) -> Result<FieldDefinition> {
+        Ok(FieldDefinition {
+            number: self.number.ok_or_else(|| {
+                crate::error::CustomSegmentError::missing_field("number", "FieldDefinition")
+            })?,
+            name: self.name.ok_or_else(|| {
+                crate::error::CustomSegmentError::missing_field("name", "FieldDefinition")
+            })?,
+            data_type: self.data_type.ok_or_else(|| {
+                crate::error::CustomSegmentError::missing_field("data_type", "FieldDefinition")
+            })?,
+            required: self.required,
+            repeatable: self.repeatable,
+            max_length: self.max_length,
+            description: self.description.unwrap_or_default(),
+        })
+    }
+
     /// Build the field definition
+    ///
+    /// # Panics
+    ///
+    /// Panics when the field number, name, or data type was never set.
+    /// Use [`try_build`](Self::try_build) for a fallible build instead.
     pub fn build(self) -> FieldDefinition {
         FieldDefinition {
             number: self.number.expect("Field number is required"),
@@ -240,16 +269,19 @@ impl FieldDefinitionBuilder {
 
 /// Trait for parsing field values from segments
 pub trait ParseSegmentField: Sized {
+    /// Parse a value from the numbered field of a segment
     fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self>;
 }
 
 /// Trait for serializing field values to segments
 pub trait SerializeSegmentField {
+    /// Write this value into the numbered field of a segment
     fn set_field(&self, segment: &mut Segment, field_num: usize);
 }
 
 /// Trait to determine the inner type for builder fields
 pub trait BuilderFieldType {
+    /// Value type accepted by the builder setter
     type Inner;
 }
 
@@ -261,17 +293,23 @@ pub struct BuilderField<T: BuildableField> {
 
 /// Trait for types that can be built from builder fields
 pub trait BuildableField: Sized {
+    /// Builder-side storage (usually `Option<Self>`)
     type Storage: Default;
+    /// Store a setter value into the storage
     fn set_value(storage: &mut Self::Storage, value: Self::Inner);
+    /// Build the field value, or fail when a required value is missing
     fn build_value(storage: Self::Storage, field_name: &str, seg_id: &str) -> Result<Self>;
+    /// Value type accepted by the builder setter
     type Inner;
 }
 
 impl<T: BuildableField> BuilderField<T> {
+    /// Store a value for this builder field
     pub fn set(&mut self, value: T::Inner) {
         T::set_value(&mut self.value, value);
     }
 
+    /// Build the field value, failing when a required value was never set
     pub fn build(self, field_name: &str, seg_id: &str) -> Result<T> {
         T::build_value(self.value, field_name, seg_id)
     }
@@ -2350,6 +2388,41 @@ mod tests {
             .build();
 
         assert!(!field.required);
+    }
+
+    #[test]
+    fn test_field_definition_try_build() {
+        let field = FieldDefinition::builder()
+            .number(1)
+            .name("Visit Type")
+            .data_type("ST")
+            .try_build()
+            .unwrap();
+
+        assert_eq!(field.number, 1);
+        assert_eq!(field.name, "Visit Type");
+        assert_eq!(field.data_type, "ST");
+    }
+
+    #[test]
+    fn test_field_definition_try_build_missing_parts() {
+        // Each missing required part is its own error, not a panic.
+        for build in [
+            FieldDefinition::builder()
+                .name("n")
+                .data_type("ST")
+                .try_build(),
+            FieldDefinition::builder()
+                .number(1)
+                .data_type("ST")
+                .try_build(),
+            FieldDefinition::builder().number(1).name("n").try_build(),
+        ] {
+            assert!(matches!(
+                build,
+                Err(crate::error::CustomSegmentError::MissingField { .. })
+            ));
+        }
     }
 
     // Tests for i32 type
