@@ -14,8 +14,11 @@ use crate::{BatchError, FileEntry, FileTransport};
 /// paths: `/`-separated, relative, `..` rejected.
 #[derive(Debug, Default)]
 pub struct MemTransport {
-    files: BTreeMap<String, Vec<u8>>,
+    files: BTreeMap<String, (Vec<u8>, u64)>,
     closed: bool,
+    /// Logical clock bumped on every write; reported as `modified_ms` so
+    /// pollers can observe mtime stability and redrops.
+    tick: u64,
 }
 
 impl MemTransport {
@@ -26,7 +29,9 @@ impl MemTransport {
 
     /// Seed one file.
     pub fn with_file(mut self, path: &str, data: &[u8]) -> Self {
-        self.files.insert(normalize(path), data.to_vec());
+        self.tick += 1;
+        let tick = self.tick;
+        self.files.insert(normalize(path), (data.to_vec(), tick));
         self
     }
 
@@ -49,7 +54,7 @@ impl FileTransport for MemTransport {
         self.check_open()?;
         let prefix = normalize(dir);
         let mut entries = Vec::new();
-        for (path, data) in &self.files {
+        for (path, (data, mtime)) in &self.files {
             let parent = match path.rfind('/') {
                 Some(i) => &path[..i],
                 None => "",
@@ -58,7 +63,7 @@ impl FileTransport for MemTransport {
                 entries.push(FileEntry {
                     path: path.clone(),
                     size: Some(data.len() as u64),
-                    modified_ms: None,
+                    modified_ms: Some(*mtime),
                 });
             }
         }
@@ -69,7 +74,7 @@ impl FileTransport for MemTransport {
         self.check_open()?;
         self.files
             .get(&normalize(path))
-            .cloned()
+            .map(|(data, _)| data.clone())
             .ok_or_else(|| BatchError::Invalid(format!("no such file: '{path}'")))
     }
 
@@ -79,7 +84,9 @@ impl FileTransport for MemTransport {
         if normalized.is_empty() {
             return Err(BatchError::Invalid("empty path".to_string()));
         }
-        self.files.insert(normalized, data.to_vec());
+        self.tick += 1;
+        let tick = self.tick;
+        self.files.insert(normalized, (data.to_vec(), tick));
         Ok(())
     }
 
@@ -137,5 +144,21 @@ mod tests {
             transport.list("").await,
             Err(BatchError::NotConnected)
         ));
+    }
+
+    #[tokio::test]
+    async fn listings_report_mtime_that_advances_on_rewrite() {
+        // Pollers key redrops on (path, size, mtime): a same-size rewrite
+        // must surface a new mtime so it reprocesses.
+        let mut transport = MemTransport::new().with_file("a.hl7", MSH.as_bytes());
+        let first = transport.list("").await.unwrap();
+        assert_eq!(first.len(), 1);
+        let before = first[0].modified_ms.expect("mtime must be reported");
+
+        transport.put("a.hl7", MSH.as_bytes()).await.unwrap();
+        let second = transport.list("").await.unwrap();
+        let after = second[0].modified_ms.expect("mtime must be reported");
+        assert_eq!(second[0].size, first[0].size);
+        assert!(after > before, "rewrite must advance mtime");
     }
 }

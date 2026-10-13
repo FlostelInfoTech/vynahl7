@@ -97,6 +97,15 @@ impl<'a> Terser<'a> {
     }
 }
 
+/// Maximum 1-based index [`TerserMut::set`] accepts in any single
+/// dimension (segment occurrence, field, repetition, component,
+/// subcomponent).
+///
+/// `set` gap-fills missing structure, so an unbounded index would allocate
+/// millions of empty values; anything beyond this cap is rejected with an
+/// error instead. Reads via [`Terser::get`] are unaffected.
+const MAX_SET_INDEX: usize = 10_000;
+
 /// Mutable terser for modifying message values
 pub struct TerserMut<'a> {
     message: &'a mut Message,
@@ -128,9 +137,24 @@ impl<'a> TerserMut<'a> {
     /// while keeping the rest.
     ///
     /// Returns [`Error::terser_path`](Error::terser_path) when the path is
-    /// malformed or uses a 0 index (all path indices are 1-based).
+    /// malformed, uses a 0 index (all path indices are 1-based), or
+    /// addresses an index beyond `MAX_SET_INDEX` (10,000).
     pub fn set(&mut self, path: &str, value: &str) -> Result<()> {
         let parsed_path = TerserPath::parse(path)?;
+
+        // Bound gap-filling before mutating anything: every dimension is
+        // compared as a 1-based occurrence count, so no partial structure
+        // is created when the write is rejected.
+        if parsed_path.segment_index + 1 > MAX_SET_INDEX
+            || parsed_path.field_index > MAX_SET_INDEX
+            || parsed_path.repetition_index + 1 > MAX_SET_INDEX
+            || parsed_path.component_index.unwrap_or(0) > MAX_SET_INDEX
+            || parsed_path.subcomponent_index.unwrap_or(0) > MAX_SET_INDEX
+        {
+            return Err(Error::terser_path(format!(
+                "Set index exceeds gap-fill cap of {MAX_SET_INDEX}: {path}"
+            )));
+        }
 
         // Find or create the segment
         let segment_index =
@@ -497,5 +521,49 @@ mod tests {
         let rep = pid.get_field(5).unwrap().get_repetition(0).unwrap();
         assert_eq!(rep.components.len(), 1);
         assert!(!message.encode().contains("SMITH^JOHN"));
+    }
+
+    #[test]
+    fn test_set_rejects_huge_segment_gap() {
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ORU^R01|123|P|2.5\r\
+                   OBX|1|NM|GLU||98\r";
+        let mut message = parse_message(hl7).unwrap();
+        {
+            let mut terser = TerserMut::new(&mut message);
+            assert!(terser.set("OBX(1000000)-5", "4.2").is_err());
+        }
+
+        // Rejected before mutating: no gap-filled segments.
+        assert_eq!(message.get_segments_by_id("OBX").len(), 1);
+    }
+
+    #[test]
+    fn test_set_rejects_huge_field_repetition_component_gaps() {
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\rPID|1\r";
+        let mut message = parse_message(hl7).unwrap();
+        {
+            let mut terser = TerserMut::new(&mut message);
+            assert!(terser.set("PID-999999999-1", "X").is_err());
+            assert!(terser.set("PID-5(100001)-1", "X").is_err());
+            assert!(terser.set("PID-5-100001", "X").is_err());
+            assert!(terser.set("PID-5-1-100001", "X").is_err());
+        }
+
+        // Rejected before mutating: PID still holds its single field.
+        assert_eq!(message.get_segments_by_id("PID")[0].fields.len(), 1);
+    }
+
+    #[test]
+    fn test_set_within_cap_still_roundtrips() {
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ORU^R01|123|P|2.5\r\
+                   OBX|1|NM|GLU||98\r";
+        let mut message = parse_message(hl7).unwrap();
+        let mut terser = TerserMut::new(&mut message);
+
+        terser.set("OBX(100)-5", "4.2").unwrap();
+
+        let read_terser = Terser::new(&message);
+        assert_eq!(read_terser.get("OBX(100)-5").unwrap(), Some("4.2"));
+        assert_eq!(message.get_segments_by_id("OBX").len(), 100);
     }
 }

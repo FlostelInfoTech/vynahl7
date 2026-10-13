@@ -86,6 +86,20 @@ macro_rules! z_segment {
         },
         validate = $validate_fn:expr
     ) => {
+        // Reject non-Z ids and field 0 at expansion: get_field(0) is
+        // always None and set_field(0) always fails, so field 0 would
+        // silently never serialize.
+        const _: () = assert!(
+            $crate::macros::__is_z_segment_id($id),
+            "z_segment! id must start with 'Z'"
+        );
+        $(
+            const _: () = assert!(
+                $field_num != 0,
+                "z_segment! field numbers are 1-based; field 0 addresses nothing"
+            );
+        )*
+
         /// Custom Z-segment
         #[derive(Debug, Clone, PartialEq)]
         pub struct $name {
@@ -112,6 +126,12 @@ macro_rules! z_segment {
             fn from_segment(segment: &vyna_hl7_core::Segment) -> $crate::error::Result<Self> {
                 use $crate::segment::ParseSegmentField;
 
+                if segment.id != $id {
+                    return Err($crate::error::CustomSegmentError::parse_error(
+                        $id,
+                        format!("expected {} segment, got {}", $id, segment.id),
+                    ));
+                }
                 Ok($name {
                     $(
                         $field_name: ParseSegmentField::parse_field(segment, $field_num, $id)?,
@@ -170,214 +190,11 @@ macro_rules! z_segment {
     };
 }
 
-/// Helper macro to parse field from segment (internal use)
+/// Check that a `z_segment!` id names a Z-segment (const so the
+/// macro can reject bad ids at expansion with a clear error).
 #[doc(hidden)]
-#[macro_export]
-macro_rules! __z_segment_parse_field {
-    // Optional field (detected by Option< prefix)
-    ($segment:expr, $num:literal, Option < $($inner:tt)* >, $field_name:expr, $seg_id:expr) => {
-        $crate::__z_segment_parse_field_inner!($segment, $num, $($inner)*, optional)
-    };
-
-    // Required field
-    ($segment:expr, $num:literal, $($field_type:tt)*, $field_name:expr, $seg_id:expr) => {
-        $crate::__z_segment_parse_field_inner!($segment, $num, $($field_type)*, required, $seg_id)
-    };
-}
-
-/// Inner helper for parsing fields
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __z_segment_parse_field_inner {
-    // Optional String
-    ($segment:expr, $num:literal, String, optional) => {
-        $segment.get_field_value($num).map(|s| s.to_string())
-    };
-
-    // Required String
-    ($segment:expr, $num:literal, String, required, $seg_id:expr) => {
-        $segment
-            .get_field_value($num)
-            .map(|s| s.to_string())
-            .ok_or_else(|| {
-                $crate::error::CustomSegmentError::missing_field(
-                    format!("{}-{}", $seg_id, $num),
-                    $seg_id,
-                )
-            })?
-    };
-
-    // Optional f64
-    ($segment:expr, $num:literal, f64, optional) => {
-        $segment
-            .get_field_value($num)
-            .and_then(|s| s.parse::<f64>().ok())
-    };
-
-    // Required f64
-    ($segment:expr, $num:literal, f64, required, $seg_id:expr) => {
-        $segment
-            .get_field_value($num)
-            .and_then(|s| s.parse::<f64>().ok())
-            .ok_or_else(|| {
-                $crate::error::CustomSegmentError::missing_field(
-                    format!("{}-{}", $seg_id, $num),
-                    $seg_id,
-                )
-            })?
-    };
-
-    // Optional u32
-    ($segment:expr, $num:literal, u32, optional) => {
-        $segment
-            .get_field_value($num)
-            .and_then(|s| s.parse::<u32>().ok())
-    };
-
-    // Required u32
-    ($segment:expr, $num:literal, u32, required, $seg_id:expr) => {
-        $segment
-            .get_field_value($num)
-            .and_then(|s| s.parse::<u32>().ok())
-            .ok_or_else(|| {
-                $crate::error::CustomSegmentError::missing_field(
-                    format!("{}-{}", $seg_id, $num),
-                    $seg_id,
-                )
-            })?
-    };
-}
-
-/// Helper macro to set field on segment (internal use)
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __z_segment_set_field {
-    // Optional field (detected by Option< prefix)
-    ($segment:expr, $num:literal, $value:expr, Option < $($inner:tt)* >) => {
-        $crate::__z_segment_set_field_inner!($segment, $num, $value, $($inner)*, optional)
-    };
-
-    // Required field
-    ($segment:expr, $num:literal, $value:expr, $($field_type:tt)*) => {
-        $crate::__z_segment_set_field_inner!($segment, $num, $value, $($field_type)*, required)
-    };
-}
-
-/// Inner helper for setting fields
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __z_segment_set_field_inner {
-    // Optional String field
-    ($segment:expr, $num:literal, $value:expr, String, optional) => {
-        if let Some(ref v) = $value {
-            $segment.set_field_value($num, v)
-        } else {
-            Ok(())
-        }
-    };
-
-    // Required String field
-    ($segment:expr, $num:literal, $value:expr, String, required) => {
-        $segment.set_field_value($num, $value)
-    };
-
-    // Optional f64 field
-    ($segment:expr, $num:literal, $value:expr, f64, optional) => {
-        if let Some(ref v) = $value {
-            $segment.set_field_value($num, &v.to_string())
-        } else {
-            Ok(())
-        }
-    };
-
-    // Required f64 field
-    ($segment:expr, $num:literal, $value:expr, f64, required) => {
-        $segment.set_field_value($num, &$value.to_string())
-    };
-
-    // Optional u32 field
-    ($segment:expr, $num:literal, $value:expr, u32, optional) => {
-        if let Some(ref v) = $value {
-            $segment.set_field_value($num, &v.to_string())
-        } else {
-            Ok(())
-        }
-    };
-
-    // Required u32 field
-    ($segment:expr, $num:literal, $value:expr, u32, required) => {
-        $segment.set_field_value($num, &$value.to_string())
-    };
-}
-
-/// Helper macro to require field in builder (internal use)
-/// Builder stores Option<T> for all fields, this unwraps required ones and keeps optional ones wrapped
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __z_segment_require_field {
-    // Optional field (detected by Option< prefix) - stays as Option<T>
-    ($value:expr, $field_name:expr, $seg_id:expr, Option < $($inner:tt)* >) => {
-        $value
-    };
-
-    // Required field - unwrap the Option<T> to get T
-    ($value:expr, $field_name:expr, $seg_id:expr, $($field_type:tt)*) => {
-        $value.ok_or_else(|| {
-            $crate::error::CustomSegmentError::missing_field(
-                format!("{}-{}", $seg_id, $field_name),
-                $seg_id,
-            )
-        })?
-    };
-}
-
-/// Helper macro to determine builder field type (internal use)
-/// All builder fields are Option<T> where T is the inner type
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __z_segment_builder_field_type {
-    // Optional field - extract inner type and wrap in Option
-    (Option < $($inner:tt)* >) => { Option<$($inner)*> };
-    // Required field - wrap in Option
-    ($($field_type:tt)*) => { Option<$($field_type)*> };
-}
-
-/// Helper macro to determine builder parameter type (internal use)
-/// Setter methods accept the inner type (without Option wrapper)
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __z_segment_builder_param_type {
-    // Optional String - setter accepts String
-    (Option < String >) => { impl Into<String> };
-    // Required String - setter accepts String
-    (String) => { impl Into<String> };
-    // Optional f64 - setter accepts f64
-    (Option < f64 >) => { f64 };
-    // Required f64 - setter accepts f64
-    (f64) => { f64 };
-    // Optional u32 - setter accepts u32
-    (Option < u32 >) => { u32 };
-    // Required u32 - setter accepts u32
-    (u32) => { u32 };
-}
-
-/// Helper macro to set builder value (internal use)
-/// Always wraps the value in Some
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __z_segment_builder_set_value {
-    // Optional String
-    ($value:expr, Option < String >) => { Some($value.into()) };
-    // Required String
-    ($value:expr, String) => { Some($value.into()) };
-    // Optional f64
-    ($value:expr, Option < f64 >) => { Some($value) };
-    // Required f64
-    ($value:expr, f64) => { Some($value) };
-    // Optional u32
-    ($value:expr, Option < u32 >) => { Some($value) };
-    // Required u32
-    ($value:expr, u32) => { Some($value) };
+pub const fn __is_z_segment_id(id: &str) -> bool {
+    !id.is_empty() && id.as_bytes()[0] == b'Z'
 }
 
 // Export paste for use in the macro
@@ -440,6 +257,18 @@ mod tests {
         assert_eq!(zpv.visit_number, "V11111");
     }
 
+    #[test]
+    fn test_z_segment_from_segment_rejects_wrong_id() {
+        // A PID segment must not misparse as ZPV: fields would bind to
+        // the wrong positions.
+        let mut segment = Segment::new("PID");
+        segment.set_field_value(1, "1").unwrap();
+        segment.set_field_value(2, "V123").unwrap();
+
+        let err = TestZPV::from_segment(&segment).unwrap_err();
+        assert!(err.to_string().contains("PID"), "unexpected: {err}");
+    }
+
     z_segment! {
         TestZCU,
         id = "ZCU",
@@ -477,5 +306,15 @@ mod tests {
             .build();
 
         assert!(zcu.is_err());
+    }
+
+    #[test]
+    fn test_is_z_segment_id() {
+        // Predicate behind the z_segment! expansion-time checks.
+        assert!(__is_z_segment_id("ZPV"));
+        assert!(__is_z_segment_id("Z"));
+        assert!(!__is_z_segment_id("PID"));
+        assert!(!__is_z_segment_id(""));
+        assert!(!__is_z_segment_id("zpv"));
     }
 }

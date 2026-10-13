@@ -1175,6 +1175,18 @@ async fn ftp_upload(
     Ok(())
 }
 
+/// Maximum in-memory download size (10 MiB). Downloads past this
+/// are rejected with a clear error instead of buffering unboundedly.
+const MAX_DOWNLOAD_BYTES: u64 = 10 * 1024 * 1024;
+
+/// Build the oversize-download error for `remote_path`.
+fn download_too_large(remote_path: &str) -> String {
+    format!(
+        "Download of '{}' exceeds maximum size of {} bytes",
+        remote_path, MAX_DOWNLOAD_BYTES
+    )
+}
+
 async fn ftp_download(
     host: &str,
     port: u16,
@@ -1200,11 +1212,17 @@ async fn ftp_download(
         .await
         .map_err(|e| format!("Download failed: {}", e))?;
 
+    // Bound the in-memory buffer: read at most one byte past the
+    // cap, then reject oversized files with a clear error.
     let mut buffer = Vec::new();
-    stream
+    (&mut stream)
+        .take(MAX_DOWNLOAD_BYTES + 1)
         .read_to_end(&mut buffer)
         .await
         .map_err(|e| format!("Read failed: {}", e))?;
+    if buffer.len() as u64 > MAX_DOWNLOAD_BYTES {
+        return Err(download_too_large(remote_path));
+    }
 
     stream
         .finish()
@@ -1704,8 +1722,13 @@ fn sftp_download_sync(
         .map_err(|e| format!("Failed to open file '{}': {}", remote_path, e))?;
 
     let mut content = Vec::new();
-    file.read_to_end(&mut content)
+    (&mut file)
+        .take(MAX_DOWNLOAD_BYTES + 1)
+        .read_to_end(&mut content)
         .map_err(|e| format!("Failed to read file: {}", e))?;
+    if content.len() as u64 > MAX_DOWNLOAD_BYTES {
+        return Err(download_too_large(remote_path));
+    }
 
     CharacterSet::decode_message(&content).map_err(|e| e.to_string())
 }
@@ -2001,6 +2024,98 @@ mod tests {
             .local_addr()
             .unwrap()
             .port()
+    }
+
+    /// Minimal fake FTP server serving one in-memory file for
+    /// download tests (USER/PASS/PASV/RETR/QUIT only).
+    async fn fake_ftp_download_server(payload: Vec<u8>) -> u16 {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let (reader, mut writer) = stream.into_split();
+            let mut lines = BufReader::new(reader).lines();
+            let mut data_listener: Option<TcpListener> = None;
+            writer.write_all(b"220 Fake FTP ready\r\n").await.unwrap();
+            while let Some(line) = lines.next_line().await.unwrap_or(None) {
+                let verb = line
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .to_ascii_uppercase();
+                match verb.as_str() {
+                    "USER" => writer.write_all(b"331 Password?\r\n").await.unwrap(),
+                    "PASS" => writer.write_all(b"230 Logged in\r\n").await.unwrap(),
+                    "PASV" => {
+                        let data = TcpListener::bind("127.0.0.1:0").await.unwrap();
+                        let dp = data.local_addr().unwrap().port();
+                        data_listener = Some(data);
+                        let reply = format!(
+                            "227 Entering Passive Mode (127,0,0,1,{},{}).\r\n",
+                            dp / 256,
+                            dp % 256
+                        );
+                        writer.write_all(reply.as_bytes()).await.unwrap();
+                    }
+                    "EPSV" => {
+                        let data = TcpListener::bind("127.0.0.1:0").await.unwrap();
+                        let dp = data.local_addr().unwrap().port();
+                        data_listener = Some(data);
+                        let reply = format!("229 Entering Extended Passive Mode (|||{}|)\r\n", dp);
+                        writer.write_all(reply.as_bytes()).await.unwrap();
+                    }
+                    "RETR" => {
+                        writer.write_all(b"150 Opening data\r\n").await.unwrap();
+                        if let Some(data) = data_listener.take() {
+                            let (mut conn, _) = data.accept().await.unwrap();
+                            conn.write_all(&payload).await.unwrap();
+                            conn.shutdown().await.unwrap();
+                        }
+                        writer
+                            .write_all(b"226 Transfer complete\r\n")
+                            .await
+                            .unwrap();
+                    }
+                    "QUIT" => {
+                        writer.write_all(b"221 Bye\r\n").await.unwrap();
+                        break;
+                    }
+                    _ => writer.write_all(b"200 OK\r\n").await.unwrap(),
+                }
+            }
+        });
+        port
+    }
+
+    #[test]
+    fn oversize_error_names_file_and_limit() {
+        let e = download_too_large("big.hl7");
+        assert!(e.contains("big.hl7"), "unexpected error: {e}");
+        assert!(e.contains("maximum"), "unexpected error: {e}");
+        assert!(e.contains(&MAX_DOWNLOAD_BYTES.to_string()));
+    }
+
+    #[tokio::test]
+    async fn ftp_download_rejects_oversized_file() {
+        // 1 byte over the enforced download cap.
+        let payload = vec![b'X'; (MAX_DOWNLOAD_BYTES + 1) as usize];
+        let port = fake_ftp_download_server(payload).await;
+        match ftp_download("127.0.0.1", port, "u", "p", "big.hl7").await {
+            Err(e) => assert!(e.contains("maximum"), "unexpected error: {e}"),
+            Ok(s) => panic!("oversized download accepted ({} bytes)", s.len()),
+        }
+    }
+
+    #[tokio::test]
+    async fn ftp_download_accepts_small_file() {
+        let port = fake_ftp_download_server(b"MSH|^~\\&|S\rPID|1\r".to_vec()).await;
+        let content = ftp_download("127.0.0.1", port, "u", "p", "small.hl7")
+            .await
+            .unwrap();
+        assert_eq!(content, "MSH|^~\\&|S\rPID|1\r");
     }
 
     #[test]

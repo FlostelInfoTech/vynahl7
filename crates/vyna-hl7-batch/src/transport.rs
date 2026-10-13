@@ -4,6 +4,7 @@
 //! absolute paths and `..` segments are rejected.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::BatchError;
 
@@ -99,6 +100,9 @@ where
         .map_err(|e| BatchError::Io(std::io::Error::other(e.to_string())))?
 }
 
+/// Disambiguates temp upload names across concurrent puts.
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 impl FilesystemTransport {
     /// Open (creating if needed) a drop folder.
     pub fn open(root: impl AsRef<Path>) -> Result<Self, BatchError> {
@@ -166,23 +170,28 @@ impl FilesystemTransport {
     }
 
     fn put_sync(&self, path: &str, data: &[u8]) -> Result<(), BatchError> {
-        let dest = self.resolve(path)?;
-        if dest.components().count() == 0 {
+        // The cleaned parts decide: `dest` always contains the root, so a
+        // component count on it can never detect an empty path.
+        if clean_relative_parts(path)?.is_empty() {
             return Err(BatchError::Invalid("empty path".to_string()));
         }
+        let dest = self.resolve(path)?;
         let parent = dest
             .parent()
             .ok_or_else(|| BatchError::Invalid(format!("path has no parent: '{path}'")))?;
         std::fs::create_dir_all(parent)?;
 
-        // Atomic publish: write temp, fsync, rename, fsync directory.
+        // Atomic publish: write temp, fsync, rename, fsync directory. The
+        // counter keeps temp names unique across concurrent puts sharing
+        // one clock tick (pid + nanos alone can repeat).
         let temp_name = format!(
-            ".tmp-{}-{}",
+            ".tmp-{}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_nanos())
-                .unwrap_or(0)
+                .unwrap_or(0),
+            TEMP_COUNTER.fetch_add(1, Ordering::SeqCst)
         );
         let temp = parent.join(temp_name);
         std::fs::write(&temp, data)?;
@@ -328,6 +337,59 @@ mod tests {
         let entries = t.list("inbox").await.unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].path, "inbox/a.hl7");
+
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn put_rejects_empty_paths_without_leaking_temp_files() {
+        let dir = scratch_dir();
+        let mut t = FilesystemTransport::open(dir.join("root")).unwrap();
+
+        for path in ["", "/", "."] {
+            assert!(
+                matches!(t.put(path, b"MSH").await, Err(BatchError::Invalid(_))),
+                "put({path:?}) must be rejected"
+            );
+        }
+        // Nothing staged anywhere: the root holds no files and its parent
+        // holds no leaked temp files either.
+        assert!(t.list("").await.unwrap().is_empty());
+        let mut leftover: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        leftover.sort();
+        assert_eq!(leftover, vec![std::ffi::OsString::from("root")]);
+
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn concurrent_puts_do_not_share_temp_files() {
+        let dir = scratch_dir();
+        let transport = FilesystemTransport::open(&dir).unwrap();
+
+        let mut handles = Vec::new();
+        for i in 0..64 {
+            let mut t = transport.clone();
+            handles.push(tokio::spawn(async move {
+                let path = format!("inbox/f{i:03}.hl7");
+                let data = format!("payload-{i}").into_bytes();
+                t.put(&path, &data).await.unwrap();
+            }));
+        }
+        for handle in handles {
+            handle.await.unwrap();
+        }
+        let mut t = transport.clone();
+        for i in 0..64 {
+            let path = format!("inbox/f{i:03}.hl7");
+            assert_eq!(
+                t.get(&path).await.unwrap(),
+                format!("payload-{i}").into_bytes()
+            );
+        }
 
         tokio::fs::remove_dir_all(&dir).await.unwrap();
     }

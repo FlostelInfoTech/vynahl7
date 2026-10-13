@@ -94,33 +94,52 @@ pub struct QueryAcknowledgment {
     pub status: QueryResponseStatus,
     /// Message query name (QAK-3)
     pub query_name: Option<String>,
-    /// Total number of matching records (QAK-4)
+    /// Total number of matching records (QAK-4); `None` when absent
+    /// or unparseable (unknown, not zero)
     pub hit_count_total: Option<u32>,
-    /// Number of records in this response (QAK-5)
+    /// Number of records in this response (QAK-5); `None` when absent
+    /// or unparseable (unknown, not zero)
     pub this_payload: Option<u32>,
-    /// Number of records not yet sent (QAK-6)
+    /// Number of records not yet sent (QAK-6); `None` when absent or
+    /// unparseable (unknown, not complete)
     pub hits_remaining: Option<u32>,
 }
 
 impl QueryAcknowledgment {
     /// Check if there is more data available (pagination)
+    ///
+    /// Returns `false` when the remaining count is unknown
+    /// ([`hits_remaining`](Self::hits_remaining) is `None`): unknown
+    /// remaining data must not be reported as complete either (see
+    /// [`is_complete`](Self::is_complete)).
     pub fn has_more_data(&self) -> bool {
         self.hits_remaining.unwrap_or(0) > 0
     }
 
     /// Check if all data has been sent
+    ///
+    /// Only a remaining count of exactly zero means complete. An
+    /// absent or unparseable QAK-6 leaves
+    /// [`hits_remaining`](Self::hits_remaining) as `None` (unknown),
+    /// which is not complete.
     pub fn is_complete(&self) -> bool {
-        self.hits_remaining.unwrap_or(0) == 0
+        self.hits_remaining == Some(0)
     }
 
     /// Get the total number of records found
-    pub fn total_records(&self) -> u32 {
-        self.hit_count_total.unwrap_or(0)
+    ///
+    /// Returns `None` when QAK-4 is absent or unparseable (unknown),
+    /// never a defaulted zero.
+    pub fn total_records(&self) -> Option<u32> {
+        self.hit_count_total
     }
 
     /// Get the number of records in this response
-    pub fn records_in_response(&self) -> u32 {
-        self.this_payload.unwrap_or(0)
+    ///
+    /// Returns `None` when QAK-5 is absent or unparseable (unknown),
+    /// never a defaulted zero.
+    pub fn records_in_response(&self) -> Option<u32> {
+        self.this_payload
     }
 }
 
@@ -359,7 +378,7 @@ mod tests {
 
         let ack = parser.parse_acknowledgment().unwrap();
         assert_eq!(ack.status, QueryResponseStatus::NoDataFound);
-        assert_eq!(ack.total_records(), 0);
+        assert_eq!(ack.total_records(), Some(0));
         assert!(!ack.has_more_data());
         assert!(ack.is_complete());
     }
@@ -415,8 +434,8 @@ mod tests {
         let ack = parser.parse_acknowledgment().unwrap();
         assert_eq!(ack.query_tag, "987654321");
         assert_eq!(ack.status, QueryResponseStatus::Ok);
-        assert_eq!(ack.total_records(), 2);
-        assert_eq!(ack.records_in_response(), 2);
+        assert_eq!(ack.total_records(), Some(2));
+        assert_eq!(ack.records_in_response(), Some(2));
         assert!(ack.is_complete());
 
         let data_segments = parser.get_data_segments();
@@ -435,6 +454,39 @@ mod tests {
 
         assert!(!parser.is_successful());
         assert!(parser.parse_acknowledgment().is_err());
+    }
+
+    #[test]
+    fn test_garbage_counts_are_unknown_not_zero_or_complete() {
+        let hl7 = "MSH|^~\\&|HOSPMPI|HOSP|CLIN|CLIN|20250115||RSP^K22|RSP-001|P|2.5\r\
+                   MSA|AA|Q-1\r\
+                   QAK|tag|OK|Q22|abc|def|ghi\r";
+        let message = parse_message(hl7).unwrap();
+        let parser = QueryResultParser::new(&message);
+
+        let ack = parser.parse_acknowledgment().unwrap();
+        assert_eq!(ack.hit_count_total, None);
+        assert_eq!(ack.this_payload, None);
+        assert_eq!(ack.hits_remaining, None);
+        assert_eq!(ack.total_records(), None);
+        assert_eq!(ack.records_in_response(), None);
+        assert!(!ack.is_complete());
+        assert!(!ack.has_more_data());
+    }
+
+    #[test]
+    fn test_missing_counts_are_unknown_not_zero_or_complete() {
+        let hl7 = "MSH|^~\\&|HOSPMPI|HOSP|CLIN|CLIN|20250115||RSP^K22|RSP-001|P|2.5\r\
+                   MSA|AA|Q-1\r\
+                   QAK|tag|OK|Q22\r";
+        let message = parse_message(hl7).unwrap();
+        let parser = QueryResultParser::new(&message);
+
+        let ack = parser.parse_acknowledgment().unwrap();
+        assert_eq!(ack.total_records(), None);
+        assert_eq!(ack.records_in_response(), None);
+        assert!(!ack.is_complete());
+        assert!(!ack.has_more_data());
     }
 
     #[test]

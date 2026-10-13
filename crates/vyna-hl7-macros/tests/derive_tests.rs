@@ -112,6 +112,7 @@ fn test_segment_from_segment() {
     let mut segment = Segment::new("PID");
     let _ = segment.set_field_value(1, "1");
     let _ = segment.set_field_value(3, "12345");
+    let _ = segment.set_component(5, 0, 0, "Smith");
     let _ = segment.set_field_value(7, "19800101");
     let _ = segment.set_field_value(8, "M");
 
@@ -122,8 +123,20 @@ fn test_segment_from_segment() {
 
     assert_eq!(pid.set_id, Some("1".to_string()));
     assert_eq!(pid.patient_id, "12345");
+    assert_eq!(pid.family_name, "Smith");
     assert_eq!(pid.date_of_birth, Some("19800101".to_string()));
     assert_eq!(pid.sex, Some("M".to_string()));
+}
+
+#[test]
+fn test_segment_from_segment_missing_required_is_none() {
+    // family_name (PID-5-1) is a required String: absent data fails the
+    // conversion instead of silently defaulting to "".
+    let mut segment = Segment::new("PID");
+    let _ = segment.set_field_value(1, "1");
+    let _ = segment.set_field_value(3, "12345");
+
+    assert!(PatientIdentification::from_segment(&segment).is_none());
 }
 
 #[test]
@@ -156,6 +169,7 @@ fn test_segment_try_from_trait() {
 
     let mut segment = Segment::new("PID");
     let _ = segment.set_field_value(3, "TEST123");
+    let _ = segment.set_component(5, 0, 0, "Smith");
 
     let pid = PatientIdentification::try_from(&segment);
     assert!(pid.is_ok());
@@ -174,6 +188,7 @@ fn test_segment_try_from_wrong_type() {
 #[test]
 fn test_component_extraction() {
     let mut segment = Segment::new("PID");
+    let _ = segment.set_field_value(3, "12345");
     // Set field 5 with components: family^given
     let _ = segment.set_component(5, 0, 0, "Smith");
     let _ = segment.set_component(5, 0, 1, "John");
@@ -318,6 +333,30 @@ fn test_message_try_from_error_names_message_type() {
         err.to_string().contains("ADT^A01"),
         "unexpected error: {err}"
     );
+}
+
+#[test]
+fn test_message_from_message_rejects_wrong_msh9() {
+    // MSH-9 ORU^R01 must not convert into the ADT^A01 struct, and a
+    // matching MSH-9 must convert.
+    for (msg_type, trigger, expect_some) in [
+        ("ORU", "R01", false),
+        ("ADT", "A02", false),
+        ("ADT", "A01", true),
+    ] {
+        let mut msh = Segment::new("MSH");
+        let _ = msh.set_component(9, 0, 0, msg_type);
+        let _ = msh.set_component(9, 0, 1, trigger);
+        let mut message = Message::new();
+        message.add_segment(msh);
+        message.add_segment(sample_pid_segment());
+
+        assert_eq!(
+            AdtA01::from_message(&message).is_some(),
+            expect_some,
+            "MSH-9 {msg_type}^{trigger}"
+        );
+    }
 }
 
 #[test]

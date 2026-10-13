@@ -242,6 +242,12 @@ impl CustomSegmentRegistry {
         })?;
 
         if let Some(factory) = factories.get(id) {
+            if segment.id != id {
+                return Err(CustomSegmentError::parse_error(
+                    id,
+                    format!("expected {} segment, got {}", id, segment.id),
+                ));
+            }
             let custom_segment = factory.create(segment)?;
             Ok(Some(custom_segment))
         } else {
@@ -445,6 +451,23 @@ mod tests {
         let result = registry.parse_segment(&segment);
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_create_rejects_mismatched_segment_id() {
+        // A PID segment must not be created as ZPV: fields would bind to
+        // the wrong positions.
+        let registry = CustomSegmentRegistry::new();
+        registry.register::<TestZPV>().unwrap();
+
+        let mut pid = Segment::new("PID");
+        pid.set_field_value(1, "1").unwrap();
+        let err = registry.create("ZPV", &pid).unwrap_err();
+        assert!(err.to_string().contains("expected ZPV"), "{err}");
+
+        let mut zpv = Segment::new("ZPV");
+        zpv.set_field_value(1, "OUTPATIENT").unwrap();
+        assert!(registry.create("ZPV", &zpv).unwrap().is_some());
     }
 
     #[test]

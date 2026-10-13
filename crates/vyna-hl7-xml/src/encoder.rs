@@ -151,9 +151,10 @@ impl XmlEncoder {
             // Parse ADT^A01 format
             let parts: Vec<&str> = value.split('^').collect();
             if parts.len() >= 2 {
-                return format!("{}_{}", parts[0], parts[1]);
+                let raw = format!("{}_{}", parts[0], parts[1]);
+                return sanitize_element_name(&raw);
             } else if !parts.is_empty() {
-                return parts[0].to_string();
+                return sanitize_element_name(parts[0]);
             }
         }
         "HL7Message".to_string()
@@ -165,8 +166,8 @@ impl XmlEncoder {
         writer: &mut Writer<W>,
         segment: &Segment,
     ) -> XmlResult<()> {
-        let segment_name = &segment.id;
-        writer.write_event(Event::Start(BytesStart::new(segment_name)))?;
+        let segment_name = sanitize_element_name(&segment.id);
+        writer.write_event(Event::Start(BytesStart::new(&segment_name)))?;
 
         // Write each field
         for (idx, field) in segment.fields.iter().enumerate() {
@@ -177,10 +178,10 @@ impl XmlEncoder {
                 continue;
             }
 
-            self.write_field(writer, segment_name, field_num, field)?;
+            self.write_field(writer, &segment_name, field_num, field)?;
         }
 
-        writer.write_event(Event::End(BytesEnd::new(segment_name)))?;
+        writer.write_event(Event::End(BytesEnd::new(&segment_name)))?;
         Ok(())
     }
 
@@ -296,6 +297,35 @@ impl XmlEncoder {
     }
 }
 
+/// Replace characters illegal in XML names with `_`.
+///
+/// Element names derive from message content (MSH-9, segment IDs);
+/// unsanitized values like `AD<T` would emit malformed XML.
+fn sanitize_element_name(name: &str) -> String {
+    if name.is_empty() {
+        return "_".to_string();
+    }
+    let mut out = String::with_capacity(name.len() + 1);
+    let mut chars = name.chars();
+    let first = chars.next().unwrap_or('_');
+    if first.is_ascii_alphabetic() || first == '_' {
+        out.push(first);
+    } else if first.is_ascii_alphanumeric() {
+        out.push('_');
+        out.push(first);
+    } else {
+        out.push('_');
+    }
+    for ch in chars {
+        if ch.is_ascii_alphanumeric() || ch == '_' || ch == '.' || ch == '-' {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+    out
+}
+
 impl Default for XmlEncoder {
     fn default() -> Self {
         Self::new()
@@ -407,5 +437,28 @@ mod tests {
         let xml = encoder.encode(&message).unwrap();
         assert!(xml.contains("<PID.5.1.1>Smith</PID.5.1.1>"));
         assert!(xml.contains("<PID.5.1.2>Johnny</PID.5.1.2>"));
+    }
+
+    #[test]
+    fn test_root_name_sanitizes_invalid_xml_chars() {
+        let mut message = Message::new();
+        let mut msh = Segment::new("MSH");
+        let _ = msh.set_field_value(9, "AD<T^A01");
+        message.add_segment(msh);
+
+        let xml = XmlEncoder::new().encode(&message).unwrap();
+        assert!(xml.contains("<AD_T_A01>"));
+        assert!(xml.contains("</AD_T_A01>"));
+        assert!(!xml.contains("<AD<T_A01>"));
+    }
+
+    #[test]
+    fn test_segment_id_sanitizes_invalid_xml_chars() {
+        let mut message = Message::new();
+        message.add_segment(Segment::new("AD<T"));
+
+        let xml = XmlEncoder::new().encode(&message).unwrap();
+        assert!(xml.contains("<AD_T>"));
+        assert!(!xml.contains("<AD<T>"));
     }
 }

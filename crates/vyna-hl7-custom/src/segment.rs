@@ -1169,25 +1169,40 @@ where
     Ok(values)
 }
 
-/// Parse HL7 datetime format: YYYYMMDDHHMMSS[.SSSS]
+/// Parse HL7 datetime: `YYYYMMDDHH[MM[SS]][.S...]`.
+///
+/// A datetime requires at least hour precision; date-only precisions
+/// (`YYYY`, `YYYYMM`, `YYYYMMDD`) belong to [`parse_hl7_date`]. A
+/// fraction (1+ digits) is allowed only with seconds precision and
+/// folds into nanoseconds. Anything else — including trailing garbage —
+/// is rejected.
 fn parse_hl7_datetime(s: &str) -> Option<NaiveDateTime> {
-    // Try full format with optional fractional seconds
-    // (.get: non-ASCII input yields None, never panics)
-    if s.len() >= 14 {
-        let year = s.get(0..4)?.parse::<i32>().ok()?;
-        let month = s.get(4..6)?.parse::<u32>().ok()?;
-        let day = s.get(6..8)?.parse::<u32>().ok()?;
-        let hour = s.get(8..10)?.parse::<u32>().ok()?;
-        let minute = s.get(10..12)?.parse::<u32>().ok()?;
-        let second = s.get(12..14)?.parse::<u32>().ok()?;
-
-        let date = NaiveDate::from_ymd_opt(year, month, day)?;
-        let time = NaiveTime::from_hms_opt(hour, minute, second)?;
-
-        return Some(NaiveDateTime::new(date, time));
+    let (base, fraction) = split_hl7_fraction(s)?;
+    if fraction.is_some() && base.len() != 14 {
+        return None;
     }
+    // (.get: non-ASCII input yields None, never panics)
+    let year = base.get(0..4)?.parse::<i32>().ok()?;
+    let month = base.get(4..6)?.parse::<u32>().ok()?;
+    let day = base.get(6..8)?.parse::<u32>().ok()?;
+    let (hour, minute, second) = match base.len() {
+        14 => (
+            base.get(8..10)?.parse::<u32>().ok()?,
+            base.get(10..12)?.parse::<u32>().ok()?,
+            base.get(12..14)?.parse::<u32>().ok()?,
+        ),
+        12 => (
+            base.get(8..10)?.parse::<u32>().ok()?,
+            base.get(10..12)?.parse::<u32>().ok()?,
+            0,
+        ),
+        10 => (base.get(8..10)?.parse::<u32>().ok()?, 0, 0),
+        _ => return None,
+    };
 
-    None
+    let date = NaiveDate::from_ymd_opt(year, month, day)?;
+    let time = NaiveTime::from_hms_nano_opt(hour, minute, second, fraction.unwrap_or(0))?;
+    Some(NaiveDateTime::new(date, time))
 }
 
 /// Parse HL7 date format: YYYYMMDD, YYYYMM, or YYYY
@@ -1215,22 +1230,51 @@ fn parse_hl7_date(s: &str) -> Option<NaiveDate> {
     }
 }
 
-/// Parse HL7 time format: HHMMSS[.SSSS] or HHMM
+/// Parse HL7 time: `HH[MM[SS]][.S...]`.
+///
+/// A fraction (1+ digits) is allowed only with seconds precision and
+/// folds into nanoseconds. Anything else — including trailing garbage
+/// and UTC offsets, which a [`NaiveTime`] cannot represent — is rejected.
 fn parse_hl7_time(s: &str) -> Option<NaiveTime> {
-    if s.len() >= 6 {
-        // HHMMSS format (.get: non-ASCII yields None, never panics)
-        let hour = s.get(0..2)?.parse::<u32>().ok()?;
-        let minute = s.get(2..4)?.parse::<u32>().ok()?;
-        let second = s.get(4..6)?.parse::<u32>().ok()?;
-        NaiveTime::from_hms_opt(hour, minute, second)
-    } else if s.len() == 4 {
-        // HHMM format
-        let hour = s.get(0..2)?.parse::<u32>().ok()?;
-        let minute = s.get(2..4)?.parse::<u32>().ok()?;
-        NaiveTime::from_hms_opt(hour, minute, 0)
-    } else {
-        None
+    let (base, fraction) = split_hl7_fraction(s)?;
+    if fraction.is_some() && base.len() != 6 {
+        return None;
     }
+    // (.get: non-ASCII yields None, never panics)
+    let (hour, minute, second) = match base.len() {
+        6 => (
+            base.get(0..2)?.parse::<u32>().ok()?,
+            base.get(2..4)?.parse::<u32>().ok()?,
+            base.get(4..6)?.parse::<u32>().ok()?,
+        ),
+        4 => (
+            base.get(0..2)?.parse::<u32>().ok()?,
+            base.get(2..4)?.parse::<u32>().ok()?,
+            0,
+        ),
+        2 => (base.get(0..2)?.parse::<u32>().ok()?, 0, 0),
+        _ => return None,
+    };
+    NaiveTime::from_hms_nano_opt(hour, minute, second, fraction.unwrap_or(0))
+}
+
+/// Split `base[.fraction]`, folding the fraction into nanoseconds.
+///
+/// The fraction must be 1+ ASCII digits; digits beyond nanosecond
+/// precision are truncated. Returns the base and the fraction as
+/// nanoseconds (`None` when no `.` is present).
+fn split_hl7_fraction(s: &str) -> Option<(&str, Option<u32>)> {
+    let Some((base, frac)) = s.split_once('.') else {
+        return Some((s, None));
+    };
+    if frac.is_empty() || !frac.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let mut nanos = 0u32;
+    for (i, b) in frac.bytes().take(9).enumerate() {
+        nanos += u32::from(b - b'0') * 10u32.pow(8 - i as u32);
+    }
+    Some((base, Some(nanos)))
 }
 
 /// Parse HL7 datetime with timezone: YYYYMMDDHHMMSS[+/-ZZZZ]
@@ -1864,14 +1908,13 @@ impl ParseSegmentField for Option<(String, String)> {
         if let Some(field) = segment.get_field(field_num)
             && let Some(rep) = field.get_repetition(0)
         {
-            let c0 = rep.get_component(0).and_then(|c| c.value());
-            let c1 = rep.get_component(1).and_then(|c| c.value());
+            let c0 = rep.get_component(0).and_then(|c| c.value()).unwrap_or("");
+            let c1 = rep.get_component(1).and_then(|c| c.value()).unwrap_or("");
 
-            if let (Some(v0), Some(v1)) = (c0, c1)
-                && !v0.is_empty()
-                && !v1.is_empty()
-            {
-                return Ok(Some((v0.to_string(), v1.to_string())));
+            // Any present component makes the field present; missing ones
+            // default to "" so partial content is never silently dropped.
+            if !c0.is_empty() || !c1.is_empty() {
+                return Ok(Some((c0.to_string(), c1.to_string())));
             }
         }
         Ok(None)
@@ -1924,16 +1967,14 @@ impl ParseSegmentField for Option<(String, String, String)> {
         if let Some(field) = segment.get_field(field_num)
             && let Some(rep) = field.get_repetition(0)
         {
-            let c0 = rep.get_component(0).and_then(|c| c.value());
-            let c1 = rep.get_component(1).and_then(|c| c.value());
-            let c2 = rep.get_component(2).and_then(|c| c.value());
+            let c0 = rep.get_component(0).and_then(|c| c.value()).unwrap_or("");
+            let c1 = rep.get_component(1).and_then(|c| c.value()).unwrap_or("");
+            let c2 = rep.get_component(2).and_then(|c| c.value()).unwrap_or("");
 
-            if let (Some(v0), Some(v1), Some(v2)) = (c0, c1, c2)
-                && !v0.is_empty()
-                && !v1.is_empty()
-                && !v2.is_empty()
-            {
-                return Ok(Some((v0.to_string(), v1.to_string(), v2.to_string())));
+            // Any present component makes the field present; missing ones
+            // default to "" so partial content is never silently dropped.
+            if !c0.is_empty() || !c1.is_empty() || !c2.is_empty() {
+                return Ok(Some((c0.to_string(), c1.to_string(), c2.to_string())));
             }
         }
         Ok(None)
@@ -1992,22 +2033,19 @@ impl ParseSegmentField for Option<(String, String, String, String)> {
         if let Some(field) = segment.get_field(field_num)
             && let Some(rep) = field.get_repetition(0)
         {
-            let c0 = rep.get_component(0).and_then(|c| c.value());
-            let c1 = rep.get_component(1).and_then(|c| c.value());
-            let c2 = rep.get_component(2).and_then(|c| c.value());
-            let c3 = rep.get_component(3).and_then(|c| c.value());
+            let c0 = rep.get_component(0).and_then(|c| c.value()).unwrap_or("");
+            let c1 = rep.get_component(1).and_then(|c| c.value()).unwrap_or("");
+            let c2 = rep.get_component(2).and_then(|c| c.value()).unwrap_or("");
+            let c3 = rep.get_component(3).and_then(|c| c.value()).unwrap_or("");
 
-            if let (Some(v0), Some(v1), Some(v2), Some(v3)) = (c0, c1, c2, c3)
-                && !v0.is_empty()
-                && !v1.is_empty()
-                && !v2.is_empty()
-                && !v3.is_empty()
-            {
+            // Any present component makes the field present; missing ones
+            // default to "" so partial content is never silently dropped.
+            if !c0.is_empty() || !c1.is_empty() || !c2.is_empty() || !c3.is_empty() {
                 return Ok(Some((
-                    v0.to_string(),
-                    v1.to_string(),
-                    v2.to_string(),
-                    v3.to_string(),
+                    c0.to_string(),
+                    c1.to_string(),
+                    c2.to_string(),
+                    c3.to_string(),
                 )));
             }
         }
@@ -2069,25 +2107,26 @@ impl ParseSegmentField for Option<(String, String, String, String, String)> {
         if let Some(field) = segment.get_field(field_num)
             && let Some(rep) = field.get_repetition(0)
         {
-            let c0 = rep.get_component(0).and_then(|c| c.value());
-            let c1 = rep.get_component(1).and_then(|c| c.value());
-            let c2 = rep.get_component(2).and_then(|c| c.value());
-            let c3 = rep.get_component(3).and_then(|c| c.value());
-            let c4 = rep.get_component(4).and_then(|c| c.value());
+            let c0 = rep.get_component(0).and_then(|c| c.value()).unwrap_or("");
+            let c1 = rep.get_component(1).and_then(|c| c.value()).unwrap_or("");
+            let c2 = rep.get_component(2).and_then(|c| c.value()).unwrap_or("");
+            let c3 = rep.get_component(3).and_then(|c| c.value()).unwrap_or("");
+            let c4 = rep.get_component(4).and_then(|c| c.value()).unwrap_or("");
 
-            if let (Some(v0), Some(v1), Some(v2), Some(v3), Some(v4)) = (c0, c1, c2, c3, c4)
-                && !v0.is_empty()
-                && !v1.is_empty()
-                && !v2.is_empty()
-                && !v3.is_empty()
-                && !v4.is_empty()
+            // Any present component makes the field present; missing ones
+            // default to "" so partial content is never silently dropped.
+            if !c0.is_empty()
+                || !c1.is_empty()
+                || !c2.is_empty()
+                || !c3.is_empty()
+                || !c4.is_empty()
             {
                 return Ok(Some((
-                    v0.to_string(),
-                    v1.to_string(),
-                    v2.to_string(),
-                    v3.to_string(),
-                    v4.to_string(),
+                    c0.to_string(),
+                    c1.to_string(),
+                    c2.to_string(),
+                    c3.to_string(),
+                    c4.to_string(),
                 )));
             }
         }
@@ -3073,8 +3112,122 @@ mod tests {
     #[test]
     fn test_parse_hl7_time_invalid() {
         assert!(parse_hl7_time("invalid").is_none());
-        assert!(parse_hl7_time("14").is_none());
+        // "14" (hour precision) is valid; see test_parse_hl7_time_reduced_precision.
         assert!(parse_hl7_time("999999").is_none()); // Invalid hour
+    }
+
+    #[test]
+    fn test_parse_hl7_datetime_reduced_precision() {
+        // YYYYMMDDHHMM and YYYYMMDDHH are valid HL7 DTM precisions;
+        // missing parts default to zero.
+        let dt = parse_hl7_datetime("202501191430").unwrap();
+        assert_eq!(dt.format("%Y%m%d%H%M%S").to_string(), "20250119143000");
+        let dt = parse_hl7_datetime("2025011914").unwrap();
+        assert_eq!(dt.format("%Y%m%d%H%M%S").to_string(), "20250119140000");
+        // Fractional seconds fold into nanoseconds.
+        use chrono::Timelike;
+        let dt = parse_hl7_datetime("20250119143000.5").unwrap();
+        assert_eq!(dt.format("%Y%m%d%H%M%S").to_string(), "20250119143000");
+        assert_eq!(dt.nanosecond(), 500_000_000);
+    }
+
+    #[test]
+    fn test_parse_hl7_datetime_rejects_trailing_garbage() {
+        assert!(parse_hl7_datetime("20250119143000XYZ").is_none());
+        assert!(parse_hl7_datetime("2025011914300012").is_none());
+        assert!(parse_hl7_datetime("20250119143000.").is_none());
+        assert!(parse_hl7_datetime("20250119143000.1A").is_none());
+        // A fraction requires seconds precision.
+        assert!(parse_hl7_datetime("202501191430.5").is_none());
+    }
+
+    #[test]
+    fn test_parse_hl7_time_reduced_precision() {
+        // HH is a valid HL7 TM precision; minute/second default to zero.
+        let t = parse_hl7_time("14").unwrap();
+        assert_eq!(t.format("%H%M%S").to_string(), "140000");
+        // Fractional seconds fold into nanoseconds.
+        use chrono::Timelike;
+        let t = parse_hl7_time("143000.25").unwrap();
+        assert_eq!(t.format("%H%M%S").to_string(), "143000");
+        assert_eq!(t.nanosecond(), 250_000_000);
+    }
+
+    #[test]
+    fn test_parse_hl7_time_rejects_trailing_garbage() {
+        assert!(parse_hl7_time("143000XYZ").is_none());
+        assert!(parse_hl7_time("14300000").is_none());
+        assert!(parse_hl7_time("143000.").is_none());
+        // A fraction requires seconds precision.
+        assert!(parse_hl7_time("1430.5").is_none());
+    }
+
+    #[test]
+    fn test_option_tuple_preserves_partial_components() {
+        // "Smith^": the present component must survive with "" for the
+        // missing one, never collapse to None.
+        let mut segment = Segment::new("TEST");
+        segment.set_component(1, 0, 0, "Smith").unwrap();
+        let result = Option::<(String, String)>::parse_field(&segment, 1, "TEST").unwrap();
+        assert_eq!(result, Some(("Smith".to_string(), String::new())));
+
+        // Second-component-only partial is preserved too.
+        let mut segment = Segment::new("TEST");
+        segment.set_component(1, 0, 1, "x").unwrap();
+        let result = Option::<(String, String)>::parse_field(&segment, 1, "TEST").unwrap();
+        assert_eq!(result, Some((String::new(), "x".to_string())));
+
+        // Fully absent stays None.
+        let segment = Segment::new("TEST");
+        let result = Option::<(String, String)>::parse_field(&segment, 1, "TEST").unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_option_tuple_partial_roundtrip() {
+        // A partial tuple must survive serialize -> parse unchanged.
+        let mut segment = Segment::new("TEST");
+        let value = Some(("Smith".to_string(), String::new()));
+        value.set_field(&mut segment, 1);
+        let back = Option::<(String, String)>::parse_field(&segment, 1, "TEST").unwrap();
+        assert_eq!(back, value);
+    }
+
+    #[test]
+    fn test_option_tuple345_preserve_partial_components() {
+        let mut segment = Segment::new("TEST");
+        segment.set_component(1, 0, 0, "a").unwrap();
+        segment.set_component(1, 0, 2, "c").unwrap();
+        let result = Option::<(String, String, String)>::parse_field(&segment, 1, "TEST").unwrap();
+        assert_eq!(
+            result,
+            Some(("a".to_string(), String::new(), "c".to_string()))
+        );
+
+        let mut segment = Segment::new("TEST");
+        segment.set_component(1, 0, 1, "b").unwrap();
+        let result =
+            Option::<(String, String, String, String)>::parse_field(&segment, 1, "TEST").unwrap();
+        assert_eq!(
+            result,
+            Some((String::new(), "b".to_string(), String::new(), String::new()))
+        );
+
+        let mut segment = Segment::new("TEST");
+        segment.set_component(1, 0, 4, "e").unwrap();
+        let result =
+            Option::<(String, String, String, String, String)>::parse_field(&segment, 1, "TEST")
+                .unwrap();
+        assert_eq!(
+            result,
+            Some((
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                "e".to_string()
+            ))
+        );
     }
 
     // Tests for Vec<String> repeating fields

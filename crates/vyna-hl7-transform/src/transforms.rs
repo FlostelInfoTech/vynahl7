@@ -108,7 +108,7 @@ pub fn substring(value: &str, ctx: &TransformContext) -> Result<String> {
     }
 
     let end = if let Some(len) = length {
-        std::cmp::min(start + len, chars.len())
+        std::cmp::min(start.saturating_add(len), chars.len())
     } else {
         chars.len()
     };
@@ -343,6 +343,13 @@ pub fn suffix(value: &str, ctx: &TransformContext) -> Result<String> {
     Ok(format!("{}{}", value, suffix))
 }
 
+/// Maximum padded length accepted by [`pad`].
+///
+/// The target length comes from caller-controlled context data, so an
+/// unbounded value would allocate without limit. One million characters
+/// is far beyond any real HL7 field while keeping one call under ~4 MB.
+pub const MAX_PAD_LENGTH: usize = 1_000_000;
+
 /// Pad the value to a specified length with a character
 ///
 /// Note: This function expects the context to contain "length", "pad_char", and "side" keys.
@@ -366,6 +373,11 @@ pub fn pad(value: &str, ctx: &TransformContext) -> Result<String> {
         .get_data("length")
         .and_then(|s| s.parse::<usize>().ok())
         .ok_or_else(|| Error::transform_fn("pad requires 'length' in context"))?;
+    if length > MAX_PAD_LENGTH {
+        return Err(Error::transform_fn(format!(
+            "pad length {length} exceeds maximum {MAX_PAD_LENGTH}"
+        )));
+    }
 
     let pad_char = ctx
         .get_data("pad_char")
@@ -374,11 +386,14 @@ pub fn pad(value: &str, ctx: &TransformContext) -> Result<String> {
 
     let side = ctx.get_data("side").map(|s| s.as_str()).unwrap_or("left");
 
-    if value.len() >= length {
+    // Compare in characters, not bytes: padding appends `char`s, so a
+    // byte-length comparison under-pads multi-byte values.
+    let value_chars = value.chars().count();
+    if value_chars >= length {
         return Ok(value.to_string());
     }
 
-    let padding = std::iter::repeat_n(pad_char, length - value.len()).collect::<String>();
+    let padding = std::iter::repeat_n(pad_char, length - value_chars).collect::<String>();
 
     match side {
         "left" => Ok(format!("{}{}", padding, value)),
@@ -562,6 +577,38 @@ mod tests {
         // 12 bytes with a split boundary inside: slicing panicked here.
         assert!(format_date("1234567éXXXX", &ctx).is_err());
         assert_eq!(format_date("20240315", &ctx).unwrap(), "2024-03-15");
+    }
+
+    #[test]
+    fn test_substring_huge_length_does_not_overflow() {
+        let ctx = TransformContext::new()
+            .add_data("start".to_string(), "2".to_string())
+            .add_data("length".to_string(), usize::MAX.to_string());
+
+        assert_eq!(substring("SMITH", &ctx).unwrap(), "ITH");
+    }
+
+    #[test]
+    fn test_pad_counts_chars_not_bytes() {
+        let ctx = TransformContext::new()
+            .add_data("length".to_string(), "3".to_string())
+            .add_data("pad_char".to_string(), "0".to_string())
+            .add_data("side".to_string(), "left".to_string());
+
+        // "éé" is 2 chars (4 bytes); padding to length 3 adds one char.
+        assert_eq!(pad("éé", &ctx).unwrap(), "0éé");
+    }
+
+    #[test]
+    fn test_pad_rejects_huge_length() {
+        for length in [usize::MAX.to_string(), (MAX_PAD_LENGTH + 1).to_string()] {
+            let ctx = TransformContext::new()
+                .add_data("length".to_string(), length)
+                .add_data("pad_char".to_string(), "0".to_string())
+                .add_data("side".to_string(), "left".to_string());
+
+            assert!(pad("123", &ctx).is_err());
+        }
     }
 
     #[test]

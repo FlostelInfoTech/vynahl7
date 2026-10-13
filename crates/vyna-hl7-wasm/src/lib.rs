@@ -199,6 +199,27 @@ pub fn validate_message(message: &WasmMessage) -> Result<WasmValidationResult, J
 /// # Returns
 ///
 /// A new message with MSH segment populated
+/// Reject empty values and raw HL7 structural characters in a
+/// value interpolated into the MSH segment, where they would shift
+/// field positions or inject segments. `message_type` legitimately
+/// uses `^` (`ADT^A01`), so callers allow it for that value only.
+/// Returns a plain string because `JsValue` cannot be built on
+/// non-wasm test targets; callers map it at the boundary.
+fn validate_msh_value(name: &str, value: &str, allow_caret: bool) -> Result<(), String> {
+    if value.is_empty() {
+        return Err(format!("invalid {name}: value must not be empty"));
+    }
+    let bad = value.chars().find(|c| {
+        matches!(c, '|' | '^' | '~' | '&' | '\\' | '\r' | '\n') && (*c != '^' || !allow_caret)
+    });
+    if let Some(bad) = bad {
+        return Err(format!(
+            "invalid {name}: character {bad:?} would corrupt MSH field positions"
+        ));
+    }
+    Ok(())
+}
+
 #[wasm_bindgen(js_name = createMessage)]
 pub fn create_message(
     version: &str,
@@ -206,6 +227,11 @@ pub fn create_message(
     sending_app: &str,
     sending_fac: &str,
 ) -> Result<WasmMessage, JsValue> {
+    validate_msh_value("version", version, false).map_err(|e| JsValue::from_str(&e))?;
+    validate_msh_value("message_type", message_type, true).map_err(|e| JsValue::from_str(&e))?;
+    validate_msh_value("sending_app", sending_app, false).map_err(|e| JsValue::from_str(&e))?;
+    validate_msh_value("sending_fac", sending_fac, false).map_err(|e| JsValue::from_str(&e))?;
+
     // Build MSH segment. MSH-10 (control ID) and MSH-11 (processing
     // ID) are required by the schemas: generate the control ID and
     // default the processing ID to "P" (Production) like the core
@@ -285,6 +311,36 @@ mod tests {
             parse_message("MSH|^~\\&|S|F|R|D|20240101||ZZZ^Z99|M1|P|2.5\rPID|1||7\r").unwrap();
         let result = validate_message(&msg).unwrap();
         assert!(result.is_valid());
+    }
+
+    #[test]
+    fn validate_msh_value_rejects_field_separator() {
+        // A raw `|` interpolated into MSH-3 shifts every later MSH
+        // field (pre-fix: MSH-3="BAD", MSH-4="APP"). The
+        // `create_message` error path itself cannot run natively
+        // (`JsValue` needs wasm), so the guard is tested directly.
+        let err = validate_msh_value("sending_app", "BAD|APP", false).unwrap_err();
+        assert!(err.contains("sending_app"), "unclear error: {err}");
+        assert!(err.contains("'|'"), "unclear error: {err}");
+    }
+
+    #[test]
+    fn validate_msh_value_rejects_empty_and_delimiter_values() {
+        assert!(
+            validate_msh_value("sending_app", "", false)
+                .unwrap_err()
+                .contains("empty")
+        );
+        assert!(validate_msh_value("sending_fac", "", false).is_err());
+        assert!(validate_msh_value("message_type", "", true).is_err());
+        assert!(validate_msh_value("message_type", "ADT|A01", true).is_err());
+        assert!(validate_msh_value("sending_app", "A\rMSH|x", false).is_err());
+        assert!(validate_msh_value("sending_fac", "F&B", false).is_err());
+        assert!(validate_msh_value("sending_app", "A~B", false).is_err());
+        // Happy paths still pass, including `^` in message types.
+        assert!(validate_msh_value("message_type", "ADT^A01", true).is_ok());
+        assert!(validate_msh_value("sending_app", "SendApp", false).is_ok());
+        assert!(validate_msh_value("version", "2.5", false).is_ok());
     }
 
     #[test]

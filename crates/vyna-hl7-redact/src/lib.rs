@@ -174,9 +174,14 @@ impl Redactor {
         self
     }
 
-    /// HMAC key for [`Strategy::Hash`].
+    /// HMAC key for [`Strategy::Hash`]. Empty keys carry no entropy and
+    /// are treated as missing.
     pub fn with_hmac_key(mut self, key: &[u8]) -> Self {
-        self.hmac_key = Some(key.to_vec());
+        self.hmac_key = if key.is_empty() {
+            None
+        } else {
+            Some(key.to_vec())
+        };
         self
     }
 
@@ -217,7 +222,8 @@ impl Redactor {
     /// matching is exact and case-sensitive). Use
     /// [`unmatched_rules`](Self::unmatched_rules) to tell the two apart.
     pub fn redact(&self, message: &mut Message) -> Result<Vec<Redaction>, RedactError> {
-        if self.rules.iter().any(|r| r.strategy == Strategy::Hash) && self.hmac_key.is_none() {
+        let key_missing = self.hmac_key.as_ref().is_none_or(|key| key.is_empty());
+        if self.rules.iter().any(|r| r.strategy == Strategy::Hash) && key_missing {
             return Err(RedactError::MissingHmacKey);
         }
         for rule in &self.rules {
@@ -1029,5 +1035,25 @@ mod tests {
                 "TXA-{field} must be hashed"
             );
         }
+    }
+
+    #[test]
+    fn empty_hmac_key_is_rejected_like_a_missing_key() {
+        let mut message = sample();
+        let redactor =
+            Redactor::new()
+                .with_hmac_key(b"")
+                .with_rule(Rule::field("PID", 3, Strategy::Hash));
+        assert_eq!(
+            redactor.redact(&mut message),
+            Err(RedactError::MissingHmacKey)
+        );
+
+        let mut message = sample();
+        let redactor = Redactor::safe_harbor(b"", 7);
+        assert_eq!(
+            redactor.redact(&mut message),
+            Err(RedactError::MissingHmacKey)
+        );
     }
 }

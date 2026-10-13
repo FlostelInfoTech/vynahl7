@@ -142,9 +142,12 @@ impl TemplateResolver {
     ) -> SegmentTemplate {
         let mut merged = base.clone();
 
-        // Child properties override
-        merged.required = child.required;
-        merged.repeating = child.repeating;
+        // Flags are sticky: a plain bool cannot distinguish "child sets
+        // false" from "child says nothing", so an explicit true wins and
+        // an unset child inherits the base value. A child therefore
+        // cannot clear a base flag; it can only add one.
+        merged.required = base.required || child.required;
+        merged.repeating = base.repeating || child.repeating;
 
         if child.description.is_some() {
             merged.description = child.description.clone();
@@ -228,6 +231,37 @@ mod tests {
 
         let field3 = pid.fields.as_ref().unwrap().get(&3).unwrap();
         assert_eq!(field3.placeholder, Some("{{child_id}}".to_string()));
+    }
+
+    #[test]
+    fn test_override_inherits_base_flags() {
+        let mut resolver = TemplateResolver::new();
+
+        // Base PID is required and repeating.
+        let mut base = MessageTemplate::new("BaseADT", "2.5", "ADT", "A01");
+        let mut pid_base = SegmentTemplate::new("PID").required().repeating();
+        pid_base.add_field(3, FieldTemplate::new().with_placeholder("{{base_id}}"));
+        base.add_segment(pid_base);
+
+        // Child overrides PID without touching the flags.
+        let mut child =
+            MessageTemplate::new("ExtendedADT", "2.5", "ADT", "A01").with_extends("BaseADT");
+        let mut pid_child = SegmentTemplate::new("PID");
+        pid_child.add_field(5, FieldTemplate::new().with_placeholder("{{child_name}}"));
+        child.add_segment(pid_child);
+
+        resolver.register(base);
+        resolver.register(child);
+
+        let resolved = resolver.resolve("ExtendedADT").unwrap();
+
+        // Base flags survive; fields from both sides are present.
+        let pid = resolved.segments.iter().find(|s| s.id == "PID").unwrap();
+        assert!(pid.required);
+        assert!(pid.repeating);
+        let fields = pid.fields.as_ref().unwrap();
+        assert!(fields.contains_key(&3));
+        assert!(fields.contains_key(&5));
     }
 
     #[test]

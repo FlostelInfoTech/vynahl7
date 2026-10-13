@@ -115,6 +115,11 @@ pub async fn logging_middleware(request: Request, next: Next) -> Response {
 /// - Environment-based log level filtering (RUST_LOG env var)
 /// - Stdout output
 ///
+/// # Panics
+///
+/// Panics if a global subscriber is already set. Use
+/// [`try_init_logging`] for a fallible variant.
+///
 /// # Example
 ///
 /// ```no_run
@@ -127,6 +132,26 @@ pub async fn logging_middleware(request: Request, next: Next) -> Response {
 /// ```
 #[cfg(feature = "logging")]
 pub fn init_logging() {
+    try_init_logging().expect("failed to set global default subscriber");
+}
+
+/// Try to initialize the logging system with a default configuration.
+///
+/// Returns `Err` instead of panicking when a global subscriber is
+/// already set (e.g. the host application installed its own).
+///
+/// # Example
+///
+/// ```no_run
+/// # #[cfg(feature = "logging")]
+/// # {
+/// use vyna_hl7_http::logging::try_init_logging;
+///
+/// let _ = try_init_logging();
+/// # }
+/// ```
+#[cfg(feature = "logging")]
+pub fn try_init_logging() -> Result<(), tracing_subscriber::util::TryInitError> {
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
     tracing_subscriber::registry()
@@ -135,7 +160,7 @@ pub fn init_logging() {
             EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| EnvFilter::new("info")),
         )
-        .init();
+        .try_init()
 }
 
 /// Initialize logging with custom format (pretty-printed for development)
@@ -144,6 +169,11 @@ pub fn init_logging() {
 /// - Pretty-printed formatting for human readability
 /// - Environment-based log level filtering (RUST_LOG env var)
 /// - Stdout output
+///
+/// # Panics
+///
+/// Panics if a global subscriber is already set. Use
+/// [`try_init_logging_pretty`] for a fallible variant.
 ///
 /// # Example
 ///
@@ -157,6 +187,26 @@ pub fn init_logging() {
 /// ```
 #[cfg(feature = "logging")]
 pub fn init_logging_pretty() {
+    try_init_logging_pretty().expect("failed to set global default subscriber");
+}
+
+/// Try to initialize logging with pretty-printed formatting.
+///
+/// Returns `Err` instead of panicking when a global subscriber is
+/// already set (e.g. the host application installed its own).
+///
+/// # Example
+///
+/// ```no_run
+/// # #[cfg(feature = "logging")]
+/// # {
+/// use vyna_hl7_http::logging::try_init_logging_pretty;
+///
+/// let _ = try_init_logging_pretty();
+/// # }
+/// ```
+#[cfg(feature = "logging")]
+pub fn try_init_logging_pretty() -> Result<(), tracing_subscriber::util::TryInitError> {
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
     tracing_subscriber::registry()
@@ -165,7 +215,7 @@ pub fn init_logging_pretty() {
             EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| EnvFilter::new("info")),
         )
-        .init();
+        .try_init()
 }
 
 /// Initialize logging with compact format
@@ -174,6 +224,11 @@ pub fn init_logging_pretty() {
 /// - Compact formatting for minimal output
 /// - Environment-based log level filtering (RUST_LOG env var)
 /// - Stdout output
+///
+/// # Panics
+///
+/// Panics if a global subscriber is already set. Use
+/// [`try_init_logging_compact`] for a fallible variant.
 ///
 /// # Example
 ///
@@ -187,6 +242,26 @@ pub fn init_logging_pretty() {
 /// ```
 #[cfg(feature = "logging")]
 pub fn init_logging_compact() {
+    try_init_logging_compact().expect("failed to set global default subscriber");
+}
+
+/// Try to initialize logging with compact format.
+///
+/// Returns `Err` instead of panicking when a global subscriber is
+/// already set (e.g. the host application installed its own).
+///
+/// # Example
+///
+/// ```no_run
+/// # #[cfg(feature = "logging")]
+/// # {
+/// use vyna_hl7_http::logging::try_init_logging_compact;
+///
+/// let _ = try_init_logging_compact();
+/// # }
+/// ```
+#[cfg(feature = "logging")]
+pub fn try_init_logging_compact() -> Result<(), tracing_subscriber::util::TryInitError> {
     use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
     tracing_subscriber::registry()
@@ -195,7 +270,7 @@ pub fn init_logging_compact() {
             EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| EnvFilter::new("info")),
         )
-        .init();
+        .try_init()
 }
 
 /// Log HL7 message metadata
@@ -295,9 +370,22 @@ pub fn log_hl7_message(message: &vyna_hl7_core::Message, direction: &str) {
 #[cfg(test)]
 #[cfg(feature = "logging")]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_init_logging() {
         // Just verify it doesn't panic
         // Can't actually test logging output without integration tests
+    }
+
+    #[test]
+    fn test_try_init_logging_second_call_returns_err() {
+        // The first call may succeed or fail depending on test order
+        // (the global subscriber is process-wide); afterwards every
+        // variant must report Err instead of panicking.
+        let _ = try_init_logging();
+        assert!(try_init_logging().is_err());
+        assert!(try_init_logging_pretty().is_err());
+        assert!(try_init_logging_compact().is_err());
     }
 }

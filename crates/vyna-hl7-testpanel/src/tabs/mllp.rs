@@ -7,6 +7,11 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::samples;
 
+/// Maximum buffered MLLP frame size (markers included), matching
+/// `vyna_hl7_mllp::DEFAULT_MAX_MESSAGE_SIZE`. Frames past this are
+/// dropped with an error entry instead of buffering unboundedly.
+const MAX_FRAME_SIZE: usize = vyna_hl7_mllp::DEFAULT_MAX_MESSAGE_SIZE;
+
 /// State shared between UI and async tasks
 #[derive(Default)]
 struct MllpState {
@@ -591,6 +596,23 @@ async fn run_mllp_server(
                             Ok(Ok(n)) => {
                                 message_buf.extend_from_slice(&buf[..n]);
 
+                                if message_buf.len() > MAX_FRAME_SIZE {
+                                    let mut s = state_clone.lock().unwrap();
+                                    s.server_messages.push(LogEntry {
+                                        timestamp: chrono::Local::now()
+                                            .format("%H:%M:%S")
+                                            .to_string(),
+                                        direction: Direction::Error,
+                                        message: format!(
+                                            "Frame from {} exceeds maximum size of {} \
+                                             bytes; connection dropped",
+                                            peer_addr, MAX_FRAME_SIZE
+                                        ),
+                                    });
+                                    ctx_clone.request_repaint();
+                                    break;
+                                }
+
                                 // Check for complete MLLP frame
                                 if message_buf.len() >= 2
                                     && message_buf[message_buf.len() - 2] == FS
@@ -719,4 +741,115 @@ fn generate_ack(message: &str) -> String {
         receiving_app, receiving_fac, sending_app, sending_fac,
         timestamp, timestamp, version, control_id
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpStream;
+
+    /// Oversized frame payload: 1 byte over the enforced limit.
+    const OVERSIZED_LEN: usize = MAX_FRAME_SIZE + 1;
+
+    fn free_port() -> u16 {
+        std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port()
+    }
+
+    async fn wait_for_log(state: &Arc<Mutex<MllpState>>, pred: impl Fn(&LogEntry) -> bool) -> bool {
+        for _ in 0..50 {
+            {
+                let s = state.lock().unwrap();
+                if s.server_messages.iter().any(&pred) {
+                    return true;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        false
+    }
+
+    #[tokio::test]
+    async fn oversized_frame_is_dropped_with_error_entry() {
+        let port = free_port();
+        let state = Arc::new(Mutex::new(MllpState::default()));
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (state_c, shutdown_c) = (state.clone(), shutdown.clone());
+        tokio::spawn(async move {
+            run_mllp_server(port, true, state_c, shutdown_c, egui::Context::default()).await;
+        });
+        assert!(wait_for_log(&state, |e| e.message.contains("listening")).await);
+
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port))
+            .await
+            .unwrap();
+        // Unterminated frame past the size limit: no FS CR sent.
+        stream.write_all(&[0x0Bu8]).await.unwrap();
+        stream.write_all(&vec![b'X'; OVERSIZED_LEN]).await.unwrap();
+        stream.flush().await.unwrap();
+
+        let logged = wait_for_log(&state, |e| {
+            e.direction == Direction::Error && e.message.contains("maximum")
+        })
+        .await;
+        // The server must drop the offending connection: the read
+        // ends promptly with EOF or reset instead of timing out.
+        let mut one = [0u8; 1];
+        let dropped = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut one))
+            .await
+            .map(|r| matches!(r, Ok(0) | Err(_)))
+            .unwrap_or(false);
+
+        shutdown.store(true, Ordering::SeqCst);
+        assert!(logged, "oversized frame drew no max-size error entry");
+        assert!(dropped, "server kept the oversized connection open");
+    }
+
+    #[tokio::test]
+    async fn small_frame_is_still_accepted_and_acked() {
+        let port = free_port();
+        let state = Arc::new(Mutex::new(MllpState::default()));
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (state_c, shutdown_c) = (state.clone(), shutdown.clone());
+        tokio::spawn(async move {
+            run_mllp_server(port, true, state_c, shutdown_c, egui::Context::default()).await;
+        });
+        assert!(wait_for_log(&state, |e| e.message.contains("listening")).await);
+
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port))
+            .await
+            .unwrap();
+        let msg = "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5";
+        let mut frame = vec![0x0Bu8];
+        frame.extend_from_slice(msg.as_bytes());
+        frame.extend_from_slice(&[0x1Cu8, 0x0Du8]);
+        stream.write_all(&frame).await.unwrap();
+        stream.flush().await.unwrap();
+
+        let mut ack = Vec::new();
+        let mut buf = [0u8; 1024];
+        let got_ack = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let n = stream.read(&mut buf).await.unwrap();
+                if n == 0 {
+                    break false;
+                }
+                ack.extend_from_slice(&buf[..n]);
+                if ack.len() >= 2 && ack[ack.len() - 2] == 0x1C && ack[ack.len() - 1] == 0x0D {
+                    break true;
+                }
+            }
+        })
+        .await
+        .unwrap_or(false);
+
+        shutdown.store(true, Ordering::SeqCst);
+        assert!(got_ack, "no ACK for small frame");
+        assert!(String::from_utf8_lossy(&ack).contains("MSA|AA"));
+    }
 }

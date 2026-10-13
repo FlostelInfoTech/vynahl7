@@ -148,6 +148,12 @@ impl Condition {
 /// Parser for predicate condition expressions
 pub struct PredicateParser;
 
+/// Maximum nesting depth for NOT/AND/OR recursion.
+///
+/// The parser recurses per operator; without a cap, hostile profile
+/// text with thousands of nested operators could exhaust the stack.
+const MAX_PREDICATE_DEPTH: usize = 64;
+
 impl PredicateParser {
     /// Parse a condition string into a Condition
     ///
@@ -163,26 +169,35 @@ impl PredicateParser {
     /// assert_eq!(cond, Condition::Equals("PID-8".to_string(), "M".to_string()));
     /// ```
     pub fn parse(input: &str) -> Result<Condition> {
+        Self::parse_with_depth(input, 0)
+    }
+
+    fn parse_with_depth(input: &str, depth: usize) -> Result<Condition> {
+        if depth > MAX_PREDICATE_DEPTH {
+            return Err(ConformanceError::InvalidPredicate(format!(
+                "predicate nesting exceeds limit {MAX_PREDICATE_DEPTH}"
+            )));
+        }
         let trimmed = input.trim();
 
         // Handle OR (lowest precedence)
         if let Some(or_pos) = Self::find_operator(trimmed, " OR ") {
-            let left = Self::parse(&trimmed[..or_pos])?;
-            let right = Self::parse(&trimmed[or_pos + 4..])?;
+            let left = Self::parse_with_depth(&trimmed[..or_pos], depth + 1)?;
+            let right = Self::parse_with_depth(&trimmed[or_pos + 4..], depth + 1)?;
             return Ok(Condition::Or(Box::new(left), Box::new(right)));
         }
 
         // Handle AND (higher precedence than OR)
         if let Some(and_pos) = Self::find_operator(trimmed, " AND ") {
-            let left = Self::parse(&trimmed[..and_pos])?;
-            let right = Self::parse(&trimmed[and_pos + 5..])?;
+            let left = Self::parse_with_depth(&trimmed[..and_pos], depth + 1)?;
+            let right = Self::parse_with_depth(&trimmed[and_pos + 5..], depth + 1)?;
             return Ok(Condition::And(Box::new(left), Box::new(right)));
         }
 
         // Handle NOT (byte-compared: the match pins ASCII bytes, so
         // slicing at 4 is always a character boundary).
         if trimmed.len() >= 4 && trimmed.as_bytes()[..4].eq_ignore_ascii_case(b"NOT ") {
-            let inner = Self::parse(&trimmed[4..])?;
+            let inner = Self::parse_with_depth(&trimmed[4..], depth + 1)?;
             return Ok(Condition::Not(Box::new(inner)));
         }
 
@@ -661,5 +676,34 @@ mod tests {
     #[test]
     fn test_malformed_path_with_operators_is_rejected() {
         assert!(PredicateParser::parse("PID-8 = 'X' IS VALUED").is_err());
+    }
+
+    #[test]
+    fn test_deeply_nested_not_is_rejected() {
+        let mut input = String::new();
+        for _ in 0..(MAX_PREDICATE_DEPTH + 10) {
+            input.push_str("NOT ");
+        }
+        input.push_str("PID-8 IS VALUED");
+        let err = PredicateParser::parse(&input).unwrap_err();
+        assert!(err.to_string().contains("exceeds limit"), "{err}");
+    }
+
+    #[test]
+    fn test_deeply_nested_and_is_rejected() {
+        let mut input = String::from("PID-8 IS VALUED");
+        for _ in 0..(MAX_PREDICATE_DEPTH + 10) {
+            input = format!("{input} AND PID-8 IS VALUED");
+        }
+        let err = PredicateParser::parse(&input).unwrap_err();
+        assert!(err.to_string().contains("exceeds limit"), "{err}");
+    }
+
+    #[test]
+    fn test_shallow_nesting_still_parses() {
+        let parsed =
+            PredicateParser::parse("NOT PID-8 IS VALUED AND PID-7 IS VALUED OR PID-8 = 'M'")
+                .unwrap();
+        assert!(matches!(parsed, Condition::Or(..)));
     }
 }

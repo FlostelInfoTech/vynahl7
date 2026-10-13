@@ -232,7 +232,7 @@ pub struct Pid {
     pub set_id_pid: Option<String>,
     /// PID-2.1 Patient ID / ID Number (ST)
     #[hl7(field = 2, component = 1)]
-    pub patient_id_id_number: String,
+    pub patient_id_id_number: Option<String>,
     /// PID-2.2 Patient ID / Check Digit (ST)
     #[hl7(field = 2, component = 2)]
     pub patient_id_check_digit: Option<String>,
@@ -355,7 +355,7 @@ pub struct Pid {
     pub religion_name_of_alternate_coding_system: Option<String>,
     /// PID-18.1 Patient Account Number / ID Number (ST)
     #[hl7(field = 18, component = 1)]
-    pub patient_account_number_id_number: String,
+    pub patient_account_number_id_number: Option<String>,
     /// PID-18.2 Patient Account Number / Check Digit (ST)
     #[hl7(field = 18, component = 2)]
     pub patient_account_number_check_digit: Option<String>,
@@ -817,7 +817,7 @@ pub struct Nk1 {
     pub next_of_kin_associated_parties_job_code_class_job_description_text: Option<String>,
     /// NK1-12.1 Next of Kin / Associated Parties Employee Number / ID Number (ST)
     #[hl7(field = 12, component = 1)]
-    pub next_of_kin_associated_parties_employee_number_id_number: String,
+    pub next_of_kin_associated_parties_employee_number_id_number: Option<String>,
     /// NK1-12.2 Next of Kin / Associated Parties Employee Number / Check Digit (ST)
     #[hl7(field = 12, component = 2)]
     pub next_of_kin_associated_parties_employee_number_check_digit: Option<String>,
@@ -1055,7 +1055,7 @@ pub struct Pv1 {
     pub admission_type: Option<String>,
     /// PV1-5.1 Preadmit Number / ID Number (ST)
     #[hl7(field = 5, component = 1)]
-    pub preadmit_number_id_number: String,
+    pub preadmit_number_id_number: Option<String>,
     /// PV1-5.2 Preadmit Number / Check Digit (ST)
     #[hl7(field = 5, component = 2)]
     pub preadmit_number_check_digit: Option<String>,
@@ -1184,7 +1184,7 @@ pub struct Pv1 {
     pub patient_type: Option<String>,
     /// PV1-19.1 Visit Number / ID Number (ST)
     #[hl7(field = 19, component = 1)]
-    pub visit_number_id_number: String,
+    pub visit_number_id_number: Option<String>,
     /// PV1-19.2 Visit Number / Check Digit (ST)
     #[hl7(field = 19, component = 2)]
     pub visit_number_check_digit: Option<String>,
@@ -1265,7 +1265,7 @@ pub struct Pv1 {
     pub discharge_disposition: Option<String>,
     /// PV1-37.1 Discharged to Location / Discharge Location (IS)
     #[hl7(field = 37, component = 1)]
-    pub discharged_to_location_discharge_location: String,
+    pub discharged_to_location_discharge_location: Option<String>,
     /// PV1-37.2 Discharged to Location / Effective Date (TS)
     #[hl7(field = 37, component = 2)]
     pub discharged_to_location_effective_date: Option<String>,
@@ -1385,7 +1385,7 @@ pub struct Pv1 {
     pub total_payments: Option<String>,
     /// PV1-50.1 Alternate Visit ID / ID Number (ST)
     #[hl7(field = 50, component = 1)]
-    pub alternate_visit_id_id_number: String,
+    pub alternate_visit_id_id_number: Option<String>,
     /// PV1-50.2 Alternate Visit ID / Check Digit (ST)
     #[hl7(field = 50, component = 2)]
     pub alternate_visit_id_check_digit: Option<String>,
@@ -2045,7 +2045,7 @@ pub struct Dg1 {
     pub outlier_days: Option<String>,
     /// DG1-13.1 Outlier Cost / Price (MO)
     #[hl7(field = 13, component = 1)]
-    pub outlier_cost_price: String,
+    pub outlier_cost_price: Option<String>,
     /// DG1-13.2 Outlier Cost / Price Type (ID)
     #[hl7(field = 13, component = 2)]
     pub outlier_cost_price_type: Option<String>,
@@ -2156,7 +2156,7 @@ pub struct Drg {
     pub outlier_days: Option<String>,
     /// DRG-7.1 Outlier Cost / Price (MO)
     #[hl7(field = 7, component = 1)]
-    pub outlier_cost_price: String,
+    pub outlier_cost_price: Option<String>,
     /// DRG-7.2 Outlier Cost / Price Type (ID)
     #[hl7(field = 7, component = 2)]
     pub outlier_cost_price_type: Option<String>,
@@ -2177,7 +2177,7 @@ pub struct Drg {
     pub drg_payor: Option<String>,
     /// DRG-9.1 Outlier Reimbursement / Price (MO)
     #[hl7(field = 9, component = 1)]
-    pub outlier_reimbursement_price: String,
+    pub outlier_reimbursement_price: Option<String>,
     /// DRG-9.2 Outlier Reimbursement / Price Type (ID)
     #[hl7(field = 9, component = 2)]
     pub outlier_reimbursement_price_type: Option<String>,
@@ -2822,7 +2822,7 @@ pub struct In1 {
     pub policy_number: Option<String>,
     /// IN1-37.1 Policy Deductible / Price (MO)
     #[hl7(field = 37, component = 1)]
-    pub policy_deductible_price: String,
+    pub policy_deductible_price: Option<String>,
     /// IN1-37.2 Policy Deductible / Price Type (ID)
     #[hl7(field = 37, component = 2)]
     pub policy_deductible_price_type: Option<String>,
@@ -2840,7 +2840,7 @@ pub struct In1 {
     pub policy_deductible_range_type: Option<String>,
     /// IN1-38.1 Policy Limit - Amount / Price (MO)
     #[hl7(field = 38, component = 1)]
-    pub policy_limit_amount_price: String,
+    pub policy_limit_amount_price: Option<String>,
     /// IN1-38.2 Policy Limit - Amount / Price Type (ID)
     #[hl7(field = 38, component = 2)]
     pub policy_limit_amount_price_type: Option<String>,
@@ -2861,7 +2861,7 @@ pub struct In1 {
     pub policy_limit_days: Option<String>,
     /// IN1-40.1 Room Rate - Semi-Private / Price (MO)
     #[hl7(field = 40, component = 1)]
-    pub room_rate_semi_private_price: String,
+    pub room_rate_semi_private_price: Option<String>,
     /// IN1-40.2 Room Rate - Semi-Private / Price Type (ID)
     #[hl7(field = 40, component = 2)]
     pub room_rate_semi_private_price_type: Option<String>,
@@ -2879,7 +2879,7 @@ pub struct In1 {
     pub room_rate_semi_private_range_type: Option<String>,
     /// IN1-41.1 Room Rate - Private / Price (MO)
     #[hl7(field = 41, component = 1)]
-    pub room_rate_private_price: String,
+    pub room_rate_private_price: Option<String>,
     /// IN1-41.2 Room Rate - Private / Price Type (ID)
     #[hl7(field = 41, component = 2)]
     pub room_rate_private_price_type: Option<String>,

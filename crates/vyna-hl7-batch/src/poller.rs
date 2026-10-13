@@ -90,9 +90,10 @@ impl SettledKey {
 /// configured, deleted when `delete_after` is set (the default), otherwise
 /// left in place and remembered for the session so it is not reprocessed.
 ///
-/// Stability (size unchanged across two consecutive polls) guards against
-/// reading files that are still being written; disable it for transports that
-/// publish atomically.
+/// Stability (size and, when the transport reports one, modification time
+/// unchanged across two consecutive polls) guards against reading files that
+/// are still being written; disable it for transports that publish
+/// atomically.
 ///
 /// Delivery is at-least-once: consumed content is always returned in the
 /// report even when settling fails (see [`PollReport::errors`]), and files
@@ -110,7 +111,7 @@ pub struct Poller<T> {
     verify_counts: bool,
     max_files_per_poll: usize,
     max_file_bytes: u64,
-    seen_sizes: HashMap<String, u64>,
+    seen_stability: HashMap<String, (u64, Option<u64>)>,
     settled: HashSet<SettledKey>,
 }
 
@@ -129,7 +130,7 @@ impl<T: FileTransport> Poller<T> {
             verify_counts: true,
             max_files_per_poll: crate::DEFAULT_MAX_FILES_PER_POLL,
             max_file_bytes: crate::DEFAULT_MAX_FILE_BYTES,
-            seen_sizes: HashMap::new(),
+            seen_stability: HashMap::new(),
             settled: HashSet::new(),
         }
     }
@@ -166,8 +167,9 @@ impl<T: FileTransport> Poller<T> {
         self
     }
 
-    /// Require a file's size to be unchanged across two consecutive polls
-    /// before consuming it (default true). Transports that publish atomically
+    /// Require a file's size and modification time (when the transport
+    /// reports one) to be unchanged across two consecutive polls before
+    /// consuming it (default true). Transports that publish atomically
     /// can disable this.
     pub fn with_require_stable(mut self, require: bool) -> Self {
         self.require_stable = require;
@@ -220,13 +222,18 @@ impl<T: FileTransport> Poller<T> {
         // rotated away): this bounds memory and lets redrops process.
         let listed: HashSet<&str> = entries.iter().map(|e| e.path.as_str()).collect();
         self.settled.retain(|k| listed.contains(k.path.as_str()));
-        self.seen_sizes.retain(|p, _| listed.contains(p.as_str()));
+        self.seen_stability
+            .retain(|p, _| listed.contains(p.as_str()));
 
         for entry in entries {
             if report.files.len() >= self.max_files_per_poll {
                 break;
             }
             if self.settled.contains(&SettledKey::of(&entry)) {
+                report.skipped.push(SkippedFile {
+                    path: entry.path.clone(),
+                    reason: "already settled".to_string(),
+                });
                 continue;
             }
             if let Some(suffix) = &self.suffix_filter
@@ -247,12 +254,21 @@ impl<T: FileTransport> Poller<T> {
             }
             if self.require_stable
                 && let Some(size) = entry.size
-                && self.seen_sizes.get(&entry.path) != Some(&size)
+                && self.seen_stability.get(&entry.path) != Some(&(size, entry.modified_ms))
             {
-                self.seen_sizes.insert(entry.path.clone(), size);
+                let seen = self
+                    .seen_stability
+                    .insert(entry.path.clone(), (size, entry.modified_ms));
+                // Same size but a moved mtime means a stalled slow writer:
+                // the size-only check would consume it mid-write.
+                let reason = if seen.is_some_and(|(prev_size, _)| prev_size == size) {
+                    "modification time not yet stable"
+                } else {
+                    "size not yet stable"
+                };
                 report.skipped.push(SkippedFile {
                     path: entry.path.clone(),
-                    reason: "size not yet stable".to_string(),
+                    reason: reason.to_string(),
                 });
                 continue;
             }
@@ -344,7 +360,7 @@ impl<T: FileTransport> Poller<T> {
             };
             if settled {
                 self.settled.insert(SettledKey::of(&entry));
-                self.seen_sizes.remove(&entry.path);
+                self.seen_stability.remove(&entry.path);
             }
         }
 
@@ -494,10 +510,14 @@ mod tests {
         assert_eq!(report.skipped[0].path, "inbox/big.hl7");
         assert!(report.skipped[0].reason.contains("exceeds limit"));
 
-        // Settled: the oversize file is not re-downloaded or re-reported.
+        // Settled: the oversize file is not re-downloaded. Re-listings
+        // are still reported, as already settled, instead of silently
+        // skipped.
         let report = poller.poll_once().await.unwrap();
         assert!(report.files.is_empty());
-        assert!(report.skipped.is_empty());
+        assert_eq!(report.skipped.len(), 1);
+        assert_eq!(report.skipped[0].path, "inbox/big.hl7");
+        assert_eq!(report.skipped[0].reason, "already settled");
 
         tokio::fs::remove_dir_all(&dir).await.unwrap();
     }
@@ -592,6 +612,90 @@ mod tests {
         assert_eq!(report.errors.len(), 1);
         assert_eq!(report.errors[0].path, "inbox/bad.hl7");
         assert!(report.errors[0].reason.contains("download failed"));
+
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
+    }
+
+    /// Transport with scripted listings (one per poll) for stability tests.
+    struct ScriptedTransport {
+        listings: Vec<Vec<FileEntry>>,
+        polls: usize,
+        body: Vec<u8>,
+    }
+
+    impl FileTransport for ScriptedTransport {
+        async fn list(&mut self, _dir: &str) -> Result<Vec<FileEntry>, BatchError> {
+            let index = self.polls.min(self.listings.len() - 1);
+            self.polls += 1;
+            Ok(self.listings[index].clone())
+        }
+
+        async fn get(&mut self, _path: &str) -> Result<Vec<u8>, BatchError> {
+            Ok(self.body.clone())
+        }
+
+        async fn put(&mut self, _path: &str, _data: &[u8]) -> Result<(), BatchError> {
+            Ok(())
+        }
+
+        async fn delete(&mut self, _path: &str) -> Result<(), BatchError> {
+            Ok(())
+        }
+
+        async fn rename(&mut self, _from: &str, _to: &str) -> Result<(), BatchError> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn stability_gate_tracks_mtime_not_just_size() {
+        let entry = |modified_ms| FileEntry {
+            path: "inbox/slow.hl7".to_string(),
+            size: Some(MSH.len() as u64),
+            modified_ms,
+        };
+        let transport = ScriptedTransport {
+            listings: vec![
+                vec![entry(Some(1000))],
+                vec![entry(Some(2000))], // same size, newer mtime: still writing
+                vec![entry(Some(2000))], // now stable
+            ],
+            polls: 0,
+            body: MSH.as_bytes().to_vec(),
+        };
+        let mut poller = Poller::new(transport)
+            .with_inbox("inbox")
+            .with_delete_after(false);
+
+        let report = poller.poll_once().await.unwrap();
+        assert!(report.files.is_empty()); // first sighting: unstable
+
+        let report = poller.poll_once().await.unwrap();
+        assert!(report.files.is_empty(), "mtime moved: still being written");
+        assert_eq!(report.skipped.len(), 1);
+
+        let report = poller.poll_once().await.unwrap();
+        assert_eq!(report.files.len(), 1); // size and mtime stable: consumed
+    }
+
+    #[tokio::test]
+    async fn settled_files_are_reported_not_silently_skipped() {
+        let dir = scratch_dir();
+        let mut t = FilesystemTransport::open(&dir).unwrap();
+        t.put("inbox/a.hl7", MSH.as_bytes()).await.unwrap();
+
+        let mut poller = Poller::new(t)
+            .with_inbox("inbox")
+            .with_require_stable(false)
+            .with_delete_after(false);
+        let report = poller.poll_once().await.unwrap();
+        assert_eq!(report.files.len(), 1);
+
+        // Still listed with the same key: reported as already settled.
+        let report = poller.poll_once().await.unwrap();
+        assert!(report.files.is_empty());
+        assert_eq!(report.skipped.len(), 1);
+        assert_eq!(report.skipped[0].path, "inbox/a.hl7");
 
         tokio::fs::remove_dir_all(&dir).await.unwrap();
     }

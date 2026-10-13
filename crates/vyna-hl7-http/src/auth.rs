@@ -122,16 +122,19 @@ pub fn extract_bearer_token(header: &str) -> Option<&str> {
 /// ```
 #[cfg(feature = "auth")]
 pub fn constant_time_compare(a: &str, b: &str) -> bool {
-    if a.len() != b.len() {
-        return false;
+    let a_bytes = a.as_bytes();
+    let b_bytes = b.as_bytes();
+    // Fold the length difference into the accumulator instead of
+    // early-returning, so mismatched lengths take the same path.
+    let mut diff = a_bytes.len() ^ b_bytes.len();
+    let max_len = a_bytes.len().max(b_bytes.len());
+    for i in 0..max_len {
+        let x = *a_bytes.get(i).unwrap_or(&0);
+        let y = *b_bytes.get(i).unwrap_or(&0);
+        diff |= (x ^ y) as usize;
     }
 
-    let mut result = 0u8;
-    for (byte_a, byte_b) in a.bytes().zip(b.bytes()) {
-        result |= byte_a ^ byte_b;
-    }
-
-    result == 0
+    diff == 0
 }
 
 /// Verify API Key with constant-time comparison to prevent timing attacks
@@ -152,9 +155,13 @@ pub fn constant_time_compare(a: &str, b: &str) -> bool {
 /// ```
 #[cfg(feature = "auth")]
 pub fn verify_api_key_secure(header_value: &str, valid_api_keys: &[String]) -> bool {
-    valid_api_keys
-        .iter()
-        .any(|key| constant_time_compare(header_value, key))
+    // Compare against every key and accumulate a single decision, so the
+    // match position does not leak via early exit.
+    let mut matched = 0u8;
+    for key in valid_api_keys {
+        matched |= u8::from(constant_time_compare(header_value, key));
+    }
+    matched != 0
 }
 
 /// Standard JWT claims structure
@@ -422,5 +429,31 @@ mod tests {
         assert!(verify_api_key_secure("very-secret-key-2", &valid_keys));
         assert!(!verify_api_key_secure("invalid-key", &valid_keys));
         assert!(!verify_api_key_secure("very-secret-key-", &valid_keys));
+    }
+
+    #[test]
+    fn test_verify_api_key_secure_matches_at_any_position() {
+        let valid_keys = vec![
+            "key-alpha".to_string(),
+            "key-beta".to_string(),
+            "key-gamma".to_string(),
+        ];
+        assert!(verify_api_key_secure("key-alpha", &valid_keys));
+        assert!(verify_api_key_secure("key-beta", &valid_keys));
+        assert!(verify_api_key_secure("key-gamma", &valid_keys));
+        assert!(!verify_api_key_secure("key-delta", &valid_keys));
+        assert!(!verify_api_key_secure("key-alpha", &[]));
+        assert!(!verify_api_key_secure("", &valid_keys));
+    }
+
+    #[test]
+    fn test_constant_time_compare_length_mismatch() {
+        assert!(!constant_time_compare("short", "a-much-longer-key"));
+        assert!(!constant_time_compare("a-much-longer-key", "short"));
+        assert!(!constant_time_compare("", "nonempty"));
+        assert!(!constant_time_compare("nonempty", ""));
+        assert!(constant_time_compare("", ""));
+        assert!(!constant_time_compare("same-length-1", "same-length-2"));
+        assert!(constant_time_compare("identical", "identical"));
     }
 }

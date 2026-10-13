@@ -20,6 +20,11 @@ use std::time::Instant;
 #[cfg(feature = "metrics")]
 static METRICS_HANDLE: std::sync::OnceLock<PrometheusHandle> = std::sync::OnceLock::new();
 
+/// Serializes recorder installation so a failed `install_recorder` always
+/// means a foreign recorder (never a lost race with our own install).
+#[cfg(feature = "metrics")]
+static METRICS_INIT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Initialize Prometheus metrics registry
 ///
 /// Sets up all metrics with descriptions and returns a handle for
@@ -27,6 +32,11 @@ static METRICS_HANDLE: std::sync::OnceLock<PrometheusHandle> = std::sync::OnceLo
 ///
 /// This function is idempotent: the first call installs the global
 /// recorder, and subsequent calls return a clone of the same handle.
+///
+/// # Panics
+///
+/// Panics if a foreign global recorder is already installed. Use
+/// [`try_init_metrics`] for a fallible variant.
 ///
 /// # Example
 ///
@@ -40,50 +50,76 @@ static METRICS_HANDLE: std::sync::OnceLock<PrometheusHandle> = std::sync::OnceLo
 /// ```
 #[cfg(feature = "metrics")]
 pub fn init_metrics() -> PrometheusHandle {
-    METRICS_HANDLE
-        .get_or_init(|| {
-            // Configure histogram buckets for response times
-            // Buckets: 1ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms,
-            // 1s, 2.5s, 5s, 10s
-            let builder = PrometheusBuilder::new()
-                .set_buckets_for_metric(
-                    Matcher::Full("http_request_duration_seconds".to_string()),
-                    &[
-                        0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
-                    ],
-                )
-                .unwrap();
+    try_init_metrics().expect("failed to install metrics recorder")
+}
 
-            let handle = builder.install_recorder().unwrap();
+/// Try to initialize the Prometheus metrics registry.
+///
+/// Returns `Err` instead of panicking when a foreign global recorder
+/// is already installed. Repeat calls return the installed handle.
+///
+/// # Example
+///
+/// ```no_run
+/// # #[cfg(feature = "metrics")]
+/// # {
+/// use vyna_hl7_http::metrics::try_init_metrics;
+///
+/// let metrics_handle = try_init_metrics().unwrap();
+/// # }
+/// ```
+#[cfg(feature = "metrics")]
+pub fn try_init_metrics() -> Result<PrometheusHandle, metrics_exporter_prometheus::BuildError> {
+    if let Some(handle) = METRICS_HANDLE.get() {
+        return Ok(handle.clone());
+    }
+    // Serialize installation; without this, two racing threads could both
+    // attempt `install_recorder` and the loser would see a spurious
+    // "foreign recorder" error from the winner's install.
+    let _guard = METRICS_INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(handle) = METRICS_HANDLE.get() {
+        return Ok(handle.clone());
+    }
 
-            // Describe all metrics
-            describe_counter!(
-                "http_requests_total",
-                "Total number of HTTP requests processed"
-            );
-            describe_histogram!(
-                "http_request_duration_seconds",
-                "HTTP request duration in seconds"
-            );
-            describe_counter!("http_request_errors_total", "Total number of HTTP errors");
-            describe_gauge!(
-                "http_active_connections",
-                "Number of active HTTP connections"
-            );
+    // Configure histogram buckets for response times
+    // Buckets: 1ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms,
+    // 1s, 2.5s, 5s, 10s
+    let builder = PrometheusBuilder::new().set_buckets_for_metric(
+        Matcher::Full("http_request_duration_seconds".to_string()),
+        &[
+            0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+        ],
+    )?;
 
-            describe_counter!(
-                "hl7_messages_total",
-                "Total number of HL7 messages processed"
-            );
-            describe_counter!(
-                "hl7_message_errors_total",
-                "Total number of HL7 message processing errors"
-            );
-            describe_histogram!("hl7_message_size_bytes", "Size of HL7 messages in bytes");
+    let handle = builder.install_recorder()?;
 
-            handle
-        })
-        .clone()
+    // Describe all metrics
+    describe_counter!(
+        "http_requests_total",
+        "Total number of HTTP requests processed"
+    );
+    describe_histogram!(
+        "http_request_duration_seconds",
+        "HTTP request duration in seconds"
+    );
+    describe_counter!("http_request_errors_total", "Total number of HTTP errors");
+    describe_gauge!(
+        "http_active_connections",
+        "Number of active HTTP connections"
+    );
+
+    describe_counter!(
+        "hl7_messages_total",
+        "Total number of HL7 messages processed"
+    );
+    describe_counter!(
+        "hl7_message_errors_total",
+        "Total number of HL7 message processing errors"
+    );
+    describe_histogram!("hl7_message_size_bytes", "Size of HL7 messages in bytes");
+
+    let _ = METRICS_HANDLE.set(handle.clone());
+    Ok(handle)
 }
 
 /// Metrics middleware for HTTP requests
@@ -280,6 +316,15 @@ mod tests {
         // recorder would) and must return the same recorder.
         let first = init_metrics();
         let second = init_metrics();
+        assert_eq!(first.render(), second.render());
+    }
+
+    #[test]
+    fn test_try_init_metrics_idempotent() {
+        // Repeat calls return the installed handle without panicking,
+        // regardless of test execution order.
+        let first = try_init_metrics().expect("try_init should succeed");
+        let second = try_init_metrics().expect("second try_init returns handle");
         assert_eq!(first.render(), second.render());
     }
 }

@@ -131,6 +131,13 @@ struct PathStep {
     index: Option<usize>,
 }
 
+/// Maximum array index accepted in a target path (e.g. `a[1000]`).
+///
+/// Indexes drive allocation: assignment grows the array with nulls up
+/// to the index, so an unbounded index from mapping YAML could exhaust
+/// memory. Real FHIR arrays stay far below this.
+const MAX_ARRAY_INDEX: usize = 1000;
+
 impl Mapping {
     /// Parse and validate a mapping from YAML text.
     pub fn from_yaml(yaml: &str) -> ConversionResult<Self> {
@@ -283,6 +290,11 @@ fn parse_target(target: &str) -> Result<Vec<PathStep>, String> {
                 let index: usize = digits
                     .parse()
                     .map_err(|_| format!("bad index in '{target}'"))?;
+                if index > MAX_ARRAY_INDEX {
+                    return Err(format!(
+                        "index {index} exceeds limit {MAX_ARRAY_INDEX} in '{target}'"
+                    ));
+                }
                 (key, Some(index))
             }
         };
@@ -492,6 +504,11 @@ impl MappingEngine {
                 Self::assign_at(slot, &steps[1..], value, target)
             }
             Some(index) => {
+                if index > MAX_ARRAY_INDEX {
+                    return Err(ConversionError::Mapping(format!(
+                        "index {index} exceeds limit {MAX_ARRAY_INDEX} in '{target}'"
+                    )));
+                }
                 if slot.is_null() {
                     *slot = Value::Array(Vec::new());
                 }
@@ -853,6 +870,32 @@ fields:
         assert_eq!(
             MappingEngine::rewrite_repeat(&mapping, "OBX(1)-5", 1),
             "OBX(1)-5"
+        );
+    }
+
+    #[test]
+    fn engine_rejects_array_index_over_limit_at_load() {
+        let err =
+            Mapping::from_yaml("resourceType: X\nfields:\n  - target: a[10000]\n    constant: 1\n")
+                .unwrap_err();
+        assert!(err.to_string().contains("exceeds limit"), "{err}");
+
+        let err =
+            Mapping::from_yaml("resourceType: X\nfields:\n  - target: a[1001]\n    constant: 1\n")
+                .unwrap_err();
+        assert!(err.to_string().contains("exceeds limit"), "{err}");
+    }
+
+    #[test]
+    fn engine_accepts_array_index_at_limit() {
+        let mapping =
+            Mapping::from_yaml("resourceType: X\nfields:\n  - target: a[2]\n    constant: 1\n")
+                .unwrap();
+        let out = MappingEngine::apply(&mapping, &message()).unwrap();
+        assert_eq!(out[0]["a"].as_array().unwrap().len(), 3);
+        assert!(
+            Mapping::from_yaml("resourceType: X\nfields:\n  - target: a[1000]\n    constant: 1\n",)
+                .is_ok()
         );
     }
 }

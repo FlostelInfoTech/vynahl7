@@ -4,7 +4,20 @@
 //! based on conditions and extracting field values conditionally.
 
 use crate::Terser;
-use vyna_hl7_core::{Message, Segment};
+use vyna_hl7_core::{Field, Message, Segment};
+
+/// Check whether any value held by `field` equals `value`.
+///
+/// Every repetition, component, and subcomponent is searched, so a
+/// match in a later repetition (e.g. `AAA~GLU`) or a later component
+/// (e.g. `XXX^GLU`) is found instead of silently missed.
+fn field_contains(field: &Field, value: &str) -> bool {
+    field.repetitions.iter().any(|rep| {
+        rep.components
+            .iter()
+            .any(|comp| comp.subcomponents.iter().any(|sub| sub.as_str() == value))
+    })
+}
 
 /// Query interface for conditional field access
 ///
@@ -132,6 +145,9 @@ impl<'a> TerserQuery<'a> {
 
     /// Find repeating segments where a specific field equals a value
     ///
+    /// Every repetition, component, and subcomponent of the field is
+    /// searched: a match anywhere in the field selects the segment.
+    ///
     /// # Examples
     ///
     /// ```
@@ -160,8 +176,7 @@ impl<'a> TerserQuery<'a> {
             .iter()
             .filter(|seg| {
                 seg.get_field(field)
-                    .and_then(|f| f.value())
-                    .map(|v| v == value)
+                    .map(|f| field_contains(f, value))
                     .unwrap_or(false)
             })
             .copied()
@@ -169,6 +184,9 @@ impl<'a> TerserQuery<'a> {
     }
 
     /// Find the first segment where a field matches a value
+    ///
+    /// Every repetition, component, and subcomponent of the field is
+    /// searched: a match anywhere in the field selects the segment.
     ///
     /// # Examples
     ///
@@ -199,8 +217,7 @@ impl<'a> TerserQuery<'a> {
             .iter()
             .find(|seg| {
                 seg.get_field(field)
-                    .and_then(|f| f.value())
-                    .map(|v| v == value)
+                    .map(|f| field_contains(f, value))
                     .unwrap_or(false)
             })
             .copied()
@@ -259,6 +276,12 @@ impl<'a> TerserQuery<'a> {
     }
 
     /// Get values from all matching segments
+    ///
+    /// Segment matching searches every repetition, component, and
+    /// subcomponent of the filter field (see [`filter_repeating`](Self::filter_repeating)).
+    /// The value collected from each matching segment is the result
+    /// field's primary value: the first component of its first
+    /// repetition.
     ///
     /// # Examples
     ///
@@ -592,5 +615,53 @@ PID|1||PAT001||DOE^JOHN||19800101|M";
         });
 
         assert_eq!(name_female, None);
+    }
+
+    #[test]
+    fn test_filter_repeating_searches_all_repetitions_and_components() {
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ORU^R01|123|P|2.5\r\
+                   OBX|1|NM|AAA~GLU||98\r\
+                   OBX|2|NM|XXX^GLU||140\r\
+                   OBX|3|NM|K||4.2\r";
+
+        let message = parse_message(hl7).unwrap();
+        let query = TerserQuery::new(&message);
+
+        // GLU sits in a later repetition (OBX-1) and a later
+        // component (OBX-2): both must match.
+        let hits = query.filter_repeating("OBX", 3, "GLU");
+        assert_eq!(hits.len(), 2);
+
+        // First-position matches keep working.
+        assert_eq!(query.filter_repeating("OBX", 3, "K").len(), 1);
+        assert!(query.filter_repeating("OBX", 3, "ZZZ").is_empty());
+    }
+
+    #[test]
+    fn test_find_first_searches_all_repetitions_and_components() {
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ORU^R01|123|P|2.5\r\
+                   OBX|1|NM|AAA~GLU||98\r\
+                   OBX|2|NM|XXX^GLU||140\r";
+
+        let message = parse_message(hl7).unwrap();
+        let query = TerserQuery::new(&message);
+
+        let found = query.find_first("OBX", 3, "GLU").unwrap();
+        assert_eq!(found.get_field(5).and_then(|f| f.value()), Some("98"));
+        assert!(query.find_first("OBX", 3, "ZZZ").is_none());
+    }
+
+    #[test]
+    fn test_get_values_where_matches_beyond_first_value() {
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ORU^R01|123|P|2.5\r\
+                   OBX|1|NM|AAA~GLU||98\r\
+                   OBX|2|NM|NA||140\r";
+
+        let message = parse_message(hl7).unwrap();
+        let query = TerserQuery::new(&message);
+
+        // Matched via the second repetition; the collected value is
+        // the result field's primary value.
+        assert_eq!(query.get_values_where("OBX", 3, "GLU", 5), vec!["98"]);
     }
 }

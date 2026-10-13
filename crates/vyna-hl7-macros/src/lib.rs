@@ -300,20 +300,73 @@ fn is_vec_type(ty: &Type) -> bool {
 
 /// Generate code that parses a delimited string value and appends the resulting
 /// repetitions to the `__field` variable in scope.
+///
+/// Each atom is HL7-decoded after splitting, the inverse of
+/// [`repetition_to_escaped_tokens`]: a literal `^` in the data arrives as
+/// `\S\` and must not become structure on re-split. Malformed escapes
+/// survive literally — `to_segment` is infallible, so a bad sequence must
+/// not fail the write.
 fn append_reps_tokens(value_expr: &proc_macro2::TokenStream) -> proc_macro2::TokenStream {
     quote! {
-        for __rep_str in (#value_expr).split('~') {
-            let mut __rep = vyna_hl7_core::field::Repetition::new();
-            for __comp_str in __rep_str.split('^') {
-                let mut __comp = vyna_hl7_core::field::Component::new();
-                for __sub in __comp_str.split('&') {
-                    __comp.add_subcomponent(
-                        vyna_hl7_core::field::SubComponent::new(__sub)
-                    );
+        {
+            let __delims = vyna_hl7_core::delimiters::Delimiters::default();
+            for __rep_str in (#value_expr).split('~') {
+                let mut __rep = vyna_hl7_core::field::Repetition::new();
+                for __comp_str in __rep_str.split('^') {
+                    let mut __comp = vyna_hl7_core::field::Component::new();
+                    for __sub in __comp_str.split('&') {
+                        let __decoded = vyna_hl7_core::encoding::Encoding::decode(
+                            __sub, &__delims,
+                        )
+                        .unwrap_or_else(|_| __sub.to_string());
+                        __comp.add_subcomponent(
+                            vyna_hl7_core::field::SubComponent::new(__decoded)
+                        );
+                    }
+                    __rep.add_component(__comp);
                 }
-                __rep.add_component(__comp);
+                __field.add_repetition(__rep);
             }
-            __field.add_repetition(__rep);
+        }
+    }
+}
+
+/// Generate a closure rendering one repetition as escape-aware composite text.
+///
+/// Subcomponent values are HL7-escaped, then joined with `&` and `^`.
+/// Trailing empty components are trimmed and a repetition without
+/// components yields `None`, matching `full_value` semantics.
+fn repetition_to_escaped_tokens() -> proc_macro2::TokenStream {
+    quote! {
+        |__rep: &vyna_hl7_core::field::Repetition| -> Option<String> {
+            if __rep.components.is_empty() {
+                return None;
+            }
+            let __delims = vyna_hl7_core::delimiters::Delimiters::default();
+            let __comps: Vec<String> = __rep
+                .components
+                .iter()
+                .map(|__comp| {
+                    __comp
+                        .subcomponents
+                        .iter()
+                        .map(|__sub| {
+                            vyna_hl7_core::encoding::Encoding::encode(
+                                __sub.as_str(),
+                                &__delims,
+                            )
+                        })
+                        .collect::<Vec<String>>()
+                        .join("&")
+                })
+                .collect();
+            // Encoding never maps empty to non-empty (or vice versa), so
+            // trimming the escaped text matches trimming decoded values.
+            let mut __end = __comps.len();
+            while __end > 0 && __comps[__end - 1].is_empty() {
+                __end -= 1;
+            }
+            Some(__comps[..__end].join("^"))
         }
     }
 }
@@ -350,14 +403,21 @@ fn inner_generic_type(ty: &Type) -> Option<&Type> {
 ///
 /// # Field types
 ///
-/// - `String` - Required whole field. Composite values are preserved verbatim
-///   (components joined by `^`, repetitions joined by `~`).
+/// - `String` - Required whole field; a missing field fails the conversion.
 /// - `Option<String>` - Optional whole field (`None` when the field is absent).
-/// - `Vec<String>` - Repeating field: one element per repetition, each holding
-///   the full composite value. Cannot be combined with `component=`.
+/// - `Vec<String>` - Repeating field: one element per repetition. Cannot be
+///   combined with `component=`.
 ///
-/// Whole-field serialization assumes the standard HL7 separators (`~`, `^`,
-/// `&`); values containing escape sequences are treated literally.
+/// Whole-field values are composite text: repetitions joined by `~`,
+/// components by `^`, subcomponents by `&`. Literal separator characters
+/// in the data are carried as HL7 escape sequences (`\F\`, `\S\`, `\T\`,
+/// `\R\`, `\E\`): reads escape with the standard delimiters and writes
+/// decode back, so escaped data survives the round trip. Trailing empty
+/// components are trimmed on read.
+///
+/// A `component = N` mapping reads and writes one component's decoded
+/// text; separator characters in the value are stored literally and
+/// escaped on encode.
 ///
 /// # Example
 ///
@@ -425,6 +485,10 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
     // Generate field extraction code for from_segment
     let mut from_segment_fields = Vec::new();
     let mut to_segment_fields = Vec::new();
+    // (field, component) pairs already mapped, to reject duplicates that
+    // would silently last-win in to_segment.
+    let mut mapped: std::collections::HashMap<(usize, Option<usize>), String> =
+        std::collections::HashMap::new();
 
     for field in fields {
         let field_name = field.ident.as_ref().ok_or_else(|| {
@@ -485,14 +549,34 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
             ));
         }
 
+        if let Some(first) = mapped.insert((field_num, attrs.component), field_name.to_string()) {
+            let location = match attrs.component {
+                Some(comp) => format!("field {field_num} component {comp}"),
+                None => format!("field {field_num}"),
+            };
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "duplicate HL7 mapping: field `{field_name}` and field \
+                     `{first}` both map to {location}; the second write \
+                     would silently overwrite the first",
+                ),
+            ));
+        }
+
         if is_repeating {
             // Repeating field: one Vec element per repetition, each holding
-            // the full composite value (components joined by `^`).
+            // the escape-aware composite value (see
+            // repetition_to_escaped_tokens).
+            let rep_to_str = repetition_to_escaped_tokens();
             from_segment_fields.push(quote! {
                 #field_name: segment.get_field(#field_num)
-                    .map(|f| f.repetitions.iter()
-                        .filter_map(|r| r.full_value())
-                        .collect::<Vec<String>>())
+                    .map(|f| {
+                        let __to_str = #rep_to_str;
+                        f.repetitions.iter()
+                            .filter_map(|r| __to_str(r))
+                            .collect::<Vec<String>>()
+                    })
                     .unwrap_or_default()
             });
 
@@ -520,13 +604,16 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
                     .map(|s| s.to_string())
             }
         } else {
-            // Extract entire field value: every repetition with its full
-            // composite value, joined by the repetition separator.
+            // Extract entire field value: every repetition rendered as
+            // escape-aware composite text, joined by the repetition
+            // separator.
+            let rep_to_str = repetition_to_escaped_tokens();
             quote! {
                 segment.get_field(#field_num)
                     .and_then(|f| {
+                        let __to_str = #rep_to_str;
                         let __parts: Vec<String> = f.repetitions.iter()
-                            .filter_map(|r| r.full_value())
+                            .filter_map(|r| __to_str(r))
                             .collect();
                         if __parts.is_empty() {
                             None
@@ -542,8 +629,10 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
                 #field_name: #extraction
             });
         } else {
+            // A missing required field fails the conversion (?); silently
+            // defaulting to "" would hide absent data.
             from_segment_fields.push(quote! {
-                #field_name: #extraction.unwrap_or_default()
+                #field_name: #extraction?
             });
         }
 
@@ -657,6 +746,11 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
 /// `Option<T>` fields take the first match if present, and `Vec<T>` fields
 /// collect every match in order. Segments sharing one ID across different
 /// groups are not distinguished positionally.
+///
+/// Before matching segments, `from_message` compares a present MSH-9
+/// against the declared `message_type`/`trigger_event`; a mismatch fails
+/// the conversion, so an ORU message cannot convert into an ADT struct.
+/// Messages without MSH-9 skip the check.
 ///
 /// # Example
 ///
@@ -865,8 +959,23 @@ fn derive_message_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
             /// Segments are matched by ID: required segments use the first
             /// match, optional segments use the first match if present, and
             /// repeating segments collect every match in order. Returns `None`
-            /// when a required segment is missing.
+            /// when a required segment is missing, or when a present MSH-9
+            /// disagrees with the declared message type or trigger event.
             pub fn from_message(message: &vyna_hl7_core::message::Message) -> Option<Self> {
+                // A present MSH-9 must agree with the declared type and
+                // trigger; each declared value that is empty is not checked.
+                // Messages without MSH-9 skip the check (partial or
+                // programmatically built messages carry no MSH).
+                if let Some((__actual_type, __actual_trigger)) =
+                    message.get_message_type()
+                {
+                    if !#message_type.is_empty() && __actual_type != #message_type {
+                        return None;
+                    }
+                    if !#trigger_event.is_empty() && __actual_trigger != #trigger_event {
+                        return None;
+                    }
+                }
                 Some(Self {
                     #(#from_message_fields),*
                 })
@@ -1361,6 +1470,71 @@ mod tests {
     }
 
     #[test]
+    fn segment_impl_rejects_duplicate_mapping() {
+        // Two struct fields reading/writing the same field/component
+        // silently last-win in to_segment; reject at derive time.
+        let err = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { \
+                 #[hl7(field = 5, component = 1)] a: String, \
+                 #[hl7(field = 5, component = 1)] b: String }",
+        ))
+        .unwrap_err();
+        assert!(err_message(err).contains("duplicate"));
+
+        // Whole-field duplicates collide too.
+        let err = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { \
+                 #[hl7(field = 3)] a: String, \
+                 #[hl7(field = 3)] b: Option<String> }",
+        ))
+        .unwrap_err();
+        assert!(err_message(err).contains("duplicate"));
+
+        // Same field, different components is fine.
+        derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { \
+                 #[hl7(field = 5, component = 1)] a: String, \
+                 #[hl7(field = 5, component = 2)] b: String }",
+        ))
+        .expect("distinct components must expand");
+    }
+
+    #[test]
+    fn segment_impl_required_field_fails_when_absent() {
+        // A missing required field must fail conversion (?), never
+        // silently become "" via unwrap_or_default().
+        let tokens = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { #[hl7(field = 3)] x: String }",
+        ))
+        .expect("valid struct must expand");
+        let rendered = tokens.to_string();
+        assert!(
+            !rendered.contains("unwrap_or_default"),
+            "required field must not default: {rendered}"
+        );
+    }
+
+    #[test]
+    fn segment_impl_whole_field_round_trip_is_escape_aware() {
+        // Whole-field values are joined composite text: reads must escape
+        // literal separators and writes must decode them back, or a
+        // literal '^' in the data becomes structure on re-split.
+        let tokens = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { #[hl7(field = 5)] x: String }",
+        ))
+        .expect("valid struct must expand");
+        let rendered = tokens.to_string().replace(' ', "");
+        assert!(
+            rendered.contains("Encoding::encode"),
+            "whole-field read must escape: {rendered}"
+        );
+        assert!(
+            rendered.contains("Encoding::decode"),
+            "whole-field write must decode: {rendered}"
+        );
+    }
+
+    #[test]
     fn message_impl_accepts_valid_struct() {
         let tokens = derive_message_impl(parse_input(
             "#[hl7(message_type = \"ADT\", trigger_event = \"A01\")] struct M { \
@@ -1370,6 +1544,22 @@ mod tests {
         ))
         .expect("valid struct must expand");
         assert!(tokens.to_string().contains("MESSAGE_TYPE"));
+    }
+
+    #[test]
+    fn message_impl_validates_msh9_type_and_trigger() {
+        // from_message must check MSH-9 against the declared message
+        // type/trigger so an ORU message cannot convert into an ADT struct.
+        let tokens = derive_message_impl(parse_input(
+            "#[hl7(message_type = \"ADT\", trigger_event = \"A01\")] struct M { \
+             #[hl7(segment)] pid: Pid }",
+        ))
+        .expect("valid struct must expand");
+        let rendered = tokens.to_string().replace(' ', "");
+        assert!(
+            rendered.contains("get_message_type"),
+            "from_message must validate MSH-9: {rendered}"
+        );
     }
 
     #[test]

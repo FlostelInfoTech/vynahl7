@@ -15,6 +15,7 @@ mod config;
 mod optimized;
 pub mod streaming;
 
+use config::is_known_segment_id;
 pub use config::{ParseResult, ParseWarning, ParserConfig, WarningCode};
 pub use streaming::{
     SegmentEvent, SegmentHandler, StreamingMessageBuilder, StreamingParser, parse_streaming,
@@ -149,6 +150,15 @@ pub fn parse_message_with_config(
                 config.max_segments
             )));
         }
+        warnings.push(ParseWarning {
+            location: config.max_segments,
+            message: format!(
+                "Message truncated from {} to {} segments",
+                segment_strings.len(),
+                config.max_segments
+            ),
+            code: WarningCode::SegmentsTruncated,
+        });
         segment_strings.truncate(config.max_segments);
     }
 
@@ -237,7 +247,7 @@ fn parse_msh_segment_with_config(
     delimiters: &Delimiters,
     config: &ParserConfig,
 ) -> Result<(Segment, Vec<ParseWarning>)> {
-    let warnings = Vec::new();
+    let mut warnings = Vec::new();
 
     if !input.starts_with("MSH") {
         return Err(Error::parse("MSH segment must start with 'MSH'"));
@@ -264,7 +274,7 @@ fn parse_msh_segment_with_config(
     let field_strings: Vec<&str> = rest.split(delimiters.field_separator).collect();
 
     for field_str in field_strings {
-        let field = parse_field_with_config(field_str, delimiters, config)?;
+        let field = parse_field_with_config(field_str, delimiters, config, &mut warnings)?;
         segment.add_field(field);
     }
 
@@ -321,6 +331,14 @@ fn parse_segment_with_config(
         });
     }
 
+    if config.validate_segment_ids && !is_known_segment_id(segment_id) {
+        warnings.push(ParseWarning {
+            location: 0,
+            message: format!("Unknown segment ID: {segment_id}"),
+            code: WarningCode::UnknownSegmentId,
+        });
+    }
+
     let mut segment = Segment::new(segment_id);
 
     // Check for field separator
@@ -345,7 +363,7 @@ fn parse_segment_with_config(
     let field_strings: Vec<&str> = rest.split(delimiters.field_separator).collect();
 
     for field_str in field_strings {
-        let field = parse_field_with_config(field_str, delimiters, config)?;
+        let field = parse_field_with_config(field_str, delimiters, config, &mut warnings)?;
         segment.add_field(field);
     }
 
@@ -357,6 +375,7 @@ fn parse_field_with_config(
     input: &str,
     delimiters: &Delimiters,
     config: &ParserConfig,
+    warnings: &mut Vec<ParseWarning>,
 ) -> Result<Field> {
     let mut field = Field::new();
 
@@ -369,6 +388,15 @@ fn parse_field_with_config(
     // Apply max repetitions limit
     let repetition_strings =
         if config.max_repetitions > 0 && repetition_strings.len() > config.max_repetitions {
+            warnings.push(ParseWarning {
+                location: 0,
+                message: format!(
+                    "Field truncated from {} to {} repetitions",
+                    repetition_strings.len(),
+                    config.max_repetitions
+                ),
+                code: WarningCode::RepetitionsTruncated,
+            });
             &repetition_strings[..config.max_repetitions]
         } else {
             &repetition_strings[..]
@@ -380,12 +408,21 @@ fn parse_field_with_config(
     for rep_str in repetition_strings {
         // Apply max field length (floored to a char boundary)
         let rep_str = if config.max_field_length > 0 && rep_str.len() > config.max_field_length {
+            warnings.push(ParseWarning {
+                location: 0,
+                message: format!(
+                    "Field truncated from {} to {} bytes",
+                    rep_str.len(),
+                    config.max_field_length
+                ),
+                code: WarningCode::FieldTruncated,
+            });
             truncate_at_char_boundary(rep_str, config.max_field_length)
         } else {
             rep_str
         };
 
-        repetitions.push(parse_repetition(rep_str, delimiters)?);
+        repetitions.push(parse_repetition(rep_str, delimiters, config, warnings)?);
     }
 
     field.repetitions = repetitions;
@@ -440,11 +477,16 @@ fn parse_segment(input: &str, delimiters: &Delimiters) -> Result<Segment> {
 
 /// Parse a field (can contain repetitions)
 fn parse_field(input: &str, delimiters: &Delimiters) -> Result<Field> {
-    parse_field_with_config(input, delimiters, &ParserConfig::strict())
+    parse_field_with_config(input, delimiters, &ParserConfig::strict(), &mut Vec::new())
 }
 
 /// Parse a repetition (can contain components)
-fn parse_repetition(input: &str, delimiters: &Delimiters) -> Result<Repetition> {
+fn parse_repetition(
+    input: &str,
+    delimiters: &Delimiters,
+    config: &ParserConfig,
+    warnings: &mut Vec<ParseWarning>,
+) -> Result<Repetition> {
     let mut repetition = Repetition::new();
 
     if input.is_empty() {
@@ -459,7 +501,7 @@ fn parse_repetition(input: &str, delimiters: &Delimiters) -> Result<Repetition> 
     let mut components = Vec::with_capacity(comp_count);
 
     for comp_str in input.split(delimiters.component_separator) {
-        components.push(parse_component(comp_str, delimiters)?);
+        components.push(parse_component(comp_str, delimiters, config, warnings)?);
     }
 
     repetition.components = components;
@@ -467,7 +509,12 @@ fn parse_repetition(input: &str, delimiters: &Delimiters) -> Result<Repetition> 
 }
 
 /// Parse a component (can contain subcomponents)
-fn parse_component(input: &str, delimiters: &Delimiters) -> Result<Component> {
+fn parse_component(
+    input: &str,
+    delimiters: &Delimiters,
+    config: &ParserConfig,
+    warnings: &mut Vec<ParseWarning>,
+) -> Result<Component> {
     let mut component = Component::new();
 
     if input.is_empty() {
@@ -477,7 +524,7 @@ fn parse_component(input: &str, delimiters: &Delimiters) -> Result<Component> {
 
     // Fast path: no subcomponents (most common case)
     if !input.contains(delimiters.subcomponent_separator) {
-        component.add_subcomponent(parse_subcomponent(input, delimiters)?);
+        component.add_subcomponent(parse_subcomponent(input, delimiters, config, warnings)?);
         return Ok(component);
     }
 
@@ -486,7 +533,7 @@ fn parse_component(input: &str, delimiters: &Delimiters) -> Result<Component> {
     let mut subcomponents = Vec::with_capacity(sub_count);
 
     for sub_str in input.split(delimiters.subcomponent_separator) {
-        subcomponents.push(parse_subcomponent(sub_str, delimiters)?);
+        subcomponents.push(parse_subcomponent(sub_str, delimiters, config, warnings)?);
     }
 
     component.subcomponents = subcomponents;
@@ -494,7 +541,12 @@ fn parse_component(input: &str, delimiters: &Delimiters) -> Result<Component> {
 }
 
 /// Parse a subcomponent (decode escape sequences)
-fn parse_subcomponent(input: &str, delimiters: &Delimiters) -> Result<SubComponent> {
+fn parse_subcomponent(
+    input: &str,
+    delimiters: &Delimiters,
+    config: &ParserConfig,
+    warnings: &mut Vec<ParseWarning>,
+) -> Result<SubComponent> {
     if input.is_empty() {
         return Ok(SubComponent::new(""));
     }
@@ -504,8 +556,18 @@ fn parse_subcomponent(input: &str, delimiters: &Delimiters) -> Result<SubCompone
         return Ok(SubComponent::new(input));
     }
 
-    let decoded = Encoding::decode(input, delimiters)?;
-    Ok(SubComponent::new(decoded))
+    match Encoding::decode(input, delimiters) {
+        Ok(decoded) => Ok(SubComponent::new(decoded)),
+        Err(e) if config.preserve_invalid_escapes => {
+            warnings.push(ParseWarning {
+                location: 0,
+                message: format!("Invalid escape sequence preserved as literal text: {e}"),
+                code: WarningCode::InvalidEscape,
+            });
+            Ok(SubComponent::new(input))
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Parse a complete HL7 batch message
@@ -1372,7 +1434,8 @@ BTS|1";
         let config = ParserConfig::strict().max_field_length(5);
         let delims = Delimiters::default();
         // Byte 5 lands inside a multibyte character.
-        let field = parse_field_with_config("abcdéfgh", &delims, &config).unwrap();
+        let mut warnings = Vec::new();
+        let field = parse_field_with_config("abcdéfgh", &delims, &config, &mut warnings).unwrap();
         assert_eq!(field.value(), Some("abcd"));
     }
 
@@ -1424,5 +1487,111 @@ BTS|1";
         assert_eq!(result.warnings[0].location, 1);
         assert_eq!(result.warnings[0].code, WarningCode::SkippedSegment);
         assert!(result.warnings[0].message.contains("3 characters"));
+    }
+
+    #[test]
+    fn test_preserve_invalid_escapes_keeps_literal_text() {
+        let config = ParserConfig::new().preserve_invalid_escapes(true);
+        let msg = "MSH|^~\\&|S|F|R|RF|20240315||ADT^A01|1|P|2.5\rPID|1||X\\Q\\Y";
+        let result = parse_message_with_config(msg, &config).unwrap();
+        let pid = result
+            .value
+            .segments
+            .iter()
+            .find(|s| s.id == "PID")
+            .unwrap();
+        assert_eq!(pid.get_field_value(3), Some("X\\Q\\Y"));
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.code == WarningCode::InvalidEscape)
+        );
+    }
+
+    #[test]
+    fn test_invalid_escape_errors_in_strict_mode() {
+        let msg = "MSH|^~\\&|S|F|R|RF|20240315||ADT^A01|1|P|2.5\rPID|1||X\\Q\\Y";
+        assert!(parse_message_with_config(msg, &ParserConfig::strict()).is_err());
+    }
+
+    #[test]
+    fn test_validate_segment_ids_warns_on_unknown_id() {
+        let config = ParserConfig::new().validate_segment_ids(true);
+        let msg = "MSH|^~\\&|S|F|R|RF|20240315||ADT^A01|1|P|2.5\rXXX|1|2\rPID|1";
+        let result = parse_message_with_config(msg, &config).unwrap();
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.code == WarningCode::UnknownSegmentId)
+        );
+    }
+
+    #[test]
+    fn test_validate_segment_ids_accepts_known_ids() {
+        let config = ParserConfig::new().validate_segment_ids(true);
+        let msg = "MSH|^~\\&|S|F|R|RF|20240315||ADT^A01|1|P|2.5\rPID|1\rPV1|1|O";
+        let result = parse_message_with_config(msg, &config).unwrap();
+        assert!(
+            !result
+                .warnings
+                .iter()
+                .any(|w| w.code == WarningCode::UnknownSegmentId)
+        );
+    }
+
+    #[test]
+    fn test_max_field_length_truncation_emits_warning() {
+        let config = ParserConfig::new().max_field_length(2);
+        let msg = "MSH|^~\\&|S|F|R|RF|20240315||ADT^A01|1|P|2.5\rPID|1||ABCDE";
+        let result = parse_message_with_config(msg, &config).unwrap();
+        let pid = result
+            .value
+            .segments
+            .iter()
+            .find(|s| s.id == "PID")
+            .unwrap();
+        assert_eq!(pid.get_field_value(3), Some("AB"));
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.code == WarningCode::FieldTruncated)
+        );
+    }
+
+    #[test]
+    fn test_max_repetitions_truncation_emits_warning() {
+        let config = ParserConfig::new().max_repetitions(2);
+        let msg = "MSH|^~\\&|S|F|R|RF|20240315||ADT^A01|1|P|2.5\rPID|1||a~b~c";
+        let result = parse_message_with_config(msg, &config).unwrap();
+        let pid = result
+            .value
+            .segments
+            .iter()
+            .find(|s| s.id == "PID")
+            .unwrap();
+        assert_eq!(pid.get_field(3).unwrap().repetitions.len(), 2);
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.code == WarningCode::RepetitionsTruncated)
+        );
+    }
+
+    #[test]
+    fn test_max_segments_truncation_emits_warning() {
+        let config = ParserConfig::new().max_segments(2).continue_on_error(true);
+        let msg = "MSH|^~\\&|S|F|R|RF|20240315||ADT^A01|1|P|2.5\rPID|1\rPV1|1|O";
+        let result = parse_message_with_config(msg, &config).unwrap();
+        assert_eq!(result.value.segments.len(), 2);
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.code == WarningCode::SegmentsTruncated)
+        );
     }
 }

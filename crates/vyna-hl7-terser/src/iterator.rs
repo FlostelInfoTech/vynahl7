@@ -8,6 +8,10 @@ use vyna_hl7_core::Message;
 
 /// Iterator over field values from repeating segments
 ///
+/// Segments whose addressed field is missing or empty are skipped, so
+/// the yielded sequence can be shorter than the segment count and must
+/// not be zipped positionally with another iterator.
+///
 /// # Examples
 ///
 /// ```
@@ -74,6 +78,10 @@ impl<'a> Iterator for FieldIterator<'a> {
 }
 
 /// Iterator over component values from a specific field
+///
+/// Segments whose addressed component is missing or empty are skipped,
+/// so the yielded sequence can be shorter than the segment count and
+/// must not be zipped positionally with another iterator.
 ///
 /// # Examples
 ///
@@ -154,6 +162,10 @@ impl<'a> Iterator for ComponentIterator<'a> {
 }
 
 /// Iterator over field repetitions
+///
+/// Repetitions whose value is missing or empty are skipped, so the
+/// yielded sequence can be shorter than the repetition count and must
+/// not be zipped positionally with another iterator.
 ///
 /// # Examples
 ///
@@ -239,6 +251,9 @@ impl<'a> Iterator for RepetitionIterator<'a> {
 impl<'a> Terser<'a> {
     /// Create an iterator over a field from all instances of a repeating segment
     ///
+    /// Segments whose addressed field is missing or empty are skipped
+    /// (see [`FieldIterator`]).
+    ///
     /// # Examples
     ///
     /// ```
@@ -267,7 +282,9 @@ impl<'a> Terser<'a> {
 
     /// Create an iterator over a specific component from all instances of a repeating segment
     ///
-    /// Component index is 1-based (HL7 standard).
+    /// Component index is 1-based (HL7 standard). Segments whose
+    /// addressed component is missing or empty are skipped (see
+    /// [`ComponentIterator`]).
     ///
     /// # Examples
     ///
@@ -305,7 +322,9 @@ impl<'a> Terser<'a> {
     /// given id, so `0` selects the first one and an out-of-range position
     /// yields no items. Note this differs from path notation, where every
     /// index (`OBX(1)`, `PID-5(1)`, components, subcomponents) is 1-based:
-    /// this argument is a direct position, not a parsed path.
+    /// this argument is a direct position, not a parsed path. Repetitions
+    /// whose value is missing or empty are skipped (see
+    /// [`RepetitionIterator`]).
     ///
     /// # Examples
     ///
@@ -519,5 +538,34 @@ OBX|3|NM|K||4.2";
             .collect();
 
         assert_eq!(values, vec![98.0, 140.0, 4.2]);
+    }
+
+    #[test]
+    fn test_component_iterator_skips_empties() {
+        let hl7 = r"MSH|^~\&|APP|FAC|||20250115||ORU^R01|123|P|2.5
+OBX|1|CE|GLU||98^mg/dL
+OBX|2|CE|NA||140^
+OBX|3|CE|K||4.2^mmol/L";
+
+        let message = parse_message(hl7).unwrap();
+        let terser = Terser::new(&message);
+
+        // The empty second component yields no item: the sequence is
+        // shorter than the segment count by design.
+        let units: Vec<&str> = terser.iter_component("OBX", 5, 2).collect();
+        assert_eq!(units, vec!["mg/dL", "mmol/L"]);
+    }
+
+    #[test]
+    fn test_repetition_iterator_skips_empties() {
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\r\
+                   PID|1||PAT001||DOE^JOHN||19800101|M|||AAA~~BBB\r";
+
+        let message = parse_message(hl7).unwrap();
+        let terser = Terser::new(&message);
+
+        // The empty middle repetition yields no item.
+        let addresses: Vec<&str> = terser.iter_repetitions("PID", 11, 0).collect();
+        assert_eq!(addresses, vec!["AAA", "BBB"]);
     }
 }

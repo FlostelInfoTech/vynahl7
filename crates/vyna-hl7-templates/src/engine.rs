@@ -16,10 +16,20 @@ fn placeholder_regex() -> &'static regex::Regex {
         .get_or_init(|| regex::Regex::new(r"\{\{([^}]+)\}\}").expect("static regex is valid"))
 }
 
+/// Maximum field or component position accepted from a template.
+///
+/// Positions size gap-filled vectors directly, so an unbounded
+/// position (e.g. from an untrusted YAML or JSON template) would
+/// exhaust memory; anything beyond this cap is rejected with an
+/// error instead. Real HL7 segments hold dozens of fields at most.
+const MAX_TEMPLATE_POSITION: usize = 1000;
+
 /// Template engine for creating messages from templates
 pub struct TemplateEngine {
     /// Variables for substitution
     variables: HashMap<String, String>,
+    /// Escape substituted variable values as literal text
+    literal_variables: bool,
 }
 
 impl TemplateEngine {
@@ -27,7 +37,42 @@ impl TemplateEngine {
     pub fn new() -> Self {
         Self {
             variables: HashMap::new(),
+            literal_variables: false,
         }
+    }
+
+    /// Treat substituted variable values as literal text
+    ///
+    /// By default a substituted value is parsed as an ER7 fragment, so
+    /// `~^&` characters in untrusted input create field structure. With
+    /// literal mode enabled, variable values are ER7-escaped before
+    /// substitution and land as literal text instead, while structure
+    /// written directly in the template is preserved. Component
+    /// templates already store values literally and are unaffected.
+    pub fn set_literal_variables(&mut self, literal: bool) {
+        self.literal_variables = literal;
+    }
+
+    /// Treat substituted variable values as literal text (builder style)
+    ///
+    /// See [`set_literal_variables`](Self::set_literal_variables).
+    pub fn with_literal_variables(mut self, literal: bool) -> Self {
+        self.literal_variables = literal;
+        self
+    }
+
+    /// Whether substituted variable values are treated as literal text
+    pub fn literal_variables(&self) -> bool {
+        self.literal_variables
+    }
+
+    /// Escape free text so it survives template substitution literally
+    ///
+    /// The escaped value can be substituted with the default (ER7
+    /// fragment) mode and still lands as literal text, which is useful
+    /// when only some values are untrusted.
+    pub fn escape_literal(value: &str) -> String {
+        Encoding::encode(value, &Delimiters::default())
     }
 
     /// Set a variable value
@@ -100,8 +145,18 @@ impl TemplateEngine {
 
         // Process field templates if present
         if let Some(field_templates) = &seg_template.fields {
+            if field_templates.contains_key(&0) {
+                return Err(Error::substitution(
+                    "Field position must be 1-based (got 0)",
+                ));
+            }
             // Get the maximum field position to size the fields vector
             let max_pos = field_templates.keys().max().copied().unwrap_or(0);
+            if max_pos > MAX_TEMPLATE_POSITION {
+                return Err(Error::substitution(format!(
+                    "Field position {max_pos} exceeds maximum of {MAX_TEMPLATE_POSITION}"
+                )));
+            }
 
             // Create fields up to max position (1-indexed in template, 0-indexed in vector)
             for pos in 1..=max_pos {
@@ -133,6 +188,11 @@ impl TemplateEngine {
             // than pushing templates in vector order. A repeated position
             // is overwritten by the later template.
             let max_pos = components.iter().map(|c| c.position).max().unwrap_or(0);
+            if max_pos > MAX_TEMPLATE_POSITION {
+                return Err(Error::substitution(format!(
+                    "Component position {max_pos} exceeds maximum of {MAX_TEMPLATE_POSITION}"
+                )));
+            }
             let mut comp_vec = vec![Component::new(); max_pos];
 
             for comp_template in components {
@@ -142,7 +202,9 @@ impl TemplateEngine {
                     ));
                 }
                 let comp_value = if let Some(placeholder) = &comp_template.placeholder {
-                    self.substitute_variables(placeholder, variables)?
+                    // Component values are stored literally already, so
+                    // they are never escaped here.
+                    self.substitute_variables(placeholder, variables, false)?
                 } else if let Some(default) = &comp_template.default {
                     default.clone()
                 } else if comp_template.required {
@@ -165,7 +227,8 @@ impl TemplateEngine {
         } else {
             // Simple field with single value
             let value = if let Some(placeholder) = &field_template.placeholder {
-                self.substitute_variables(placeholder, variables)?
+                let escape = self.literal_variables;
+                self.substitute_variables(placeholder, variables, escape)?
             } else if let Some(default) = &field_template.default {
                 default.clone()
             } else if field_template.required {
@@ -208,11 +271,14 @@ impl TemplateEngine {
     }
 
     /// Substitute variables in a placeholder string
-    /// Supports {{variable_name}} syntax (inner whitespace allowed)
+    /// Supports {{variable_name}} syntax (inner whitespace allowed).
+    /// When `escape_values` is set, each substituted value is
+    /// ER7-escaped so it lands as literal text instead of structure.
     fn substitute_variables(
         &self,
         placeholder: &str,
         variables: &HashMap<String, String>,
+        escape_values: bool,
     ) -> Result<String> {
         let mut result = placeholder.to_string();
 
@@ -223,9 +289,15 @@ impl TemplateEngine {
                 .get(var_name)
                 .ok_or_else(|| Error::substitution(format!("Variable '{}' not found", var_name)))?;
 
+            let replacement = if escape_values {
+                Self::escape_literal(var_value)
+            } else {
+                var_value.clone()
+            };
+
             // Replace the exact matched text: rebuilding the pattern from
             // the trimmed name would leave "{{ name }}" spellings behind.
-            result = result.replace(&cap[0], var_value);
+            result = result.replace(&cap[0], &replacement);
         }
 
         Ok(result)
@@ -250,7 +322,7 @@ mod tests {
         vars.insert("name".to_string(), "John Doe".to_string());
         vars.insert("id".to_string(), "12345".to_string());
 
-        let result = engine.substitute_variables("Patient {{name}} has ID {{id}}", &vars);
+        let result = engine.substitute_variables("Patient {{name}} has ID {{id}}", &vars, false);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Patient John Doe has ID 12345");
     }
@@ -261,7 +333,7 @@ mod tests {
         let mut vars = HashMap::new();
         vars.insert("facility".to_string(), "General".to_string());
 
-        let result = engine.substitute_variables("Site: {{ facility }}!", &vars);
+        let result = engine.substitute_variables("Site: {{ facility }}!", &vars, false);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Site: General!");
     }
@@ -309,7 +381,7 @@ mod tests {
         let engine = TemplateEngine::new();
         let vars = HashMap::new();
 
-        let result = engine.substitute_variables("Patient {{name}}", &vars);
+        let result = engine.substitute_variables("Patient {{name}}", &vars, false);
         assert!(result.is_err());
         assert!(
             result
@@ -546,5 +618,158 @@ mod tests {
         let components = &pid.get_field(5).unwrap().repetitions[0].components;
         assert_eq!(components.len(), 1);
         assert_eq!(components[0].value(), Some("A^B"));
+    }
+
+    #[test]
+    fn test_literal_variables_keep_structure_characters_literal() {
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        template.add_segment(SegmentTemplate::new("MSH").required());
+        let mut pid = SegmentTemplate::new("PID");
+        pid.add_field(5, FieldTemplate::new().with_placeholder("{{name}}"));
+        template.add_segment(pid);
+
+        let mut engine = TemplateEngine::new().with_literal_variables(true);
+        assert!(engine.literal_variables());
+        engine.set_variable("name", "DOE^JOHN~EVIL&A\\B|C");
+        let message = engine.create_message(&template).unwrap();
+        let field = message
+            .get_segment_by_id("PID")
+            .unwrap()
+            .get_field(5)
+            .unwrap();
+
+        // Untrusted delimiters create no structure: one repetition,
+        // one component holding the exact input text.
+        assert_eq!(field.repetitions.len(), 1);
+        assert_eq!(field.repetitions[0].components.len(), 1);
+        assert_eq!(
+            field.repetitions[0].components[0].value(),
+            Some("DOE^JOHN~EVIL&A\\B|C")
+        );
+        // The encoded message round-trips back to the same value.
+        let parsed = vyna_hl7_parser::parse_message(&message.encode()).unwrap();
+        let reparsed = parsed
+            .get_segment_by_id("PID")
+            .unwrap()
+            .get_field(5)
+            .unwrap();
+        assert_eq!(reparsed.value(), field.value());
+    }
+
+    #[test]
+    fn test_literal_variables_preserve_template_structure() {
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut pid = SegmentTemplate::new("PID");
+        pid.add_field(5, FieldTemplate::new().with_placeholder("X^{{v}}"));
+        template.add_segment(pid);
+
+        let mut engine = TemplateEngine::new();
+        engine.set_literal_variables(true);
+        engine.set_variable("v", "a^b");
+        let message = engine.create_message(&template).unwrap();
+        let components = &message
+            .get_segment_by_id("PID")
+            .unwrap()
+            .get_field(5)
+            .unwrap()
+            .repetitions[0]
+            .components;
+
+        // The template's own separator still splits; only the
+        // substituted value is literal.
+        assert_eq!(components.len(), 2);
+        assert_eq!(components[0].value(), Some("X"));
+        assert_eq!(components[1].value(), Some("a^b"));
+    }
+
+    #[test]
+    fn test_escape_literal_helper_for_default_mode() {
+        assert_eq!(
+            TemplateEngine::escape_literal("A^B~C&D|E\\F"),
+            "A\\S\\B\\R\\C\\T\\D\\F\\E\\E\\F"
+        );
+
+        // A pre-escaped value stays literal even in default mode.
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut pid = SegmentTemplate::new("PID");
+        pid.add_field(5, FieldTemplate::new().with_placeholder("{{v}}"));
+        template.add_segment(pid);
+
+        let mut engine = TemplateEngine::new();
+        engine.set_variable("v", TemplateEngine::escape_literal("a^b"));
+        let message = engine.create_message(&template).unwrap();
+        let field = message
+            .get_segment_by_id("PID")
+            .unwrap()
+            .get_field(5)
+            .unwrap();
+        assert_eq!(field.repetitions.len(), 1);
+        assert_eq!(field.repetitions[0].components.len(), 1);
+        assert_eq!(field.value(), Some("a^b"));
+    }
+
+    #[test]
+    fn test_create_message_rejects_huge_component_position() {
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut pid = SegmentTemplate::new("PID");
+        pid.add_field(
+            5,
+            FieldTemplate::new()
+                .with_components(vec![ComponentTemplate::new(1_000_000).with_default("x")]),
+        );
+        template.add_segment(pid);
+
+        let engine = TemplateEngine::new();
+        let result = engine.create_message(&template);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("exceeds maximum"));
+    }
+
+    #[test]
+    fn test_create_message_rejects_huge_field_position() {
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut pid = SegmentTemplate::new("PID");
+        pid.add_field(500_000, FieldTemplate::new().with_default("x"));
+        template.add_segment(pid);
+
+        let engine = TemplateEngine::new();
+        let result = engine.create_message(&template);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("exceeds maximum"));
+    }
+
+    #[test]
+    fn test_create_message_rejects_field_position_zero() {
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut pid = SegmentTemplate::new("PID");
+        pid.add_field(0, FieldTemplate::new().with_default("x"));
+        template.add_segment(pid);
+
+        let engine = TemplateEngine::new();
+        assert!(engine.create_message(&template).is_err());
+    }
+
+    #[test]
+    fn test_create_message_accepts_boundary_positions() {
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut pid = SegmentTemplate::new("PID");
+        pid.add_field(
+            5,
+            FieldTemplate::new()
+                .with_components(vec![ComponentTemplate::new(1000).with_default("x")]),
+        );
+        template.add_segment(pid);
+
+        let engine = TemplateEngine::new();
+        let message = engine.create_message(&template).unwrap();
+        let components = &message
+            .get_segment_by_id("PID")
+            .unwrap()
+            .get_field(5)
+            .unwrap()
+            .repetitions[0]
+            .components;
+        assert_eq!(components.len(), 1000);
+        assert_eq!(components[999].value(), Some("x"));
     }
 }

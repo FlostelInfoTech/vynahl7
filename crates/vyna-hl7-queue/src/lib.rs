@@ -668,6 +668,7 @@ impl MessageQueue for FileQueue {
     }
 
     fn ack(&mut self, id: &str) -> Result<(), QueueError> {
+        validate_id(id)?;
         if !meta_path(&self.inflight, id).exists() {
             return Err(QueueError::Unknown(id.to_string()));
         }
@@ -676,6 +677,7 @@ impl MessageQueue for FileQueue {
     }
 
     fn nack(&mut self, id: &str, error: Option<&str>) -> Result<NackOutcome, QueueError> {
+        validate_id(id)?;
         let Some(mut meta) = read_meta(&self.inflight, id)? else {
             return Err(QueueError::Unknown(id.to_string()));
         };
@@ -723,6 +725,17 @@ impl MessageQueue for FileQueue {
 
 fn dir_name(dir: &Path) -> &str {
     dir.file_name().and_then(|n| n.to_str()).unwrap_or("?")
+}
+
+/// Caller-supplied ids are joined into state-directory paths, so anything
+/// that could escape the directory (separators, parent refs) or match
+/// nothing is rejected as unknown. Generated ids are hex plus `-` and
+/// always pass.
+fn validate_id(id: &str) -> Result<(), QueueError> {
+    if id.is_empty() || id.contains('/') || id.contains('\\') || id.contains("..") {
+        return Err(QueueError::Unknown(id.to_string()));
+    }
+    Ok(())
 }
 
 fn meta_path(dir: &Path, id: &str) -> PathBuf {
@@ -1224,6 +1237,57 @@ mod tests {
                 dead: 1
             }
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn file_ack_rejects_path_traversal_ids() {
+        let dir = scratch_dir();
+        let (mut queue, _) = FileQueue::open(&dir).unwrap();
+        let id = queue.enqueue(b"MSH", HashMap::new()).unwrap();
+
+        // Never leased: still pending. Hostile ids must not settle it.
+        for hostile in [
+            format!("../pending/{id}"),
+            "../inflight/anything".to_string(),
+            "a/b".to_string(),
+            "a\\b".to_string(),
+            String::new(),
+        ] {
+            assert!(
+                matches!(queue.ack(&hostile), Err(QueueError::Unknown(_))),
+                "ack({hostile:?}) must be rejected"
+            );
+        }
+        assert_eq!(queue.stats().unwrap().pending, 1);
+
+        // The entry is intact and still deliverable.
+        let leased = queue.dequeue().unwrap().unwrap();
+        assert_eq!(leased.id, id);
+        assert_eq!(leased.body, b"MSH");
+        queue.ack(&id).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn file_nack_rejects_path_traversal_ids() {
+        let dir = scratch_dir();
+        let (mut queue, _) = FileQueue::open(&dir).unwrap();
+        let id = queue.enqueue(b"MSH", HashMap::new()).unwrap();
+
+        for hostile in [
+            format!("../pending/{id}"),
+            "../dead/anything".to_string(),
+            "a/b".to_string(),
+        ] {
+            assert!(
+                matches!(queue.nack(&hostile, Some("e")), Err(QueueError::Unknown(_))),
+                "nack({hostile:?}) must be rejected"
+            );
+        }
+        assert_eq!(queue.stats().unwrap().pending, 1);
+        let leased = queue.dequeue().unwrap().unwrap();
+        assert_eq!(leased.id, id);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

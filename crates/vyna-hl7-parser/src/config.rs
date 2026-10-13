@@ -72,7 +72,8 @@ pub struct ParserConfig {
 
     /// Preserve invalid escape sequences as literal text
     ///
-    /// When true, "\X" (invalid escape) is kept as "\X"
+    /// When true, "\X" (invalid escape) is kept as "\X" and reported with
+    /// an `InvalidEscape` warning
     /// When false, invalid escapes cause an error
     /// Default: false (strict)
     pub preserve_invalid_escapes: bool,
@@ -117,10 +118,36 @@ pub struct ParserConfig {
 
     /// Validate segment IDs against known HL7 segments
     ///
-    /// When true, unknown segment IDs cause a warning (not error)
+    /// When true, unknown segment IDs cause a warning (not error) with
+    /// an `UnknownSegmentId` code; parsing still succeeds
     /// When false, any 3-character ID is accepted
     /// Default: false
     pub validate_segment_ids: bool,
+}
+
+/// Standard HL7 v2.x segment IDs (all versions through 2.8).
+///
+/// Used by `ParserConfig::validate_segment_ids`: any parsed segment ID
+/// not in this table produces an `UnknownSegmentId` warning. Site-defined
+/// Z-segments are intentionally not listed and warn when validation is on.
+pub(crate) const KNOWN_SEGMENT_IDS: &[&str] = &[
+    "ABS", "ACC", "ADD", "ADJ", "AFF", "AIG", "AIL", "AIP", "AIS", "AL1", "APR", "ARQ", "ARV",
+    "AUT", "BHS", "BLC", "BPO", "BPX", "BTS", "BTX", "CDM", "CM0", "CM1", "CM2", "CNS", "CON",
+    "CSP", "CSR", "CSS", "CTD", "CTI", "DB1", "DG1", "DON", "DRG", "DSC", "DSP", "ECD", "ECR",
+    "EDU", "EQL", "EQU", "ERQ", "ERR", "EVN", "FAC", "FHS", "FT1", "FTS", "GOL", "GP1", "GP2",
+    "GT1", "IAM", "IN1", "IN2", "IN3", "INV", "IPC", "ISD", "LAN", "LCH", "LDP", "LOC", "LRL",
+    "MFA", "MFE", "MFI", "MRG", "MSA", "MSH", "NCK", "NDS", "NK1", "NPU", "NSC", "NST", "NTE",
+    "OBR", "OBX", "ODS", "ODT", "OH1", "OH2", "OH3", "OH4", "OM1", "OM2", "OM3", "OM4", "OM5",
+    "OM6", "OM7", "ORC", "ORG", "OVR", "PCR", "PD1", "PDC", "PDA", "PEO", "PES", "PID", "PR1",
+    "PRA", "PRB", "PRC", "PRD", "PRT", "PSG", "PSH", "PTH", "PV1", "PV2", "PYE", "QAK", "QID",
+    "QPD", "QRD", "QRF", "QRI", "RCP", "RDF", "RDT", "REL", "RF1", "RGS", "RMI", "ROL", "RQ1",
+    "RQD", "RXA", "RXC", "RXD", "RXE", "RXG", "RXO", "RXR", "SAC", "SCH", "SDD", "SFT", "SID",
+    "SPM", "STF", "TAX", "TCD", "TQ1", "TQ2", "TXA", "UAC", "UB1", "UB2", "URD", "URS", "VAR",
+];
+
+/// Check whether `id` is a standard HL7 segment ID.
+pub(crate) fn is_known_segment_id(id: &str) -> bool {
+    KNOWN_SEGMENT_IDS.contains(&id)
 }
 
 impl Default for ParserConfig {
@@ -288,6 +315,8 @@ pub enum WarningCode {
     FieldTruncated,
     /// Repetitions were truncated
     RepetitionsTruncated,
+    /// Segments beyond `max_segments` were dropped
+    SegmentsTruncated,
     /// Unknown segment ID
     UnknownSegmentId,
     /// Segment skipped after a parse error with continue_on_error
@@ -305,6 +334,7 @@ impl std::fmt::Display for WarningCode {
             WarningCode::BlankLine => write!(f, "BLANK_LINE"),
             WarningCode::FieldTruncated => write!(f, "FIELD_TRUNCATED"),
             WarningCode::RepetitionsTruncated => write!(f, "REPETITIONS_TRUNCATED"),
+            WarningCode::SegmentsTruncated => write!(f, "SEGMENTS_TRUNCATED"),
             WarningCode::UnknownSegmentId => write!(f, "UNKNOWN_SEGMENT_ID"),
             WarningCode::SkippedSegment => write!(f, "SKIPPED_SEGMENT"),
         }

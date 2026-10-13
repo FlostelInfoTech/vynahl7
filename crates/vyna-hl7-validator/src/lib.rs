@@ -632,6 +632,12 @@ impl Validator {
                     Ok(idx) => idx,
                     Err(_) => continue,
                 };
+                // Components are 1-indexed in the schema; key "0" is
+                // malformed. Skip it like unparsable keys instead of
+                // underflowing on `comp_idx - 1` below.
+                if comp_idx == 0 {
+                    continue;
+                }
                 // Components are 0-indexed in the repetition vec, 1-indexed in schema
                 let component = repetition.get_component(comp_idx - 1);
                 let comp_location = format!("{}-{}", field_location, comp_idx);
@@ -978,6 +984,63 @@ mod tests {
 
         assert!(!result.is_valid());
         assert!(result.errors.iter().any(|e| e.message.contains("MSH")));
+    }
+
+    #[test]
+    fn test_component_key_zero_does_not_panic() {
+        let mut components = HashMap::new();
+        components.insert(
+            "0".to_string(),
+            ComponentDefinition {
+                name: "Bogus".to_string(),
+                data_type: "ST".to_string(),
+                required: false,
+                max_length: None,
+                table_id: None,
+            },
+        );
+        let mut fields = HashMap::new();
+        fields.insert(
+            3,
+            FieldDefinition {
+                name: "Patient Identifier List".to_string(),
+                data_type: "ST".to_string(),
+                required: false,
+                repeating: false,
+                max_length: None,
+                table_id: None,
+                components: Some(components),
+            },
+        );
+        let mut segments = HashMap::new();
+        segments.insert(
+            "PID".to_string(),
+            SegmentDefinition {
+                name: "Patient Identification".to_string(),
+                required: false,
+                repeating: false,
+                fields,
+            },
+        );
+        let schema = MessageSchema {
+            message_type: "ADT".to_string(),
+            trigger_event: "A01".to_string(),
+            version: "2.5".to_string(),
+            segments,
+        };
+
+        let mut msg = Message::new();
+        msg.add_segment(Segment::new("MSH"));
+        let mut pid = Segment::new("PID");
+        pid.add_field(Field::from_value("1"));
+        pid.add_field(Field::from_value(""));
+        pid.add_field(Field::from_value("12345"));
+        msg.add_segment(pid);
+
+        // Component keys are 1-based; key "0" must be skipped, not panic.
+        let validator = Validator::with_schema(Version::V2_5, schema);
+        let result = validator.validate(&msg);
+        assert!(result.is_valid());
     }
 
     #[test]

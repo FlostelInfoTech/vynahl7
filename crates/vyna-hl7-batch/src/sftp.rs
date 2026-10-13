@@ -173,6 +173,18 @@ impl russh::client::Handler for VerifyHandler {
     }
 }
 
+/// Map SSH connect failures, surfacing host-key pin rejections as
+/// [`BatchError::HostKey`]. russh reports `check_server_key = false`
+/// as [`russh::Error::UnknownKey`].
+fn map_connect_error(e: russh::Error, addr: &str) -> BatchError {
+    match e {
+        russh::Error::UnknownKey => {
+            BatchError::HostKey(format!("{addr}: host key does not match pinned keys"))
+        }
+        other => BatchError::Ssh(other),
+    }
+}
+
 /// Compare a pinned OpenSSH public key line against the presented key.
 /// Only the key material is compared; comments are ignored.
 fn key_matches(pinned_line: &str, presented: &russh::keys::PublicKeyOrCertificate) -> bool {
@@ -209,12 +221,13 @@ impl SftpTransport {
         };
         let ssh_config = Arc::new(russh::client::Config::default());
         let timeout = config.connect_timeout;
-        let mut ssh = tokio::time::timeout(
+        let connected = tokio::time::timeout(
             timeout,
             russh::client::connect(ssh_config, config.addr.as_str(), handler),
         )
         .await
-        .map_err(|_| BatchError::Timeout(timeout))??;
+        .map_err(|_| BatchError::Timeout(timeout))?;
+        let mut ssh = connected.map_err(|e| map_connect_error(e, &config.addr))?;
 
         let timeout = config.command_timeout;
         let authenticated = match &config.auth {
@@ -565,6 +578,19 @@ mod tests {
         assert!(!is_staged_upload("inbox/a.hl7"));
         assert!(!is_staged_upload("report.tmp-backup.hl7"));
         assert!(!is_staged_upload("inbox/x.tmp-1-2-3"));
+    }
+
+    #[test]
+    fn unknown_key_maps_to_host_key_error() {
+        let err = map_connect_error(russh::Error::UnknownKey, "host:22");
+        assert!(matches!(err, BatchError::HostKey(_)));
+        assert!(err.to_string().contains("host:22"));
+    }
+
+    #[test]
+    fn other_ssh_errors_stay_ssh_errors() {
+        let err = map_connect_error(russh::Error::Disconnect, "host:22");
+        assert!(matches!(err, BatchError::Ssh(_)));
     }
 
     #[test]

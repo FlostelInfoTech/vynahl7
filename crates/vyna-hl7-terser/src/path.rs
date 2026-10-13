@@ -98,6 +98,12 @@ impl TerserPath {
             None
         };
 
+        // Anything beyond SEGMENT-FIELD-COMPONENT-SUBCOMPONENT is
+        // malformed: silently dropping it would address the wrong value.
+        if parts.len() > 4 {
+            return Err(Error::terser_path("Too many path parts"));
+        }
+
         Ok(TerserPath {
             segment_id,
             segment_index,
@@ -117,6 +123,13 @@ impl TerserPath {
             let index_str = &part[paren_pos + 1..];
 
             if let Some(close_paren) = index_str.find(')') {
+                // Reject trailing garbage such as "OBX(2)x": only the
+                // index may sit between the parentheses.
+                if !index_str[close_paren + 1..].is_empty() {
+                    return Err(Error::terser_path(
+                        "Trailing characters after segment index",
+                    ));
+                }
                 let index = index_str[..close_paren]
                     .parse::<usize>()
                     .map_err(|_| Error::terser_path("Invalid segment index"))?;
@@ -153,6 +166,13 @@ impl TerserPath {
                 .map_err(|_| Error::terser_path("Invalid field index"))?;
 
             if let Some(close_paren) = rep_str.find(')') {
+                // Reject trailing garbage such as "5(2)x": only the
+                // index may sit between the parentheses.
+                if !rep_str[close_paren + 1..].is_empty() {
+                    return Err(Error::terser_path(
+                        "Trailing characters after repetition index",
+                    ));
+                }
                 let rep_index = rep_str[..close_paren]
                     .parse::<usize>()
                     .map_err(|_| Error::terser_path("Invalid repetition index"))?;
@@ -261,5 +281,30 @@ mod tests {
         // PID-11(0) should be invalid (HL7 uses 1-based indexing)
         let result = TerserPath::parse("PID-11(0)-1");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_rejects_trailing_garbage_after_segment_index() {
+        assert!(TerserPath::parse("OBX(2)x-5").is_err());
+        assert!(TerserPath::parse("OBX(2)(3)-5").is_err());
+        assert!(TerserPath::parse("OBX(2) -5").is_err());
+        // Clean indexed paths still parse.
+        assert!(TerserPath::parse("OBX(2)-5").is_ok());
+    }
+
+    #[test]
+    fn test_parse_rejects_trailing_garbage_after_repetition_index() {
+        assert!(TerserPath::parse("PID-11(2)x-1").is_err());
+        assert!(TerserPath::parse("PID-11(2)(3)-1").is_err());
+        // Clean indexed paths still parse.
+        assert!(TerserPath::parse("PID-11(2)-1").is_ok());
+    }
+
+    #[test]
+    fn test_parse_rejects_parts_beyond_subcomponent() {
+        assert!(TerserPath::parse("PID-5-1-2-3").is_err());
+        assert!(TerserPath::parse("PID-5-1-2-3-4").is_err());
+        // A full four-part path still parses.
+        assert!(TerserPath::parse("PID-5-1-2").is_ok());
     }
 }
