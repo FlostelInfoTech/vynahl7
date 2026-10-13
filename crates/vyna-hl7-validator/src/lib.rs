@@ -555,6 +555,12 @@ impl Validator {
         result: &mut ValidationResult,
     ) {
         for repetition in &field.repetitions {
+            // Empty means absent in HL7: skip required-component checks for
+            // repetitions with no content (e.g. empty wire positions, which
+            // the parser materializes as one empty repetition).
+            if repetition.is_empty() {
+                continue;
+            }
             for (comp_key, comp_def) in components {
                 let comp_idx: usize = match comp_key.parse() {
                     Ok(idx) => idx,
@@ -677,6 +683,13 @@ impl Validator {
 /// unsplit component, so the value is split on the component separator when
 /// the schema (or datatype) says the field is composite. Parsed messages
 /// already expose component 1 via `value()`, making the split a no-op there.
+///
+/// When the schema assigns the same table to a component other than 1 (e.g.
+/// XPN name-type table 0200 on component 7), the component-level checks own
+/// it and there is no field-level code to check.
+///
+/// Exception: on CQ quantity/units fields a field-level table constrains the
+/// units (component 2), never the numeric quantity in component 1.
 fn field_table_code<'a>(
     field: &'a vyna_hl7_core::field::Field,
     field_def: &FieldDefinition,
@@ -684,6 +697,21 @@ fn field_table_code<'a>(
 ) -> Option<&'a str> {
     let value = field.value()?;
     if field_def.components.is_some() || is_composite_datatype(&field_def.data_type) {
+        if let Some(table_id) = &field_def.table_id
+            && let Some(components) = &field_def.components
+            && components.iter().any(|(key, comp)| {
+                comp.table_id.as_ref() == Some(table_id)
+                    && key.parse::<usize>().is_ok_and(|idx| idx != 1)
+            })
+        {
+            return None;
+        }
+        if field_def.data_type == "CQ" {
+            if let Some(units) = field.get_component(0, 1).and_then(|c| c.value()) {
+                return Some(units);
+            }
+            return value.split(delimiters.component_separator).nth(1);
+        }
         Some(
             value
                 .split(delimiters.component_separator)
@@ -1649,6 +1677,147 @@ mod tests {
                 .errors
                 .iter()
                 .any(|e| e.message.contains("PID"))
+        );
+    }
+
+    #[test]
+    fn test_parsed_empty_fields_validate_like_sparse_built_message() {
+        use vyna_hl7_core::builders::vxu::{ImmunizationDose, VxuV04Builder};
+
+        // The parser materializes empty wire positions (PID-2, PID-4) as
+        // fields with one empty repetition, while sparse builders leave them
+        // absent. Both mean "not present" in HL7, so both must validate
+        // identically: no required-component errors for empty fields.
+        let built = VxuV04Builder::new(Version::V2_5)
+            .sending_application("IMM")
+            .sending_facility("CLINIC")
+            .receiving_application("IIS")
+            .receiving_facility("REG")
+            .patient_id("12345")
+            .patient_name("Smith", "John")
+            .add_immunization(
+                ImmunizationDose::new("08^HEPB^CVX", "20240115130000")
+                    .amount("0.5")
+                    .units("mL"),
+            )
+            .build()
+            .unwrap();
+        let parsed = vyna_hl7_parser::parse_message(&built.encode()).unwrap();
+
+        let validator = Validator::for_message_type(Version::V2_5, "VXU", "V04").unwrap();
+        let mut built_errors: Vec<String> = validator
+            .validate(&built)
+            .errors
+            .iter()
+            .map(|e| format!("{}: {}", e.location, e.message))
+            .collect();
+        let mut parsed_errors: Vec<String> = validator
+            .validate(&parsed)
+            .errors
+            .iter()
+            .map(|e| format!("{}: {}", e.location, e.message))
+            .collect();
+        built_errors.sort();
+        parsed_errors.sort();
+        assert_eq!(
+            built_errors, parsed_errors,
+            "parsed message must validate like the built message"
+        );
+        assert!(parsed_errors.is_empty(), "errors: {:?}", parsed_errors);
+    }
+
+    #[test]
+    fn test_populated_field_missing_required_component_still_errors() {
+        // A field with content but a missing required component must still
+        // fail: PID-3 "^ST123" populates CX.2 while required CX.1 is empty.
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\rPID|1||^ST123||DOE^JOHN\r",
+        )
+        .unwrap();
+
+        let validator = Validator::for_message_type(Version::V2_5, "ADT", "A01").unwrap();
+        let result = validator.validate(&message);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.location == "PID[1]-3-1" && e.message.contains("Required component 1")),
+            "errors: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_field_table_on_later_component_not_checked_at_component_one() {
+        // v2.8 PID-5 carries field-level table 0200 (Name Type), which the
+        // schema assigns to XPN component 7. A family name in component 1
+        // must not be checked against it.
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01^ADT_A01|M1|P|2.8\rPID|1||7||DOE^JOHN\rPV1||I\r",
+        )
+        .unwrap();
+
+        let validator = Validator::for_message_type(Version::V2_8, "ADT", "A01").unwrap();
+        let result = validator.validate(&message);
+        assert!(
+            result
+                .errors
+                .iter()
+                .all(|e| !(e.location == "PID[1]-5" && e.message.contains("0200"))),
+            "errors: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_cq_field_table_checks_units_component() {
+        // QRD-7 is CQ with field-level table 0126, which constrains the
+        // units (component 2), not the quantity in component 1.
+        let valid = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|S|F|R|D|20240101||QRY^A19|M1|P|2.5\rQRD|20240101|R|I|Q1|||10^RD|12345|DEM|LAB\r",
+        )
+        .unwrap();
+        let validator = Validator::for_message_type(Version::V2_5, "QRY", "A19").unwrap();
+        let result = validator.validate(&valid);
+        assert!(
+            result.errors.iter().all(|e| !e.message.contains("0126")),
+            "errors: {:?}",
+            result.errors
+        );
+
+        let invalid = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|S|F|R|D|20240101||QRY^A19|M1|P|2.5\rQRD|20240101|R|I|Q1|||10^XX|12345|DEM|LAB\r",
+        )
+        .unwrap();
+        let result = validator.validate(&invalid);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.location == "QRD[1]-7" && e.message.contains("0126")),
+            "errors: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_name_type_code_still_validated_at_component_seven() {
+        // Component-level table checks still apply: XPN.7 "X" is not a
+        // table 0200 code.
+        let message = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01^ADT_A01|M1|P|2.8\rPID|1||7||DOE^JOHN^^^^^X\rPV1||I\r",
+        )
+        .unwrap();
+
+        let validator = Validator::for_message_type(Version::V2_8, "ADT", "A01").unwrap();
+        let result = validator.validate(&message);
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.location == "PID[1]-5-7" && e.message.contains("0200")),
+            "errors: {:?}",
+            result.errors
         );
     }
 }

@@ -59,7 +59,7 @@ use crate::{
     charset::CharacterSet,
     delimiters::Delimiters,
     error::Result,
-    field::Field,
+    field::{Component, Field, Repetition},
     message::Message,
     segment::Segment,
     types::format_timestamp,
@@ -194,6 +194,8 @@ pub struct AckBuilder {
     processing_id: String,
     /// Character set for MSH-18, echoed from the incoming message
     charset: Option<CharacterSet>,
+    /// Trigger event echoed in MSH-9-2 (e.g. `A01` for `ACK^A01`)
+    trigger_event: Option<String>,
 }
 
 impl AckBuilder {
@@ -249,6 +251,12 @@ impl AckBuilder {
             .filter(|value| !value.is_empty())
             .and_then(|value| CharacterSet::from_msh18(value).ok());
 
+        // Echo the trigger event so MSH-9 reads e.g. `ACK^A01`.
+        let trigger_event = message
+            .get_message_type()
+            .map(|(_, trigger)| trigger)
+            .filter(|trigger| !trigger.is_empty());
+
         Self {
             version,
             original_control_id,
@@ -265,6 +273,7 @@ impl AckBuilder {
             control_id_override: None,
             processing_id,
             charset,
+            trigger_event,
         }
     }
 
@@ -294,7 +303,17 @@ impl AckBuilder {
             control_id_override: None,
             processing_id: "P".to_string(),
             charset: None,
+            trigger_event: None,
         }
+    }
+
+    /// Set the trigger event echoed in MSH-9-2 (e.g. `A01`).
+    ///
+    /// Required by v2.3+ schemas; [`for_message`](Self::for_message) fills it
+    /// from the incoming message automatically.
+    pub fn trigger_event(mut self, trigger: &str) -> Self {
+        self.trigger_event = Some(trigger.to_string());
+        self
     }
 
     /// Declare the ACK wire character set in MSH-18 (HL7 table 0211)
@@ -502,8 +521,17 @@ impl AckBuilder {
         // MSH-8: Security (empty)
         msh.add_field(Field::from_value(""));
 
-        // MSH-9: Message Type (ACK)
-        msh.add_field(Field::from_value("ACK"));
+        // MSH-9: Message Type (ACK) with trigger echo, e.g. ACK^A01.
+        // Components are split (not a single "ACK^A01" value) so MSH-9-2
+        // validates as its own component.
+        let mut msg_type_field = Field::new();
+        let mut rep = Repetition::new();
+        rep.add_component(Component::from_value("ACK"));
+        if let Some(trigger) = &self.trigger_event {
+            rep.add_component(Component::from_value(trigger));
+        }
+        msg_type_field.add_repetition(rep);
+        msh.add_field(msg_type_field);
 
         // MSH-10: Message Control ID
         let control_id = self

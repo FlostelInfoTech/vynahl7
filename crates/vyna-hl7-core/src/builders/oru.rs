@@ -24,6 +24,7 @@ pub struct OruR01Builder {
     order_control: String,
     placer_order_number: Option<String>,
     filler_order_number: Option<String>,
+    universal_service_id: Option<String>,
     result_status: Option<String>,
     visit_number: Option<String>,
     observations: Vec<Observation>,
@@ -54,6 +55,7 @@ impl OruR01Builder {
             order_control: "RE".to_string(),
             placer_order_number: None,
             filler_order_number: None,
+            universal_service_id: None,
             result_status: None,
             visit_number: None,
             observations: Vec::new(),
@@ -104,6 +106,12 @@ impl OruR01Builder {
 
     pub fn filler_order_number(mut self, number: &str) -> Self {
         self.filler_order_number = Some(number.to_string());
+        self
+    }
+
+    /// OBR-4: Universal Service ID (required by the schema).
+    pub fn universal_service_id(mut self, id: &str) -> Self {
+        self.universal_service_id = Some(id.to_string());
         self
     }
 
@@ -177,7 +185,7 @@ impl OruR01Builder {
         obr.add_field(Field::from_value("1")); // OBR-1: Set ID
         obr.add_field(Field::from_value(self.placer_order_number.as_deref().unwrap_or(""))); // OBR-2: Placer Order Number
         obr.add_field(Field::from_value(self.filler_order_number.as_deref().unwrap_or(""))); // OBR-3: Filler Order Number
-        obr.add_field(Field::from_value("")); // OBR-4: Universal Service ID
+        obr.add_field(Field::from_value(self.universal_service_id.as_deref().unwrap_or(""))); // OBR-4: Universal Service ID
         if let Some(status) = self.result_status.as_deref() {
             for _ in 5..25 {
                 obr.add_field(Field::from_value(""));

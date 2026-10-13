@@ -13,8 +13,13 @@ pub struct MdmT01Builder {
     control_id: Option<String>,
     patient_id: Option<String>,
     patient_name: Option<(String, String)>,
+    patient_class: Option<String>,
     document_type: Option<String>,
     unique_document_number: Option<String>,
+    document_completion_status: Option<String>,
+    observation_identifier: Option<String>,
+    observation_value: Option<String>,
+    result_status: Option<String>,
 }
 
 impl MdmT01Builder {
@@ -28,8 +33,13 @@ impl MdmT01Builder {
             control_id: None,
             patient_id: None,
             patient_name: None,
+            patient_class: None,
             document_type: None,
             unique_document_number: None,
+            document_completion_status: None,
+            observation_identifier: None,
+            observation_value: None,
+            result_status: None,
         }
     }
 
@@ -73,6 +83,37 @@ impl MdmT01Builder {
         self
     }
 
+    /// PV1-2 Patient Class (required by the schema); no PV1 is emitted
+    /// unless this is set.
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.patient_class = Some(class.to_string());
+        self
+    }
+
+    /// TXA-17 Document Completion Status, HL7 table 0271 (required).
+    pub fn document_completion_status(mut self, status: &str) -> Self {
+        self.document_completion_status = Some(status.to_string());
+        self
+    }
+
+    /// OBX-3 Observation Identifier; no OBX is emitted unless this is set.
+    pub fn observation_identifier(mut self, id: &str) -> Self {
+        self.observation_identifier = Some(id.to_string());
+        self
+    }
+
+    /// OBX-5 Observation Value (document content for T02).
+    pub fn observation_value(mut self, value: &str) -> Self {
+        self.observation_value = Some(value.to_string());
+        self
+    }
+
+    /// OBX-11 Observation Result Status (required when OBX is emitted).
+    pub fn result_status(mut self, status: &str) -> Self {
+        self.result_status = Some(status.to_string());
+        self
+    }
+
     pub fn build(mut self) -> Result<Message> {
         let control_id = self.control_id.unwrap_or_else(generate_control_id);
 
@@ -86,7 +127,7 @@ impl MdmT01Builder {
         )?;
         self.base.message.add_segment(msh);
 
-        let evn = self.base.create_evn("T01", None)?;
+        let evn = self.base.create_evn(self.base.trigger_event(), None)?;
         self.base.message.add_segment(evn);
 
         // PID segment
@@ -102,12 +143,51 @@ impl MdmT01Builder {
 
         self.base.message.add_segment(pid);
 
+        // PV1 segment (PV1-2 patient class is schema-required)
+        if let Some(class) = &self.patient_class {
+            let mut pv1 = Segment::new("PV1");
+            pv1.add_field(Field::from_value("1")); // Set ID
+            pv1.add_field(Field::from_value(class)); // Patient Class
+            self.base.message.add_segment(pv1);
+        }
+
         // TXA segment
         let mut txa = Segment::new("TXA");
         txa.add_field(Field::from_value("1")); // Set ID
         txa.add_field(Field::from_value(self.document_type.as_deref().unwrap_or(""))); // Document Type
+        for _ in 3..12 {
+            txa.add_field(Field::from_value(""));
+        }
+        txa.add_field(Field::from_value(
+            self.unique_document_number.as_deref().unwrap_or(""),
+        )); // TXA-12: Unique Document Number
+        for _ in 13..17 {
+            txa.add_field(Field::from_value(""));
+        }
+        txa.add_field(Field::from_value(
+            self.document_completion_status.as_deref().unwrap_or(""),
+        )); // TXA-17: Document Completion Status
 
         self.base.message.add_segment(txa);
+
+        // OBX segment (document content for T02, status details for T04)
+        if let Some(identifier) = &self.observation_identifier {
+            let mut obx = Segment::new("OBX");
+            obx.add_field(Field::from_value("1")); // Set ID
+            obx.add_field(Field::from_value("TX")); // Value Type
+            obx.add_field(Field::from_value(identifier)); // Observation Identifier
+            obx.add_field(Field::from_value("")); // Observation Sub-ID
+            obx.add_field(Field::from_value(
+                self.observation_value.as_deref().unwrap_or(""),
+            )); // Observation Value
+            for _ in 6..11 {
+                obx.add_field(Field::from_value(""));
+            }
+            obx.add_field(Field::from_value(
+                self.result_status.as_deref().unwrap_or(""),
+            )); // OBX-11: Result Status
+            self.base.message.add_segment(obx);
+        }
 
         Ok(self.base.build())
     }
@@ -165,6 +245,31 @@ impl MdmT02Builder {
         self
     }
 
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.base = self.base.patient_class(class);
+        self
+    }
+
+    pub fn document_completion_status(mut self, status: &str) -> Self {
+        self.base = self.base.document_completion_status(status);
+        self
+    }
+
+    pub fn observation_identifier(mut self, id: &str) -> Self {
+        self.base = self.base.observation_identifier(id);
+        self
+    }
+
+    pub fn observation_value(mut self, value: &str) -> Self {
+        self.base = self.base.observation_value(value);
+        self
+    }
+
+    pub fn result_status(mut self, status: &str) -> Self {
+        self.base = self.base.result_status(status);
+        self
+    }
+
     pub fn build(self) -> Result<Message> {
         self.base.build()
     }
@@ -219,6 +324,31 @@ impl MdmT04Builder {
 
     pub fn unique_document_number(mut self, number: &str) -> Self {
         self.base = self.base.unique_document_number(number);
+        self
+    }
+
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.base = self.base.patient_class(class);
+        self
+    }
+
+    pub fn document_completion_status(mut self, status: &str) -> Self {
+        self.base = self.base.document_completion_status(status);
+        self
+    }
+
+    pub fn observation_identifier(mut self, id: &str) -> Self {
+        self.base = self.base.observation_identifier(id);
+        self
+    }
+
+    pub fn observation_value(mut self, value: &str) -> Self {
+        self.base = self.base.observation_value(value);
+        self
+    }
+
+    pub fn result_status(mut self, status: &str) -> Self {
+        self.base = self.base.result_status(status);
         self
     }
 

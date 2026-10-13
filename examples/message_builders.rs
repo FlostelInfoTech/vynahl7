@@ -365,7 +365,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .patient_name("DOE", "JOHN")
         .order_control("NW")
         .placer_order_number("RX-001")
-        .give_code("00069123001^Aspirin 81mg^NDC")
+        .give_code("08^HEPB^CVX")
+        .give_amount_minimum("1")
+        .give_units("TAB^Tablet^L")
+        .route("PO")
         .build()?;
 
     println!("{}\n", rde_message.encode());
@@ -383,7 +386,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .patient_name("DOE", "JOHN")
         .order_control("RE")
         .placer_order_number("RX-001")
-        .give_code("00069123001^Aspirin 81mg^NDC")
+        .administered_code("08^HEPB^CVX")
+        .amount("0.5")
+        .route("IM")
         .build()?;
 
     println!("{}\n", ras_message.encode());
@@ -401,7 +406,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .patient_name("DOE", "JOHN")
         .order_control("RE")
         .placer_order_number("RX-001")
-        .give_code("00069123001^Aspirin 81mg^NDC")
+        .dispense_code("08^HEPB^CVX")
+        .dispense_amount("1")
+        .prescription_number("RX12345")
+        .route("PO")
         .build()?;
 
     println!("{}\n", rds_message.encode());
@@ -419,7 +427,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .patient_name("DOE", "JOHN")
         .order_control("RE")
         .placer_order_number("RX-001")
-        .give_code("00069123001^Aspirin 81mg^NDC")
+        .give_code("08^HEPB^CVX")
+        .give_amount_minimum("1")
+        .give_units("TAB^Tablet^L")
+        .route("PO")
         .build()?;
 
     println!("{}\n", rgv_message.encode());
@@ -435,9 +446,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .receiving_facility("Hospital")
         .patient_id("12345")
         .patient_name("DOE", "JOHN")
-        .order_control("OK")
-        .placer_order_number("RX-001")
-        .give_code("00069123001^Aspirin 81mg^NDC")
+        .ack_code("AA")
+        .acknowledged_control_id("RX-001")
         .build()?;
 
     println!("{}\n", rra_message.encode());
@@ -453,9 +463,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .receiving_facility("Hospital")
         .patient_id("12345")
         .patient_name("DOE", "JOHN")
-        .order_control("RE")
-        .placer_order_number("RX-001")
-        .give_code("00069123001^Aspirin 81mg^NDC")
+        .ack_code("AA")
+        .acknowledged_control_id("RX-001")
         .build()?;
 
     println!("{}\n", rrd_message.encode());

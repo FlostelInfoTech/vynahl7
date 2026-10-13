@@ -64,6 +64,11 @@ impl MessageBuilder {
         self
     }
 
+    /// The trigger event this builder constructs (e.g. `A01`).
+    pub fn trigger_event(&self) -> &str {
+        &self.trigger_event
+    }
+
     /// Create MSH segment with basic fields
     pub fn create_msh(
         &self,

@@ -254,8 +254,9 @@ impl AdtA01Builder {
         )?;
         self.base.message.add_segment(msh);
 
-        // Create EVN segment
-        let evn = self.base.create_evn("A01", None)?;
+        // Create EVN segment (event code follows the trigger so delegates
+        // sharing this shape emit their own event, not A01)
+        let evn = self.base.create_evn(self.base.trigger_event(), None)?;
         self.base.message.add_segment(evn);
 
         // Create PID segment
@@ -512,6 +513,11 @@ impl AdtA04Builder {
         self
     }
 
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.base = self.base.patient_class(class);
+        self
+    }
+
     pub fn build(self) -> Result<Message> {
         self.base.build()
     }
@@ -566,6 +572,11 @@ impl AdtA08Builder {
 
     pub fn sex(mut self, sex: &str) -> Self {
         self.base = self.base.sex(sex);
+        self
+    }
+
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.base = self.base.patient_class(class);
         self
     }
 
@@ -787,6 +798,11 @@ impl AdtA11Builder {
         self
     }
 
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.base = self.base.patient_class(class);
+        self
+    }
+
     pub fn build(self) -> Result<Message> {
         self.base.build()
     }
@@ -834,6 +850,11 @@ impl AdtA12Builder {
         self
     }
 
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.base = self.base.patient_class(class);
+        self
+    }
+
     pub fn build(self) -> Result<Message> {
         self.base.build()
     }
@@ -878,6 +899,11 @@ impl AdtA13Builder {
 
     pub fn patient_name(mut self, family: &str, given: &str) -> Self {
         self.base = self.base.patient_name(family, given);
+        self
+    }
+
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.base = self.base.patient_class(class);
         self
     }
 
@@ -1042,6 +1068,11 @@ impl AdtA17Builder {
         self
     }
 
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.base = self.base.patient_class(class);
+        self
+    }
+
     pub fn build(self) -> Result<Message> {
         self.base.build()
     }
@@ -1099,6 +1130,11 @@ impl AdtA28Builder {
         self
     }
 
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.base = self.base.patient_class(class);
+        self
+    }
+
     pub fn build(self) -> Result<Message> {
         self.base.build()
     }
@@ -1153,6 +1189,11 @@ impl AdtA31Builder {
 
     pub fn sex(mut self, sex: &str) -> Self {
         self.base = self.base.sex(sex);
+        self
+    }
+
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.base = self.base.patient_class(class);
         self
     }
 

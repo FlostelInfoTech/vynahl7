@@ -15,6 +15,7 @@ pub struct OulR21Builder {
     patient_name: Option<(String, String)>,
     observation_id: Option<String>,
     observation_value: Option<String>,
+    result_status: Option<String>,
 }
 
 impl OulR21Builder {
@@ -30,6 +31,7 @@ impl OulR21Builder {
             patient_name: None,
             observation_id: None,
             observation_value: None,
+            result_status: None,
         }
     }
 
@@ -70,6 +72,13 @@ impl OulR21Builder {
 
     pub fn observation_value(mut self, value: &str) -> Self {
         self.observation_value = Some(value.to_string());
+        self
+    }
+
+    /// OBX-11: Observation Result Status (`F` final, `P` preliminary...).
+    /// Required by the schema whenever the OBX segment is emitted.
+    pub fn result_status(mut self, status: &str) -> Self {
+        self.result_status = Some(status.to_string());
         self
     }
 
@@ -118,6 +127,14 @@ impl OulR21Builder {
             obx.add_field(Field::from_value(self.observation_id.as_deref().unwrap_or(""))); // Observation ID
             obx.add_field(Field::from_value("")); // Observation Sub-ID
             obx.add_field(Field::from_value(self.observation_value.as_deref().unwrap_or(""))); // Observation Value
+            obx.add_field(Field::from_value("")); // Units
+            obx.add_field(Field::from_value("")); // References Range
+            obx.add_field(Field::from_value("")); // Abnormal Flags
+            obx.add_field(Field::from_value("")); // Probability
+            obx.add_field(Field::from_value("")); // Nature of Abnormal Test
+            obx.add_field(Field::from_value(
+                self.result_status.as_deref().unwrap_or(""),
+            )); // OBX-11: Result Status
 
             self.base.message.add_segment(obx);
         }

@@ -15,6 +15,10 @@ pub struct SiuS12Builder {
     filler_appointment_id: Option<String>,
     patient_id: Option<String>,
     patient_name: Option<(String, String)>,
+    event_reason: Option<String>,
+    filler_contact: Option<String>,
+    entered_by: Option<String>,
+    resource_action_code: Option<String>,
 }
 
 impl SiuS12Builder {
@@ -30,6 +34,10 @@ impl SiuS12Builder {
             filler_appointment_id: None,
             patient_id: None,
             patient_name: None,
+            event_reason: None,
+            filler_contact: None,
+            entered_by: None,
+            resource_action_code: None,
         }
     }
 
@@ -73,6 +81,30 @@ impl SiuS12Builder {
         self
     }
 
+    /// SCH-6 Event Reason (required by the schema).
+    pub fn event_reason(mut self, reason: &str) -> Self {
+        self.event_reason = Some(reason.to_string());
+        self
+    }
+
+    /// SCH-16 Filler Contact Person (required by the schema).
+    pub fn filler_contact(mut self, contact: &str) -> Self {
+        self.filler_contact = Some(contact.to_string());
+        self
+    }
+
+    /// SCH-20 Entered By Person (required by the schema).
+    pub fn entered_by(mut self, person: &str) -> Self {
+        self.entered_by = Some(person.to_string());
+        self
+    }
+
+    /// RGS-2 Segment Action Code, HL7 table 0206 (e.g. `A` add).
+    pub fn resource_action_code(mut self, code: &str) -> Self {
+        self.resource_action_code = Some(code.to_string());
+        self
+    }
+
     pub fn build(mut self) -> Result<Message> {
         let control_id = self.control_id.unwrap_or_else(generate_control_id);
 
@@ -90,7 +122,33 @@ impl SiuS12Builder {
         let mut sch = Segment::new("SCH");
         sch.add_field(Field::from_value(self.placer_appointment_id.as_deref().unwrap_or("")));
         sch.add_field(Field::from_value(self.filler_appointment_id.as_deref().unwrap_or("")));
+        for _ in 3..6 {
+            sch.add_field(Field::from_value(""));
+        }
+        sch.add_field(Field::from_value(
+            self.event_reason.as_deref().unwrap_or(""),
+        )); // SCH-6: Event Reason
+        for _ in 7..16 {
+            sch.add_field(Field::from_value(""));
+        }
+        sch.add_field(Field::from_value(
+            self.filler_contact.as_deref().unwrap_or(""),
+        )); // SCH-16: Filler Contact Person
+        for _ in 17..20 {
+            sch.add_field(Field::from_value(""));
+        }
+        sch.add_field(Field::from_value(self.entered_by.as_deref().unwrap_or(""))); // SCH-20: Entered By Person
         self.base.message.add_segment(sch);
+
+        // RGS segment (required by the schema)
+        let mut rgs = Segment::new("RGS");
+        rgs.add_field(Field::from_value("1")); // Set ID
+        if self.resource_action_code.is_some() {
+            rgs.add_field(Field::from_value(
+                self.resource_action_code.as_deref().unwrap_or(""),
+            )); // RGS-2: Segment Action Code
+        }
+        self.base.message.add_segment(rgs);
 
         // PID segment if patient info provided
         if self.patient_id.is_some() || self.patient_name.is_some() {
@@ -163,6 +221,26 @@ impl SiuS13Builder {
         self
     }
 
+    pub fn event_reason(mut self, reason: &str) -> Self {
+        self.base = self.base.event_reason(reason);
+        self
+    }
+
+    pub fn filler_contact(mut self, contact: &str) -> Self {
+        self.base = self.base.filler_contact(contact);
+        self
+    }
+
+    pub fn entered_by(mut self, person: &str) -> Self {
+        self.base = self.base.entered_by(person);
+        self
+    }
+
+    pub fn resource_action_code(mut self, code: &str) -> Self {
+        self.base = self.base.resource_action_code(code);
+        self
+    }
+
     pub fn build(self) -> Result<Message> {
         self.base.build()
     }
@@ -220,6 +298,26 @@ impl SiuS14Builder {
         self
     }
 
+    pub fn event_reason(mut self, reason: &str) -> Self {
+        self.base = self.base.event_reason(reason);
+        self
+    }
+
+    pub fn filler_contact(mut self, contact: &str) -> Self {
+        self.base = self.base.filler_contact(contact);
+        self
+    }
+
+    pub fn entered_by(mut self, person: &str) -> Self {
+        self.base = self.base.entered_by(person);
+        self
+    }
+
+    pub fn resource_action_code(mut self, code: &str) -> Self {
+        self.base = self.base.resource_action_code(code);
+        self
+    }
+
     pub fn build(self) -> Result<Message> {
         self.base.build()
     }
@@ -274,6 +372,26 @@ impl SiuS15Builder {
 
     pub fn patient_name(mut self, family: &str, given: &str) -> Self {
         self.base = self.base.patient_name(family, given);
+        self
+    }
+
+    pub fn event_reason(mut self, reason: &str) -> Self {
+        self.base = self.base.event_reason(reason);
+        self
+    }
+
+    pub fn filler_contact(mut self, contact: &str) -> Self {
+        self.base = self.base.filler_contact(contact);
+        self
+    }
+
+    pub fn entered_by(mut self, person: &str) -> Self {
+        self.base = self.base.entered_by(person);
+        self
+    }
+
+    pub fn resource_action_code(mut self, code: &str) -> Self {
+        self.base = self.base.resource_action_code(code);
         self
     }
 

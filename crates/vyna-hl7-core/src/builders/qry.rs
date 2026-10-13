@@ -1,8 +1,27 @@
 //! QRY (Query) message builders
 
 use super::{generate_control_id, MessageBuilder};
-use crate::{error::Result, field::Field, message::Message, segment::Segment, types::format_timestamp, Version};
+use crate::{
+    error::Result,
+    field::{Component, Field, Repetition},
+    message::Message,
+    segment::Segment,
+    types::format_timestamp,
+    Version,
+};
 use chrono::Local;
+
+/// Build a field with one component per `^`-separated part, so composite
+/// values validate per-component like parsed messages do.
+fn composite_field(value: &str) -> Field {
+    let mut field = Field::new();
+    let mut rep = Repetition::new();
+    for part in value.split('^') {
+        rep.add_component(Component::from_value(part));
+    }
+    field.add_repetition(rep);
+    field
+}
 
 /// Builder for QRY^A19 - Patient Query
 pub struct QryA19Builder {
@@ -15,6 +34,8 @@ pub struct QryA19Builder {
     query_id: String,
     patient_id: Option<String>,
     patient_name: Option<(String, String)>,
+    quantity_limited_request: Option<String>,
+    what_department_data_code: Option<String>,
 }
 
 impl QryA19Builder {
@@ -29,6 +50,8 @@ impl QryA19Builder {
             query_id: generate_control_id(),
             patient_id: None,
             patient_name: None,
+            quantity_limited_request: None,
+            what_department_data_code: None,
         }
     }
 
@@ -72,6 +95,18 @@ impl QryA19Builder {
         self
     }
 
+    /// QRD-7: Quantity Limited Request, e.g. `10^RD` (required by the schema).
+    pub fn quantity_limited_request(mut self, quantity: &str) -> Self {
+        self.quantity_limited_request = Some(quantity.to_string());
+        self
+    }
+
+    /// QRD-10: What Department Data Code (required by the schema).
+    pub fn what_department_data_code(mut self, code: &str) -> Self {
+        self.what_department_data_code = Some(code.to_string());
+        self
+    }
+
     pub fn build(mut self) -> Result<Message> {
         let control_id = self.control_id.unwrap_or_else(generate_control_id);
 
@@ -107,8 +142,10 @@ impl QryA19Builder {
         // QRD-6: Deferred Response Date/Time (empty)
         qrd.add_field(Field::from_value(""));
 
-        // QRD-7: Quantity Limited Request (empty)
-        qrd.add_field(Field::from_value(""));
+        // QRD-7: Quantity Limited Request
+        qrd.add_field(composite_field(
+            self.quantity_limited_request.as_deref().unwrap_or(""),
+        ));
 
         // QRD-8: Who Subject Filter
         if let Some((family, given)) = &self.patient_name {
@@ -123,8 +160,10 @@ impl QryA19Builder {
         // QRD-9: What Subject Filter - DEM for demographics
         qrd.add_field(Field::from_value("DEM"));
 
-        // QRD-10: What Department Data Code (empty)
-        qrd.add_field(Field::from_value(""));
+        // QRD-10: What Department Data Code
+        qrd.add_field(Field::from_value(
+            self.what_department_data_code.as_deref().unwrap_or(""),
+        ));
 
         self.base.message.add_segment(qrd);
 
@@ -142,6 +181,9 @@ pub struct QryQ01Builder {
     control_id: Option<String>,
     query_id: String,
     what_subject_filter: String,
+    who_subject_filter: Option<String>,
+    quantity_limited_request: Option<String>,
+    what_department_data_code: Option<String>,
 }
 
 impl QryQ01Builder {
@@ -155,6 +197,9 @@ impl QryQ01Builder {
             control_id: None,
             query_id: generate_control_id(),
             what_subject_filter: String::new(),
+            who_subject_filter: None,
+            quantity_limited_request: None,
+            what_department_data_code: None,
         }
     }
 
@@ -188,6 +233,24 @@ impl QryQ01Builder {
         self
     }
 
+    /// QRD-8: Who Subject Filter (required by the schema).
+    pub fn who_subject_filter(mut self, filter: &str) -> Self {
+        self.who_subject_filter = Some(filter.to_string());
+        self
+    }
+
+    /// QRD-7: Quantity Limited Request, e.g. `10^RD` (required by the schema).
+    pub fn quantity_limited_request(mut self, quantity: &str) -> Self {
+        self.quantity_limited_request = Some(quantity.to_string());
+        self
+    }
+
+    /// QRD-10: What Department Data Code (required by the schema).
+    pub fn what_department_data_code(mut self, code: &str) -> Self {
+        self.what_department_data_code = Some(code.to_string());
+        self
+    }
+
     pub fn build(mut self) -> Result<Message> {
         let control_id = self.control_id.unwrap_or_else(generate_control_id);
 
@@ -211,9 +274,16 @@ impl QryQ01Builder {
         qrd.add_field(Field::from_value(&self.query_id));
         qrd.add_field(Field::from_value("")); // Deferred Response Type
         qrd.add_field(Field::from_value("")); // Deferred Response Date/Time
-        qrd.add_field(Field::from_value("")); // Quantity Limited Request
-        qrd.add_field(Field::from_value("")); // Who Subject Filter
+        qrd.add_field(composite_field(
+            self.quantity_limited_request.as_deref().unwrap_or(""),
+        )); // Quantity Limited Request
+        qrd.add_field(Field::from_value(
+            self.who_subject_filter.as_deref().unwrap_or(""),
+        )); // Who Subject Filter
         qrd.add_field(Field::from_value(&self.what_subject_filter)); // What Subject Filter
+        qrd.add_field(Field::from_value(
+            self.what_department_data_code.as_deref().unwrap_or(""),
+        )); // What Department Data Code
 
         self.base.message.add_segment(qrd);
 
@@ -232,6 +302,9 @@ pub struct QryQ02Builder {
     query_id: String,
     what_subject_filter: String,
     deferred_response_type: String,
+    who_subject_filter: Option<String>,
+    quantity_limited_request: Option<String>,
+    what_department_data_code: Option<String>,
 }
 
 impl QryQ02Builder {
@@ -246,6 +319,9 @@ impl QryQ02Builder {
             query_id: generate_control_id(),
             what_subject_filter: String::new(),
             deferred_response_type: "B".to_string(), // Before the date/time specified
+            who_subject_filter: None,
+            quantity_limited_request: None,
+            what_department_data_code: None,
         }
     }
 
@@ -284,6 +360,24 @@ impl QryQ02Builder {
         self
     }
 
+    /// QRD-8: Who Subject Filter (required by the schema).
+    pub fn who_subject_filter(mut self, filter: &str) -> Self {
+        self.who_subject_filter = Some(filter.to_string());
+        self
+    }
+
+    /// QRD-7: Quantity Limited Request, e.g. `10^RD` (required by the schema).
+    pub fn quantity_limited_request(mut self, quantity: &str) -> Self {
+        self.quantity_limited_request = Some(quantity.to_string());
+        self
+    }
+
+    /// QRD-10: What Department Data Code (required by the schema).
+    pub fn what_department_data_code(mut self, code: &str) -> Self {
+        self.what_department_data_code = Some(code.to_string());
+        self
+    }
+
     pub fn build(mut self) -> Result<Message> {
         let control_id = self.control_id.unwrap_or_else(generate_control_id);
 
@@ -307,9 +401,16 @@ impl QryQ02Builder {
         qrd.add_field(Field::from_value(&self.query_id));
         qrd.add_field(Field::from_value(&self.deferred_response_type)); // Deferred Response Type
         qrd.add_field(Field::from_value("")); // Deferred Response Date/Time
-        qrd.add_field(Field::from_value("")); // Quantity Limited Request
-        qrd.add_field(Field::from_value("")); // Who Subject Filter
+        qrd.add_field(composite_field(
+            self.quantity_limited_request.as_deref().unwrap_or(""),
+        )); // Quantity Limited Request
+        qrd.add_field(Field::from_value(
+            self.who_subject_filter.as_deref().unwrap_or(""),
+        )); // Who Subject Filter
         qrd.add_field(Field::from_value(&self.what_subject_filter)); // What Subject Filter
+        qrd.add_field(Field::from_value(
+            self.what_department_data_code.as_deref().unwrap_or(""),
+        )); // What Department Data Code
 
         self.base.message.add_segment(qrd);
 
