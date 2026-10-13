@@ -24,6 +24,7 @@ pub mod siu;
 pub mod vxu;
 
 use crate::{
+    Version,
     charset::CharacterSet,
     delimiters::Delimiters,
     error::Result,
@@ -31,9 +32,9 @@ use crate::{
     message::Message,
     segment::Segment,
     types::format_timestamp,
-    Version,
 };
 use chrono::Local;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Base message builder with common functionality
 pub struct MessageBuilder {
@@ -90,7 +91,10 @@ impl MessageBuilder {
         // MSH-2: Encoding characters
         msh.add_field(Field::from_value(format!(
             "{}{}{}{}",
-            delims.component_separator, delims.repetition_separator, delims.escape_character, delims.subcomponent_separator
+            delims.component_separator,
+            delims.repetition_separator,
+            delims.escape_character,
+            delims.subcomponent_separator
         )));
 
         // MSH-3: Sending Application
@@ -141,7 +145,11 @@ impl MessageBuilder {
     }
 
     /// Create EVN segment
-    pub fn create_evn(&self, event_type_code: &str, recorded_datetime: Option<&str>) -> Result<Segment> {
+    pub fn create_evn(
+        &self,
+        event_type_code: &str,
+        recorded_datetime: Option<&str>,
+    ) -> Result<Segment> {
         let mut evn = Segment::new("EVN");
 
         // EVN-1: Event Type Code
@@ -164,14 +172,28 @@ impl MessageBuilder {
     }
 }
 
-/// Generate a message control ID (simple implementation)
+/// Process-wide sequence mixed into generated control IDs.
+static CONTROL_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Generate a unique message control ID.
+///
+/// Combines millisecond time with a process-wide counter so IDs stay unique
+/// even when many messages are created within one millisecond (e.g. every
+/// builder default MSH-10). The counter is offset by the process ID so two
+/// processes starting together do not mint the same IDs in the same
+/// millisecond. `MSG<millis><seq>` stays within MSH-10's 20-character limit.
 pub fn generate_control_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let timestamp = SystemTime::now()
+    let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis();
-    format!("MSG{}", timestamp)
+    let pid = std::process::id() as u64;
+    let seq = CONTROL_ID_COUNTER
+        .fetch_add(1, Ordering::Relaxed)
+        .wrapping_add(pid.wrapping_mul(7919))
+        % 10_000;
+    format!("MSG{millis}{seq:04}")
 }
 
 #[cfg(test)]
@@ -182,19 +204,27 @@ mod tests {
     fn test_create_msh_with_character_set() {
         let builder = MessageBuilder::new(Version::V2_5, "ADT", "A01")
             .with_character_set(CharacterSet::Iso8859(1));
-        let msh = builder
-            .create_msh("S", "F", "R", "RF", "1", "P")
-            .unwrap();
+        let msh = builder.create_msh("S", "F", "R", "RF", "1", "P").unwrap();
         assert_eq!(msh.get_field_value(18), Some("8859/1"));
     }
 
     #[test]
     fn test_create_msh_without_character_set_ends_at_msh12() {
         let builder = MessageBuilder::new(Version::V2_5, "ADT", "A01");
-        let msh = builder
-            .create_msh("S", "F", "R", "RF", "1", "P")
-            .unwrap();
+        let msh = builder.create_msh("S", "F", "R", "RF", "1", "P").unwrap();
         assert_eq!(msh.get_field_value(12), Some("2.5"));
         assert_eq!(msh.get_field_value(18), None);
+    }
+
+    #[test]
+    fn generated_control_ids_are_unique_and_bounded() {
+        use std::collections::HashSet;
+        let ids: Vec<String> = (0..1000).map(|_| generate_control_id()).collect();
+        let unique: HashSet<&String> = ids.iter().collect();
+        assert_eq!(unique.len(), ids.len(), "duplicate control IDs generated");
+        for id in &ids {
+            assert!(id.starts_with("MSG"), "unexpected control ID: {id}");
+            assert!(id.len() <= 20, "control ID exceeds MSH-10 limit: {id}");
+        }
     }
 }

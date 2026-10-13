@@ -143,11 +143,27 @@ pub struct Redaction {
 }
 
 /// De-identifies messages according to a rule list.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct Redactor {
     rules: Vec<Rule>,
     date_shift_days: i64,
     hmac_key: Option<Vec<u8>>,
+}
+
+// The HMAC key must never leak into logs via `{:?}`: report presence and
+// length only, never bytes (mirrors the `FtpConfig`/`SftpAuth` redaction).
+impl std::fmt::Debug for Redactor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let key = self
+            .hmac_key
+            .as_ref()
+            .map(|key| format!("<redacted: {} bytes>", key.len()));
+        f.debug_struct("Redactor")
+            .field("rules", &self.rules)
+            .field("date_shift_days", &self.date_shift_days)
+            .field("hmac_key", &key)
+            .finish()
+    }
 }
 
 impl Redactor {
@@ -1055,5 +1071,18 @@ mod tests {
             redactor.redact(&mut message),
             Err(RedactError::MissingHmacKey)
         );
+    }
+
+    #[test]
+    fn debug_redacts_hmac_key_bytes() {
+        let key = b"super-secret-hmac-key";
+        let redactor = Redactor::safe_harbor(key, 30);
+        let debug = format!("{redactor:?}");
+        // Raw key bytes must never appear (`Vec<u8>` debug prints them).
+        assert!(!debug.contains(&format!("{:?}", key.to_vec())));
+        assert!(debug.contains("redacted"));
+        assert!(debug.contains(&key.len().to_string()));
+        // A missing key reports None.
+        assert!(format!("{:?}", Redactor::new()).contains("None"));
     }
 }

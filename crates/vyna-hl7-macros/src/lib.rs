@@ -1025,6 +1025,9 @@ fn derive_message_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
 /// requires `Option<T>`. `field =`, `subcomponent =`, and `repetition =`
 /// are meaningless here and are rejected, as are unknown keys.
 ///
+/// `from_repetition` returns `None` when a required component is
+/// missing, mirroring `Segment::from_segment`.
+///
 /// # Example
 ///
 /// ```ignore
@@ -1173,11 +1176,13 @@ fn hl7_type_impl(attr_meta: Meta, input: DeriveInput) -> syn::Result<proc_macro2
                 }
             });
         } else {
+            // A missing required component fails the conversion (?),
+            // mirroring Segment derive: silently defaulting to ""
+            // would hide absent data.
             from_rep_fields.push(quote! {
                 #field_name: repetition.get_component(#comp_idx)
                     .and_then(|c| c.value())
-                    .map(|s| s.to_string())
-                    .unwrap_or_default()
+                    .map(|s| s.to_string())?
             });
 
             to_rep_fields.push(quote! {
@@ -1208,10 +1213,14 @@ fn hl7_type_impl(attr_meta: Meta, input: DeriveInput) -> syn::Result<proc_macro2
             pub const DATA_TYPE: &'static str = #data_type;
 
             /// Create from a vyna_hl7_core Repetition
-            pub fn from_repetition(repetition: &vyna_hl7_core::field::Repetition) -> Self {
-                Self {
+            ///
+            /// Returns `None` when a required component is missing.
+            pub fn from_repetition(
+                repetition: &vyna_hl7_core::field::Repetition
+            ) -> Option<Self> {
+                Some(Self {
                     #(#from_rep_fields),*
-                }
+                })
             }
 
             /// Convert to a vyna_hl7_core Repetition
@@ -1233,9 +1242,18 @@ fn hl7_type_impl(attr_meta: Meta, input: DeriveInput) -> syn::Result<proc_macro2
             }
         }
 
-        impl From<&vyna_hl7_core::field::Repetition> for #name {
-            fn from(repetition: &vyna_hl7_core::field::Repetition) -> Self {
-                Self::from_repetition(repetition)
+        impl std::convert::TryFrom<&vyna_hl7_core::field::Repetition> for #name {
+            type Error = vyna_hl7_core::error::Error;
+
+            fn try_from(
+                repetition: &vyna_hl7_core::field::Repetition
+            ) -> Result<Self, Self::Error> {
+                Self::from_repetition(repetition).ok_or_else(|| {
+                    vyna_hl7_core::error::Error::MissingRequiredField(format!(
+                        "Repetition is missing required components for {}",
+                        #data_type
+                    ))
+                })
             }
         }
     };
@@ -1599,5 +1617,31 @@ mod tests {
         let meta: Meta = syn::parse_str("data_type = \"XPN\"").unwrap();
         let err = hl7_type_impl(meta, parse_input("struct N { x: String }")).unwrap_err();
         assert!(err_message(err).contains("needs `#[hl7(component = N)]`"));
+    }
+
+    #[test]
+    fn hl7_type_impl_required_component_fails_when_absent() {
+        // A missing required component must fail the conversion,
+        // mirroring Segment derive: never silently become "".
+        let meta: Meta = syn::parse_str("data_type = \"XPN\"").unwrap();
+        let tokens = hl7_type_impl(
+            meta,
+            parse_input("struct N { #[hl7(component = 1)] x: String }"),
+        )
+        .expect("valid input must expand");
+        let rendered = tokens.to_string();
+        assert!(
+            !rendered.contains("unwrap_or_default"),
+            "required component must not default: {rendered}"
+        );
+        let compact = rendered.replace(' ', "");
+        assert!(
+            compact.contains("->Option<Self>"),
+            "from_repetition must return Option: {rendered}"
+        );
+        assert!(
+            compact.contains("TryFrom"),
+            "borrowed conversion must be fallible: {rendered}"
+        );
     }
 }

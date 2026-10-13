@@ -8,11 +8,13 @@ use vyna_hl7_core::batch::{Batch, BatchHeader, BatchTrailer, File, FileHeader, F
 
 static CONTROL_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// Monotonic control id: prefix + local timestamp + process-wide sequence.
+/// Unique control id: prefix + local timestamp + process id + full-width
+/// process-wide sequence (monotonic, never wraps in practice).
 fn generate_control_id(prefix: char) -> String {
-    let seq = CONTROL_ID_COUNTER.fetch_add(1, Ordering::Relaxed) % 10000;
+    let seq = CONTROL_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
     let now = chrono::Local::now().naive_local();
-    format!("{}{}{seq:04}", prefix, now.format("%Y%m%d%H%M%S"))
+    let pid = std::process::id();
+    format!("{}{}-{pid}-{seq}", prefix, now.format("%Y%m%d%H%M%S"))
 }
 
 /// Wrap messages in `FHS`/`BHS`/`BTS`/`FTS` envelopes.
@@ -283,5 +285,12 @@ mod tests {
         assert_eq!(file.batches[0].trailer.message_count, Some(1));
         assert_eq!(file.batches[1].trailer.message_count, Some(1));
         assert!(file.validate().is_ok());
+    }
+
+    #[test]
+    fn control_ids_stay_unique_past_10000_builds() {
+        let ids: std::collections::HashSet<String> =
+            (0..100_001).map(|_| generate_control_id('F')).collect();
+        assert_eq!(ids.len(), 100_001);
     }
 }

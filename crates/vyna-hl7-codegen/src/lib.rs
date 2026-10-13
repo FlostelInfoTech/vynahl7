@@ -95,11 +95,25 @@ fn capitalize(word: &str) -> String {
     }
 }
 
+/// Keep only characters valid in a Rust identifier.
+///
+/// Schema text is caller-controlled; anything else would break out of
+/// the struct-name position and inject arbitrary items or attributes.
+fn sanitize_type_chars(text: &str) -> String {
+    text.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .collect()
+}
+
 /// Struct name for a segment ID (`PID` -> `Pid`).
 pub fn segment_struct_name(segment_id: &str) -> String {
-    let name = capitalize(segment_id);
-    if name.is_empty() {
+    let name = capitalize(&sanitize_type_chars(segment_id));
+    if name == "Self" {
+        "SegmentSelf".to_string()
+    } else if !name.chars().any(|c| c.is_ascii_alphanumeric()) {
         "Unknown".to_string()
+    } else if name.starts_with(|c: char| c.is_ascii_digit()) {
+        format!("Segment{name}")
     } else {
         name
     }
@@ -107,7 +121,20 @@ pub fn segment_struct_name(segment_id: &str) -> String {
 
 /// Struct name for a message (`ADT` + `A01` -> `AdtA01`, `ACK` -> `Ack`).
 pub fn message_struct_name(message_type: &str, trigger_event: &str) -> String {
-    format!("{}{}", capitalize(message_type), trigger_event)
+    let name = format!(
+        "{}{}",
+        capitalize(&sanitize_type_chars(message_type)),
+        sanitize_type_chars(trigger_event)
+    );
+    if name == "Self" {
+        "MessageSelf".to_string()
+    } else if !name.chars().any(|c| c.is_ascii_alphanumeric()) {
+        "UnknownMessage".to_string()
+    } else if name.starts_with(|c: char| c.is_ascii_digit()) {
+        format!("Message{name}")
+    } else {
+        name
+    }
 }
 
 /// Turn a raw HL7 element name into a unique, compilable struct field name.
@@ -118,7 +145,12 @@ pub fn message_struct_name(message_type: &str, trigger_event: &str) -> String {
 pub fn sanitize_ident(base: &str, fallback: &str, used: &mut HashSet<String>) -> String {
     let mut name = to_snake_case(base);
     if name.is_empty() {
-        name = fallback.to_string();
+        // The fallback can itself carry schema text (e.g. a raw segment
+        // ID), so it goes through the same sanitization.
+        name = to_snake_case(fallback);
+        if name.is_empty() {
+            name = "field".to_string();
+        }
     }
     if name.starts_with(|c: char| c.is_ascii_digit()) {
         name = format!("field_{name}");
@@ -145,6 +177,26 @@ fn sanitize_comment_text(text: &str) -> String {
     text.chars()
         .map(|c| if c == '\r' || c == '\n' { ' ' } else { c })
         .collect()
+}
+
+/// Escape schema text rendered inside a `"..."` attribute string.
+///
+/// A `"` or `\` would terminate the string literal and inject arbitrary
+/// tokens into the generated module; control characters would split it
+/// across lines. Escapes decode back to the original value, so runtime
+/// matching on the attribute still sees the real schema text.
+fn escape_attr_string(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\r' => out.push_str("\\r"),
+            '\n' => out.push_str("\\n"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// Render one `#[derive(Segment)]` struct from a schema segment definition.
@@ -191,7 +243,10 @@ pub fn generate_segment(segment_id: &str, def: &SegmentDefinition) -> String {
         sanitize_comment_text(&def.name)
     ));
     out.push_str("#[derive(vyna_hl7_macros::Segment, Debug, Clone, Default, PartialEq)]\n");
-    out.push_str(&format!("#[hl7(id = \"{segment_id}\")]\n"));
+    out.push_str(&format!(
+        "#[hl7(id = \"{}\")]\n",
+        escape_attr_string(segment_id)
+    ));
     out.push_str(&format!("pub struct {struct_name} {{\n"));
     out.push_str(&body);
     out.push_str("}\n");
@@ -302,7 +357,8 @@ pub fn generate_module(schema: &MessageSchema) -> String {
     out.push_str("#[derive(vyna_hl7_macros::Message, Debug, Clone, Default, PartialEq)]\n");
     out.push_str(&format!(
         "#[hl7(message_type = \"{}\", trigger_event = \"{}\")]\n",
-        schema.message_type, schema.trigger_event
+        escape_attr_string(&schema.message_type),
+        escape_attr_string(&schema.trigger_event)
     ));
     out.push_str(&format!("pub struct {struct_name} {{\n"));
     for id in &ids {
@@ -593,5 +649,50 @@ mod tests {
             "{source}"
         );
         assert!(!source.contains("component ="), "{source}");
+    }
+
+    #[test]
+    fn struct_names_strip_characters_outside_idents() {
+        assert_eq!(segment_struct_name("P\"ID"), "Pid");
+        assert_eq!(segment_struct_name("123"), "Segment123");
+        assert_eq!(message_struct_name("AD\"T", "A01"), "AdtA01");
+        assert_eq!(message_struct_name("ADT", "A0\"1"), "AdtA01");
+        assert_eq!(message_struct_name("", ""), "UnknownMessage");
+    }
+
+    #[test]
+    fn sanitize_ident_sanitizes_fallback_text() {
+        let mut used = HashSet::new();
+        assert_eq!(sanitize_ident("!!!", "seg\"ment", &mut used), "seg_ment");
+    }
+
+    #[test]
+    fn generated_attributes_escape_schema_text() {
+        let def = SegmentDefinition {
+            name: "Evil".to_string(),
+            required: true,
+            repeating: false,
+            fields: HashMap::new(),
+        };
+        let source = generate_segment("PID\")]\npub struct Evil;\n//", &def);
+        assert!(
+            !source.lines().any(|line| line.trim() == "pub struct Evil;"),
+            "{source}"
+        );
+        let schema = MessageSchema {
+            message_type: "ADT".to_string(),
+            trigger_event: "A01\")]\npub struct Evil;\n//".to_string(),
+            version: "2.5".to_string(),
+            segments: HashMap::from([("PID".to_string(), def)]),
+        };
+        let module = generate_module(&schema);
+        assert!(
+            !module.lines().any(|line| line.trim() == "pub struct Evil;"),
+            "{module}"
+        );
+        assert!(
+            module.contains("pub struct AdtA01pubstructEvil {"),
+            "{module}"
+        );
     }
 }

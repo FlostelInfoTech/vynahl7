@@ -51,6 +51,10 @@ use crate::{MllpClient, MllpConfig};
 use crate::tls::TlsClientConfig;
 
 /// Configuration for the connection pool
+///
+/// Checked-out connections are validated by the time-based
+/// `idle_timeout`/`max_lifetime` bounds only; the pool performs no I/O
+/// health probe on checkout.
 #[derive(Debug, Clone)]
 pub struct PoolConfig {
     /// Maximum number of connections in the pool (default: 10)
@@ -70,8 +74,6 @@ pub struct PoolConfig {
     pub cleanup_interval: Duration,
     /// MLLP configuration for connections
     pub mllp_config: MllpConfig,
-    /// Whether to validate connections before returning them (default: false)
-    pub test_on_acquire: bool,
 }
 
 impl Default for PoolConfig {
@@ -84,7 +86,6 @@ impl Default for PoolConfig {
             max_lifetime: Duration::from_secs(1800), // 30 minutes
             cleanup_interval: Duration::from_secs(60),
             mllp_config: MllpConfig::default(),
-            test_on_acquire: false,
         }
     }
 }
@@ -134,12 +135,6 @@ impl PoolConfig {
     /// Set the MLLP configuration
     pub fn with_mllp_config(mut self, config: MllpConfig) -> Self {
         self.mllp_config = config;
-        self
-    }
-
-    /// Enable testing connections on acquire
-    pub fn with_test_on_acquire(mut self, test: bool) -> Self {
-        self.test_on_acquire = test;
         self
     }
 }
@@ -479,10 +474,22 @@ impl MllpPool {
         let mut connections = self.connections.lock().await;
         let mut stats = self.stats.lock().await;
 
-        let initial_count = connections.len();
-        connections.retain(|conn| !(conn.is_expired(&self.config) || conn.is_idle(&self.config)));
-
-        let removed = initial_count - connections.len();
+        // NOTE: idle connections hold no semaphore permits (a permit is
+        // only consumed while a connection is checked out, and returned
+        // in `release`), so evicting them must NOT add permits back.
+        let mut kept = VecDeque::with_capacity(connections.len());
+        let mut removed = 0;
+        while let Some(conn) = connections.pop_front() {
+            if conn.is_expired(&self.config) || conn.is_idle(&self.config) {
+                // Gracefully close evicted connections (orderly shutdown,
+                // e.g. TLS close_notify) rather than just dropping them.
+                drop(conn.client.close().await);
+                removed += 1;
+            } else {
+                kept.push_back(conn);
+            }
+        }
+        *connections = kept;
         stats.connections_closed += removed;
         stats.idle_connections = connections.len();
     }
@@ -522,6 +529,126 @@ impl MllpPool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    /// Spawn a minimal MLLP server that ACKs every framed message it receives.
+    async fn spawn_ack_server() -> (String, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let handle = tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = match listener.accept().await {
+                    Ok(s) => s,
+                    Err(_) => break,
+                };
+                tokio::spawn(async move {
+                    let mut buf = Vec::new();
+                    let mut tmp = [0u8; 4096];
+                    loop {
+                        match socket.read(&mut tmp).await {
+                            Ok(0) => break,
+                            Ok(n) => {
+                                buf.extend_from_slice(&tmp[..n]);
+                                while let Some(end) = find_frame_end(&buf) {
+                                    let ack = concat!(
+                                        "\x0BMSH|^~\\&|SRV|F|SND|F|20240101||ACK^A01|1|P|2.5\r",
+                                        "MSA|AA|1\r\x1C\x0D",
+                                    );
+                                    if socket.write_all(ack.as_bytes()).await.is_err() {
+                                        break;
+                                    }
+                                    buf.drain(..end);
+                                }
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                });
+            }
+        });
+        (addr, handle)
+    }
+
+    fn find_frame_end(buf: &[u8]) -> Option<usize> {
+        buf.windows(2)
+            .position(|w| w[0] == 0x1C && w[1] == 0x0D)
+            .map(|pos| pos + 2)
+    }
+
+    fn test_message() -> Message {
+        vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|SND|F|SRV|F|20240101||ADT^A01|1|P|2.5\rPID|1||123^^^F^MR\r",
+        )
+        .unwrap()
+    }
+
+    /// Guard for finding 1 (permit half): the pool must stay usable
+    /// across cleanup()/close() cycles. Idle connections hold no permits,
+    /// so evicting them returns none; if that invariant ever breaks, later
+    /// sends would hit the acquire timeout.
+    #[tokio::test]
+    async fn test_pool_usable_after_cleanup_and_close() {
+        let (addr, _server) = spawn_ack_server().await;
+        let pool = MllpPool::with_config(
+            &addr,
+            PoolConfig::new()
+                .with_min_connections(0)
+                .with_max_connections(2)
+                .with_acquire_timeout(Duration::from_secs(5)),
+        )
+        .await
+        .unwrap();
+
+        pool.send(&test_message()).await.unwrap();
+        pool.cleanup().await;
+        pool.send(&test_message()).await.unwrap();
+        pool.close().await;
+        pool.send(&test_message()).await.unwrap();
+
+        let stats = pool.stats().await;
+        assert_eq!(stats.acquires, 3);
+        assert_eq!(stats.timeouts, 0);
+    }
+
+    /// Finding 1 (close half): cleanup() must gracefully close evicted
+    /// connections. The server observes EOF and the stats account for it.
+    #[tokio::test]
+    async fn test_cleanup_closes_evicted_connections() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let accept = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            socket
+        });
+
+        let pool = MllpPool::with_config(
+            &addr,
+            PoolConfig::new()
+                .with_min_connections(1)
+                .with_idle_timeout(Duration::from_millis(50)),
+        )
+        .await
+        .unwrap();
+
+        let mut server_side = accept.await.unwrap();
+        // Let the pooled connection go idle, then reap it.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        pool.cleanup().await;
+
+        let stats = pool.stats().await;
+        assert_eq!(stats.idle_connections, 0);
+        assert_eq!(stats.connections_closed, 1);
+        assert_eq!(pool.idle_connections().await, 0);
+
+        // The evicted connection was closed: the server reads EOF.
+        let mut buf = [0u8; 16];
+        let read = tokio::time::timeout(Duration::from_secs(5), server_side.read(&mut buf)).await;
+        assert!(
+            matches!(read, Ok(Ok(0))),
+            "evicted connection was not closed: {read:?}"
+        );
+    }
 
     #[test]
     fn test_pool_config_builder() {
@@ -531,8 +658,7 @@ mod tests {
             .with_acquire_timeout(Duration::from_secs(60))
             .with_idle_timeout(Duration::from_secs(120))
             .with_max_lifetime(Duration::from_secs(600))
-            .with_cleanup_interval(Duration::from_secs(30))
-            .with_test_on_acquire(true);
+            .with_cleanup_interval(Duration::from_secs(30));
 
         assert_eq!(config.max_connections, 20);
         assert_eq!(config.min_connections, 5);
@@ -540,7 +666,6 @@ mod tests {
         assert_eq!(config.idle_timeout, Duration::from_secs(120));
         assert_eq!(config.max_lifetime, Duration::from_secs(600));
         assert_eq!(config.cleanup_interval, Duration::from_secs(30));
-        assert!(config.test_on_acquire);
     }
 
     #[test]

@@ -78,6 +78,7 @@ pub struct HttpClient {
     #[cfg(feature = "tls")]
     tls_config: Option<TlsClientConfig>,
     http2_only: bool,
+    timeout: Duration,
     max_response_size: usize,
 }
 
@@ -99,9 +100,8 @@ impl HttpClient {
             ));
         }
 
-        let client = ClientBuilder::new()
-            .timeout(Duration::from_secs(30))
-            .build()?;
+        let timeout = Duration::from_secs(30);
+        let client = ClientBuilder::new().timeout(timeout).build()?;
 
         Ok(Self {
             endpoint,
@@ -110,6 +110,7 @@ impl HttpClient {
             #[cfg(feature = "tls")]
             tls_config: None,
             http2_only: false,
+            timeout,
             max_response_size: DEFAULT_MAX_RESPONSE_SIZE,
         })
     }
@@ -133,14 +134,15 @@ impl HttpClient {
     /// ```
     pub fn with_http2_only(mut self) -> Result<Self> {
         self.http2_only = true;
-        self.client = self.rebuild_client(Duration::from_secs(30))?;
+        self.client = self.rebuild_client()?;
         Ok(self)
     }
 
     /// Rebuild the inner client from the stored settings so builder calls
-    /// never drop each other's configuration (TLS, HTTP/2) by call order.
-    fn rebuild_client(&self, timeout: Duration) -> Result<Client> {
-        let mut builder = ClientBuilder::new().timeout(timeout);
+    /// never drop each other's configuration (TLS, HTTP/2, timeout) by
+    /// call order.
+    fn rebuild_client(&self) -> Result<Client> {
+        let mut builder = ClientBuilder::new().timeout(self.timeout);
 
         if self.http2_only {
             builder = builder.http2_prior_knowledge();
@@ -189,7 +191,7 @@ impl HttpClient {
     #[cfg(feature = "tls")]
     pub fn with_tls(mut self, tls_config: TlsClientConfig) -> Result<Self> {
         self.tls_config = Some(tls_config);
-        self.client = self.rebuild_client(Duration::from_secs(30))?;
+        self.client = self.rebuild_client()?;
         Ok(self)
     }
 
@@ -263,7 +265,8 @@ impl HttpClient {
     /// This method rebuilds the HTTP client while preserving existing configuration
     /// (TLS, HTTP/2, etc.) to avoid losing settings.
     pub fn with_timeout(mut self, timeout: Duration) -> Result<Self> {
-        self.client = self.rebuild_client(timeout)?;
+        self.timeout = timeout;
+        self.client = self.rebuild_client()?;
         Ok(self)
     }
 
@@ -500,6 +503,52 @@ mod tests {
         assert_eq!(client.max_response_size, 1024);
     }
 
+    #[test]
+    fn test_timeout_default_and_override() {
+        let client = HttpClient::new("http://example.com").unwrap();
+        assert_eq!(client.timeout, Duration::from_secs(30));
+
+        let client = client.with_timeout(Duration::from_secs(7)).unwrap();
+        assert_eq!(client.timeout, Duration::from_secs(7));
+    }
+
+    #[test]
+    fn test_http2_only_preserves_custom_timeout() {
+        // Timeout set before the rebuild must survive it ...
+        let client = HttpClient::new("http://example.com")
+            .unwrap()
+            .with_timeout(Duration::from_secs(5))
+            .unwrap()
+            .with_http2_only()
+            .unwrap();
+        assert_eq!(client.timeout, Duration::from_secs(5));
+        assert!(client.http2_only);
+
+        // ... and setting the timeout last must win regardless of order.
+        let client = HttpClient::new("http://example.com")
+            .unwrap()
+            .with_http2_only()
+            .unwrap()
+            .with_timeout(Duration::from_secs(9))
+            .unwrap();
+        assert_eq!(client.timeout, Duration::from_secs(9));
+        assert!(client.http2_only);
+    }
+
+    #[cfg(feature = "tls")]
+    #[test]
+    fn test_tls_preserves_custom_timeout() {
+        use crate::tls::TlsClientConfig;
+
+        let client = HttpClient::new("https://example.com")
+            .unwrap()
+            .with_timeout(Duration::from_secs(5))
+            .unwrap()
+            .with_tls(TlsClientConfig::new().unwrap())
+            .unwrap();
+        assert_eq!(client.timeout, Duration::from_secs(5));
+    }
+
     #[tokio::test]
     async fn test_response_size_limit_enforced() {
         use axum::{Router, routing::post};
@@ -678,6 +727,70 @@ mod tests {
         )
         .await;
         server.await.unwrap()
+    }
+
+    /// Repro for finding 2: `with_tls` must not silently reset a custom
+    /// timeout. The probe completes the handshake, then closes without
+    /// answering; only a client that kept its 300 ms timeout reports a
+    /// timeout error.
+    #[cfg(feature = "tls")]
+    #[tokio::test]
+    async fn with_tls_preserves_custom_timeout() {
+        use crate::tls::TlsClientConfig;
+        use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
+        use tokio::io::AsyncReadExt;
+
+        let dir = std::env::temp_dir().join(format!(
+            "vyna_http_timeout_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (ca_cert, srv_cert, srv_key) = generate_probe_certs(&dir);
+
+        let certs: Vec<CertificateDer<'static>> =
+            CertificateDer::pem_slice_iter(&std::fs::read(&srv_cert).unwrap())
+                .map(|r| r.unwrap().into_owned())
+                .collect();
+        let key = PrivateKeyDer::pem_slice_iter(&std::fs::read(&srv_key).unwrap())
+            .next()
+            .unwrap()
+            .unwrap()
+            .clone_key();
+        let config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)
+            .unwrap();
+        let acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(config));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut tls = acceptor.accept(tcp).await.unwrap();
+            // Read (part of) the request, then stall past the client's
+            // custom timeout and close without answering.
+            let mut buf = [0u8; 4096];
+            let _ = tokio::time::timeout(Duration::from_secs(10), tls.read(&mut buf)).await;
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+        });
+
+        let client = HttpClient::new(format!("https://{addr}"))
+            .unwrap()
+            .with_timeout(Duration::from_millis(300))
+            .unwrap()
+            .with_tls(TlsClientConfig::with_ca_cert(&ca_cert).unwrap())
+            .unwrap();
+        let err = client.send_message_raw("MSH|^~\\&|A\r").await.unwrap_err();
+        assert!(
+            matches!(&err, Error::Network(e) if e.is_timeout()),
+            "custom timeout was lost across with_tls: {err:?}"
+        );
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[cfg(feature = "tls")]

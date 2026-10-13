@@ -647,8 +647,8 @@ pub fn format_message_tree_with_schema(message: &Message, schema: Option<&Messag
                         // Use display function to get the full repetition value without escape encoding
                         let rep_value = display_repetition(repetition, delimiters);
                         if !rep_value.is_empty() {
-                            // Build path with repetition index (0-based for repetitions)
-                            let rep_path = format!("{}({})", field_path, rep_idx);
+                            // Terser paths use 1-based repetition indexes.
+                            let rep_path = format!("{}({})", field_path, rep_idx + 1);
                             let rep_label = format!(
                                 "Rep {}: {}",
                                 rep_idx + 1,
@@ -826,8 +826,14 @@ impl TreeNode {
 pub fn truncate_string(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
+    } else if max_len <= 3 {
+        s.chars().take(max_len).collect()
     } else {
-        format!("{}...", &s[..max_len - 3])
+        let mut end = max_len - 3;
+        while !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}...", &s[..end])
     }
 }
 
@@ -879,3 +885,50 @@ pub struct MessageStats {
     pub segment_types: std::collections::HashMap<String, usize>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_string_keeps_char_boundary() {
+        // CJK chars are 3 bytes each; a byte cut at max_len - 3
+        // can split one and panic on non-char-boundary slicing.
+        let s = "日本語テストメッセージの切り詰め確認用文字列です";
+        let out = truncate_string(s, 20);
+        assert!(out.ends_with("..."));
+        assert!(out.len() <= 20);
+        // Short strings pass through untouched.
+        assert_eq!(truncate_string("abc", 20), "abc");
+    }
+
+    #[test]
+    fn tree_repetition_paths_are_one_based() {
+        // TerserPath rejects repetition index 0, so tree rep
+        // paths must use 1-based indexes to stay clickable.
+        let hl7 = "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\r\
+             PID|1||7||DOE^JOHN||||||123 Main St^^Boston^MA~456 Oak Ave^^Austin^TX\r";
+        let msg = vyna_hl7_parser::parse_message(hl7).unwrap();
+        let nodes = format_message_tree(&msg);
+        let mut rep_paths = Vec::new();
+        collect_paths(&nodes, &mut rep_paths);
+        let rep_paths: Vec<_> = rep_paths
+            .into_iter()
+            .filter(|p| p.starts_with("PID-11(") && p.ends_with(')'))
+            .collect();
+        assert_eq!(rep_paths, vec!["PID-11(1)", "PID-11(2)"]);
+        // Every emitted rep path must parse in the terser.
+        let terser = vyna_hl7_terser::Terser::new(&msg);
+        for path in &rep_paths {
+            assert!(terser.get(path).is_ok(), "terser rejects {path}");
+        }
+    }
+
+    fn collect_paths(nodes: &[TreeNode], out: &mut Vec<String>) {
+        for node in nodes {
+            if let Some(path) = &node.path {
+                out.push(path.clone());
+            }
+            collect_paths(&node.children, out);
+        }
+    }
+}

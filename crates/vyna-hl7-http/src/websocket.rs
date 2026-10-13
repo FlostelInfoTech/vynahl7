@@ -14,9 +14,14 @@ use axum::{
     response::Response,
 };
 #[cfg(feature = "websocket")]
-use futures_util::{sink::SinkExt, stream::StreamExt};
+use futures_util::{
+    sink::SinkExt,
+    stream::{SplitSink, StreamExt},
+};
 #[cfg(feature = "websocket")]
 use std::sync::Arc;
+#[cfg(feature = "websocket")]
+use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(feature = "websocket")]
 use tokio::sync::broadcast;
 #[cfg(feature = "websocket")]
@@ -31,6 +36,21 @@ use vyna_hl7_parser::parse_message;
 #[cfg(feature = "websocket")]
 pub type WsMessageHandler = Arc<dyn Fn(Message) -> Result<Message> + Send + Sync>;
 
+/// One fan-out item: an HL7 message received on some connection.
+#[cfg(feature = "websocket")]
+#[derive(Clone, Debug)]
+struct BroadcastFrame {
+    /// Connection that received the message; it is skipped on delivery
+    /// so a sender never gets its own message echoed back.
+    sender_id: u64,
+    /// The HL7 message text as received.
+    text: String,
+}
+
+/// Connection ids for broadcast de-duplication. Id 0 is never issued.
+#[cfg(feature = "websocket")]
+static NEXT_WS_CONN_ID: AtomicU64 = AtomicU64::new(1);
+
 /// WebSocket server configuration
 #[cfg(feature = "websocket")]
 #[derive(Clone)]
@@ -39,8 +59,17 @@ pub struct WebSocketConfig {
     pub handler: WsMessageHandler,
     /// Maximum accepted message size in bytes (default: 1 MB)
     pub max_message_size: usize,
-    /// Broadcast each message to all connected clients
+    /// Broadcast each successfully parsed incoming message to all other
+    /// connected clients (the sender gets only its direct response).
+    ///
+    /// The broadcast channel is shared by every clone of this config, so
+    /// serving one config via axum `State` (which clones it per
+    /// connection) fans out across all connections. See
+    /// [`WebSocketConfig::with_broadcast`].
     pub enable_broadcast: bool,
+    /// Shared fan-out channel. Cloned configs share the same channel, so
+    /// enabling broadcast on the served config wires every connection.
+    broadcast_tx: broadcast::Sender<BroadcastFrame>,
 }
 
 #[cfg(feature = "websocket")]
@@ -64,10 +93,12 @@ impl WebSocketConfig {
     /// # }
     /// ```
     pub fn new(handler: WsMessageHandler) -> Self {
+        let (broadcast_tx, _) = broadcast::channel(128);
         Self {
             handler,
             max_message_size: 1024 * 1024, // 1 MB default
             enable_broadcast: false,
+            broadcast_tx,
         }
     }
 
@@ -77,7 +108,12 @@ impl WebSocketConfig {
         self
     }
 
-    /// Enable broadcast mode (messages sent to all connected clients)
+    /// Enable broadcast mode: every successfully parsed incoming HL7
+    /// message is fanned out to all other connected clients as a text
+    /// frame, in addition to the direct response sent back to the sender.
+    ///
+    /// Serve the returned config (via axum `State`) so its clones share
+    /// one broadcast channel across connections.
     pub fn with_broadcast(mut self) -> Self {
         self.enable_broadcast = true;
         self
@@ -122,179 +158,244 @@ pub async fn websocket_handler(
     ws.on_upgrade(move |socket| handle_websocket(socket, config))
 }
 
+/// Publish one received message to the shared broadcast channel.
+///
+/// No-op unless broadcast mode is enabled on the served config.
+#[cfg(feature = "websocket")]
+fn publish_incoming(config: &WebSocketConfig, conn_id: u64, text: &str) {
+    if config.enable_broadcast {
+        let _ = config.broadcast_tx.send(BroadcastFrame {
+            sender_id: conn_id,
+            text: text.to_string(),
+        });
+    }
+}
+
 /// Handle WebSocket connection lifecycle
 #[cfg(feature = "websocket")]
 async fn handle_websocket(socket: WebSocket, config: WebSocketConfig) {
     let (mut sender, mut receiver) = socket.split();
+    let conn_id = NEXT_WS_CONN_ID.fetch_add(1, Ordering::Relaxed);
+    let mut broadcast_rx = config.broadcast_tx.subscribe();
 
     #[cfg(feature = "logging")]
     tracing::info!("WebSocket connection established");
 
-    while let Some(msg) = receiver.next().await {
-        match msg {
-            Ok(WsMessage::Text(text)) => {
-                let text_str = text.as_str();
-                #[cfg(feature = "logging")]
-                tracing::debug!("Received text message: {} bytes", text_str.len());
-
-                // Check message size
-                if text_str.len() > config.max_message_size {
-                    #[cfg(feature = "logging")]
-                    tracing::warn!(
-                        "Message exceeds maximum size: {} > {}",
-                        text_str.len(),
-                        config.max_message_size
-                    );
-
-                    let _ = sender
-                        .send(WsMessage::Text(
-                            format!(
-                                "Error: Message too large ({} bytes, max {})",
-                                text_str.len(),
-                                config.max_message_size
-                            )
-                            .into(),
-                        ))
-                        .await;
-                    continue;
+    loop {
+        tokio::select! {
+            msg = receiver.next() => {
+                match msg {
+                    Some(msg) => {
+                        if !process_inbound(msg, &mut sender, &config, conn_id).await {
+                            break;
+                        }
+                    }
+                    None => break,
                 }
-
-                // Parse HL7 message
-                match parse_message(text_str) {
-                    Ok(hl7_msg) => {
-                        #[cfg(feature = "logging")]
+            }
+            frame = broadcast_rx.recv() => {
+                match frame {
+                    // Nothing is published unless broadcast mode is on, so
+                    // this only fires for opted-in connections.
+                    Ok(frame) if frame.sender_id != conn_id => {
+                        if sender
+                            .send(WsMessage::Text(frame.text.into()))
+                            .await
+                            .is_err()
                         {
-                            tracing::info!(
-                                message_type = ?hl7_msg.get_message_type(),
-                                control_id = ?hl7_msg.get_control_id(),
-                                "Received HL7 message via WebSocket"
-                            );
-                        }
-
-                        // Handle message
-                        match (config.handler)(hl7_msg) {
-                            Ok(response) => {
-                                let response_text = response.encode();
-                                if let Err(_e) =
-                                    sender.send(WsMessage::Text(response_text.into())).await
-                                {
-                                    #[cfg(feature = "logging")]
-                                    tracing::error!("Failed to send response: {}", _e);
-                                    break;
-                                }
-                            }
-                            Err(_e) => {
-                                #[cfg(feature = "logging")]
-                                tracing::error!("Handler error: {}", _e);
-
-                                let error_msg = format!("Error processing message: {}", _e);
-                                let _ = sender.send(WsMessage::Text(error_msg.into())).await;
-                            }
+                            break;
                         }
                     }
-                    Err(e) => {
-                        #[cfg(feature = "logging")]
-                        tracing::warn!("Failed to parse HL7 message: {}", e);
-
-                        let error_msg = format!("Error parsing HL7 message: {}", e);
-                        let _ = sender.send(WsMessage::Text(error_msg.into())).await;
-                    }
+                    Ok(_) => {} // Own message; already answered directly.
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    // Unreachable in practice: every live connection holds
+                    // a clone of the sender via its config. Break rather
+                    // than spin, defensively.
+                    Err(broadcast::error::RecvError::Closed) => break,
                 }
-            }
-            Ok(WsMessage::Binary(data)) => {
-                #[cfg(feature = "logging")]
-                tracing::debug!("Received binary message: {} bytes", data.len());
-
-                // Enforce the same size cap as text frames.
-                if data.len() > config.max_message_size {
-                    #[cfg(feature = "logging")]
-                    tracing::warn!(
-                        "Message exceeds maximum size: {} > {}",
-                        data.len(),
-                        config.max_message_size
-                    );
-
-                    let _ = sender
-                        .send(WsMessage::Text(
-                            format!(
-                                "Error: Message too large ({} bytes, max {})",
-                                data.len(),
-                                config.max_message_size
-                            )
-                            .into(),
-                        ))
-                        .await;
-                    continue;
-                }
-
-                // Decode binary using the MSH-18 declaration
-                let text = match CharacterSet::decode_message(&data) {
-                    Ok(text) => text,
-                    Err(e) => {
-                        #[cfg(feature = "logging")]
-                        tracing::warn!("Binary message is not valid UTF-8: {}", e);
-
-                        let error_msg = format!("Error decoding binary message: {}", e);
-                        let _ = sender.send(WsMessage::Text(error_msg.into())).await;
-                        continue;
-                    }
-                };
-
-                let hl7_msg = match parse_message(&text) {
-                    Ok(hl7_msg) => hl7_msg,
-                    Err(e) => {
-                        #[cfg(feature = "logging")]
-                        tracing::warn!("Failed to parse HL7 message: {}", e);
-
-                        let error_msg = format!("Error parsing HL7 message: {}", e);
-                        let _ = sender.send(WsMessage::Text(error_msg.into())).await;
-                        continue;
-                    }
-                };
-
-                match (config.handler)(hl7_msg) {
-                    Ok(response) => {
-                        // Best effort: fall back to UTF-8 when the
-                        // response cannot be encoded as declared.
-                        let response_bytes = response
-                            .encode_bytes()
-                            .unwrap_or_else(|_| response.encode().into_bytes());
-                        let _ = sender.send(WsMessage::Binary(response_bytes.into())).await;
-                    }
-                    Err(_e) => {
-                        #[cfg(feature = "logging")]
-                        tracing::error!("Handler error: {}", _e);
-
-                        let error_msg = format!("Error processing message: {}", _e);
-                        let _ = sender.send(WsMessage::Text(error_msg.into())).await;
-                    }
-                }
-            }
-            Ok(WsMessage::Ping(data)) => {
-                #[cfg(feature = "logging")]
-                tracing::trace!("Received ping");
-
-                let _ = sender.send(WsMessage::Pong(data)).await;
-            }
-            Ok(WsMessage::Pong(_)) => {
-                #[cfg(feature = "logging")]
-                tracing::trace!("Received pong");
-            }
-            Ok(WsMessage::Close(_frame)) => {
-                #[cfg(feature = "logging")]
-                tracing::info!("WebSocket connection closed: {:?}", _frame);
-                break;
-            }
-            Err(_e) => {
-                #[cfg(feature = "logging")]
-                tracing::error!("WebSocket error: {}", _e);
-                break;
             }
         }
     }
 
     #[cfg(feature = "logging")]
     tracing::info!("WebSocket connection terminated");
+}
+
+/// Process one inbound WebSocket message.
+///
+/// Returns `false` when the connection should be closed.
+#[cfg(feature = "websocket")]
+async fn process_inbound(
+    msg: std::result::Result<WsMessage, axum::Error>,
+    sender: &mut SplitSink<WebSocket, WsMessage>,
+    config: &WebSocketConfig,
+    conn_id: u64,
+) -> bool {
+    match msg {
+        Ok(WsMessage::Text(text)) => {
+            let text_str = text.as_str();
+            #[cfg(feature = "logging")]
+            tracing::debug!("Received text message: {} bytes", text_str.len());
+
+            // Check message size
+            if text_str.len() > config.max_message_size {
+                #[cfg(feature = "logging")]
+                tracing::warn!(
+                    "Message exceeds maximum size: {} > {}",
+                    text_str.len(),
+                    config.max_message_size
+                );
+
+                let _ = sender
+                    .send(WsMessage::Text(
+                        format!(
+                            "Error: Message too large ({} bytes, max {})",
+                            text_str.len(),
+                            config.max_message_size
+                        )
+                        .into(),
+                    ))
+                    .await;
+                return true;
+            }
+
+            // Parse HL7 message
+            match parse_message(text_str) {
+                Ok(hl7_msg) => {
+                    #[cfg(feature = "logging")]
+                    {
+                        tracing::info!(
+                            message_type = ?hl7_msg.get_message_type(),
+                            control_id = ?hl7_msg.get_control_id(),
+                            "Received HL7 message via WebSocket"
+                        );
+                    }
+
+                    publish_incoming(config, conn_id, text_str);
+
+                    // Handle message
+                    match (config.handler)(hl7_msg) {
+                        Ok(response) => {
+                            let response_text = response.encode();
+                            if let Err(_e) =
+                                sender.send(WsMessage::Text(response_text.into())).await
+                            {
+                                #[cfg(feature = "logging")]
+                                tracing::error!("Failed to send response: {}", _e);
+                                return false;
+                            }
+                        }
+                        Err(_e) => {
+                            #[cfg(feature = "logging")]
+                            tracing::error!("Handler error: {}", _e);
+
+                            let error_msg = format!("Error processing message: {}", _e);
+                            let _ = sender.send(WsMessage::Text(error_msg.into())).await;
+                        }
+                    }
+                }
+                Err(e) => {
+                    #[cfg(feature = "logging")]
+                    tracing::warn!("Failed to parse HL7 message: {}", e);
+
+                    let error_msg = format!("Error parsing HL7 message: {}", e);
+                    let _ = sender.send(WsMessage::Text(error_msg.into())).await;
+                }
+            }
+        }
+        Ok(WsMessage::Binary(data)) => {
+            #[cfg(feature = "logging")]
+            tracing::debug!("Received binary message: {} bytes", data.len());
+
+            // Enforce the same size cap as text frames.
+            if data.len() > config.max_message_size {
+                #[cfg(feature = "logging")]
+                tracing::warn!(
+                    "Message exceeds maximum size: {} > {}",
+                    data.len(),
+                    config.max_message_size
+                );
+
+                let _ = sender
+                    .send(WsMessage::Text(
+                        format!(
+                            "Error: Message too large ({} bytes, max {})",
+                            data.len(),
+                            config.max_message_size
+                        )
+                        .into(),
+                    ))
+                    .await;
+                return true;
+            }
+
+            // Decode binary using the MSH-18 declaration
+            let text = match CharacterSet::decode_message(&data) {
+                Ok(text) => text,
+                Err(e) => {
+                    #[cfg(feature = "logging")]
+                    tracing::warn!("Binary message is not valid UTF-8: {}", e);
+
+                    let error_msg = format!("Error decoding binary message: {}", e);
+                    let _ = sender.send(WsMessage::Text(error_msg.into())).await;
+                    return true;
+                }
+            };
+
+            let hl7_msg = match parse_message(&text) {
+                Ok(hl7_msg) => hl7_msg,
+                Err(e) => {
+                    #[cfg(feature = "logging")]
+                    tracing::warn!("Failed to parse HL7 message: {}", e);
+
+                    let error_msg = format!("Error parsing HL7 message: {}", e);
+                    let _ = sender.send(WsMessage::Text(error_msg.into())).await;
+                    return true;
+                }
+            };
+
+            publish_incoming(config, conn_id, &text);
+
+            match (config.handler)(hl7_msg) {
+                Ok(response) => {
+                    // Best effort: fall back to UTF-8 when the
+                    // response cannot be encoded as declared.
+                    let response_bytes = response
+                        .encode_bytes()
+                        .unwrap_or_else(|_| response.encode().into_bytes());
+                    let _ = sender.send(WsMessage::Binary(response_bytes.into())).await;
+                }
+                Err(_e) => {
+                    #[cfg(feature = "logging")]
+                    tracing::error!("Handler error: {}", _e);
+
+                    let error_msg = format!("Error processing message: {}", _e);
+                    let _ = sender.send(WsMessage::Text(error_msg.into())).await;
+                }
+            }
+        }
+        Ok(WsMessage::Ping(data)) => {
+            #[cfg(feature = "logging")]
+            tracing::trace!("Received ping");
+
+            let _ = sender.send(WsMessage::Pong(data)).await;
+        }
+        Ok(WsMessage::Pong(_)) => {
+            #[cfg(feature = "logging")]
+            tracing::trace!("Received pong");
+        }
+        Ok(WsMessage::Close(_frame)) => {
+            #[cfg(feature = "logging")]
+            tracing::info!("WebSocket connection closed: {:?}", _frame);
+            return false;
+        }
+        Err(_e) => {
+            #[cfg(feature = "logging")]
+            tracing::error!("WebSocket error: {}", _e);
+            return false;
+        }
+    }
+    true
 }
 
 /// WebSocket broadcast channel
@@ -543,6 +644,60 @@ mod tests {
     fn test_websocket_client_creation() {
         let client = WebSocketClient::new("ws://localhost:8080/ws");
         assert_eq!(client.url, "ws://localhost:8080/ws");
+    }
+
+    /// Repro for finding 4: with broadcast enabled, a message received
+    /// from one client must reach the other connected clients.
+    #[tokio::test]
+    async fn test_broadcast_reaches_other_clients() {
+        use axum::{Router, routing::get};
+        use tokio_tungstenite::{connect_async, tungstenite::Message as TMessage};
+
+        let handler: WsMessageHandler = Arc::new(Ok);
+        let config = WebSocketConfig::new(handler).with_broadcast();
+        let app = Router::new()
+            .route("/ws", get(websocket_handler))
+            .with_state(config);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let (mut ws_a, _) = connect_async(format!("ws://{addr}/ws")).await.unwrap();
+        let (mut ws_b, _) = connect_async(format!("ws://{addr}/ws")).await.unwrap();
+
+        // A sends a valid HL7 message; A gets the echo response ...
+        let hl7 = "MSH|^~\\&|S|A|R|F|20240101||ADT^A01|BC1|P|2.5\r";
+        ws_a.send(TMessage::Text(hl7.into())).await.unwrap();
+        let reply = tokio::time::timeout(std::time::Duration::from_secs(5), ws_a.next())
+            .await
+            .expect("sender should get its echo response")
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(&reply, TMessage::Text(t) if t.as_str().contains("BC1")),
+            "unexpected reply to sender: {reply:?}"
+        );
+
+        // ... and B must receive the broadcast of A's message.
+        let bcast = tokio::time::timeout(std::time::Duration::from_secs(5), ws_b.next())
+            .await
+            .expect("broadcast was not delivered to the other client")
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(&bcast, TMessage::Text(t) if t.as_str().contains("BC1")),
+            "unexpected broadcast: {bcast:?}"
+        );
+
+        // The sender must not get its own message echoed back as a broadcast.
+        let nothing =
+            tokio::time::timeout(std::time::Duration::from_millis(300), ws_a.next()).await;
+        assert!(
+            nothing.is_err(),
+            "sender received its own broadcast echo: {nothing:?}"
+        );
     }
 
     #[tokio::test]

@@ -35,7 +35,7 @@ impl WasmMessage {
     /// Get the HL7 version as a string
     pub fn version(&self) -> Option<String> {
         // get_version returns Option<Version>
-        self.inner.get_version().map(|v| format!("{:?}", v))
+        self.inner.get_version().map(|v| v.as_str().to_string())
     }
 
     /// Get the message type (e.g., "ADT^A01")
@@ -170,5 +170,13 @@ mod tests {
         msg.set_value("PID-5-1", "SMITH").unwrap();
         let terser = vyna_hl7_terser::Terser::new(msg.inner());
         assert_eq!(terser.get("PID-5-1").unwrap(), Some("SMITH"));
+    }
+
+    #[test]
+    fn version_returns_dotted_string() {
+        // d.ts, README and getVersion rustdoc promise "2.5",
+        // not the Debug form "V2_5".
+        let msg = parse_wasm(ADT).unwrap();
+        assert_eq!(msg.version(), Some("2.5".to_string()));
     }
 }

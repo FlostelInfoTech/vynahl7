@@ -150,7 +150,7 @@ impl ServiceRequestConverter {
         // OBR-4: Universal Service Identifier -> code
         if let Ok(Some(service_code)) = terser.get(&obr_path("4")) {
             let mut coding = Coding {
-                system: Some("http://loinc.org".to_string()),
+                system: None,
                 code: Some(service_code.to_string()),
                 display: None,
                 version: None,
@@ -159,6 +159,13 @@ impl ServiceRequestConverter {
             // Component 1: Service text/display
             if let Ok(Some(service_text)) = terser.get(&format!("{}-2", obr_path("4"))) {
                 coding.display = Some(service_text.to_string());
+            }
+
+            // OBR-4-3: Coding system selects the system URI.
+            if let Ok(Some(system)) = terser.get(&format!("{}-3", obr_path("4")))
+                && !system.is_empty()
+            {
+                coding.system = Some(Self::convert_coding_system(system));
             }
 
             service_request.code = Some(CodeableConcept {
@@ -246,6 +253,16 @@ impl ServiceRequestConverter {
             _ => "routine",
         }
         .to_string()
+    }
+
+    /// Convert HL7 coding system (OBR-4-3) to a FHIR system URI.
+    fn convert_coding_system(system: &str) -> String {
+        match system {
+            "LN" | "LNC" => "http://loinc.org".to_string(),
+            "SNM" | "SCT" => "http://snomed.info/sct".to_string(),
+            "C4" | "CPT" => "http://www.ama-assn.org/go/cpt".to_string(),
+            _ => format!("urn:oid:{system}"),
+        }
     }
 
     /// Convert HL7 datetime (YYYYMMDDHHMMSS) to FHIR ISO 8601 format
@@ -398,6 +415,29 @@ mod tests {
             ServiceRequestConverter::convert_datetime("20240315100000").unwrap(),
             "2024-03-15T10:00:00"
         );
+    }
+
+    #[test]
+    fn test_coding_system_mapped_from_obr4_3() {
+        // OBR-4-3 selects the coding system; CPT/SNOMED must
+        // not be mislabeled with the LOINC system URI.
+        let cases = [
+            ("85025^CBC^LN", "http://loinc.org"),
+            ("123456^Proc^SNM", "http://snomed.info/sct"),
+            ("99213^Visit^CPT", "http://www.ama-assn.org/go/cpt"),
+        ];
+        for (obr4, expected) in cases {
+            let hl7 = format!(
+                "MSH|^~\\&|CPOE|H|LAB|H|20240315||ORM^O01|M|P|2.5\r\
+                 PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+                 ORC|NW|ORD123|||A\r\
+                 OBR|1|ORD123||{obr4}"
+            );
+            let message = parse_message(&hl7).unwrap();
+            let requests = ServiceRequestConverter::convert_all(&message).unwrap();
+            let coding = requests[0].code.as_ref().unwrap().coding.as_ref().unwrap();
+            assert_eq!(coding[0].system.as_deref(), Some(expected), "OBR-4 {obr4}");
+        }
     }
 
     #[test]

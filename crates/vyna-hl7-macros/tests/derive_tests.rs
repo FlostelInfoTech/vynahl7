@@ -526,6 +526,8 @@ struct ExtendedPersonName {
 
 #[test]
 fn test_hl7_type_round_trip() {
+    use std::convert::TryFrom;
+
     assert_eq!(ExtendedPersonName::DATA_TYPE, "XPN");
 
     let name = ExtendedPersonName {
@@ -539,19 +541,32 @@ fn test_hl7_type_round_trip() {
     assert_eq!(rep.get_component(0).and_then(|c| c.value()), Some("Smith"));
     assert_eq!(rep.get_component(1).and_then(|c| c.value()), Some("John"));
 
-    let back = ExtendedPersonName::from_repetition(&rep);
+    let back = ExtendedPersonName::from_repetition(&rep).unwrap();
     assert_eq!(back.family_name, "Smith");
     assert_eq!(back.given_name, "John");
     assert_eq!(back.second_name, None);
 
-    let via_from = ExtendedPersonName::from(&rep);
-    assert_eq!(via_from.family_name, "Smith");
+    let via_try_from = ExtendedPersonName::try_from(&rep).unwrap();
+    assert_eq!(via_try_from.family_name, "Smith");
 
     let rep_back: Repetition = name.into();
     assert_eq!(
         rep_back.get_component(0).and_then(|c| c.value()),
         Some("Smith")
     );
+}
+
+#[test]
+fn test_hl7_type_missing_required_component_is_none() {
+    use std::convert::TryFrom;
+
+    // given_name (component 2) is required: absent data fails the
+    // conversion instead of silently defaulting to "".
+    let mut rep = Repetition::new();
+    rep.add_component(vyna_hl7_core::field::Component::from_value("Smith"));
+
+    assert!(ExtendedPersonName::from_repetition(&rep).is_none());
+    assert!(ExtendedPersonName::try_from(&rep).is_err());
 }
 
 #[test]

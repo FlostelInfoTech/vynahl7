@@ -87,8 +87,26 @@ impl RuleConfig {
         self
     }
 
-    /// Convert to a TransformationRule
+    /// Convert to a TransformationRule, merging this rule's params
+    /// into the given context.
+    ///
+    /// Kept for single-rule use. [`TransformConfig::build`] uses
+    /// [`to_rule_with_params`](Self::to_rule_with_params) instead so each
+    /// rule keeps its own params rather than sharing one map.
     pub fn to_rule(&self, context: &mut TransformContext) -> Result<TransformationRule> {
+        let (rule, params) = self.to_rule_with_params()?;
+        for (key, value) in params {
+            context.data.insert(key, value);
+        }
+        Ok(rule)
+    }
+
+    /// Convert to a TransformationRule plus its private params.
+    ///
+    /// The params are returned alongside the rule instead of being merged
+    /// into a shared map, so rules using the same transform function with
+    /// different params do not clobber each other.
+    pub fn to_rule_with_params(&self) -> Result<(TransformationRule, HashMap<String, String>)> {
         let mut rule = TransformationRule::new(&self.source, &self.target);
 
         // Set default value if provided
@@ -99,13 +117,6 @@ impl RuleConfig {
         // Set skip_if_empty if provided
         if let Some(skip) = self.skip_if_empty {
             rule = rule.skip_if_empty(skip);
-        }
-
-        // Add params to context if provided
-        if let Some(params) = &self.params {
-            for (key, value) in params {
-                context.data.insert(key.clone(), value.clone());
-            }
         }
 
         // Set transformation function if provided
@@ -136,7 +147,7 @@ impl RuleConfig {
             rule = rule.with_transform(transform_fn);
         }
 
-        Ok(rule)
+        Ok((rule, self.params.clone().unwrap_or_default()))
     }
 }
 
@@ -173,24 +184,19 @@ impl TransformConfig {
     /// Build a MessageTransformer from this configuration
     pub fn build(&self) -> Result<MessageTransformer> {
         let mut transformer = MessageTransformer::new();
-        let mut context = TransformContext::new();
 
-        // Add global context data
+        // Add global context data (shared by all rules)
         if let Some(global_context) = &self.context {
             for (key, value) in global_context {
-                context.data.insert(key.clone(), value.clone());
+                transformer.set_context_data(key.clone(), value.clone());
             }
         }
 
-        // Convert and add all rules
+        // Convert and add all rules, keeping each rule's params private
+        // so same-named params on different rules do not clobber each other.
         for rule_config in &self.rules {
-            let rule = rule_config.to_rule(&mut context)?;
-            transformer.add_rule(rule);
-        }
-
-        // Set context data in transformer
-        for (key, value) in context.data {
-            transformer.set_context_data(key, value);
+            let (rule, params) = rule_config.to_rule_with_params()?;
+            transformer.add_rule_with_params(rule, params);
         }
 
         Ok(transformer)
@@ -409,5 +415,45 @@ rules:
         let mut context = TransformContext::new();
         let result = rule.to_rule(&mut context);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rules_with_different_params_are_independent() {
+        use vyna_hl7_core::Version;
+        use vyna_hl7_core::builders::adt::AdtBuilder;
+        use vyna_hl7_parser::parse_message;
+        use vyna_hl7_terser::Terser;
+
+        let msg = AdtBuilder::a01(Version::V2_5)
+            .patient_id("ABCDEFGH")
+            .sex("12345678")
+            .build()
+            .unwrap();
+        let encoded = msg.encode();
+        let source = parse_message(&encoded).unwrap();
+
+        let mut config = TransformConfig::new();
+        let mut first = HashMap::new();
+        first.insert("start".to_string(), "0".to_string());
+        first.insert("length".to_string(), "3".to_string());
+        config.add_rule(
+            RuleConfig::new("PID-3", "PID-3")
+                .with_transform("substring")
+                .with_params(first),
+        );
+        let mut second = HashMap::new();
+        second.insert("start".to_string(), "0".to_string());
+        second.insert("length".to_string(), "5".to_string());
+        config.add_rule(
+            RuleConfig::new("PID-8", "PID-8")
+                .with_transform("substring")
+                .with_params(second),
+        );
+
+        let transformer = config.build().unwrap();
+        let target = transformer.transform(&source).unwrap();
+        let terser = Terser::new(&target);
+        assert_eq!(terser.get("PID-3").unwrap(), Some("ABC"));
+        assert_eq!(terser.get("PID-8").unwrap(), Some("12345"));
     }
 }

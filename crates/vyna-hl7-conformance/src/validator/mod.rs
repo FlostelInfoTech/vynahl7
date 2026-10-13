@@ -410,7 +410,7 @@ impl ConformanceValidator {
                 }
             }
             ConditionalUsage::NotUsed => {
-                if occurrence_count > 0 {
+                if has_content {
                     let field_name = field_profile
                         .name
                         .clone()
@@ -785,6 +785,47 @@ mod tests {
         assert!(
             result.is_valid(),
             "expected valid, got: {:?}",
+            result.errors
+        );
+    }
+
+    /// Profile with PID-2 marked not-used (X).
+    fn x_usage_profile() -> ConformanceProfile {
+        let metadata = ProfileMetadata::new("XUsage".to_string(), "1.0".to_string(), Version::V2_5);
+        let mut message = MessageProfile::new("ADT".to_string(), "A01".to_string());
+        let mut pid = SegmentProfile::new("PID".to_string(), Usage::Required, Cardinality::one());
+        pid.add_field(FieldProfile::new(
+            2,
+            Usage::NotUsed,
+            Cardinality::zero_or_one(),
+        ));
+        message.add_segment(pid);
+        ConformanceProfile::new(metadata, message)
+    }
+
+    #[test]
+    fn test_x_usage_empty_field_passes() {
+        // Empty PID-2 parses to one empty repetition; X must
+        // only fire on actual content, like R requires it.
+        let validator = ConformanceValidator::new(x_usage_profile());
+        let result = validator.validate(&conditional_message("PID|1||PATID1234"));
+        assert!(
+            result.is_valid(),
+            "expected valid for empty PID-2, got: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_x_usage_valued_field_fails() {
+        let validator = ConformanceValidator::new(x_usage_profile());
+        let result = validator.validate(&conditional_message("PID|1|VALUED|PATID1234"));
+        assert!(
+            result.errors.iter().any(|e| {
+                e.error_type == ConformanceErrorType::NotUsedElementPresent
+                    && e.rule.as_deref() == Some("PID-2 usage=X")
+            }),
+            "expected a not-used error for PID-2, got: {:?}",
             result.errors
         );
     }

@@ -9,6 +9,8 @@ use axum::{
     routing::post,
 };
 use std::sync::Arc;
+#[cfg(feature = "tls")]
+use std::time::Duration;
 use tower_http::trace::TraceLayer;
 use vyna_hl7_core::Message;
 use vyna_hl7_parser::parse_message;
@@ -54,12 +56,28 @@ pub type MessageHandler = Arc<dyn Fn(Message) -> Result<Message> + Send + Sync>;
 /// # Ok(())
 /// # }
 /// ```
+/// Default bound on a single TLS handshake (see
+/// [`HttpServer::with_tls_handshake_timeout`]).
+#[cfg(feature = "tls")]
+pub const DEFAULT_TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Default bound on a single TLS connection lifetime (see
+/// [`HttpServer::with_tls_connection_timeout`]).
+#[cfg(feature = "tls")]
+pub const DEFAULT_TLS_CONNECTION_TIMEOUT: Duration = Duration::from_secs(300);
+
 #[derive(Clone)]
 pub struct HttpServer {
     handler: MessageHandler,
     auth: Option<(String, String)>,
     #[cfg(feature = "tls")]
     tls_config: Option<TlsServerConfig>,
+    /// Bound on `TlsAcceptor::accept` per connection (default: 10 s).
+    #[cfg(feature = "tls")]
+    tls_handshake_timeout: Duration,
+    /// Bound on serving one TLS connection (default: 300 s).
+    #[cfg(feature = "tls")]
+    tls_connection_timeout: Duration,
     #[cfg(feature = "compression")]
     pub(crate) enable_compression: bool,
 }
@@ -74,6 +92,10 @@ impl HttpServer {
             auth: None,
             #[cfg(feature = "tls")]
             tls_config: None,
+            #[cfg(feature = "tls")]
+            tls_handshake_timeout: DEFAULT_TLS_HANDSHAKE_TIMEOUT,
+            #[cfg(feature = "tls")]
+            tls_connection_timeout: DEFAULT_TLS_CONNECTION_TIMEOUT,
             #[cfg(feature = "compression")]
             enable_compression: false,
         }
@@ -133,6 +155,30 @@ impl HttpServer {
     #[cfg(feature = "tls")]
     pub fn with_tls(mut self, tls_config: TlsServerConfig) -> Self {
         self.tls_config = Some(tls_config);
+        self
+    }
+
+    /// Bound how long one TLS handshake may take (default: 10 s).
+    ///
+    /// Each accepted TCP connection spawns a task that performs the TLS
+    /// handshake; without a bound, clients that connect and stall pin a
+    /// task forever (task-exhaustion DoS). Connections that exceed the
+    /// bound are dropped.
+    #[cfg(feature = "tls")]
+    pub fn with_tls_handshake_timeout(mut self, timeout: Duration) -> Self {
+        self.tls_handshake_timeout = timeout;
+        self
+    }
+
+    /// Bound how long one TLS connection is served (default: 300 s).
+    ///
+    /// Caps the lifetime of the per-connection task that runs hyper after
+    /// the handshake, so stalled connections (e.g. slowloris-style partial
+    /// requests) cannot accumulate without bound. Connections that exceed
+    /// the bound are dropped.
+    #[cfg(feature = "tls")]
+    pub fn with_tls_connection_timeout(mut self, timeout: Duration) -> Self {
+        self.tls_connection_timeout = timeout;
         self
     }
 
@@ -262,6 +308,10 @@ impl HttpServer {
             Error::InvalidUrl("TLS not configured. Use with_tls() first.".to_string())
         })?;
 
+        // Copy the per-connection bounds before `with_state` moves `self`.
+        let handshake_timeout = self.tls_handshake_timeout;
+        let connection_timeout = self.tls_connection_timeout;
+
         // Build router
         let app = Router::new()
             .route("/", post(handle_message))
@@ -292,24 +342,54 @@ impl HttpServer {
                     let app = app.clone();
 
                     tokio::spawn(async move {
-                        // Perform TLS handshake
-                        match tls_acceptor.accept(tcp_stream).await {
-                            Ok(tls_stream) => {
-                                // Serve the connection using hyper
-                                let tower_service = app;
-                                let hyper_service = hyper::service::service_fn(move |request| {
-                                    tower_service.clone().call(request)
-                                });
-
-                                if let Err(err) = hyper::server::conn::http1::Builder::new()
-                                    .serve_connection(hyper_util::rt::TokioIo::new(tls_stream), hyper_service)
-                                    .await
-                                {
-                                    eprintln!("Error serving connection: {}", err);
+                        // Perform TLS handshake, bounded so stalled clients
+                        // cannot pin this task forever.
+                        let tls_stream =
+                            match tokio::time::timeout(
+                                handshake_timeout,
+                                tls_acceptor.accept(tcp_stream),
+                            )
+                            .await
+                            {
+                                Ok(Ok(tls_stream)) => tls_stream,
+                                Ok(Err(err)) => {
+                                    eprintln!("TLS handshake failed: {}", err);
+                                    return;
                                 }
+                                Err(_) => {
+                                    eprintln!(
+                                        "TLS handshake timed out after {:?}",
+                                        handshake_timeout
+                                    );
+                                    return;
+                                }
+                            };
+
+                        // Serve the connection using hyper, bounded so
+                        // stalled connections cannot accumulate without end.
+                        let tower_service = app;
+                        let hyper_service = hyper::service::service_fn(move |request| {
+                            tower_service.clone().call(request)
+                        });
+
+                        match tokio::time::timeout(
+                            connection_timeout,
+                            hyper::server::conn::http1::Builder::new().serve_connection(
+                                hyper_util::rt::TokioIo::new(tls_stream),
+                                hyper_service,
+                            ),
+                        )
+                        .await
+                        {
+                            Ok(Ok(())) => {}
+                            Ok(Err(err)) => {
+                                eprintln!("Error serving connection: {}", err);
                             }
-                            Err(err) => {
-                                eprintln!("TLS handshake failed: {}", err);
+                            Err(_) => {
+                                eprintln!(
+                                    "TLS connection timed out after {:?}",
+                                    connection_timeout
+                                );
                             }
                         }
                     });
@@ -563,6 +643,197 @@ mod tests {
         assert!(headers["content-type"].to_str().unwrap().contains("hl7"));
         let echoed = parse_message(&decode_body(&body, "").unwrap()).unwrap();
         assert_eq!(echoed.get_control_id(), Some("1"));
+    }
+
+    /// Generate a CA plus a server certificate signed by it (requires
+    /// openssl). Returns `(ca_cert, server_cert, server_key)`.
+    #[cfg(feature = "tls")]
+    fn generate_test_certs(dir: &std::path::Path) -> (String, String, String) {
+        use std::process::Command;
+
+        let path = |name: &str| dir.join(name).to_str().unwrap().to_string();
+        let (ca_key, ca_cert) = (path("ca-key.pem"), path("ca-cert.pem"));
+        let (srv_key, srv_csr, srv_cert, srv_ext) = (
+            path("srv-key.pem"),
+            path("srv.csr"),
+            path("srv-cert.pem"),
+            path("srv-ext.cnf"),
+        );
+        std::fs::write(
+            &srv_ext,
+            "[v3_req]\nbasicConstraints = CA:FALSE\n\
+             keyUsage = digitalSignature, keyEncipherment\n\
+             extendedKeyUsage = serverAuth\n\
+             subjectAltName = DNS:localhost,IP:127.0.0.1\n",
+        )
+        .unwrap();
+        let run = |args: &[&str]| {
+            let status = Command::new("openssl")
+                .args(args)
+                .status()
+                .expect("openssl must be installed for TLS tests");
+            assert!(status.success(), "openssl {args:?} failed");
+        };
+        run(&[
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            &ca_key,
+            "-out",
+            &ca_cert,
+            "-days",
+            "2",
+            "-subj",
+            "/CN=Test CA",
+        ]);
+        run(&[
+            "req",
+            "-new",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            &srv_key,
+            "-out",
+            &srv_csr,
+            "-subj",
+            "/CN=localhost",
+        ]);
+        run(&[
+            "x509",
+            "-req",
+            "-in",
+            &srv_csr,
+            "-CA",
+            &ca_cert,
+            "-CAkey",
+            &ca_key,
+            "-CAcreateserial",
+            "-out",
+            &srv_cert,
+            "-days",
+            "2",
+            "-extfile",
+            &srv_ext,
+            "-extensions",
+            "v3_req",
+        ]);
+        (ca_cert, srv_cert, srv_key)
+    }
+
+    /// Repro for finding 3: a client that stalls the TLS handshake must be
+    /// disconnected instead of pinning a server task forever.
+    #[cfg(feature = "tls")]
+    #[tokio::test]
+    async fn test_tls_handshake_timeout_closes_stalled_connection() {
+        use crate::tls::TlsServerConfig;
+        use std::time::Duration;
+        use tokio::io::AsyncReadExt;
+
+        let dir = std::env::temp_dir().join(format!(
+            "vyna_http_srvtls_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (_ca, cert, key) = generate_test_certs(&dir);
+
+        let server = HttpServer::new()
+            .with_tls(TlsServerConfig::new(&cert, &key).unwrap())
+            .with_tls_handshake_timeout(Duration::from_millis(200));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (_shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let srv = tokio::spawn(async move {
+            server.serve_tls_on(listener, shutdown_rx).await.unwrap();
+        });
+
+        // Connect and stall: never send the TLS ClientHello.
+        let mut tcp = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let mut buf = [0u8; 16];
+        let read = tokio::time::timeout(Duration::from_secs(5), tcp.read(&mut buf)).await;
+        assert!(
+            read.is_ok(),
+            "stalled TLS handshake was never closed (task-exhaustion DoS)"
+        );
+
+        drop(_shutdown_tx);
+        let _ = tokio::time::timeout(Duration::from_secs(5), srv).await;
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A client that completes the handshake but then stalls (partial
+    /// request) must be disconnected once the connection bound elapses.
+    #[cfg(feature = "tls")]
+    #[tokio::test]
+    async fn test_tls_connection_timeout_closes_stalled_connection() {
+        use crate::tls::{TlsClientConfig, TlsServerConfig};
+        use std::time::Duration;
+        use tokio::io::AsyncReadExt;
+
+        let dir = std::env::temp_dir().join(format!(
+            "vyna_http_srvtls_conn_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (ca, cert, key) = generate_test_certs(&dir);
+
+        let server = HttpServer::new()
+            .with_tls(TlsServerConfig::new(&cert, &key).unwrap())
+            .with_tls_connection_timeout(Duration::from_millis(300));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (_shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let srv = tokio::spawn(async move {
+            server.serve_tls_on(listener, shutdown_rx).await.unwrap();
+        });
+
+        // Complete the handshake (trusting the test CA), then stall
+        // without sending a request.
+        let tls_client = TlsClientConfig::with_ca_cert(&ca).unwrap();
+        let connector = tokio_rustls::TlsConnector::from(tls_client.config.clone());
+        let tcp = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let server_name = rustls::pki_types::ServerName::try_from("localhost")
+            .unwrap()
+            .to_owned();
+        let mut tls = connector.connect(server_name, tcp).await.unwrap();
+
+        let mut buf = [0u8; 16];
+        let read = tokio::time::timeout(Duration::from_secs(5), tls.read(&mut buf)).await;
+        assert!(
+            read.is_ok(),
+            "stalled TLS connection was never closed (task-exhaustion DoS)"
+        );
+
+        drop(_shutdown_tx);
+        let _ = tokio::time::timeout(Duration::from_secs(5), srv).await;
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(feature = "tls")]
+    #[test]
+    fn test_tls_timeout_defaults_and_overrides() {
+        use std::time::Duration;
+
+        let server = HttpServer::new();
+        assert_eq!(server.tls_handshake_timeout, Duration::from_secs(10));
+        assert_eq!(server.tls_connection_timeout, Duration::from_secs(300));
+
+        let server = server
+            .with_tls_handshake_timeout(Duration::from_secs(3))
+            .with_tls_connection_timeout(Duration::from_secs(60));
+        assert_eq!(server.tls_handshake_timeout, Duration::from_secs(3));
+        assert_eq!(server.tls_connection_timeout, Duration::from_secs(60));
     }
 
     #[tokio::test]

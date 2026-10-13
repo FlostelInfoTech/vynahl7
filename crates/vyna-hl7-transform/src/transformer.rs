@@ -2,6 +2,8 @@
 
 use crate::error::{Error, Result};
 use crate::rule::{TransformContext, TransformFn, TransformationRule};
+use std::borrow::Cow;
+use std::collections::HashMap;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::{Terser, TerserMut};
 
@@ -30,6 +32,11 @@ pub struct MessageTransformer {
     /// List of transformation rules to apply
     rules: Vec<TransformationRule>,
 
+    /// Per-rule params, parallel to `rules`: each rule's private overlay
+    /// over the shared context so rules using the same transform with
+    /// different params stay independent.
+    rule_params: Vec<HashMap<String, String>>,
+
     /// Context for transformations
     context: TransformContext,
 }
@@ -39,6 +46,7 @@ impl MessageTransformer {
     pub fn new() -> Self {
         Self {
             rules: Vec::new(),
+            rule_params: Vec::new(),
             context: TransformContext::new(),
         }
     }
@@ -60,7 +68,7 @@ impl MessageTransformer {
     /// ```
     pub fn add_mapping<S: Into<String>, T: Into<String>>(&mut self, source_path: S, target_path: T) {
         let rule = TransformationRule::new(source_path, target_path);
-        self.rules.push(rule);
+        self.add_rule(rule);
     }
 
     /// Add a field mapping with a transformation function
@@ -87,7 +95,7 @@ impl MessageTransformer {
     ) {
         let rule = TransformationRule::new(source_path, target_path)
             .with_transform(transform_fn);
-        self.rules.push(rule);
+        self.add_rule(rule);
     }
 
     /// Add a pre-configured transformation rule
@@ -108,12 +116,43 @@ impl MessageTransformer {
     /// transformer.add_rule(rule);
     /// ```
     pub fn add_rule(&mut self, rule: TransformationRule) {
+        self.add_rule_with_params(rule, HashMap::new());
+    }
+
+    /// Add a transformation rule with parameters private to that rule.
+    ///
+    /// The rule's params overlay the shared context when the rule runs:
+    /// a rule param shadows a same-named shared key for that rule only,
+    /// and keys absent from the rule's params resolve from shared data.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use std::collections::HashMap;
+    /// use vyna_hl7_transform::{MessageTransformer, rule::TransformationRule, transforms};
+    ///
+    /// let mut transformer = MessageTransformer::new();
+    /// let mut params = HashMap::new();
+    /// params.insert("length".to_string(), "3".to_string());
+    /// params.insert("start".to_string(), "0".to_string());
+    /// let rule = TransformationRule::new("PID-3", "PID-3")
+    ///     .with_transform(transforms::substring);
+    /// transformer.add_rule_with_params(rule, params);
+    /// ```
+    pub fn add_rule_with_params(
+        &mut self,
+        rule: TransformationRule,
+        params: HashMap<String, String>,
+    ) {
         self.rules.push(rule);
+        self.rule_params.push(params);
     }
 
     /// Add multiple transformation rules
     pub fn add_rules(&mut self, rules: Vec<TransformationRule>) {
-        self.rules.extend(rules);
+        for rule in rules {
+            self.add_rule(rule);
+        }
     }
 
     /// Set context data for transformations
@@ -146,7 +185,7 @@ impl MessageTransformer {
         let mut target_terser = TerserMut::new(&mut target);
 
         // Apply each rule
-        for rule in &self.rules {
+        for (rule, params) in self.rules.iter().zip(self.rule_params.iter()) {
             // Validate rule
             rule.validate()?;
 
@@ -156,8 +195,9 @@ impl MessageTransformer {
                 .map_err(|e| Error::field_access(format!("Failed to get {}: {}", rule.source_path, e)))?
                 .unwrap_or_default();
 
-            // Apply transformation
-            if let Some(transformed_value) = rule.apply(source_value, &self.context)? {
+            // Apply transformation with this rule's params overlaid
+            let context = Self::overlay_context(&self.context, params);
+            if let Some(transformed_value) = rule.apply(source_value, &context)? {
                 // Set target value
                 target_terser
                     .set(&rule.target_path, &transformed_value)
@@ -182,7 +222,7 @@ impl MessageTransformer {
         let mut target_terser = TerserMut::new(message);
 
         // Apply each rule
-        for rule in &self.rules {
+        for (rule, params) in self.rules.iter().zip(self.rule_params.iter()) {
             // Validate rule
             rule.validate()?;
 
@@ -192,8 +232,9 @@ impl MessageTransformer {
                 .map_err(|e| Error::field_access(format!("Failed to get {}: {}", rule.source_path, e)))?
                 .unwrap_or_default();
 
-            // Apply transformation
-            if let Some(transformed_value) = rule.apply(source_value, &self.context)? {
+            // Apply transformation with this rule's params overlaid
+            let context = Self::overlay_context(&self.context, params);
+            if let Some(transformed_value) = rule.apply(source_value, &context)? {
                 // Set target value
                 target_terser
                     .set(&rule.target_path, &transformed_value)
@@ -209,9 +250,27 @@ impl MessageTransformer {
         self.rules.len()
     }
 
+    /// Merge one rule's private params over the shared context.
+    ///
+    /// Borrows the shared context when the rule has no params so the
+    /// common no-params path pays no clone.
+    fn overlay_context<'a>(
+        base: &'a TransformContext,
+        params: &HashMap<String, String>,
+    ) -> Cow<'a, TransformContext> {
+        if params.is_empty() {
+            Cow::Borrowed(base)
+        } else {
+            let mut merged = base.clone();
+            merged.data.extend(params.clone());
+            Cow::Owned(merged)
+        }
+    }
+
     /// Clear all transformation rules
     pub fn clear_rules(&mut self) {
         self.rules.clear();
+        self.rule_params.clear();
     }
 
     /// Validate all rules
@@ -413,5 +472,36 @@ mod tests {
         let terser = Terser::new(&target);
         assert_eq!(terser.get("PID-11(1)-1").unwrap(), Some("HOME"));
         assert_eq!(terser.get("PID-11(2)-1").unwrap(), Some("work"));
+    }
+
+    #[test]
+    fn test_rule_params_overlay_shared_context() {
+        use vyna_hl7_parser::parse_message;
+
+        let msg = AdtBuilder::a01(Version::V2_5)
+            .patient_id("ABCDEFGH")
+            .build()
+            .unwrap();
+        let encoded = msg.encode();
+        let source = parse_message(&encoded).unwrap();
+
+        let mut transformer = MessageTransformer::new();
+        transformer.set_context_data("start".to_string(), "0".to_string());
+        transformer.set_context_data("length".to_string(), "2".to_string());
+        let mut params = std::collections::HashMap::new();
+        params.insert("length".to_string(), "4".to_string());
+        transformer.add_rule_with_params(
+            TransformationRule::new("PID-3", "PID-3").with_transform(transforms::substring),
+            params,
+        );
+        transformer.add_transform("PID-3", "PID-8", transforms::substring);
+
+        let target = transformer.transform(&source).unwrap();
+
+        let terser = Terser::new(&target);
+        // The rule's own params shadow the shared length for that rule only.
+        assert_eq!(terser.get("PID-3").unwrap(), Some("ABCD"));
+        // The plain rule still resolves start/length from shared context.
+        assert_eq!(terser.get("PID-8").unwrap(), Some("AB"));
     }
 }
