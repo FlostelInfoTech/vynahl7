@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-13
+
+### Fixed
+
+- Packaging blockers for crates.io: testpanel/macros path-only deps now use workspace deps, root facade made publishable, per-crate LICENSE copies, READMEs for batch/codegen/convert/queue/redact/testpanel/xml, `rust-version` 1.91 everywhere
+- Panic elimination: parser lenient short-input OOB, streaming byte-slicing, delimiters/datetime slicing, batch intake non-ASCII slicing, FHIR date/datetime guards (all converters + mapping engine), conformance predicate non-ASCII/quote panics, terser bulk wildcard panics — all return `Err` now
+- Silent data corruption now fails loud: XML decoder rewritten (repetitions, subcomponents, 4-part names round-trip), FHIR condition indexes, `obs-{OBX-1}` report refs, unparseable NM/amount values error, `Bundle::add_resource` propagates failures, reverse encounter PV1-4/PV1-10, template component positions and whitespace placeholders
+- `TerserMut::set` gap-fills missing segment occurrences with a documented roundtrip contract; `CachedTerser`/`Terser` missing-vs-malformed behavior unified and documented
+- Redactor gains `unmatched_rules()` (typo'd rules detectable) and `InvalidRule` for field/component 0; Safe Harbor free-text/Z-segment gap documented with locking tests
+- Credential leaks closed: redacting `Debug` impls for FTP/SFTP/HTTP auth types; constant-time API key compare
+- Unbounded buffering capped: HTTP response size, FTP/SFTP/poller file limits, queue depth caps, WebSocket binary size checks; blocking fs moved to `spawn_blocking`; FTP/SFTP command timeouts
+- CLI `validate` exits 1 on invalid messages; `extract` rejects malformed paths on stderr; proc macros emit spanned errors instead of panicking; dead code removed (`PooledConnectionGuard`, reqwest-retry/middleware deps)
+
+### Changed
+
+- **Breaking**: `Bundle::add_resource`/`BundleBuilder::add_resource` return `ConversionResult`; `ConvertError` gains a `Schema` variant (loses `PartialEq`/`Eq`); unparseable FHIR numeric/datetime values now error instead of being silently dropped
+- MSRV is now Rust 1.91 (`rust-version` in every manifest)
+
 ## [0.8.0] - 2026-10-13
 
 ### Added
@@ -148,7 +166,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial VynaHL7 release (Vyna Healthcare product family library), forked from rs7 1.6.1 with versioning restarted at 0.1.0
 - Renamed project from rs7 to VynaHL7: all crates renamed from `rs7-*` to `vyna-hl7-*`, Rust paths from `rs7_*` to `vyna_hl7_*`, CLI binary to `vynahl7`, and documentation updated accordingly
 
-[Unreleased]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.5.1...v0.6.0

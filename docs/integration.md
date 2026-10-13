@@ -1,6 +1,6 @@
 # Integration Guide — VynaHL7
 
-How to embed VynaHL7 (0.8.0) in a Rust service. Every Rust snippet below
+How to embed VynaHL7 (0.9.0) in a Rust service. Every Rust snippet below
 is executed as a test before release (see the guide verification crate);
 shell snippets mirror the CLI's own integration tests.
 
@@ -8,13 +8,13 @@ shell snippets mirror the CLI's own integration tests.
 
 ```toml
 [dependencies]
-vyna-hl7-core = "0.8"
-vyna-hl7-parser = "0.8"
-vyna-hl7-validator = "0.8"
-vyna-hl7-terser = "0.8"
+vyna-hl7-core = "0.9"
+vyna-hl7-parser = "0.9"
+vyna-hl7-validator = "0.9"
+vyna-hl7-terser = "0.9"
 # Transports as needed:
-vyna-hl7-mllp = "0.8"   # intra-organization, Tokio-based
-vyna-hl7-http = "0.8"   # inter-organization, HL7-over-HTTP
+vyna-hl7-mllp = "0.9"   # intra-organization, Tokio-based
+vyna-hl7-http = "0.9"   # inter-organization, HL7-over-HTTP
 ```
 
 Edition 2024, no `rust-version` pin. Transports need Tokio at your

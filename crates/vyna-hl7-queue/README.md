@@ -25,7 +25,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-vyna-hl7-queue = "0.8"
+vyna-hl7-queue = "0.9"
 ```
 
 ## Basic Usage

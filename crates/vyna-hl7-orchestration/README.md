@@ -14,7 +14,7 @@ Message routing and workflow orchestration for HL7 v2.x messages.
 
 ```toml
 [dependencies]
-vyna-hl7-orchestration = "0.8"
+vyna-hl7-orchestration = "0.9"
 ```
 
 ## Quick Example

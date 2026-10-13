@@ -2,9 +2,9 @@
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
   "version": 1,
-  "serialNumber": "urn:uuid:1c0b3f9d-6a5b-47c3-b9d6-ec4dd7a8b424",
+  "serialNumber": "urn:uuid:f62335da-c314-4a4c-b307-a6253c4dc2b1",
   "metadata": {
-    "timestamp": "2026-10-13T05:14:44.826427943Z",
+    "timestamp": "2026-10-13T07:33:12.715687307Z",
     "tools": [
       {
         "vendor": "CycloneDX",
@@ -14,16 +14,15 @@
     ],
     "authors": [
       {
-        "name": "Alex SHAO Fan",
-        "email": "alex.shaofan@flostel.com"
+        "name": "Alex SHAO Fan"
       }
     ],
     "component": {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7#vyna-hl7@0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7#vyna-hl7@0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "Comprehensive HL7 v2.x library for Rust - parsing, validation, and MLLP support",
       "scope": "required",
       "licenses": [
@@ -31,7 +30,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7@0.8.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7@0.9.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -49,10 +48,10 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///vynahl7#vyna-hl7@0.8.0 bin-target-0",
+          "bom-ref": "path+file:///vynahl7#vyna-hl7@0.9.0 bin-target-0",
           "name": "vyna_hl7",
-          "version": "0.8.0",
-          "purl": "pkg:cargo/vyna-hl7@0.8.0?download_url=file://.#src/lib.rs"
+          "version": "0.9.0",
+          "purl": "pkg:cargo/vyna-hl7@0.9.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
@@ -66,10 +65,10 @@
   "components": [
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7#vyna-hl7@0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7#vyna-hl7@0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "Comprehensive HL7 v2.x library for Rust - parsing, validation, and MLLP support",
       "scope": "required",
       "licenses": [
@@ -77,7 +76,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7@0.8.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7@0.9.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -95,19 +94,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///vynahl7#vyna-hl7@0.8.0 bin-target-0",
+          "bom-ref": "path+file:///vynahl7#vyna-hl7@0.9.0 bin-target-0",
           "name": "vyna_hl7",
-          "version": "0.8.0",
-          "purl": "pkg:cargo/vyna-hl7@0.8.0?download_url=file://.#src/lib.rs"
+          "version": "0.9.0",
+          "purl": "pkg:cargo/vyna-hl7@0.9.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-batch#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-batch#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-batch",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "HL7 v2.x batch file building, lenient intake parsing, and file-drop transports (filesystem, FTP, SFTP)",
       "scope": "required",
       "licenses": [
@@ -115,7 +114,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-batch@0.8.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-batch@0.9.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -133,19 +132,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-batch#0.8.0 bin-target-0",
+          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-batch#0.9.0 bin-target-0",
           "name": "vyna_hl7_batch",
-          "version": "0.8.0",
-          "purl": "pkg:cargo/vyna-hl7-batch@0.8.0?download_url=file://.#src/lib.rs"
+          "version": "0.9.0",
+          "purl": "pkg:cargo/vyna-hl7-batch@0.9.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "application",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-cli#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-cli#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-cli",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "Command-line interface for VynaHL7 HL7 v2.x library",
       "scope": "required",
       "licenses": [
@@ -153,7 +152,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-cli@0.8.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-cli@0.9.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -171,19 +170,19 @@
       "components": [
         {
           "type": "application",
-          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-cli#0.8.0 bin-target-0",
+          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-cli#0.9.0 bin-target-0",
           "name": "vynahl7",
-          "version": "0.8.0",
-          "purl": "pkg:cargo/vyna-hl7-cli@0.8.0?download_url=file://.#src/main.rs"
+          "version": "0.9.0",
+          "purl": "pkg:cargo/vyna-hl7-cli@0.9.0?download_url=file://.#src/main.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-codegen#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-codegen#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-codegen",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "Schema-driven code generation for HAPI-style typed HL7 models",
       "scope": "required",
       "licenses": [
@@ -191,7 +190,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-codegen@0.8.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-codegen@0.9.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -209,19 +208,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-codegen#0.8.0 bin-target-0",
+          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-codegen#0.9.0 bin-target-0",
           "name": "vyna_hl7_codegen",
-          "version": "0.8.0",
-          "purl": "pkg:cargo/vyna-hl7-codegen@0.8.0?download_url=file://.#src/lib.rs"
+          "version": "0.9.0",
+          "purl": "pkg:cargo/vyna-hl7-codegen@0.9.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-conformance#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-conformance#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-conformance",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "HL7 v2.x conformance profile validation for VynaHL7",
       "scope": "required",
       "licenses": [
@@ -229,7 +228,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-conformance@0.8.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-conformance@0.9.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -247,19 +246,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-conformance#0.8.0 bin-target-0",
+          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-conformance#0.9.0 bin-target-0",
           "name": "vyna_hl7_conformance",
-          "version": "0.8.0",
-          "purl": "pkg:cargo/vyna-hl7-conformance@0.8.0?download_url=file://.#src/lib.rs"
+          "version": "0.9.0",
+          "purl": "pkg:cargo/vyna-hl7-conformance@0.9.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-convert#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-convert#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-convert",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "Schema-driven cross-version conversion for HL7 v2.x messages",
       "scope": "required",
       "licenses": [
@@ -267,7 +266,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-convert@0.8.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-convert@0.9.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -285,19 +284,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-convert#0.8.0 bin-target-0",
+          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-convert#0.9.0 bin-target-0",
           "name": "vyna_hl7_convert",
-          "version": "0.8.0",
-          "purl": "pkg:cargo/vyna-hl7-convert@0.8.0?download_url=file://.#src/lib.rs"
+          "version": "0.9.0",
+          "purl": "pkg:cargo/vyna-hl7-convert@0.9.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-core",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "Core data structures and traits for HL7 v2.x message handling",
       "scope": "required",
       "licenses": [
@@ -305,7 +304,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-core@0.8.0?download_url=file://crates/vyna-hl7-core",
+      "purl": "pkg:cargo/vyna-hl7-core@0.9.0?download_url=file://crates/vyna-hl7-core",
       "externalReferences": [
         {
           "type": "documentation",
@@ -323,10 +322,10 @@
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-custom#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-custom#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-custom",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "Framework for defining and registering custom Z-segments in HL7 v2.x messages",
       "scope": "required",
       "licenses": [
@@ -334,7 +333,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-custom@0.8.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-custom@0.9.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -352,19 +351,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-custom#0.8.0 bin-target-0",
+          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-custom#0.9.0 bin-target-0",
           "name": "vyna_hl7_custom",
-          "version": "0.8.0",
-          "purl": "pkg:cargo/vyna-hl7-custom@0.8.0?download_url=file://.#src/lib.rs"
+          "version": "0.9.0",
+          "purl": "pkg:cargo/vyna-hl7-custom@0.9.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-fhir#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-fhir#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-fhir",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "HL7 v2.x to FHIR R4 conversion library with 12 production-ready converters",
       "scope": "required",
       "licenses": [
@@ -372,7 +371,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-fhir@0.8.0?download_url=file://../vyna-hl7-fhir",
+      "purl": "pkg:cargo/vyna-hl7-fhir@0.9.0?download_url=file://../vyna-hl7-fhir",
       "externalReferences": [
         {
           "type": "documentation",
@@ -390,10 +389,10 @@
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-http#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-http#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-http",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "HTTP transport for HL7 v2.x messages (inter-organization communication)",
       "scope": "required",
       "licenses": [
@@ -401,7 +400,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-http@0.8.0?download_url=file://crates/vyna-hl7-http",
+      "purl": "pkg:cargo/vyna-hl7-http@0.9.0?download_url=file://crates/vyna-hl7-http",
       "externalReferences": [
         {
           "type": "documentation",
@@ -419,10 +418,10 @@
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-macros#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-macros#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-macros",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "Procedural macros for HL7 message types",
       "scope": "required",
       "licenses": [
@@ -430,7 +429,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-macros@0.8.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-macros@0.9.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -448,19 +447,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-macros#0.8.0 bin-target-0",
+          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-macros#0.9.0 bin-target-0",
           "name": "vyna_hl7_macros",
-          "version": "0.8.0",
-          "purl": "pkg:cargo/vyna-hl7-macros@0.8.0?download_url=file://.#src/lib.rs"
+          "version": "0.9.0",
+          "purl": "pkg:cargo/vyna-hl7-macros@0.9.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-mllp#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-mllp#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-mllp",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "MLLP (Minimal Lower Layer Protocol) support for HL7 message transmission",
       "scope": "required",
       "licenses": [
@@ -468,7 +467,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-mllp@0.8.0?download_url=file://crates/vyna-hl7-mllp",
+      "purl": "pkg:cargo/vyna-hl7-mllp@0.9.0?download_url=file://crates/vyna-hl7-mllp",
       "externalReferences": [
         {
           "type": "documentation",
@@ -486,10 +485,10 @@
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-orchestration#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-orchestration#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-orchestration",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "Message routing, orchestration, and workflow engine for HL7 v2.x messages",
       "scope": "required",
       "licenses": [
@@ -497,7 +496,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-orchestration@0.8.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-orchestration@0.9.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -515,19 +514,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-orchestration#0.8.0 bin-target-0",
+          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-orchestration#0.9.0 bin-target-0",
           "name": "vyna_hl7_orchestration",
-          "version": "0.8.0",
-          "purl": "pkg:cargo/vyna-hl7-orchestration@0.8.0?download_url=file://.#src/lib.rs"
+          "version": "0.9.0",
+          "purl": "pkg:cargo/vyna-hl7-orchestration@0.9.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-parser#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-parser#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-parser",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "Parser for HL7 v2.x messages",
       "scope": "required",
       "licenses": [
@@ -535,7 +534,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-parser@0.8.0?download_url=file://crates/vyna-hl7-parser",
+      "purl": "pkg:cargo/vyna-hl7-parser@0.9.0?download_url=file://crates/vyna-hl7-parser",
       "externalReferences": [
         {
           "type": "documentation",
@@ -553,10 +552,10 @@
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-queue#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-queue#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-queue",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "Durable store-and-forward queue for HL7 v2.x messages",
       "scope": "required",
       "licenses": [
@@ -564,7 +563,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-queue@0.8.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-queue@0.9.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -582,19 +581,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-queue#0.8.0 bin-target-0",
+          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-queue#0.9.0 bin-target-0",
           "name": "vyna_hl7_queue",
-          "version": "0.8.0",
-          "purl": "pkg:cargo/vyna-hl7-queue@0.8.0?download_url=file://.#src/lib.rs"
+          "version": "0.9.0",
+          "purl": "pkg:cargo/vyna-hl7-queue@0.9.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-redact#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-redact#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-redact",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "Safe Harbor de-identification for HL7 v2.x messages",
       "scope": "required",
       "licenses": [
@@ -602,7 +601,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-redact@0.8.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-redact@0.9.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -620,19 +619,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-redact#0.8.0 bin-target-0",
+          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-redact#0.9.0 bin-target-0",
           "name": "vyna_hl7_redact",
-          "version": "0.8.0",
-          "purl": "pkg:cargo/vyna-hl7-redact@0.8.0?download_url=file://.#src/lib.rs"
+          "version": "0.9.0",
+          "purl": "pkg:cargo/vyna-hl7-redact@0.9.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-templates#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-templates#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-templates",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "Message and segment templates for VynaHL7 HL7 library",
       "scope": "required",
       "licenses": [
@@ -640,7 +639,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-templates@0.8.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-templates@0.9.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -658,19 +657,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-templates#0.8.0 bin-target-0",
+          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-templates#0.9.0 bin-target-0",
           "name": "vyna_hl7_templates",
-          "version": "0.8.0",
-          "purl": "pkg:cargo/vyna-hl7-templates@0.8.0?download_url=file://.#src/lib.rs"
+          "version": "0.9.0",
+          "purl": "pkg:cargo/vyna-hl7-templates@0.9.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-terser#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-terser#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-terser",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "Terser API for easy HL7 field access using path notation",
       "scope": "required",
       "licenses": [
@@ -678,7 +677,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-terser@0.8.0?download_url=file://crates/vyna-hl7-terser",
+      "purl": "pkg:cargo/vyna-hl7-terser@0.9.0?download_url=file://crates/vyna-hl7-terser",
       "externalReferences": [
         {
           "type": "documentation",
@@ -696,10 +695,10 @@
     },
     {
       "type": "application",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-testpanel#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-testpanel#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-testpanel",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "GUI Test Panel for VynaHL7 HL7 Library - demonstrates parsing, building, validation, MLLP, and FHIR conversion",
       "scope": "required",
       "licenses": [
@@ -707,7 +706,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-testpanel@0.8.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-testpanel@0.9.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "vcs",
@@ -717,19 +716,19 @@
       "components": [
         {
           "type": "application",
-          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-testpanel#0.8.0 bin-target-0",
+          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-testpanel#0.9.0 bin-target-0",
           "name": "vyna-hl7-testpanel",
-          "version": "0.8.0",
-          "purl": "pkg:cargo/vyna-hl7-testpanel@0.8.0?download_url=file://.#src/main.rs"
+          "version": "0.9.0",
+          "purl": "pkg:cargo/vyna-hl7-testpanel@0.9.0?download_url=file://.#src/main.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-transform#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-transform#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-transform",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "Message transformation framework for HL7 v2.x messages",
       "scope": "required",
       "licenses": [
@@ -737,7 +736,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-transform@0.8.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-transform@0.9.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -755,19 +754,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-transform#0.8.0 bin-target-0",
+          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-transform#0.9.0 bin-target-0",
           "name": "vyna_hl7_transform",
-          "version": "0.8.0",
-          "purl": "pkg:cargo/vyna-hl7-transform@0.8.0?download_url=file://.#src/lib.rs"
+          "version": "0.9.0",
+          "purl": "pkg:cargo/vyna-hl7-transform@0.9.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-validator#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-validator#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-validator",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "Validation for HL7 v2.x messages against various standards",
       "scope": "required",
       "licenses": [
@@ -775,7 +774,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-validator@0.8.0?download_url=file://crates/vyna-hl7-validator",
+      "purl": "pkg:cargo/vyna-hl7-validator@0.9.0?download_url=file://crates/vyna-hl7-validator",
       "externalReferences": [
         {
           "type": "documentation",
@@ -793,10 +792,10 @@
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-wasm#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-wasm#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-wasm",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "WebAssembly bindings for VynaHL7 HL7 v2.x library",
       "scope": "required",
       "licenses": [
@@ -804,7 +803,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-wasm@0.8.0?download_url=file://.",
+      "purl": "pkg:cargo/vyna-hl7-wasm@0.9.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "documentation",
@@ -822,19 +821,19 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-wasm#0.8.0 bin-target-0",
+          "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-wasm#0.9.0 bin-target-0",
           "name": "vyna_hl7_wasm",
-          "version": "0.8.0",
-          "purl": "pkg:cargo/vyna-hl7-wasm@0.8.0?download_url=file://.#src/lib.rs"
+          "version": "0.9.0",
+          "purl": "pkg:cargo/vyna-hl7-wasm@0.9.0?download_url=file://.#src/lib.rs"
         }
       ]
     },
     {
       "type": "library",
-      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-xml#0.8.0",
-      "author": "Alex SHAO Fan <alex.shaofan@flostel.com>",
+      "bom-ref": "path+file:///vynahl7/crates/vyna-hl7-xml#0.9.0",
+      "author": "Alex SHAO Fan",
       "name": "vyna-hl7-xml",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "description": "XML encoding and decoding for HL7 v2.x messages",
       "scope": "required",
       "licenses": [
@@ -842,7 +841,7 @@
           "expression": "MIT"
         }
       ],
-      "purl": "pkg:cargo/vyna-hl7-xml@0.8.0?download_url=file://../vyna-hl7-xml",
+      "purl": "pkg:cargo/vyna-hl7-xml@0.9.0?download_url=file://../vyna-hl7-xml",
       "externalReferences": [
         {
           "type": "documentation",
@@ -14535,37 +14534,6 @@
     },
     {
       "type": "library",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#pin-utils@0.1.1",
-      "author": "Josef Brandl <mail@josefbrandl.de>",
-      "name": "pin-utils",
-      "version": "0.1.1",
-      "description": "Utilities for pinning ",
-      "scope": "required",
-      "hashes": [
-        {
-          "alg": "SHA-256",
-          "content": "13bee6c73da26345c729282832b60b0363cf3dd9f4bfd81d8551b7a1c889a113"
-        }
-      ],
-      "licenses": [
-        {
-          "expression": "MIT OR Apache-2.0"
-        }
-      ],
-      "purl": "pkg:cargo/pin-utils@0.1.1",
-      "externalReferences": [
-        {
-          "type": "documentation",
-          "url": "https://docs.rs/pin-utils"
-        },
-        {
-          "type": "vcs",
-          "url": "https://github.com/rust-lang/pin-utils"
-        }
-      ]
-    },
-    {
-      "type": "library",
       "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#piper@0.2.5",
       "author": "Stjepan Glavina <stjepang@gmail.com>, John Nunley <dev@notgull.net>",
       "name": "piper",
@@ -16566,60 +16534,6 @@
     },
     {
       "type": "library",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#reqwest-middleware@0.5.2",
-      "author": "Rodrigo Gryzinski <rodrigo.gryzinski@truelayer.com>",
-      "name": "reqwest-middleware",
-      "version": "0.5.2",
-      "description": "Wrapper around reqwest to allow for client middleware chains.",
-      "scope": "required",
-      "hashes": [
-        {
-          "alg": "SHA-256",
-          "content": "07bc3f1384cffa4f274dad2d4ddd73aed32fed8f786d96c6be8aa4e5fd3c3b58"
-        }
-      ],
-      "licenses": [
-        {
-          "expression": "MIT OR Apache-2.0"
-        }
-      ],
-      "purl": "pkg:cargo/reqwest-middleware@0.5.2",
-      "externalReferences": [
-        {
-          "type": "vcs",
-          "url": "https://github.com/TrueLayer/reqwest-middleware"
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#reqwest-retry@0.9.1",
-      "author": "Rodrigo Gryzinski <rodrigo.gryzinski@truelayer.com>",
-      "name": "reqwest-retry",
-      "version": "0.9.1",
-      "description": "Retry middleware for reqwest.",
-      "scope": "required",
-      "hashes": [
-        {
-          "alg": "SHA-256",
-          "content": "fe2412db2af7d2268e7a5406be0431f37d9eb67ff390f35b395716f5f06c2eaa"
-        }
-      ],
-      "licenses": [
-        {
-          "expression": "MIT OR Apache-2.0"
-        }
-      ],
-      "purl": "pkg:cargo/reqwest-retry@0.9.1",
-      "externalReferences": [
-        {
-          "type": "vcs",
-          "url": "https://github.com/TrueLayer/reqwest-middleware"
-        }
-      ]
-    },
-    {
-      "type": "library",
       "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#reqwest@0.13.5",
       "author": "Sean McArthur <sean@seanmonstar.com>",
       "name": "reqwest",
@@ -16672,33 +16586,6 @@
         {
           "type": "vcs",
           "url": "https://github.com/linebender/resvg"
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#retry-policies@0.5.2",
-      "author": "Luca Palmieri <lpalmieri@truelayer.com>",
-      "name": "retry-policies",
-      "version": "0.5.2",
-      "description": "A collection of plug-and-play retry policies for Rust projects.",
-      "scope": "required",
-      "hashes": [
-        {
-          "alg": "SHA-256",
-          "content": "dc05fbf560421a0357a750cbe78c7ca19d4923918490daabba313d5dbc871e47"
-        }
-      ],
-      "licenses": [
-        {
-          "expression": "MIT OR Apache-2.0"
-        }
-      ],
-      "purl": "pkg:cargo/retry-policies@0.5.2",
-      "externalReferences": [
-        {
-          "type": "vcs",
-          "url": "https://github.com/TrueLayer/retry-policies"
         }
       ]
     },
@@ -22653,33 +22540,6 @@
     },
     {
       "type": "library",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#wasmtimer@0.4.3",
-      "author": "WhizSid <whizsid@aol.com>, Pierre Krieger <pierre.krieger1708@gmail.com>",
-      "name": "wasmtimer",
-      "version": "0.4.3",
-      "description": "Time utils from std::time, tokio::time and tokio_util::time on WASM targets",
-      "scope": "required",
-      "hashes": [
-        {
-          "alg": "SHA-256",
-          "content": "1c598d6b99ea013e35844697fc4670d08339d5cda15588f193c6beedd12f644b"
-        }
-      ],
-      "licenses": [
-        {
-          "expression": "MIT"
-        }
-      ],
-      "purl": "pkg:cargo/wasmtimer@0.4.3",
-      "externalReferences": [
-        {
-          "type": "vcs",
-          "url": "https://github.com/whizsid/wasmtimer-rs"
-        }
-      ]
-    },
-    {
-      "type": "library",
       "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#wayland-backend@0.3.17",
       "author": "Elinor Berger <elinor@safaradeg.net>",
       "name": "wayland-backend",
@@ -25721,18 +25581,18 @@
   ],
   "dependencies": [
     {
-      "ref": "path+file:///vynahl7#vyna-hl7@0.8.0",
+      "ref": "path+file:///vynahl7#vyna-hl7@0.9.0",
       "dependsOn": [
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-http#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-mllp#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-parser#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-terser#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-validator#0.8.0"
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-http#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-mllp#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-parser#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-terser#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-validator#0.9.0"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-batch#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-batch#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#russh@0.64.1",
@@ -25740,58 +25600,56 @@
         "registry+https://github.com/rust-lang/crates.io-index#suppaftp@12.2.0",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
         "registry+https://github.com/rust-lang/crates.io-index#tokio@1.53.2",
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-parser#0.8.0"
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-parser#0.9.0"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-cli#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-cli#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#anyhow@1.0.104",
         "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.7",
         "registry+https://github.com/rust-lang/crates.io-index#colored@3.1.1",
-        "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
-        "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
         "registry+https://github.com/rust-lang/crates.io-index#tokio@1.53.2",
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-fhir#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-http#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-mllp#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-parser#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-terser#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-validator#0.8.0"
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-fhir#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-http#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-mllp#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-parser#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-terser#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-validator#0.9.0"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-codegen#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-codegen#0.9.0",
       "dependsOn": [
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-validator#0.8.0"
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-validator#0.9.0"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-conformance#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-conformance#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#anyhow@1.0.104",
         "registry+https://github.com/rust-lang/crates.io-index#quick-xml@0.42.0",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-terser#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-validator#0.8.0"
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-terser#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-validator#0.9.0"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-convert#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-convert#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-validator#0.8.0"
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-validator#0.9.0"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#encoding_rs@0.8.42",
@@ -25801,19 +25659,19 @@
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-custom#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-custom#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#anyhow@1.0.104",
         "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#once_cell@1.21.4",
         "registry+https://github.com/rust-lang/crates.io-index#paste@1.0.15",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-parser#0.8.0"
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-parser#0.9.0"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-fhir#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-fhir#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#anyhow@1.0.104",
         "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
@@ -25821,13 +25679,13 @@
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
         "registry+https://github.com/rust-lang/crates.io-index#serde_yaml@0.9.34+deprecated",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-parser#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-terser#0.8.0"
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-parser#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-terser#0.9.0"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-http#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-http#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#anyhow@1.0.104",
         "registry+https://github.com/rust-lang/crates.io-index#async-channel@2.5.0",
@@ -25842,8 +25700,6 @@
         "registry+https://github.com/rust-lang/crates.io-index#metrics-exporter-prometheus@0.18.3",
         "registry+https://github.com/rust-lang/crates.io-index#rand@0.10.3",
         "registry+https://github.com/rust-lang/crates.io-index#reqwest@0.13.5",
-        "registry+https://github.com/rust-lang/crates.io-index#reqwest-middleware@0.5.2",
-        "registry+https://github.com/rust-lang/crates.io-index#reqwest-retry@0.9.1",
         "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.45",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
@@ -25856,14 +25712,14 @@
         "registry+https://github.com/rust-lang/crates.io-index#tracing@0.1.44",
         "registry+https://github.com/rust-lang/crates.io-index#tracing-subscriber@0.3.23",
         "registry+https://github.com/rust-lang/crates.io-index#uuid@1.28.0",
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-parser#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-terser#0.8.0",
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-parser#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-terser#0.9.0",
         "registry+https://github.com/rust-lang/crates.io-index#webpki-roots@1.0.9"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-macros#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-macros#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#proc-macro2@1.0.107",
         "registry+https://github.com/rust-lang/crates.io-index#quote@1.0.47",
@@ -25871,7 +25727,7 @@
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-mllp#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-mllp#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#anyhow@1.0.104",
         "registry+https://github.com/rust-lang/crates.io-index#bytes@1.12.1",
@@ -25880,68 +25736,68 @@
         "registry+https://github.com/rust-lang/crates.io-index#tokio@1.53.2",
         "registry+https://github.com/rust-lang/crates.io-index#tokio-rustls@0.26.6",
         "registry+https://github.com/rust-lang/crates.io-index#tokio-util@0.7.20",
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-parser#0.8.0",
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-parser#0.9.0",
         "registry+https://github.com/rust-lang/crates.io-index#webpki-roots@1.0.9"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-orchestration#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-orchestration#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
         "registry+https://github.com/rust-lang/crates.io-index#tokio@1.53.2",
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-terser#0.8.0"
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-terser#0.9.0"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-parser#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-parser#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0"
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-queue#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-queue#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0"
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-redact#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-redact#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#hmac@0.13.0",
         "registry+https://github.com/rust-lang/crates.io-index#sha2@0.11.0",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0"
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-templates#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-templates#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#regex@1.13.1",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
         "registry+https://github.com/rust-lang/crates.io-index#serde_yaml@0.9.34+deprecated",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-parser#0.8.0"
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-parser#0.9.0"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-terser#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-terser#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0"
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-testpanel#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-testpanel#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#async-trait@0.1.92",
         "registry+https://github.com/rust-lang/crates.io-index#base64@0.23.1",
@@ -25970,20 +25826,20 @@
         "registry+https://github.com/rust-lang/crates.io-index#unftp-sbe-fs@0.4.0",
         "registry+https://github.com/rust-lang/crates.io-index#usvg@0.48.1",
         "registry+https://github.com/rust-lang/crates.io-index#uuid@1.28.0",
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-fhir#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-http#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-mllp#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-parser#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-templates#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-terser#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-validator#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-xml#0.8.0",
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-fhir#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-http#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-mllp#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-parser#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-templates#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-terser#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-validator#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-xml#0.9.0",
         "registry+https://github.com/rust-lang/crates.io-index#winresource@0.1.34"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-transform#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-transform#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#regex@1.13.1",
@@ -25991,45 +25847,43 @@
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
         "registry+https://github.com/rust-lang/crates.io-index#serde_yaml@0.9.34+deprecated",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-terser#0.8.0"
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-terser#0.9.0"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-validator#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-validator#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
         "registry+https://github.com/rust-lang/crates.io-index#serde_yaml@0.9.34+deprecated",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-terser#0.8.0"
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-terser#0.9.0"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-wasm#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-wasm#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#console_error_panic_hook@0.1.7",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde-wasm-bindgen@0.6.5",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
-        "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-parser#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-terser#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-validator#0.8.0",
-        "registry+https://github.com/rust-lang/crates.io-index#wasm-bindgen@0.2.129",
-        "registry+https://github.com/rust-lang/crates.io-index#web-sys@0.3.106"
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-parser#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-terser#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-validator#0.9.0",
+        "registry+https://github.com/rust-lang/crates.io-index#wasm-bindgen@0.2.129"
       ]
     },
     {
-      "ref": "path+file:///vynahl7/crates/vyna-hl7-xml#0.8.0",
+      "ref": "path+file:///vynahl7/crates/vyna-hl7-xml#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#quick-xml@0.42.0",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "path+file:///vynahl7/crates/vyna-hl7-core#0.8.0",
-        "path+file:///vynahl7/crates/vyna-hl7-parser#0.8.0"
+        "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
+        "path+file:///vynahl7/crates/vyna-hl7-parser#0.9.0"
       ]
     },
     {
@@ -29466,9 +29320,6 @@
       ]
     },
     {
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#pin-utils@0.1.1"
-    },
-    {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#piper@0.2.5",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#atomic-waker@1.1.2",
@@ -29905,35 +29756,6 @@
       "ref": "registry+https://github.com/rust-lang/crates.io-index#renderdoc-sys@1.1.0"
     },
     {
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#reqwest-middleware@0.5.2",
-      "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#anyhow@1.0.104",
-        "registry+https://github.com/rust-lang/crates.io-index#async-trait@0.1.92",
-        "registry+https://github.com/rust-lang/crates.io-index#http@1.5.0",
-        "registry+https://github.com/rust-lang/crates.io-index#reqwest@0.13.5",
-        "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "registry+https://github.com/rust-lang/crates.io-index#tower-service@0.3.3"
-      ]
-    },
-    {
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#reqwest-retry@0.9.1",
-      "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#anyhow@1.0.104",
-        "registry+https://github.com/rust-lang/crates.io-index#async-trait@0.1.92",
-        "registry+https://github.com/rust-lang/crates.io-index#futures@0.3.34",
-        "registry+https://github.com/rust-lang/crates.io-index#getrandom@0.2.17",
-        "registry+https://github.com/rust-lang/crates.io-index#http@1.5.0",
-        "registry+https://github.com/rust-lang/crates.io-index#hyper@1.12.0",
-        "registry+https://github.com/rust-lang/crates.io-index#reqwest@0.13.5",
-        "registry+https://github.com/rust-lang/crates.io-index#reqwest-middleware@0.5.2",
-        "registry+https://github.com/rust-lang/crates.io-index#retry-policies@0.5.2",
-        "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
-        "registry+https://github.com/rust-lang/crates.io-index#tokio@1.53.2",
-        "registry+https://github.com/rust-lang/crates.io-index#tracing@0.1.44",
-        "registry+https://github.com/rust-lang/crates.io-index#wasmtimer@0.4.3"
-      ]
-    },
-    {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#reqwest@0.13.5",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#base64@0.23.1",
@@ -29983,12 +29805,6 @@
         "registry+https://github.com/rust-lang/crates.io-index#tiny-skia@0.12.0",
         "registry+https://github.com/rust-lang/crates.io-index#usvg@0.48.1",
         "registry+https://github.com/rust-lang/crates.io-index#zune-jpeg@0.5.15"
-      ]
-    },
-    {
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#retry-policies@0.5.2",
-      "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#rand@0.10.3"
       ]
     },
     {
@@ -31528,17 +31344,6 @@
         "registry+https://github.com/rust-lang/crates.io-index#rustversion@1.0.23",
         "registry+https://github.com/rust-lang/crates.io-index#wasm-bindgen-macro@0.2.129",
         "registry+https://github.com/rust-lang/crates.io-index#wasm-bindgen-shared@0.2.129"
-      ]
-    },
-    {
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#wasmtimer@0.4.3",
-      "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#futures@0.3.34",
-        "registry+https://github.com/rust-lang/crates.io-index#js-sys@0.3.106",
-        "registry+https://github.com/rust-lang/crates.io-index#parking_lot@0.12.5",
-        "registry+https://github.com/rust-lang/crates.io-index#pin-utils@0.1.1",
-        "registry+https://github.com/rust-lang/crates.io-index#slab@0.4.12",
-        "registry+https://github.com/rust-lang/crates.io-index#wasm-bindgen@0.2.129"
       ]
     },
     {

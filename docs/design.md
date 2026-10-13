@@ -1,7 +1,7 @@
 # Software Design Specification — VynaHL7
 
-Companion to the [requirements](requirements.md). Covers the 0.8.0
-workspace: 23 crates, Rust edition 2024, no `rust-version` pin.
+Companion to the [requirements](requirements.md). Covers the 0.9.0
+workspace: 23 crates, Rust edition 2024, `rust-version` 1.91.
 
 ## 1. Crate catalog and dependency direction
 

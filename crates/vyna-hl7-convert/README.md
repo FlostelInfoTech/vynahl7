@@ -24,7 +24,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-vyna-hl7-convert = "0.8"
+vyna-hl7-convert = "0.9"
 ```
 
 ## Basic Usage

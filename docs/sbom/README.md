@@ -1,8 +1,8 @@
 # SBOM — Software Bill of Materials
 
-`vynahl7-0.8.0.cdx.json`: CycloneDX 1.5 SBOM for the 0.8.0 workspace —
+`vynahl7-0.9.0.cdx.json`: CycloneDX 1.5 SBOM for the 0.9.0 workspace —
 all 23 member crates plus their dependency closures, all features, all
-targets (847 components, including the optional TLS stack). It is the
+targets (842 components, including the optional TLS stack). It is the
 supply-chain record for the release; do not hand-edit it.
 
 ## Regenerate

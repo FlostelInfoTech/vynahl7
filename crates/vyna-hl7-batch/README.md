@@ -28,7 +28,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-vyna-hl7-batch = "0.8"
+vyna-hl7-batch = "0.9"
 ```
 
 Enable network transports with the `ftp` and `sftp` features.
