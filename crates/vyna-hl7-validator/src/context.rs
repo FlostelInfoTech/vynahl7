@@ -144,9 +144,11 @@ impl ValidationContext {
     }
 }
 
+/// [`ValidationContext::strict`]: `Default` matches what the
+/// [`Validator`](crate::Validator) constructors use.
 impl Default for ValidationContext {
     fn default() -> Self {
-        Self::standard()
+        Self::strict()
     }
 }
 
@@ -155,12 +157,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn default_is_strict() {
+        assert_eq!(ValidationContext::default(), ValidationContext::strict());
+    }
+
+    #[test]
     fn presets_differ_as_documented() {
         let strict = ValidationContext::strict();
         let standard = ValidationContext::standard();
         let lenient = ValidationContext::lenient();
 
-        assert_eq!(standard, ValidationContext::default());
+        assert_eq!(strict, ValidationContext::default());
         assert_eq!(strict.version_mismatch, Severity::Error);
         assert_eq!(standard.version_mismatch, Severity::Warning);
         assert_eq!(lenient.invalid_value, Severity::Warning);

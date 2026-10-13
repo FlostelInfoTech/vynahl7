@@ -7,6 +7,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use vyna_hl7_core::CharacterSet;
 
+use super::mllp::sanitize_ack_field;
+
 /// State shared between UI and async tasks
 #[derive(Default)]
 struct HttpState {
@@ -27,7 +29,7 @@ struct HttpState {
     load_test_throughput: f64,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct HttpResponse {
     status_code: u16,
     status_text: String,
@@ -944,10 +946,7 @@ async fn send_http_request(request: SendHttpRequest) -> Result<HttpResponse, Str
         .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
         .collect();
 
-    let body = response
-        .text()
-        .await
-        .map_err(|e| format!("Failed to read response body: {}", e))?;
+    let body = read_capped_response_text(response).await?;
 
     Ok(HttpResponse {
         status_code,
@@ -976,6 +975,153 @@ fn body_buffer_capacity(content_length: usize) -> Result<usize, &'static str> {
     Ok(content_length.min(MAX_HTTP_BODY_PREALLOC))
 }
 
+/// Largest HTTP client response body buffered (10 MiB, mirroring the
+/// server-side body cap).
+pub(crate) const MAX_HTTP_RESPONSE_SIZE: usize = 10 * 1024 * 1024;
+
+/// Read a response body with a size cap. Checks `Content-Length` up
+/// front, then enforces the cap while streaming so close-delimited or
+/// chunked bodies cannot grow the buffer without bound.
+pub(crate) async fn read_capped_response_bytes(
+    response: reqwest::Response,
+) -> Result<Vec<u8>, String> {
+    if let Some(len) = response.content_length()
+        && len > MAX_HTTP_RESPONSE_SIZE as u64
+    {
+        return Err(format!(
+            "Response body ({} bytes) exceeds the {}-byte limit",
+            len, MAX_HTTP_RESPONSE_SIZE
+        ));
+    }
+    let mut response = response;
+    let mut buf = Vec::new();
+    loop {
+        match response.chunk().await {
+            Err(e) => return Err(format!("Failed to read response body: {}", e)),
+            Ok(None) => break,
+            Ok(Some(chunk)) => {
+                if buf.len() + chunk.len() > MAX_HTTP_RESPONSE_SIZE {
+                    return Err(format!(
+                        "Response body exceeds the {}-byte limit",
+                        MAX_HTTP_RESPONSE_SIZE
+                    ));
+                }
+                buf.extend_from_slice(&chunk);
+            }
+        }
+    }
+    Ok(buf)
+}
+
+/// Read a response body as text with the same size cap.
+pub(crate) async fn read_capped_response_text(
+    response: reqwest::Response,
+) -> Result<String, String> {
+    let bytes = read_capped_response_bytes(response).await?;
+    String::from_utf8(bytes).map_err(|e| format!("Response body is not valid UTF-8: {}", e))
+}
+
+/// Per-line timeout for request-head reads.
+const HTTP_HEAD_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Maximum header lines accepted in a request head.
+const MAX_HTTP_HEADER_LINES: usize = 100;
+
+/// Maximum bytes accepted in a request head (request line + headers).
+const MAX_HTTP_HEADER_BYTES: usize = 64 * 1024;
+
+/// Parsed HTTP request line plus the `Content-Length` header.
+#[derive(Debug)]
+struct HttpRequestHead {
+    method: String,
+    path: String,
+    content_length: usize,
+}
+
+/// Why a request head could not be read.
+#[derive(Debug)]
+enum RequestHeadError {
+    /// A head line read failed.
+    Read(String),
+    /// A head line read timed out.
+    Timeout,
+    /// The head exceeded the line/byte caps.
+    TooLarge(String),
+}
+
+/// Read the request line and headers with a per-line timeout and
+/// line/byte caps. Timeouts and over-cap heads fail; plain read
+/// errors end the head, as before.
+async fn read_http_request_head<R>(
+    reader: &mut tokio::io::BufReader<R>,
+    per_line_timeout: std::time::Duration,
+) -> Result<HttpRequestHead, RequestHeadError>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    use tokio::io::AsyncBufReadExt;
+
+    // Read HTTP request
+    let mut request_line = String::new();
+    match tokio::time::timeout(per_line_timeout, reader.read_line(&mut request_line)).await {
+        Err(_) => return Err(RequestHeadError::Timeout),
+        Ok(Err(e)) => return Err(RequestHeadError::Read(e.to_string())),
+        Ok(Ok(_)) => {}
+    }
+    if request_line.len() > MAX_HTTP_HEADER_BYTES {
+        return Err(RequestHeadError::TooLarge(format!(
+            "request line exceeds {} bytes",
+            MAX_HTTP_HEADER_BYTES
+        )));
+    }
+    let mut head_bytes = request_line.len();
+
+    // Parse request line (e.g., "POST /hl7 HTTP/1.1")
+    let parts: Vec<&str> = request_line.split_whitespace().collect();
+    let method = parts.first().unwrap_or(&"").to_string();
+    let path = parts.get(1).unwrap_or(&"/").to_string();
+
+    // Read headers
+    let mut content_length: usize = 0;
+    let mut header_lines = 0usize;
+    loop {
+        let mut line = String::new();
+        match tokio::time::timeout(per_line_timeout, reader.read_line(&mut line)).await {
+            Err(_) => return Err(RequestHeadError::Timeout),
+            Ok(Err(_)) => break,
+            Ok(Ok(_)) => {}
+        }
+        if line.trim().is_empty() {
+            break;
+        }
+        header_lines += 1;
+        head_bytes += line.len();
+        if header_lines > MAX_HTTP_HEADER_LINES {
+            return Err(RequestHeadError::TooLarge(format!(
+                "more than {} header lines",
+                MAX_HTTP_HEADER_LINES
+            )));
+        }
+        if head_bytes > MAX_HTTP_HEADER_BYTES {
+            return Err(RequestHeadError::TooLarge(format!(
+                "request head exceeds {} bytes",
+                MAX_HTTP_HEADER_BYTES
+            )));
+        }
+        if let Some((key, value)) = line.split_once(':')
+            && key.trim().eq_ignore_ascii_case("content-length")
+        {
+            content_length = value.trim().parse().unwrap_or(0);
+        }
+    }
+
+    Ok(HttpRequestHead {
+        method,
+        path,
+        content_length,
+    })
+}
+
 /// Run the HTTP server
 async fn run_http_server(
     port: u16,
@@ -984,7 +1130,7 @@ async fn run_http_server(
     shutdown: Arc<AtomicBool>,
     ctx: egui::Context,
 ) {
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::io::{AsyncWriteExt, BufReader};
     use tokio::net::TcpListener;
     use tokio::time::{Duration, timeout};
 
@@ -1053,39 +1199,55 @@ async fn run_http_server(
                     let (reader, mut writer) = stream.into_split();
                     let mut buf_reader = BufReader::new(reader);
 
-                    // Read HTTP request
-                    let mut request_line = String::new();
-                    if let Err(e) = buf_reader.read_line(&mut request_line).await {
-                        let mut s = state_clone.lock().unwrap();
-                        s.server_messages.push(LogEntry {
-                            timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
-                            direction: Direction::Error,
-                            message: format!("Read error: {}", e),
-                        });
-                        return;
-                    }
-
-                    // Parse request line (e.g., "POST /hl7 HTTP/1.1")
-                    let parts: Vec<&str> = request_line.split_whitespace().collect();
-                    let method = parts.first().unwrap_or(&"");
-                    let path = parts.get(1).unwrap_or(&"/");
-
-                    // Read headers
-                    let mut content_length: usize = 0;
-                    loop {
-                        let mut line = String::new();
-                        if buf_reader.read_line(&mut line).await.is_err() {
-                            break;
+                    // Read the request line and headers.
+                    let head = match read_http_request_head(&mut buf_reader, HTTP_HEAD_READ_TIMEOUT)
+                        .await
+                    {
+                        Ok(head) => head,
+                        Err(RequestHeadError::Read(detail)) => {
+                            let mut s = state_clone.lock().unwrap();
+                            s.server_messages.push(LogEntry {
+                                timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                                direction: Direction::Error,
+                                message: format!("Read error: {}", detail),
+                            });
+                            return;
                         }
-                        if line.trim().is_empty() {
-                            break;
+                        Err(RequestHeadError::Timeout) => {
+                            let mut s = state_clone.lock().unwrap();
+                            s.server_messages.push(LogEntry {
+                                timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                                direction: Direction::Error,
+                                message: "Request head read timed out; connection dropped"
+                                    .to_string(),
+                            });
+                            ctx_clone.request_repaint();
+                            return;
                         }
-                        if let Some((key, value)) = line.split_once(':')
-                            && key.trim().eq_ignore_ascii_case("content-length")
-                        {
-                            content_length = value.trim().parse().unwrap_or(0);
+                        Err(RequestHeadError::TooLarge(detail)) => {
+                            {
+                                let mut s = state_clone.lock().unwrap();
+                                s.server_messages.push(LogEntry {
+                                    timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                                    direction: Direction::Error,
+                                    message: format!("Rejected request head: {}", detail),
+                                });
+                            }
+                            ctx_clone.request_repaint();
+                            let response = format!(
+                                "HTTP/1.1 431 Request Header Fields Too Large\r\n\
+                                 Content-Type: text/plain\r\nContent-Length: {}\
+                                 \r\nConnection: close\r\n\r\n{}",
+                                detail.len(),
+                                detail
+                            );
+                            let _ = writer.write_all(response.as_bytes()).await;
+                            return;
                         }
-                    }
+                    };
+                    let method = head.method;
+                    let path = head.path;
+                    let content_length = head.content_length;
 
                     // Read body: reject over-limit claims with a 413
                     // instead of pre-allocating the peer's claim, and cap
@@ -1150,7 +1312,7 @@ async fn run_http_server(
 
                     // Generate response
                     let (status_code, status_text, response_body) =
-                        if *method == "POST" || *method == "PUT" {
+                        if method == "POST" || method == "PUT" {
                             if auto_ack && !body_str.is_empty() {
                                 let ack = generate_ack(&body_str);
                                 (200, "OK", ack)
@@ -1248,14 +1410,14 @@ fn generate_ack(message: &str) -> String {
 
     format!(
         "MSH|^~\\&|{}|{}|{}|{}|{}||ACK|ACK{}|P|{}\rMSA|AA|{}|Message accepted\r",
-        receiving_app,
-        receiving_fac,
-        sending_app,
-        sending_fac,
+        sanitize_ack_field(receiving_app),
+        sanitize_ack_field(receiving_fac),
+        sanitize_ack_field(sending_app),
+        sanitize_ack_field(sending_fac),
         timestamp,
         timestamp,
-        version,
-        control_id
+        sanitize_ack_field(version),
+        sanitize_ack_field(control_id)
     )
 }
 
@@ -1379,10 +1541,14 @@ async fn run_http_load_test(params: HttpLoadTest) {
 
         match result {
             Ok(resp) if resp.status().is_success() => {
-                // Consume the body to allow connection reuse
-                let _ = resp.bytes().await;
-                let mut s = state.lock().unwrap();
-                s.load_test_received += 1;
+                // Consume the (capped) body to allow connection reuse
+                if read_capped_response_bytes(resp).await.is_ok() {
+                    let mut s = state.lock().unwrap();
+                    s.load_test_received += 1;
+                } else {
+                    let mut s = state.lock().unwrap();
+                    s.load_test_errors += 1;
+                }
             }
             _ => {
                 let mut s = state.lock().unwrap();
@@ -1519,6 +1685,172 @@ mod tests {
     fn body_capacity_rejects_over_limit_claims() {
         assert!(body_buffer_capacity(MAX_HTTP_BODY_SIZE + 1).is_err());
         assert!(body_buffer_capacity(usize::MAX).is_err());
+    }
+
+    /// Drain a full client request (head plus body) on a fake server,
+    /// so the socket closes cleanly instead of resetting.
+    async fn drain_request(stream: &mut TcpStream) {
+        let mut acc = Vec::new();
+        let mut one = [0u8; 1];
+        while acc.len() < 65536 {
+            match stream.read(&mut one).await {
+                Ok(1) => {
+                    acc.push(one[0]);
+                    if acc.len() >= 4 && &acc[acc.len() - 4..] == b"\r\n\r\n" {
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+        let head = String::from_utf8_lossy(&acc);
+        let body_len: usize = head
+            .lines()
+            .filter_map(|l| l.split_once(':'))
+            .filter(|(k, _)| k.trim().eq_ignore_ascii_case("content-length"))
+            .filter_map(|(_, v)| v.trim().parse::<usize>().ok())
+            .sum();
+        let mut remaining = body_len;
+        let mut buf = [0u8; 4096];
+        while remaining > 0 {
+            let take = remaining.min(buf.len());
+            match stream.read(&mut buf[..take]).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => remaining -= n,
+            }
+        }
+    }
+
+    fn client_request(url: String) -> SendHttpRequest {
+        SendHttpRequest {
+            url,
+            method: HttpMethod::Post,
+            message: "MSH|^~\\&|S\r".to_string(),
+            timeout_secs: 30,
+            auth_type: AuthType::None,
+            username: String::new(),
+            password: String::new(),
+            api_key_header: String::new(),
+            api_key: String::new(),
+            bearer_token: String::new(),
+            headers: Vec::new(),
+            verify_tls: true,
+        }
+    }
+
+    #[test]
+    fn generate_ack_strips_structural_chars_from_peer_fields() {
+        // Same peer-injection case as the MLLP tab's ACK generator.
+        let msg = "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1^X~Y&Z\\Q\nEVN|P|2.5^X";
+        let ack = generate_ack(msg);
+        assert!(!ack.contains('\n'), "LF survived into ACK: {:?}", ack);
+        let segments: Vec<&str> = ack.split('\r').filter(|s| !s.is_empty()).collect();
+        assert_eq!(segments.len(), 2, "ACK segment count: {:?}", ack);
+        let msa: Vec<&str> = segments[1].split('|').collect();
+        assert_eq!(msa.len(), 4, "MSA field shift: {:?}", ack);
+        assert_eq!(msa[2], "M1XYZQEVN");
+        let msh: Vec<&str> = segments[0].split('|').collect();
+        assert_eq!(msh.len(), 12, "MSH field shift: {:?}", ack);
+        assert_eq!(msh[11], "2.5X");
+    }
+
+    #[tokio::test]
+    async fn http_client_response_body_is_capped() {
+        // Close-delimited body past the cap: no Content-Length, so
+        // only a streaming cap can catch it.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            drain_request(&mut stream).await;
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\
+                      Connection: close\r\n\r\n",
+                )
+                .await
+                .unwrap();
+            let chunk = vec![b'X'; 1024 * 1024];
+            for _ in 0..11 {
+                if stream.write_all(&chunk).await.is_err() {
+                    break;
+                }
+            }
+        });
+        let err = send_http_request(client_request(format!("http://127.0.0.1:{}/hl7", port)))
+            .await
+            .unwrap_err();
+        assert!(err.contains("limit"), "unexpected error: {err}");
+    }
+
+    #[tokio::test]
+    async fn http_client_small_response_still_works() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            drain_request(&mut stream).await;
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 9\
+                      \r\nConnection: close\r\n\r\nMSA|AA|M1",
+                )
+                .await
+                .unwrap();
+        });
+        let resp = send_http_request(client_request(format!("http://127.0.0.1:{}/hl7", port)))
+            .await
+            .unwrap();
+        assert_eq!(resp.status_code, 200);
+        assert_eq!(resp.body, "MSA|AA|M1");
+    }
+
+    #[tokio::test]
+    async fn http_server_header_flood_is_rejected() {
+        let port = free_port();
+        let (_state, shutdown) = start_test_server(port).await;
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port))
+            .await
+            .unwrap();
+        let mut req = String::from("POST /hl7 HTTP/1.1\r\nHost: x\r\n");
+        for i in 0..200 {
+            req.push_str(&format!("X-Pad-{}: abcdefgh\r\n", i));
+        }
+        req.push_str("\r\n");
+        stream.write_all(req.as_bytes()).await.unwrap();
+        // Fixed behavior: a prompt 431. Vulnerable behavior: the server
+        // reads all headers and answers 200.
+        let mut buf = vec![0u8; 1024];
+        let n = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buf))
+            .await
+            .expect("server must answer a header flood promptly")
+            .unwrap();
+        let head = String::from_utf8_lossy(&buf[..n]);
+        assert!(head.starts_with("HTTP/1.1 431"), "got: {}", head);
+        shutdown.store(true, Ordering::SeqCst);
+    }
+
+    #[tokio::test]
+    async fn header_read_times_out_when_peer_is_silent() {
+        use tokio::io::BufReader;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let client = tokio::spawn(async move {
+            TcpStream::connect(format!("127.0.0.1:{}", port))
+                .await
+                .unwrap()
+        });
+        let (server_side, _) = listener.accept().await.unwrap();
+        let _client = client.await.unwrap(); // stays silent
+        let mut reader = BufReader::new(server_side);
+        let err = tokio::time::timeout(
+            Duration::from_secs(5),
+            read_http_request_head(&mut reader, Duration::from_millis(100)),
+        )
+        .await
+        .expect("helper must enforce its own read timeout")
+        .unwrap_err();
+        assert!(matches!(err, RequestHeadError::Timeout));
     }
 
     #[tokio::test]

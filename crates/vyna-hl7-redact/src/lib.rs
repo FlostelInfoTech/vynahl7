@@ -423,7 +423,9 @@ fn shift_date(value: &str, days: i64) -> Option<String> {
         return None;
     }
     let date = NaiveDate::parse_from_str(&value[..8], "%Y%m%d").ok()?;
-    let shifted = date + Duration::days(days);
+    // Checked arithmetic: extreme shifts overflow `Duration::days` or push
+    // the date out of range, and both must remove the value, never panic.
+    let shifted = date.checked_add_signed(Duration::try_days(days)?)?;
     Some(format!("{}{}", shifted.format("%Y%m%d"), &value[8..]))
 }
 
@@ -628,6 +630,34 @@ mod tests {
         assert_eq!(shift_date("20240101", -1).as_deref(), Some("20231231"));
         assert_eq!(shift_date("2024", 5), None); // too short
         assert_eq!(shift_date("not-a-date", 5), None);
+    }
+
+    #[test]
+    fn extreme_date_shifts_remove_the_value_instead_of_panicking() {
+        // `Duration::days(i64::MAX)` overflows and `date + days` panics
+        // outside the representable range; both must yield `None` so the
+        // value is removed, never a panic.
+        assert_eq!(shift_date("20240101", i64::MAX), None);
+        assert_eq!(shift_date("20240101", i64::MIN), None);
+        assert_eq!(shift_date("2621431231", 1), None);
+        // End to end: the overflowing value is removed, not kept.
+        let mut message = parse_message(concat!(
+            "MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\r",
+            "PID|1||||||20240101",
+        ))
+        .unwrap();
+        Redactor::new()
+            .with_date_shift_days(i64::MAX)
+            .with_rule(Rule::field("PID", 7, Strategy::DateShift))
+            .redact(&mut message)
+            .unwrap();
+        assert!(
+            message
+                .get_segment_by_id("PID")
+                .unwrap()
+                .get_field_value(7)
+                .is_none()
+        );
     }
 
     #[test]

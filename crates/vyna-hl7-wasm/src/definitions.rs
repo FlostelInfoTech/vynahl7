@@ -11,7 +11,10 @@ use vyna_hl7_validator::{SegmentDefinition, TableRegistry, list_available_schema
 use wasm_bindgen::prelude::*;
 
 /// Supported HL7 versions exposed to JavaScript
-const SUPPORTED_VERSIONS: &[&str] = &["2.1", "2.2", "2.3", "2.4", "2.5", "2.6", "2.7", "2.8"];
+const SUPPORTED_VERSIONS: &[&str] = &[
+    "2.1", "2.2", "2.3", "2.3.1", "2.4", "2.5", "2.5.1", "2.6", "2.7", "2.7.1", "2.8", "2.8.1",
+    "2.8.2",
+];
 
 /// Convert a version string like "2.5" to the vyna_hl7_core::Version enum
 fn parse_version(version: &str) -> Result<Version, JsValue> {
@@ -19,11 +22,16 @@ fn parse_version(version: &str) -> Result<Version, JsValue> {
         "2.1" => Ok(Version::V2_1),
         "2.2" => Ok(Version::V2_2),
         "2.3" => Ok(Version::V2_3),
+        "2.3.1" => Ok(Version::V2_3_1),
         "2.4" => Ok(Version::V2_4),
         "2.5" => Ok(Version::V2_5),
+        "2.5.1" => Ok(Version::V2_5_1),
         "2.6" => Ok(Version::V2_6),
         "2.7" => Ok(Version::V2_7),
+        "2.7.1" => Ok(Version::V2_7_1),
         "2.8" => Ok(Version::V2_8),
+        "2.8.1" => Ok(Version::V2_8_1),
+        "2.8.2" => Ok(Version::V2_8_2),
         _ => Err(JsValue::from_str(&format!(
             "Unsupported HL7 version: '{}'. Supported versions: {}",
             version,
@@ -106,7 +114,8 @@ fn get_message_description(message_type: &str, trigger_event: &str) -> &'static 
 ///
 /// # Returns
 ///
-/// A JavaScript array of version strings from `"2.1"` through `"2.8"`.
+/// A JavaScript array of version strings from `"2.1"` through `"2.8.2"`,
+/// including the point releases core supports.
 #[wasm_bindgen(js_name = listHL7Versions)]
 pub fn list_hl7_versions() -> Result<JsValue, JsValue> {
     serde_wasm_bindgen::to_value(&SUPPORTED_VERSIONS).map_err(|e| JsValue::from_str(&e.to_string()))
@@ -548,11 +557,16 @@ mod tests {
             ("2.1", true),
             ("2.2", true),
             ("2.3", true),
+            ("2.3.1", true),
             ("2.4", true),
             ("2.5", true),
+            ("2.5.1", true),
             ("2.6", true),
             ("2.7", true),
+            ("2.7.1", true),
             ("2.8", true),
+            ("2.8.1", true),
+            ("2.8.2", true),
             ("1.0", false),
             ("", false),
         ];
@@ -586,12 +600,42 @@ mod tests {
 
     #[test]
     fn test_supported_versions() {
-        assert_eq!(SUPPORTED_VERSIONS.len(), 8);
+        assert_eq!(SUPPORTED_VERSIONS.len(), 13);
         assert!(SUPPORTED_VERSIONS.contains(&"2.1"));
         assert!(SUPPORTED_VERSIONS.contains(&"2.2"));
         assert!(SUPPORTED_VERSIONS.contains(&"2.3"));
+        assert!(SUPPORTED_VERSIONS.contains(&"2.3.1"));
+        assert!(SUPPORTED_VERSIONS.contains(&"2.5.1"));
         assert!(SUPPORTED_VERSIONS.contains(&"2.7"));
+        assert!(SUPPORTED_VERSIONS.contains(&"2.7.1"));
         assert!(SUPPORTED_VERSIONS.contains(&"2.8"));
+        assert!(SUPPORTED_VERSIONS.contains(&"2.8.1"));
+        assert!(SUPPORTED_VERSIONS.contains(&"2.8.2"));
+    }
+
+    #[test]
+    fn point_releases_are_listed_as_supported() {
+        // Core supports 2.3.1/2.5.1/2.7.1/2.8.1/2.8.2 and the
+        // schema loader maps them onto their major dirs, so the
+        // WASM bindings must accept them too.
+        for ver in ["2.3.1", "2.5.1", "2.7.1", "2.8.1", "2.8.2"] {
+            assert!(
+                SUPPORTED_VERSIONS.contains(&ver),
+                "point release {} is missing",
+                ver
+            );
+        }
+    }
+
+    #[test]
+    fn parse_version_accepts_point_releases() {
+        // The Ok path builds no JsValue, so it runs on native targets.
+        assert_eq!(parse_version("2.3.1").unwrap(), Version::V2_3_1);
+        assert_eq!(parse_version("2.5.1").unwrap(), Version::V2_5_1);
+        assert_eq!(parse_version("2.7.1").unwrap(), Version::V2_7_1);
+        assert_eq!(parse_version("2.8.1").unwrap(), Version::V2_8_1);
+        assert_eq!(parse_version("2.8.2").unwrap(), Version::V2_8_2);
+        assert_eq!(parse_version("2.5").unwrap(), Version::V2_5);
     }
 
     #[test]

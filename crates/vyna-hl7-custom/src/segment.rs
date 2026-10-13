@@ -275,8 +275,11 @@ pub trait ParseSegmentField: Sized {
 
 /// Trait for serializing field values to segments
 pub trait SerializeSegmentField {
-    /// Write this value into the numbered field of a segment
-    fn set_field(&self, segment: &mut Segment, field_num: usize);
+    /// Write this value into the numbered field of a segment.
+    ///
+    /// Fails for field number 0 (the segment ID slot); `z_segment!`
+    /// rejects 0 at macro expansion, so generated code cannot hit this.
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()>;
 }
 
 /// Trait to determine the inner type for builder fields
@@ -433,16 +436,18 @@ impl ParseSegmentField for Option<String> {
 }
 
 impl SerializeSegmentField for String {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
-        let _ = segment.set_field_value(field_num, self);
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
+        segment.set_field_value(field_num, self)?;
+        Ok(())
     }
 }
 
 impl SerializeSegmentField for Option<String> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         if let Some(v) = self {
-            let _ = segment.set_field_value(field_num, v);
+            segment.set_field_value(field_num, v)?;
         }
+        Ok(())
     }
 }
 
@@ -468,16 +473,18 @@ impl ParseSegmentField for Option<f64> {
 }
 
 impl SerializeSegmentField for f64 {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
-        let _ = segment.set_field_value(field_num, self.to_string());
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
+        segment.set_field_value(field_num, self.to_string())?;
+        Ok(())
     }
 }
 
 impl SerializeSegmentField for Option<f64> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         if let Some(v) = self {
-            let _ = segment.set_field_value(field_num, v.to_string());
+            segment.set_field_value(field_num, v.to_string())?;
         }
+        Ok(())
     }
 }
 
@@ -503,16 +510,18 @@ impl ParseSegmentField for Option<u32> {
 }
 
 impl SerializeSegmentField for u32 {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
-        let _ = segment.set_field_value(field_num, self.to_string());
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
+        segment.set_field_value(field_num, self.to_string())?;
+        Ok(())
     }
 }
 
 impl SerializeSegmentField for Option<u32> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         if let Some(v) = self {
-            let _ = segment.set_field_value(field_num, v.to_string());
+            segment.set_field_value(field_num, v.to_string())?;
         }
+        Ok(())
     }
 }
 
@@ -569,16 +578,18 @@ impl ParseSegmentField for Option<i32> {
 }
 
 impl SerializeSegmentField for i32 {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
-        let _ = segment.set_field_value(field_num, self.to_string());
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
+        segment.set_field_value(field_num, self.to_string())?;
+        Ok(())
     }
 }
 
 impl SerializeSegmentField for Option<i32> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         if let Some(v) = self {
-            let _ = segment.set_field_value(field_num, v.to_string());
+            segment.set_field_value(field_num, v.to_string())?;
         }
+        Ok(())
     }
 }
 
@@ -635,16 +646,18 @@ impl ParseSegmentField for Option<i64> {
 }
 
 impl SerializeSegmentField for i64 {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
-        let _ = segment.set_field_value(field_num, self.to_string());
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
+        segment.set_field_value(field_num, self.to_string())?;
+        Ok(())
     }
 }
 
 impl SerializeSegmentField for Option<i64> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         if let Some(v) = self {
-            let _ = segment.set_field_value(field_num, v.to_string());
+            segment.set_field_value(field_num, v.to_string())?;
         }
+        Ok(())
     }
 }
 
@@ -702,18 +715,20 @@ impl ParseSegmentField for Option<bool> {
 }
 
 impl SerializeSegmentField for bool {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         let value = if *self { "Y" } else { "N" };
-        let _ = segment.set_field_value(field_num, value);
+        segment.set_field_value(field_num, value)?;
+        Ok(())
     }
 }
 
 impl SerializeSegmentField for Option<bool> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         if let Some(v) = self {
             let value = if *v { "Y" } else { "N" };
-            let _ = segment.set_field_value(field_num, value);
+            segment.set_field_value(field_num, value)?;
         }
+        Ok(())
     }
 }
 
@@ -779,18 +794,20 @@ impl ParseSegmentField for Option<NaiveDateTime> {
 
 // SerializeSegmentField for NaiveDateTime
 impl SerializeSegmentField for NaiveDateTime {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         let formatted = self.format("%Y%m%d%H%M%S").to_string();
-        let _ = segment.set_field_value(field_num, &formatted);
+        segment.set_field_value(field_num, &formatted)?;
+        Ok(())
     }
 }
 
 // SerializeSegmentField for Option<NaiveDateTime>
 impl SerializeSegmentField for Option<NaiveDateTime> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         if let Some(dt) = self {
-            dt.set_field(segment, field_num);
+            dt.set_field(segment, field_num)?;
         }
+        Ok(())
     }
 }
 
@@ -858,18 +875,20 @@ impl ParseSegmentField for Option<NaiveDate> {
 
 // SerializeSegmentField for NaiveDate
 impl SerializeSegmentField for NaiveDate {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         let formatted = self.format("%Y%m%d").to_string();
-        let _ = segment.set_field_value(field_num, &formatted);
+        segment.set_field_value(field_num, &formatted)?;
+        Ok(())
     }
 }
 
 // SerializeSegmentField for Option<NaiveDate>
 impl SerializeSegmentField for Option<NaiveDate> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         if let Some(date) = self {
-            date.set_field(segment, field_num);
+            date.set_field(segment, field_num)?;
         }
+        Ok(())
     }
 }
 
@@ -937,18 +956,20 @@ impl ParseSegmentField for Option<NaiveTime> {
 
 // SerializeSegmentField for NaiveTime
 impl SerializeSegmentField for NaiveTime {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         let formatted = self.format("%H%M%S").to_string();
-        let _ = segment.set_field_value(field_num, &formatted);
+        segment.set_field_value(field_num, &formatted)?;
+        Ok(())
     }
 }
 
 // SerializeSegmentField for Option<NaiveTime>
 impl SerializeSegmentField for Option<NaiveTime> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         if let Some(time) = self {
-            time.set_field(segment, field_num);
+            time.set_field(segment, field_num)?;
         }
+        Ok(())
     }
 }
 
@@ -1018,18 +1039,20 @@ impl ParseSegmentField for Option<DateTime<Utc>> {
 // Writes the UTC wall time without an offset suffix; values without a
 // suffix parse back as UTC, so the round trip is stable.
 impl SerializeSegmentField for DateTime<Utc> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         let formatted = self.format("%Y%m%d%H%M%S").to_string();
-        let _ = segment.set_field_value(field_num, &formatted);
+        segment.set_field_value(field_num, &formatted)?;
+        Ok(())
     }
 }
 
 // SerializeSegmentField for Option<DateTime<Utc>>
 impl SerializeSegmentField for Option<DateTime<Utc>> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         if let Some(dt) = self {
-            dt.set_field(segment, field_num);
+            dt.set_field(segment, field_num)?;
         }
+        Ok(())
     }
 }
 
@@ -1355,14 +1378,15 @@ impl ParseSegmentField for Vec<String> {
 }
 
 impl SerializeSegmentField for Vec<String> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         use vyna_hl7_core::{Field, Repetition};
 
         let mut field = Field::new();
         for value in self {
             field.add_repetition(Repetition::from_value(value));
         }
-        let _ = segment.set_field(field_num, field);
+        segment.set_field(field_num, field)?;
+        Ok(())
     }
 }
 
@@ -1391,14 +1415,15 @@ impl ParseSegmentField for Vec<u32> {
 }
 
 impl SerializeSegmentField for Vec<u32> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         use vyna_hl7_core::{Field, Repetition};
 
         let mut field = Field::new();
         for value in self {
             field.add_repetition(Repetition::from_value(value.to_string()));
         }
-        let _ = segment.set_field(field_num, field);
+        segment.set_field(field_num, field)?;
+        Ok(())
     }
 }
 
@@ -1427,14 +1452,15 @@ impl ParseSegmentField for Vec<i32> {
 }
 
 impl SerializeSegmentField for Vec<i32> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         use vyna_hl7_core::{Field, Repetition};
 
         let mut field = Field::new();
         for value in self {
             field.add_repetition(Repetition::from_value(value.to_string()));
         }
-        let _ = segment.set_field(field_num, field);
+        segment.set_field(field_num, field)?;
+        Ok(())
     }
 }
 
@@ -1463,14 +1489,15 @@ impl ParseSegmentField for Vec<i64> {
 }
 
 impl SerializeSegmentField for Vec<i64> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         use vyna_hl7_core::{Field, Repetition};
 
         let mut field = Field::new();
         for value in self {
             field.add_repetition(Repetition::from_value(value.to_string()));
         }
-        let _ = segment.set_field(field_num, field);
+        segment.set_field(field_num, field)?;
+        Ok(())
     }
 }
 
@@ -1499,14 +1526,15 @@ impl ParseSegmentField for Vec<f64> {
 }
 
 impl SerializeSegmentField for Vec<f64> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         use vyna_hl7_core::{Field, Repetition};
 
         let mut field = Field::new();
         for value in self {
             field.add_repetition(Repetition::from_value(value.to_string()));
         }
-        let _ = segment.set_field(field_num, field);
+        segment.set_field(field_num, field)?;
+        Ok(())
     }
 }
 
@@ -1535,7 +1563,7 @@ impl ParseSegmentField for Vec<bool> {
 }
 
 impl SerializeSegmentField for Vec<bool> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         use vyna_hl7_core::{Field, Repetition};
 
         let mut field = Field::new();
@@ -1543,7 +1571,8 @@ impl SerializeSegmentField for Vec<bool> {
             let str_value = if *value { "Y" } else { "N" };
             field.add_repetition(Repetition::from_value(str_value));
         }
-        let _ = segment.set_field(field_num, field);
+        segment.set_field(field_num, field)?;
+        Ok(())
     }
 }
 
@@ -1608,7 +1637,7 @@ impl ParseSegmentField for (String, String) {
 }
 
 impl SerializeSegmentField for (String, String) {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         use vyna_hl7_core::{Component, Field, Repetition};
 
         let mut rep = Repetition::new();
@@ -1617,7 +1646,8 @@ impl SerializeSegmentField for (String, String) {
 
         let mut field = Field::new();
         field.add_repetition(rep);
-        let _ = segment.set_field(field_num, field);
+        segment.set_field(field_num, field)?;
+        Ok(())
     }
 }
 
@@ -1678,7 +1708,7 @@ impl ParseSegmentField for (String, String, String) {
 }
 
 impl SerializeSegmentField for (String, String, String) {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         use vyna_hl7_core::{Component, Field, Repetition};
 
         let mut rep = Repetition::new();
@@ -1688,7 +1718,8 @@ impl SerializeSegmentField for (String, String, String) {
 
         let mut field = Field::new();
         field.add_repetition(rep);
-        let _ = segment.set_field(field_num, field);
+        segment.set_field(field_num, field)?;
+        Ok(())
     }
 }
 
@@ -1759,7 +1790,7 @@ impl ParseSegmentField for (String, String, String, String) {
 }
 
 impl SerializeSegmentField for (String, String, String, String) {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         use vyna_hl7_core::{Component, Field, Repetition};
 
         let mut rep = Repetition::new();
@@ -1770,7 +1801,8 @@ impl SerializeSegmentField for (String, String, String, String) {
 
         let mut field = Field::new();
         field.add_repetition(rep);
-        let _ = segment.set_field(field_num, field);
+        segment.set_field(field_num, field)?;
+        Ok(())
     }
 }
 
@@ -1858,7 +1890,7 @@ impl ParseSegmentField for (String, String, String, String, String) {
 }
 
 impl SerializeSegmentField for (String, String, String, String, String) {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         use vyna_hl7_core::{Component, Field, Repetition};
 
         let mut rep = Repetition::new();
@@ -1870,7 +1902,8 @@ impl SerializeSegmentField for (String, String, String, String, String) {
 
         let mut field = Field::new();
         field.add_repetition(rep);
-        let _ = segment.set_field(field_num, field);
+        segment.set_field(field_num, field)?;
+        Ok(())
     }
 }
 
@@ -1922,7 +1955,7 @@ impl ParseSegmentField for Option<(String, String)> {
 }
 
 impl SerializeSegmentField for Option<(String, String)> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         if let Some((c0, c1)) = self {
             use vyna_hl7_core::{Component, Field, Repetition};
 
@@ -1932,8 +1965,9 @@ impl SerializeSegmentField for Option<(String, String)> {
 
             let mut field = Field::new();
             field.add_repetition(rep);
-            let _ = segment.set_field(field_num, field);
+            segment.set_field(field_num, field)?;
         }
+        Ok(())
     }
 }
 
@@ -1982,7 +2016,7 @@ impl ParseSegmentField for Option<(String, String, String)> {
 }
 
 impl SerializeSegmentField for Option<(String, String, String)> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         if let Some((c0, c1, c2)) = self {
             use vyna_hl7_core::{Component, Field, Repetition};
 
@@ -1993,8 +2027,9 @@ impl SerializeSegmentField for Option<(String, String, String)> {
 
             let mut field = Field::new();
             field.add_repetition(rep);
-            let _ = segment.set_field(field_num, field);
+            segment.set_field(field_num, field)?;
         }
+        Ok(())
     }
 }
 
@@ -2054,7 +2089,7 @@ impl ParseSegmentField for Option<(String, String, String, String)> {
 }
 
 impl SerializeSegmentField for Option<(String, String, String, String)> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         if let Some((c0, c1, c2, c3)) = self {
             use vyna_hl7_core::{Component, Field, Repetition};
 
@@ -2066,8 +2101,9 @@ impl SerializeSegmentField for Option<(String, String, String, String)> {
 
             let mut field = Field::new();
             field.add_repetition(rep);
-            let _ = segment.set_field(field_num, field);
+            segment.set_field(field_num, field)?;
         }
+        Ok(())
     }
 }
 
@@ -2135,7 +2171,7 @@ impl ParseSegmentField for Option<(String, String, String, String, String)> {
 }
 
 impl SerializeSegmentField for Option<(String, String, String, String, String)> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         if let Some((c0, c1, c2, c3, c4)) = self {
             use vyna_hl7_core::{Component, Field, Repetition};
 
@@ -2148,8 +2184,9 @@ impl SerializeSegmentField for Option<(String, String, String, String, String)> 
 
             let mut field = Field::new();
             field.add_repetition(rep);
-            let _ = segment.set_field(field_num, field);
+            segment.set_field(field_num, field)?;
         }
+        Ok(())
     }
 }
 
@@ -2176,17 +2213,30 @@ impl BuilderFieldType for Option<(String, String, String, String, String)> {
 
 // Vec<(String, String)> - Multiple 2-component fields
 impl ParseSegmentField for Vec<(String, String)> {
-    fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
+    fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
         if let Some(field) = segment.get_field(field_num) {
             let mut results = Vec::new();
-            for rep in &field.repetitions {
+            for (idx, rep) in field.repetitions.iter().enumerate() {
                 let c0 = rep.get_component(0).and_then(|c| c.value()).unwrap_or("");
                 let c1 = rep.get_component(1).and_then(|c| c.value()).unwrap_or("");
 
-                // Only include complete tuples (all components present)
-                if !c0.is_empty() && !c1.is_empty() {
-                    results.push((c0.to_string(), c1.to_string()));
+                // Empty repetitions are skipped like parse_repeating_scalar,
+                // but partial tuples are an error, never silently dropped.
+                let present = [!c0.is_empty(), !c1.is_empty()]
+                    .iter()
+                    .filter(|&&p| p)
+                    .count();
+                if present == 0 {
+                    continue;
                 }
+                if present < 2 {
+                    return Err(crate::error::CustomSegmentError::invalid_field(
+                        format!("{seg_id}-{field_num}"),
+                        seg_id,
+                        format!("repetition {} has {present} of 2 components", idx + 1),
+                    ));
+                }
+                results.push((c0.to_string(), c1.to_string()));
             }
             Ok(results)
         } else {
@@ -2196,7 +2246,7 @@ impl ParseSegmentField for Vec<(String, String)> {
 }
 
 impl SerializeSegmentField for Vec<(String, String)> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         use vyna_hl7_core::{Component, Field, Repetition};
 
         let mut field = Field::new();
@@ -2206,7 +2256,8 @@ impl SerializeSegmentField for Vec<(String, String)> {
             rep.add_component(Component::from_value(c1));
             field.add_repetition(rep);
         }
-        let _ = segment.set_field(field_num, field);
+        segment.set_field(field_num, field)?;
+        Ok(())
     }
 }
 
@@ -2229,18 +2280,31 @@ impl BuilderFieldType for Vec<(String, String)> {
 
 // Vec<(String, String, String)> - Multiple 3-component fields
 impl ParseSegmentField for Vec<(String, String, String)> {
-    fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
+    fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
         if let Some(field) = segment.get_field(field_num) {
             let mut results = Vec::new();
-            for rep in &field.repetitions {
+            for (idx, rep) in field.repetitions.iter().enumerate() {
                 let c0 = rep.get_component(0).and_then(|c| c.value()).unwrap_or("");
                 let c1 = rep.get_component(1).and_then(|c| c.value()).unwrap_or("");
                 let c2 = rep.get_component(2).and_then(|c| c.value()).unwrap_or("");
 
-                // Only include complete tuples (all components present)
-                if !c0.is_empty() && !c1.is_empty() && !c2.is_empty() {
-                    results.push((c0.to_string(), c1.to_string(), c2.to_string()));
+                // Empty repetitions are skipped like parse_repeating_scalar,
+                // but partial tuples are an error, never silently dropped.
+                let present = [!c0.is_empty(), !c1.is_empty(), !c2.is_empty()]
+                    .iter()
+                    .filter(|&&p| p)
+                    .count();
+                if present == 0 {
+                    continue;
                 }
+                if present < 3 {
+                    return Err(crate::error::CustomSegmentError::invalid_field(
+                        format!("{seg_id}-{field_num}"),
+                        seg_id,
+                        format!("repetition {} has {present} of 3 components", idx + 1),
+                    ));
+                }
+                results.push((c0.to_string(), c1.to_string(), c2.to_string()));
             }
             Ok(results)
         } else {
@@ -2250,7 +2314,7 @@ impl ParseSegmentField for Vec<(String, String, String)> {
 }
 
 impl SerializeSegmentField for Vec<(String, String, String)> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         use vyna_hl7_core::{Component, Field, Repetition};
 
         let mut field = Field::new();
@@ -2261,7 +2325,8 @@ impl SerializeSegmentField for Vec<(String, String, String)> {
             rep.add_component(Component::from_value(c2));
             field.add_repetition(rep);
         }
-        let _ = segment.set_field(field_num, field);
+        segment.set_field(field_num, field)?;
+        Ok(())
     }
 }
 
@@ -2284,24 +2349,42 @@ impl BuilderFieldType for Vec<(String, String, String)> {
 
 // Vec<(String, String, String, String)> - Multiple 4-component fields
 impl ParseSegmentField for Vec<(String, String, String, String)> {
-    fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
+    fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
         if let Some(field) = segment.get_field(field_num) {
             let mut results = Vec::new();
-            for rep in &field.repetitions {
+            for (idx, rep) in field.repetitions.iter().enumerate() {
                 let c0 = rep.get_component(0).and_then(|c| c.value()).unwrap_or("");
                 let c1 = rep.get_component(1).and_then(|c| c.value()).unwrap_or("");
                 let c2 = rep.get_component(2).and_then(|c| c.value()).unwrap_or("");
                 let c3 = rep.get_component(3).and_then(|c| c.value()).unwrap_or("");
 
-                // Only include complete tuples (all components present)
-                if !c0.is_empty() && !c1.is_empty() && !c2.is_empty() && !c3.is_empty() {
-                    results.push((
-                        c0.to_string(),
-                        c1.to_string(),
-                        c2.to_string(),
-                        c3.to_string(),
+                // Empty repetitions are skipped like parse_repeating_scalar,
+                // but partial tuples are an error, never silently dropped.
+                let present = [
+                    !c0.is_empty(),
+                    !c1.is_empty(),
+                    !c2.is_empty(),
+                    !c3.is_empty(),
+                ]
+                .iter()
+                .filter(|&&p| p)
+                .count();
+                if present == 0 {
+                    continue;
+                }
+                if present < 4 {
+                    return Err(crate::error::CustomSegmentError::invalid_field(
+                        format!("{seg_id}-{field_num}"),
+                        seg_id,
+                        format!("repetition {} has {present} of 4 components", idx + 1),
                     ));
                 }
+                results.push((
+                    c0.to_string(),
+                    c1.to_string(),
+                    c2.to_string(),
+                    c3.to_string(),
+                ));
             }
             Ok(results)
         } else {
@@ -2311,7 +2394,7 @@ impl ParseSegmentField for Vec<(String, String, String, String)> {
 }
 
 impl SerializeSegmentField for Vec<(String, String, String, String)> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         use vyna_hl7_core::{Component, Field, Repetition};
 
         let mut field = Field::new();
@@ -2323,7 +2406,8 @@ impl SerializeSegmentField for Vec<(String, String, String, String)> {
             rep.add_component(Component::from_value(c3));
             field.add_repetition(rep);
         }
-        let _ = segment.set_field(field_num, field);
+        segment.set_field(field_num, field)?;
+        Ok(())
     }
 }
 
@@ -2346,31 +2430,45 @@ impl BuilderFieldType for Vec<(String, String, String, String)> {
 
 // Vec<(String, String, String, String, String)> - Multiple 5-component fields
 impl ParseSegmentField for Vec<(String, String, String, String, String)> {
-    fn parse_field(segment: &Segment, field_num: usize, _seg_id: &str) -> Result<Self> {
+    fn parse_field(segment: &Segment, field_num: usize, seg_id: &str) -> Result<Self> {
         if let Some(field) = segment.get_field(field_num) {
             let mut results = Vec::new();
-            for rep in &field.repetitions {
+            for (idx, rep) in field.repetitions.iter().enumerate() {
                 let c0 = rep.get_component(0).and_then(|c| c.value()).unwrap_or("");
                 let c1 = rep.get_component(1).and_then(|c| c.value()).unwrap_or("");
                 let c2 = rep.get_component(2).and_then(|c| c.value()).unwrap_or("");
                 let c3 = rep.get_component(3).and_then(|c| c.value()).unwrap_or("");
                 let c4 = rep.get_component(4).and_then(|c| c.value()).unwrap_or("");
 
-                // Only include complete tuples (all components present)
-                if !c0.is_empty()
-                    && !c1.is_empty()
-                    && !c2.is_empty()
-                    && !c3.is_empty()
-                    && !c4.is_empty()
-                {
-                    results.push((
-                        c0.to_string(),
-                        c1.to_string(),
-                        c2.to_string(),
-                        c3.to_string(),
-                        c4.to_string(),
+                // Empty repetitions are skipped like parse_repeating_scalar,
+                // but partial tuples are an error, never silently dropped.
+                let present = [
+                    !c0.is_empty(),
+                    !c1.is_empty(),
+                    !c2.is_empty(),
+                    !c3.is_empty(),
+                    !c4.is_empty(),
+                ]
+                .iter()
+                .filter(|&&p| p)
+                .count();
+                if present == 0 {
+                    continue;
+                }
+                if present < 5 {
+                    return Err(crate::error::CustomSegmentError::invalid_field(
+                        format!("{seg_id}-{field_num}"),
+                        seg_id,
+                        format!("repetition {} has {present} of 5 components", idx + 1),
                     ));
                 }
+                results.push((
+                    c0.to_string(),
+                    c1.to_string(),
+                    c2.to_string(),
+                    c3.to_string(),
+                    c4.to_string(),
+                ));
             }
             Ok(results)
         } else {
@@ -2380,7 +2478,7 @@ impl ParseSegmentField for Vec<(String, String, String, String, String)> {
 }
 
 impl SerializeSegmentField for Vec<(String, String, String, String, String)> {
-    fn set_field(&self, segment: &mut Segment, field_num: usize) {
+    fn set_field(&self, segment: &mut Segment, field_num: usize) -> Result<()> {
         use vyna_hl7_core::{Component, Field, Repetition};
 
         let mut field = Field::new();
@@ -2393,7 +2491,8 @@ impl SerializeSegmentField for Vec<(String, String, String, String, String)> {
             rep.add_component(Component::from_value(c4));
             field.add_repetition(rep);
         }
-        let _ = segment.set_field(field_num, field);
+        segment.set_field(field_num, field)?;
+        Ok(())
     }
 }
 
@@ -2417,6 +2516,15 @@ impl BuilderFieldType for Vec<(String, String, String, String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_serialize_field_zero_errors_instead_of_silent_loss() {
+        // Field 0 (the segment ID slot) can never be written: the error
+        // must surface instead of being swallowed.
+        let mut segment = Segment::new("ZPV");
+        assert!("OUTPATIENT".to_string().set_field(&mut segment, 0).is_err());
+        assert!("OUTPATIENT".to_string().set_field(&mut segment, 1).is_ok());
+    }
 
     #[test]
     fn test_field_definition_builder() {
@@ -2518,7 +2626,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let value: i32 = -456;
 
-        value.set_field(&mut segment, 1);
+        value.set_field(&mut segment, 1).unwrap();
         assert_eq!(segment.get_field_value(1).unwrap(), "-456");
     }
 
@@ -2527,7 +2635,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let original: i32 = 789;
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = i32::parse_field(&segment, 1, "TEST").unwrap();
 
         assert_eq!(original, parsed);
@@ -2574,7 +2682,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let value: i64 = 123456789012345;
 
-        value.set_field(&mut segment, 1);
+        value.set_field(&mut segment, 1).unwrap();
         assert_eq!(segment.get_field_value(1).unwrap(), "123456789012345");
     }
 
@@ -2583,7 +2691,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let original: i64 = -987654321098765;
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = i64::parse_field(&segment, 1, "TEST").unwrap();
 
         assert_eq!(original, parsed);
@@ -2715,7 +2823,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let value = true;
 
-        value.set_field(&mut segment, 1);
+        value.set_field(&mut segment, 1).unwrap();
         assert_eq!(segment.get_field_value(1).unwrap(), "Y");
     }
 
@@ -2724,7 +2832,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let value = false;
 
-        value.set_field(&mut segment, 1);
+        value.set_field(&mut segment, 1).unwrap();
         assert_eq!(segment.get_field_value(1).unwrap(), "N");
     }
 
@@ -2733,7 +2841,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let original = true;
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = bool::parse_field(&segment, 1, "TEST").unwrap();
 
         assert_eq!(original, parsed);
@@ -2744,7 +2852,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let original = false;
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = bool::parse_field(&segment, 1, "TEST").unwrap();
 
         assert_eq!(original, parsed);
@@ -2863,7 +2971,7 @@ mod tests {
             .and_hms_opt(14, 30, 0)
             .unwrap();
 
-        dt.set_field(&mut segment, 1);
+        dt.set_field(&mut segment, 1).unwrap();
         assert_eq!(segment.get_field_value(1).unwrap(), "20250119143000");
     }
 
@@ -2876,7 +2984,7 @@ mod tests {
             .and_hms_opt(23, 59, 59)
             .unwrap();
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = NaiveDateTime::parse_field(&segment, 1, "TEST").unwrap();
 
         assert_eq!(original, parsed);
@@ -2932,7 +3040,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let date = NaiveDate::from_ymd_opt(2025, 6, 15).unwrap();
 
-        date.set_field(&mut segment, 1);
+        date.set_field(&mut segment, 1).unwrap();
         assert_eq!(segment.get_field_value(1).unwrap(), "20250615");
     }
 
@@ -2941,7 +3049,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let original = NaiveDate::from_ymd_opt(1980, 1, 15).unwrap();
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = NaiveDate::parse_field(&segment, 1, "TEST").unwrap();
 
         assert_eq!(original, parsed);
@@ -2988,7 +3096,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let time = NaiveTime::from_hms_opt(23, 59, 59).unwrap();
 
-        time.set_field(&mut segment, 1);
+        time.set_field(&mut segment, 1).unwrap();
         assert_eq!(segment.get_field_value(1).unwrap(), "235959");
     }
 
@@ -2997,7 +3105,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let original = NaiveTime::from_hms_opt(8, 15, 30).unwrap();
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = NaiveTime::parse_field(&segment, 1, "TEST").unwrap();
 
         assert_eq!(original, parsed);
@@ -3036,7 +3144,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let dt = Utc.with_ymd_and_hms(2025, 1, 19, 14, 30, 0).unwrap();
 
-        dt.set_field(&mut segment, 1);
+        dt.set_field(&mut segment, 1).unwrap();
         assert_eq!(segment.get_field_value(1).unwrap(), "20250119143000");
     }
 
@@ -3046,7 +3154,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let original = Utc.with_ymd_and_hms(2025, 12, 31, 23, 59, 59).unwrap();
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = DateTime::<Utc>::parse_field(&segment, 1, "TEST").unwrap();
 
         assert_eq!(original, parsed);
@@ -3188,7 +3296,7 @@ mod tests {
         // A partial tuple must survive serialize -> parse unchanged.
         let mut segment = Segment::new("TEST");
         let value = Some(("Smith".to_string(), String::new()));
-        value.set_field(&mut segment, 1);
+        value.set_field(&mut segment, 1).unwrap();
         let back = Option::<(String, String)>::parse_field(&segment, 1, "TEST").unwrap();
         assert_eq!(back, value);
     }
@@ -3259,7 +3367,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let values = vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()];
 
-        values.set_field(&mut segment, 1);
+        values.set_field(&mut segment, 1).unwrap();
 
         let field = segment.get_field(1).unwrap();
         assert_eq!(field.repetitions.len(), 3);
@@ -3275,7 +3383,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let original = vec!["phone1".to_string(), "phone2".to_string()];
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = Vec::<String>::parse_field(&segment, 1, "TEST").unwrap();
 
         assert_eq!(original, parsed);
@@ -3315,7 +3423,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let values = vec![100, 200, 300];
 
-        values.set_field(&mut segment, 1);
+        values.set_field(&mut segment, 1).unwrap();
 
         let field = segment.get_field(1).unwrap();
         assert_eq!(field.repetitions.len(), 3);
@@ -3329,7 +3437,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let original = vec![42, 99, 1000];
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = Vec::<u32>::parse_field(&segment, 1, "TEST").unwrap();
 
         assert_eq!(original, parsed);
@@ -3356,7 +3464,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let values = vec![-100, 50, -75];
 
-        values.set_field(&mut segment, 1);
+        values.set_field(&mut segment, 1).unwrap();
 
         let field = segment.get_field(1).unwrap();
         assert_eq!(field.repetitions[0].value().unwrap(), "-100");
@@ -3369,7 +3477,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let original = vec![-456, 0, 789];
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = Vec::<i32>::parse_field(&segment, 1, "TEST").unwrap();
 
         assert_eq!(original, parsed);
@@ -3396,7 +3504,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let original = vec![1000000000000i64, -1000000000000i64];
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = Vec::<i64>::parse_field(&segment, 1, "TEST").unwrap();
 
         assert_eq!(original, parsed);
@@ -3428,7 +3536,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let values = vec![123.45, 678.90, -99.99];
 
-        values.set_field(&mut segment, 1);
+        values.set_field(&mut segment, 1).unwrap();
 
         let field = segment.get_field(1).unwrap();
         assert_eq!(field.repetitions.len(), 3);
@@ -3442,7 +3550,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let original = vec![1.5, 2.5, 3.5];
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = Vec::<f64>::parse_field(&segment, 1, "TEST").unwrap();
 
         assert_eq!(original.len(), parsed.len());
@@ -3488,7 +3596,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let values = vec![true, false, true, true, false];
 
-        values.set_field(&mut segment, 1);
+        values.set_field(&mut segment, 1).unwrap();
 
         let field = segment.get_field(1).unwrap();
         assert_eq!(field.repetitions.len(), 5);
@@ -3504,7 +3612,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let original = vec![true, false, false, true];
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = Vec::<bool>::parse_field(&segment, 1, "TEST").unwrap();
 
         assert_eq!(original, parsed);
@@ -3523,7 +3631,7 @@ mod tests {
             "555-5678".to_string(),
             "555-9999".to_string(),
         ];
-        phones.set_field(&mut segment, 1);
+        phones.set_field(&mut segment, 1).unwrap();
 
         let delimiters = Delimiters::default();
         let encoded = segment.encode(&delimiters);
@@ -3537,7 +3645,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let empty: Vec<String> = vec![];
 
-        empty.set_field(&mut segment, 1);
+        empty.set_field(&mut segment, 1).unwrap();
 
         let field = segment.get_field(1).unwrap();
         assert_eq!(field.repetitions.len(), 0);
@@ -3566,7 +3674,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let value = ("Smith".to_string(), "John".to_string());
 
-        value.set_field(&mut segment, 1);
+        value.set_field(&mut segment, 1).unwrap();
 
         let field = segment.get_field(1).unwrap();
         let rep = field.get_repetition(0).unwrap();
@@ -3581,7 +3689,7 @@ mod tests {
         let mut segment = Segment::new("ZPN");
         let original = ("Doe".to_string(), "Jane".to_string());
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = <(String, String)>::parse_field(&segment, 1, "ZPN").unwrap();
 
         assert_eq!(original, parsed);
@@ -3616,7 +3724,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let value = ("Smith".to_string(), "John".to_string(), "A".to_string());
 
-        value.set_field(&mut segment, 1);
+        value.set_field(&mut segment, 1).unwrap();
 
         let field = segment.get_field(1).unwrap();
         let rep = field.get_repetition(0).unwrap();
@@ -3630,7 +3738,7 @@ mod tests {
         let mut segment = Segment::new("ZPN");
         let original = ("Doe".to_string(), "Jane".to_string(), "Marie".to_string());
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = <(String, String, String)>::parse_field(&segment, 1, "ZPN").unwrap();
 
         assert_eq!(original, parsed);
@@ -3667,7 +3775,7 @@ mod tests {
             "Jr".to_string(),
         );
 
-        value.set_field(&mut segment, 1);
+        value.set_field(&mut segment, 1).unwrap();
 
         let field = segment.get_field(1).unwrap();
         let rep = field.get_repetition(0).unwrap();
@@ -3687,7 +3795,7 @@ mod tests {
             "III".to_string(),
         );
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = <(String, String, String, String)>::parse_field(&segment, 1, "ZPN").unwrap();
 
         assert_eq!(original, parsed);
@@ -3728,7 +3836,7 @@ mod tests {
             "Dr".to_string(),
         );
 
-        value.set_field(&mut segment, 1);
+        value.set_field(&mut segment, 1).unwrap();
 
         let field = segment.get_field(1).unwrap();
         let rep = field.get_repetition(0).unwrap();
@@ -3750,7 +3858,7 @@ mod tests {
             "Prof".to_string(),
         );
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed =
             <(String, String, String, String, String)>::parse_field(&segment, 1, "ZPN").unwrap();
 
@@ -3771,7 +3879,7 @@ mod tests {
             "Jr".to_string(),
             "Dr".to_string(),
         );
-        name.set_field(&mut segment, 1);
+        name.set_field(&mut segment, 1).unwrap();
 
         let delimiters = Delimiters::default();
         let encoded = segment.encode(&delimiters);
@@ -3813,7 +3921,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let value = Some(("Doe".to_string(), "Jane".to_string()));
 
-        value.set_field(&mut segment, 1);
+        value.set_field(&mut segment, 1).unwrap();
 
         let field = segment.get_field(1).unwrap();
         let rep = field.get_repetition(0).unwrap();
@@ -3826,7 +3934,7 @@ mod tests {
         let mut segment = Segment::new("TEST");
         let value: Option<(String, String)> = None;
 
-        value.set_field(&mut segment, 1);
+        value.set_field(&mut segment, 1).unwrap();
 
         // Should not create a field
         assert!(segment.get_field(1).is_none() || segment.get_field(1).unwrap().is_empty());
@@ -3837,7 +3945,7 @@ mod tests {
         let mut segment = Segment::new("ZOP");
         let original = Some(("Brown".to_string(), "Alice".to_string()));
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = Option::<(String, String)>::parse_field(&segment, 1, "ZOP").unwrap();
 
         assert_eq!(original, parsed);
@@ -3877,7 +3985,7 @@ mod tests {
         let mut segment = Segment::new("ZOP");
         let original = Some(("Doe".to_string(), "Jane".to_string(), "Marie".to_string()));
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = Option::<(String, String, String)>::parse_field(&segment, 1, "ZOP").unwrap();
 
         assert_eq!(original, parsed);
@@ -3912,7 +4020,7 @@ mod tests {
             "III".to_string(),
         ));
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed =
             Option::<(String, String, String, String)>::parse_field(&segment, 1, "ZOP").unwrap();
 
@@ -3951,7 +4059,7 @@ mod tests {
             "Prof".to_string(),
         ));
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed =
             Option::<(String, String, String, String, String)>::parse_field(&segment, 1, "ZOP")
                 .unwrap();
@@ -3967,7 +4075,7 @@ mod tests {
         let mut segment = Segment::new("ZOP");
         let value = Some(("Test".to_string(), "Value".to_string()));
 
-        value.set_field(&mut segment, 1);
+        value.set_field(&mut segment, 1).unwrap();
 
         let delimiters = Delimiters::default();
         let encoded = segment.encode(&delimiters);
@@ -3982,7 +4090,7 @@ mod tests {
         let mut segment = Segment::new("ZOP");
         let value: Option<(String, String)> = None;
 
-        value.set_field(&mut segment, 1);
+        value.set_field(&mut segment, 1).unwrap();
 
         let delimiters = Delimiters::default();
         let encoded = segment.encode(&delimiters);
@@ -4039,7 +4147,7 @@ mod tests {
             ("555-5678".to_string(), "Work".to_string()),
         ];
 
-        phones.set_field(&mut segment, 1);
+        phones.set_field(&mut segment, 1).unwrap();
 
         let delimiters = Delimiters::default();
         let encoded = segment.encode(&delimiters);
@@ -4056,7 +4164,7 @@ mod tests {
             ("EEE".to_string(), "FFF".to_string()),
         ];
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = Vec::<(String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
 
         assert_eq!(parsed, original);
@@ -4113,7 +4221,7 @@ mod tests {
             ("Doe".to_string(), "Jane".to_string(), "PhD".to_string()),
         ];
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed = Vec::<(String, String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
 
         assert_eq!(parsed, original);
@@ -4185,7 +4293,7 @@ mod tests {
             ),
         ];
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed =
             Vec::<(String, String, String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
 
@@ -4265,7 +4373,7 @@ mod tests {
             ),
         ];
 
-        original.set_field(&mut segment, 1);
+        original.set_field(&mut segment, 1).unwrap();
         let parsed =
             Vec::<(String, String, String, String, String)>::parse_field(&segment, 1, "ZVT")
                 .unwrap();
@@ -4295,7 +4403,7 @@ mod tests {
             ("555-3333".to_string(), "Mobile".to_string()),
         ];
 
-        phones.set_field(&mut segment, 1);
+        phones.set_field(&mut segment, 1).unwrap();
 
         let delimiters = Delimiters::default();
         let encoded = segment.encode(&delimiters);
@@ -4309,7 +4417,7 @@ mod tests {
     }
 
     #[test]
-    fn test_vec_tuple_incomplete_components_skipped() {
+    fn test_vec_tuple_incomplete_components_error() {
         use vyna_hl7_core::{Component, Field, Repetition};
 
         let mut segment = Segment::new("ZVT");
@@ -4336,12 +4444,10 @@ mod tests {
 
         segment.set_field(1, field).unwrap();
 
-        let result = Vec::<(String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
-
-        // Should only include complete tuples (AAA^BBB and DDD^EEE)
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0], ("AAA".to_string(), "BBB".to_string()));
-        assert_eq!(result[1], ("DDD".to_string(), "EEE".to_string()));
+        // An incomplete repetition is an error like the Vec scalar path,
+        // never silently dropped even when other repetitions are complete.
+        let err = Vec::<(String, String)>::parse_field(&segment, 1, "ZVT").unwrap_err();
+        assert!(err.to_string().contains("repetition 2"));
     }
 
     #[test]
@@ -4352,7 +4458,7 @@ mod tests {
             ("555-0002".to_string(), "Secondary".to_string()),
         ];
 
-        phones.set_field(&mut segment, 1);
+        phones.set_field(&mut segment, 1).unwrap();
         let parsed = Vec::<(String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
 
         assert_eq!(parsed.len(), 2);
@@ -4495,5 +4601,72 @@ mod tests {
             Option::<String>::parse_field(&segment, 1, "TEST").unwrap(),
             Some("PLAIN".to_string())
         );
+    }
+
+    #[test]
+    fn test_vec_tuple2_incomplete_repetition_errors() {
+        use vyna_hl7_core::Field;
+
+        let mut segment = Segment::new("ZVT");
+        segment
+            .set_field(1, Field::from_delimited("555-1234^Home~555-5678"))
+            .unwrap();
+
+        let err = Vec::<(String, String)>::parse_field(&segment, 1, "ZVT").unwrap_err();
+        assert!(err.to_string().contains("repetition 2"));
+    }
+
+    #[test]
+    fn test_vec_tuple3_incomplete_repetition_errors() {
+        use vyna_hl7_core::Field;
+
+        let mut segment = Segment::new("ZVT");
+        segment
+            .set_field(1, Field::from_delimited("AAA^BBB^CCC~DDD^EEE"))
+            .unwrap();
+
+        assert!(Vec::<(String, String, String)>::parse_field(&segment, 1, "ZVT").is_err());
+    }
+
+    #[test]
+    fn test_vec_tuple4_incomplete_repetition_errors() {
+        use vyna_hl7_core::Field;
+
+        let mut segment = Segment::new("ZVT");
+        segment
+            .set_field(1, Field::from_delimited("A^B^C^D~E^F^G"))
+            .unwrap();
+
+        assert!(Vec::<(String, String, String, String)>::parse_field(&segment, 1, "ZVT").is_err());
+    }
+
+    #[test]
+    fn test_vec_tuple5_incomplete_repetition_errors() {
+        use vyna_hl7_core::Field;
+
+        let mut segment = Segment::new("ZVT");
+        segment
+            .set_field(1, Field::from_delimited("A^B^C^D^E~F^G^H^I"))
+            .unwrap();
+
+        assert!(
+            Vec::<(String, String, String, String, String)>::parse_field(&segment, 1, "ZVT")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_vec_tuple2_skips_empty_repetition() {
+        use vyna_hl7_core::Field;
+
+        let mut segment = Segment::new("ZVT");
+        segment
+            .set_field(1, Field::from_delimited("AAA^BBB~~CCC^DDD"))
+            .unwrap();
+
+        let result = Vec::<(String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], ("AAA".to_string(), "BBB".to_string()));
+        assert_eq!(result[1], ("CCC".to_string(), "DDD".to_string()));
     }
 }

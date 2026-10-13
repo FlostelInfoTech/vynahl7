@@ -544,9 +544,12 @@ impl XmlDecoder {
         Ok(())
     }
 
-    /// Check if a name looks like a segment ID (3 uppercase letters)
+    /// Check if a name looks like a segment ID (3 uppercase alphanumerics)
     fn is_segment_name(&self, name: &str) -> bool {
-        name.len() == 3 && name.chars().all(|c| c.is_ascii_uppercase())
+        name.len() == 3
+            && name
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
     }
 
     /// Parse a field element name like "MSH.3" or "PID.5"
@@ -923,5 +926,20 @@ mod tests {
         assert!(matches!(err, XmlError::Unescape(_)));
         let source: &dyn std::error::Error = &err;
         assert!(source.source().is_some());
+    }
+
+    #[test]
+    fn test_decode_segment_id_with_digits() {
+        // Z-segments like Z12 are 3-char alphanumerics: they must
+        // decode as segments, not collapse into the root wrapper.
+        let decoder = XmlDecoder::new();
+        assert!(decoder.is_segment_name("Z12"));
+        assert!(decoder.parse_field_name("Z12.1").is_some());
+
+        let xml = r#"<Z12><Z12.1>hello</Z12.1></Z12>"#;
+        let message = decoder.decode(xml).unwrap();
+        assert_eq!(message.segments.len(), 1);
+        assert_eq!(message.segments[0].id, "Z12");
+        assert_eq!(message.segments[0].get_field_value(1), Some("hello"));
     }
 }

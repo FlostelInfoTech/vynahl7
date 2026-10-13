@@ -3,6 +3,13 @@
 //! This module provides format validation for HL7 data types according to the
 //! HL7 v2.x specification. Each data type has specific formatting rules that
 //! must be followed for conformance.
+//!
+//! Composite data types (CE, XPN, XAD, XTN, CX, and the other
+//! multi-component types) intentionally accept any scalar here:
+//! component structure is enforced by schema component definitions
+//! from the parsed field (see `Validator`), because these functions
+//! only ever see one decoded scalar, in which separator characters
+//! are data rather than structure.
 
 use vyna_hl7_core::datetime::{Hl7Date, Hl7DateTime, Hl7Time};
 use vyna_hl7_core::error::Error as CoreError;
@@ -146,21 +153,43 @@ fn validate_timestamp(value: &str) -> DataTypeValidation {
     }
 }
 
-/// Validate NM (Numeric) - can include decimals and signs
+/// Validate NM (Numeric): `[+-]?` digits with at most one decimal point
+///
+/// This is a grammar check, deliberately not `f64` parsing: `f64`
+/// accepts `NaN`, infinities, and exponents (`1e5`), none of which
+/// are valid HL7 NM values.
 fn validate_numeric(value: &str) -> DataTypeValidation {
-    // Allow optional sign, digits, and optional decimal point
     let trimmed = value.trim();
 
     if trimmed.is_empty() {
         return DataTypeValidation::Valid;
     }
 
-    // Try parsing as f64
-    match trimmed.parse::<f64>() {
-        Ok(_) => DataTypeValidation::Valid,
-        Err(_) => DataTypeValidation::Invalid {
+    let digits = trimmed.strip_prefix(['+', '-']).unwrap_or(trimmed);
+    let mut seen_dot = false;
+    let mut seen_digit = false;
+    let mut valid = !digits.is_empty();
+    for c in digits.chars() {
+        if c == '.' {
+            if seen_dot {
+                valid = false;
+                break;
+            }
+            seen_dot = true;
+        } else if c.is_ascii_digit() {
+            seen_digit = true;
+        } else {
+            valid = false;
+            break;
+        }
+    }
+
+    if valid && seen_digit {
+        DataTypeValidation::Valid
+    } else {
+        DataTypeValidation::Invalid {
             reason: "Not a valid numeric value".to_string(),
-        },
+        }
     }
 }
 
@@ -206,24 +235,25 @@ fn validate_identifier(value: &str) -> DataTypeValidation {
     }
 }
 
-/// Validate CE/CWE/CNE (Coded Elements) - component structure
+/// Accept any scalar for CE/CWE/CNE/CF (Coded Elements)
+///
+/// Component structure is enforced by schema component definitions
+/// from the parsed field (see `Validator`); this layer only ever
+/// sees one decoded scalar, in which separators are data.
 fn validate_coded_element(value: &str) -> DataTypeValidation {
-    // Coded elements have components separated by ^
-    // Format: identifier^text^coding system^...
-    // At minimum, should have an identifier
     if value.is_empty() {
         return DataTypeValidation::Valid;
     }
 
-    // Just check that it's not malformed (basic validation)
-    // More detailed validation would require checking component count
     DataTypeValidation::Valid
 }
 
-/// Validate XPN (Person Name) - component structure
+/// Accept any scalar for XPN/PN (Person Name)
+///
+/// Component structure is enforced by schema component definitions
+/// from the parsed field (see `Validator`); this layer only ever
+/// sees one decoded scalar, in which separators are data.
 fn validate_person_name(value: &str) -> DataTypeValidation {
-    // Format: family^given^middle^suffix^prefix^...
-    // Basic validation - should have components
     if value.is_empty() {
         return DataTypeValidation::Valid;
     }
@@ -231,9 +261,12 @@ fn validate_person_name(value: &str) -> DataTypeValidation {
     DataTypeValidation::Valid
 }
 
-/// Validate XAD (Address) - component structure
+/// Accept any scalar for XAD/AD (Address)
+///
+/// Component structure is enforced by schema component definitions
+/// from the parsed field (see `Validator`); this layer only ever
+/// sees one decoded scalar, in which separators are data.
 fn validate_address(value: &str) -> DataTypeValidation {
-    // Format: street^other designation^city^state^zip^...
     if value.is_empty() {
         return DataTypeValidation::Valid;
     }
@@ -241,11 +274,12 @@ fn validate_address(value: &str) -> DataTypeValidation {
     DataTypeValidation::Valid
 }
 
-/// Validate XTN (Telecom) - phone/email format
+/// Accept any scalar for XTN/TN (Telecom)
+///
+/// Component structure is enforced by schema component definitions
+/// from the parsed field (see `Validator`); this layer only ever
+/// sees one decoded scalar, in which separators are data.
 fn validate_telecom(value: &str) -> DataTypeValidation {
-    // Format: [(999)]999-9999[X99999][B99999][C any text]
-    // Or email format
-    // Basic validation for now
     if value.is_empty() {
         return DataTypeValidation::Valid;
     }
@@ -253,9 +287,12 @@ fn validate_telecom(value: &str) -> DataTypeValidation {
     DataTypeValidation::Valid
 }
 
-/// Validate CX (Composite ID)
+/// Accept any scalar for CX/CK (Composite ID)
+///
+/// Component structure is enforced by schema component definitions
+/// from the parsed field (see `Validator`); this layer only ever
+/// sees one decoded scalar, in which separators are data.
 fn validate_composite_id(value: &str) -> DataTypeValidation {
-    // Format: ID^check digit^check digit scheme^assigning authority^...
     if value.is_empty() {
         return DataTypeValidation::Valid;
     }
@@ -263,9 +300,12 @@ fn validate_composite_id(value: &str) -> DataTypeValidation {
     DataTypeValidation::Valid
 }
 
-/// Validate EI (Entity Identifier)
+/// Accept any scalar for EI (Entity Identifier)
+///
+/// Component structure is enforced by schema component definitions
+/// from the parsed field (see `Validator`); this layer only ever
+/// sees one decoded scalar, in which separators are data.
 fn validate_entity_identifier(value: &str) -> DataTypeValidation {
-    // Format: entity identifier^namespace ID^universal ID^universal ID type
     if value.is_empty() {
         return DataTypeValidation::Valid;
     }
@@ -273,9 +313,12 @@ fn validate_entity_identifier(value: &str) -> DataTypeValidation {
     DataTypeValidation::Valid
 }
 
-/// Validate HD (Hierarchic Designator)
+/// Accept any scalar for HD (Hierarchic Designator)
+///
+/// Component structure is enforced by schema component definitions
+/// from the parsed field (see `Validator`); this layer only ever
+/// sees one decoded scalar, in which separators are data.
 fn validate_hierarchic_designator(value: &str) -> DataTypeValidation {
-    // Format: namespace ID^universal ID^universal ID type
     if value.is_empty() {
         return DataTypeValidation::Valid;
     }
@@ -345,7 +388,11 @@ fn validate_numeric_array(value: &str) -> DataTypeValidation {
     DataTypeValidation::Valid
 }
 
-/// Validate IS (Coded Value for HL7 Defined Tables) - similar to ID
+/// Accept any scalar for IS (Coded Value for HL7 Defined Tables)
+///
+/// Component structure is enforced by schema component definitions
+/// from the parsed field (see `Validator`); this layer only ever
+/// sees one decoded scalar, in which separators are data.
 fn validate_coded_value(value: &str) -> DataTypeValidation {
     if value.is_empty() {
         return DataTypeValidation::Valid;
@@ -353,43 +400,59 @@ fn validate_coded_value(value: &str) -> DataTypeValidation {
     DataTypeValidation::Valid
 }
 
-/// Validate XCN (Extended Composite ID Number and Name)
+/// Accept any scalar for XCN/CN (Extended Composite ID Number and Name)
+///
+/// Component structure is enforced by schema component definitions
+/// from the parsed field (see `Validator`); this layer only ever
+/// sees one decoded scalar, in which separators are data.
 fn validate_composite_name(value: &str) -> DataTypeValidation {
-    // Format: ID^family^given^middle^suffix^prefix^degree^source table^...
     if value.is_empty() {
         return DataTypeValidation::Valid;
     }
     DataTypeValidation::Valid
 }
 
-/// Validate PL (Person Location)
+/// Accept any scalar for PL (Person Location)
+///
+/// Component structure is enforced by schema component definitions
+/// from the parsed field (see `Validator`); this layer only ever
+/// sees one decoded scalar, in which separators are data.
 fn validate_person_location(value: &str) -> DataTypeValidation {
-    // Format: point of care^room^bed^facility^location status^...
     if value.is_empty() {
         return DataTypeValidation::Valid;
     }
     DataTypeValidation::Valid
 }
 
-/// Validate VID (Version Identifier)
+/// Accept any scalar for VID (Version Identifier)
+///
+/// Component structure is enforced by schema component definitions
+/// from the parsed field (see `Validator`); this layer only ever
+/// sees one decoded scalar, in which separators are data.
 fn validate_version_identifier(value: &str) -> DataTypeValidation {
-    // Format: version ID^internationalization code^international version ID
     if value.is_empty() {
         return DataTypeValidation::Valid;
     }
     DataTypeValidation::Valid
 }
 
-/// Validate SN (Structured Numeric)
+/// Accept any scalar for SN (Structured Numeric)
+///
+/// Component structure is enforced by schema component definitions
+/// from the parsed field (see `Validator`); this layer only ever
+/// sees one decoded scalar, in which separators are data.
 fn validate_structured_numeric(value: &str) -> DataTypeValidation {
-    // Format: comparator^num1^separator/suffix^num2
     if value.is_empty() {
         return DataTypeValidation::Valid;
     }
     DataTypeValidation::Valid
 }
 
-/// Generic validation for composite types with component structure
+/// Accept any scalar for the remaining composite types
+///
+/// Component structure is enforced by schema component definitions
+/// from the parsed field (see `Validator`); this layer only ever
+/// sees one decoded scalar, in which separators are data.
 fn validate_composite_type(value: &str) -> DataTypeValidation {
     if value.is_empty() {
         return DataTypeValidation::Valid;
@@ -452,6 +515,27 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_numeric_rejects_non_nm_float_forms() {
+        // f64 parses these, but the HL7 NM grammar (optional sign,
+        // digits, one decimal point) does not allow them.
+        for bad in ["NaN", "inf", "-inf", "+Infinity", "1e5", "1E-3"] {
+            assert!(!validate_numeric(bad).is_valid(), "{bad}");
+        }
+        // Grammar edge cases: a sign or point alone is not a number.
+        for bad in ["+", "-", ".", "+.", "1.2.3", "12a", ""] {
+            if bad.is_empty() {
+                assert!(validate_numeric(bad).is_valid());
+            } else {
+                assert!(!validate_numeric(bad).is_valid(), "{bad}");
+            }
+        }
+        // Still valid: leading/trailing-point decimals and signed values.
+        for good in ["0", "-0", "+0.5", ".5", "5.", "007", "123456789.987654321"] {
+            assert!(validate_numeric(good).is_valid(), "{good}");
+        }
+    }
+
+    #[test]
     fn test_validate_sequence_id() {
         assert!(validate_sequence_id("1").is_valid());
         assert!(validate_sequence_id("123").is_valid());
@@ -499,5 +583,21 @@ mod tests {
         assert!(validate_date("").is_valid());
         assert!(validate_time("").is_valid());
         assert!(validate_numeric("").is_valid());
+    }
+
+    #[test]
+    fn test_composite_validators_accept_any_scalar_by_design() {
+        // Composite checks intentionally accept any scalar: component
+        // structure is enforced by schema component definitions from the
+        // parsed field, while these functions only ever see one decoded
+        // scalar, in which separators are data rather than structure.
+        for value in ["DOE^JOHN", "^^^^", "anything at all"] {
+            assert!(validate_coded_element(value).is_valid());
+            assert!(validate_person_name(value).is_valid());
+            assert!(validate_address(value).is_valid());
+            assert!(validate_telecom(value).is_valid());
+            assert!(validate_composite_id(value).is_valid());
+            assert!(validate_composite_type(value).is_valid());
+        }
     }
 }

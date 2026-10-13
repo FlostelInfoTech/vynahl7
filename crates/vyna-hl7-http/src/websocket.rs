@@ -23,6 +23,8 @@ use std::sync::Arc;
 #[cfg(feature = "websocket")]
 use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(feature = "websocket")]
+use std::time::Duration;
+#[cfg(feature = "websocket")]
 use tokio::sync::broadcast;
 #[cfg(feature = "websocket")]
 use vyna_hl7_core::{CharacterSet, Message};
@@ -51,6 +53,11 @@ struct BroadcastFrame {
 #[cfg(feature = "websocket")]
 static NEXT_WS_CONN_ID: AtomicU64 = AtomicU64::new(1);
 
+/// Default idle timeout for server connections (see
+/// [`WebSocketConfig::with_idle_timeout`]).
+#[cfg(feature = "websocket")]
+pub const DEFAULT_WS_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+
 /// WebSocket server configuration
 #[cfg(feature = "websocket")]
 #[derive(Clone)]
@@ -59,6 +66,11 @@ pub struct WebSocketConfig {
     pub handler: WsMessageHandler,
     /// Maximum accepted message size in bytes (default: 1 MB)
     pub max_message_size: usize,
+    /// Close connections idle longer than this (default: 5 minutes).
+    ///
+    /// Any inbound frame or broadcast delivery resets the timer. `None`
+    /// disables the timeout (connections stay open indefinitely).
+    pub idle_timeout: Option<Duration>,
     /// Broadcast each successfully parsed incoming message to all other
     /// connected clients (the sender gets only its direct response).
     ///
@@ -97,6 +109,7 @@ impl WebSocketConfig {
         Self {
             handler,
             max_message_size: 1024 * 1024, // 1 MB default
+            idle_timeout: Some(DEFAULT_WS_IDLE_TIMEOUT),
             enable_broadcast: false,
             broadcast_tx,
         }
@@ -116,6 +129,20 @@ impl WebSocketConfig {
     /// one broadcast channel across connections.
     pub fn with_broadcast(mut self) -> Self {
         self.enable_broadcast = true;
+        self
+    }
+
+    /// Close connections idle longer than `timeout` (default: 5 minutes).
+    ///
+    /// Without a bound, dead peers accumulate a server task each forever.
+    pub fn with_idle_timeout(mut self, timeout: Duration) -> Self {
+        self.idle_timeout = Some(timeout);
+        self
+    }
+
+    /// Disable the idle timeout (connections stay open indefinitely).
+    pub fn without_idle_timeout(mut self) -> Self {
+        self.idle_timeout = None;
         self
     }
 }
@@ -182,6 +209,14 @@ async fn handle_websocket(socket: WebSocket, config: WebSocketConfig) {
     tracing::info!("WebSocket connection established");
 
     loop {
+        // Fresh deadline each iteration: any event below (inbound frame
+        // or broadcast delivery) resets the idle timer.
+        let idle = async {
+            match config.idle_timeout {
+                Some(timeout) => tokio::time::sleep(timeout).await,
+                None => std::future::pending::<()>().await,
+            }
+        };
         tokio::select! {
             msg = receiver.next() => {
                 match msg {
@@ -213,6 +248,11 @@ async fn handle_websocket(socket: WebSocket, config: WebSocketConfig) {
                     // than spin, defensively.
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
+            }
+            _ = idle => {
+                #[cfg(feature = "logging")]
+                tracing::info!("WebSocket connection closed after idle timeout");
+                break;
             }
         }
     }
@@ -464,10 +504,15 @@ impl BroadcastChannel {
     }
 }
 
+/// Default bound on [`WebSocketClient::send_message`] waiting for a response.
+#[cfg(feature = "websocket")]
+pub const DEFAULT_WS_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// WebSocket client for connecting to remote HL7 WebSocket servers
 #[cfg(feature = "websocket")]
 pub struct WebSocketClient {
     url: String,
+    response_timeout: Duration,
 }
 
 #[cfg(feature = "websocket")]
@@ -489,7 +534,17 @@ impl WebSocketClient {
     /// # }
     /// ```
     pub fn new(url: impl Into<String>) -> Self {
-        Self { url: url.into() }
+        Self {
+            url: url.into(),
+            response_timeout: DEFAULT_WS_RESPONSE_TIMEOUT,
+        }
+    }
+
+    /// Bound how long [`WebSocketClient::send_message`] waits for a
+    /// response (default: 30 s).
+    pub fn with_response_timeout(mut self, timeout: Duration) -> Self {
+        self.response_timeout = timeout;
+        self
     }
 
     /// Connect to the WebSocket server and process messages
@@ -596,8 +651,16 @@ impl WebSocketClient {
             .await
             .map_err(|e| Error::Io(std::io::Error::other(e)))?;
 
-        // Wait for response
-        if let Some(msg) = read.next().await {
+        // Wait for response, bounded so a silent peer cannot hang us forever.
+        let reply = tokio::time::timeout(self.response_timeout, read.next())
+            .await
+            .map_err(|_| {
+                Error::Http(format!(
+                    "WebSocket response timed out after {:?}",
+                    self.response_timeout
+                ))
+            })?;
+        if let Some(msg) = reply {
             match msg {
                 Ok(TungsteniteMessage::Text(text)) => {
                     let response = parse_message(&text)?;
@@ -644,6 +707,73 @@ mod tests {
     fn test_websocket_client_creation() {
         let client = WebSocketClient::new("ws://localhost:8080/ws");
         assert_eq!(client.url, "ws://localhost:8080/ws");
+    }
+
+    #[test]
+    fn test_ws_timeout_defaults_and_overrides() {
+        use std::time::Duration;
+
+        let client = WebSocketClient::new("ws://localhost:8080/ws");
+        assert_eq!(client.response_timeout, DEFAULT_WS_RESPONSE_TIMEOUT);
+        let client = client.with_response_timeout(Duration::from_secs(5));
+        assert_eq!(client.response_timeout, Duration::from_secs(5));
+
+        let config = WebSocketConfig::new(Arc::new(Ok));
+        assert_eq!(config.idle_timeout, Some(DEFAULT_WS_IDLE_TIMEOUT));
+        let config = config.with_idle_timeout(Duration::from_secs(60));
+        assert_eq!(config.idle_timeout, Some(Duration::from_secs(60)));
+        let config = config.without_idle_timeout();
+        assert_eq!(config.idle_timeout, None);
+    }
+
+    /// A server that never responds must not hang `send_message` forever.
+    #[tokio::test]
+    async fn test_client_response_timeout() {
+        use axum::extract::ws::{WebSocket, WebSocketUpgrade};
+        use axum::response::Response;
+        use axum::{Router, routing::get};
+        use std::time::{Duration, Instant};
+
+        async fn black_hole(ws: WebSocketUpgrade) -> Response {
+            ws.on_upgrade(
+                |mut socket: WebSocket| async move { while socket.recv().await.is_some() {} },
+            )
+        }
+        let app = Router::new().route("/ws", get(black_hole));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let client = WebSocketClient::new(format!("ws://{addr}/ws"))
+            .with_response_timeout(Duration::from_millis(100));
+        let msg = parse_message("MSH|^~\\&|S|A|R|F|20240101||ADT^A01|T1|P|2.5\r").unwrap();
+        let start = Instant::now();
+        let err = client.send_message(&msg).await.unwrap_err();
+        assert!(start.elapsed() < Duration::from_secs(5));
+        assert!(err.to_string().contains("timed out"), "unexpected: {err}");
+    }
+
+    /// Idle server connections are closed once the idle timeout elapses.
+    #[tokio::test]
+    async fn test_server_idle_timeout_closes_connection() {
+        use axum::{Router, routing::get};
+        use std::time::Duration;
+        use tokio_tungstenite::connect_async;
+
+        let handler: WsMessageHandler = Arc::new(Ok);
+        let config = WebSocketConfig::new(handler).with_idle_timeout(Duration::from_millis(100));
+        let app = Router::new()
+            .route("/ws", get(websocket_handler))
+            .with_state(config);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let (mut ws, _) = connect_async(format!("ws://{addr}/ws")).await.unwrap();
+        // Stay idle: the server must close us promptly.
+        tokio::time::timeout(Duration::from_secs(5), ws.next())
+            .await
+            .expect("idle connection was never closed by the server");
     }
 
     /// Repro for finding 4: with broadcast enabled, a message received

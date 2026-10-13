@@ -1,10 +1,10 @@
 //! HTTP server for receiving HL7 messages
 
-use crate::{CONTENT_TYPE_HL7_ER7, Error, Result, decode_body};
+use crate::{CONTENT_TYPE_HL7_ER7, CONTENT_TYPE_HL7_XML, Error, Result, decode_body};
 use axum::{
     Router,
     body::Bytes,
-    extract::State,
+    extract::{DefaultBodyLimit, State},
     http::{HeaderMap, StatusCode},
     routing::post,
 };
@@ -66,10 +66,17 @@ pub const DEFAULT_TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 #[cfg(feature = "tls")]
 pub const DEFAULT_TLS_CONNECTION_TIMEOUT: Duration = Duration::from_secs(300);
 
+/// Default cap on a single request body (see [`HttpServer::with_max_body_size`]).
+///
+/// Matches axum's implicit 2 MB default, now explicit and configurable.
+pub const DEFAULT_MAX_BODY_SIZE: usize = 2 * 1024 * 1024;
+
 #[derive(Clone)]
 pub struct HttpServer {
     handler: MessageHandler,
     auth: Option<(String, String)>,
+    /// Cap on a single request body in bytes (default: 2 MB).
+    max_body_size: usize,
     #[cfg(feature = "tls")]
     tls_config: Option<TlsServerConfig>,
     /// Bound on `TlsAcceptor::accept` per connection (default: 10 s).
@@ -90,6 +97,7 @@ impl HttpServer {
         Self {
             handler: Arc::new(Ok),
             auth: None,
+            max_body_size: DEFAULT_MAX_BODY_SIZE,
             #[cfg(feature = "tls")]
             tls_config: None,
             #[cfg(feature = "tls")]
@@ -209,6 +217,35 @@ impl HttpServer {
         self
     }
 
+    /// Cap the request body size in bytes (default: 2 MB).
+    ///
+    /// Bodies larger than the cap are rejected with `413 Payload Too Large`
+    /// before reaching the handler. Raise this for large clinical batches.
+    pub fn with_max_body_size(mut self, max_body_size: usize) -> Self {
+        self.max_body_size = max_body_size;
+        self
+    }
+
+    /// Build the axum router: routes plus tracing, the body-size limit,
+    /// optional compression, and this server as state.
+    fn build_router(self) -> Router {
+        let app = Router::new()
+            .route("/", post(handle_message))
+            .route("/{*path}", post(handle_message))
+            .layer(TraceLayer::new_for_http())
+            .layer(DefaultBodyLimit::max(self.max_body_size));
+
+        // Add compression layer if enabled
+        #[cfg(feature = "compression")]
+        let app = if self.enable_compression {
+            app.layer(CompressionLayer::new())
+        } else {
+            app
+        };
+
+        app.with_state(self)
+    }
+
     /// Start the HTTP server
     ///
     /// # Arguments
@@ -228,21 +265,7 @@ impl HttpServer {
     /// # }
     /// ```
     pub async fn serve(self, addr: &str) -> Result<()> {
-        // Build router
-        let app = Router::new()
-            .route("/", post(handle_message))
-            .route("/{*path}", post(handle_message))
-            .layer(TraceLayer::new_for_http());
-
-        // Add compression layer if enabled
-        #[cfg(feature = "compression")]
-        let app = if self.enable_compression {
-            app.layer(CompressionLayer::new())
-        } else {
-            app
-        };
-
-        let app = app.with_state(self);
+        let app = self.build_router();
 
         // Bind server
         let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -308,25 +331,11 @@ impl HttpServer {
             Error::InvalidUrl("TLS not configured. Use with_tls() first.".to_string())
         })?;
 
-        // Copy the per-connection bounds before `with_state` moves `self`.
+        // Copy the per-connection bounds before `build_router` moves `self`.
         let handshake_timeout = self.tls_handshake_timeout;
         let connection_timeout = self.tls_connection_timeout;
 
-        // Build router
-        let app = Router::new()
-            .route("/", post(handle_message))
-            .route("/{*path}", post(handle_message))
-            .layer(TraceLayer::new_for_http());
-
-        // Add compression layer if enabled
-        #[cfg(feature = "compression")]
-        let app = if self.enable_compression {
-            app.layer(CompressionLayer::new())
-        } else {
-            app
-        };
-
-        let app = app.with_state(self);
+        let app = self.build_router();
 
         // Create TLS acceptor
         let tls_acceptor = TlsAcceptor::from(tls_config.config.clone());
@@ -417,6 +426,18 @@ impl Default for HttpServer {
     }
 }
 
+/// True when `content_type` names an HL7 v2 media type.
+///
+/// Compares the media type (before any `;` parameters) case-insensitively
+/// against the crate's HL7 content types. Substring matching is deliberately
+/// avoided so spoof types such as `application/hl7-evil` are rejected while
+/// parameters (e.g. `; charset=utf-8`) are allowed.
+pub(crate) fn is_hl7_content_type(content_type: &str) -> bool {
+    let media_type = content_type.split(';').next().unwrap_or("").trim();
+    media_type.eq_ignore_ascii_case(CONTENT_TYPE_HL7_ER7)
+        || media_type.eq_ignore_ascii_case(CONTENT_TYPE_HL7_XML)
+}
+
 /// Handle incoming HTTP POST requests with HL7 messages
 pub(crate) async fn handle_message(
     State(server): State<HttpServer>,
@@ -429,7 +450,7 @@ pub(crate) async fn handle_message(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    if !content_type.contains("hl7") {
+    if !is_hl7_content_type(content_type) {
         return Err((
             StatusCode::BAD_REQUEST,
             format!(
@@ -545,6 +566,45 @@ mod tests {
     }
 
     #[test]
+    fn test_body_limit_default_and_knob() {
+        assert_eq!(HttpServer::new().max_body_size, DEFAULT_MAX_BODY_SIZE);
+        assert_eq!(DEFAULT_MAX_BODY_SIZE, 2 * 1024 * 1024);
+        let server = HttpServer::new().with_max_body_size(1024);
+        assert_eq!(server.max_body_size, 1024);
+    }
+
+    async fn post_status(app: Router, body: String) -> reqwest::StatusCode {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        reqwest::Client::new()
+            .post(format!("http://{addr}/"))
+            .header("content-type", CONTENT_TYPE_HL7_ER7)
+            .body(body)
+            .send()
+            .await
+            .unwrap()
+            .status()
+    }
+
+    /// Oversized bodies get 413, and the knob moves the boundary.
+    #[tokio::test]
+    async fn test_body_limit_enforced_and_configurable() {
+        // A valid message just over the 2 MB default: base MSH plus padding.
+        let mut big = String::from(VALID_HL7);
+        while big.len() <= 2 * 1024 * 1024 + 1024 {
+            big.push_str("NTE|1||padding-padding-padding-padding-padding\r");
+        }
+        let status = post_status(HttpServer::new().build_router(), big.clone()).await;
+        assert_eq!(status, reqwest::StatusCode::PAYLOAD_TOO_LARGE);
+        let raised = HttpServer::new()
+            .with_max_body_size(8 * 1024 * 1024)
+            .build_router();
+        let status = post_status(raised, big).await;
+        assert_eq!(status, reqwest::StatusCode::OK);
+    }
+
+    #[test]
     fn test_with_handler() {
         let custom_handler: MessageHandler = Arc::new(|msg| {
             // Custom handler logic
@@ -622,6 +682,47 @@ mod tests {
         .await;
         let (status, _) = result.unwrap_err();
         assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_handle_message_rejects_spoof_content_type() {
+        // Substring "hl7" must not be enough to pass the check.
+        let server = HttpServer::new();
+        for spoof in [
+            "application/hl7-evil",
+            "text/hl7",
+            "x-application/hl7-v2+er7x",
+            "application/json; note=hl7",
+        ] {
+            let result = handle_message(
+                State(server.clone()),
+                headers(Some(spoof), None),
+                VALID_HL7.into(),
+            )
+            .await;
+            let (status, _) = result.unwrap_err();
+            assert_eq!(status, StatusCode::BAD_REQUEST, "spoof accepted: {spoof}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_message_accepts_content_type_parameters() {
+        let server = HttpServer::new();
+        for ok_type in [
+            CONTENT_TYPE_HL7_ER7,
+            "x-application/hl7-v2+er7; charset=utf-8",
+            "X-Application/HL7-V2+ER7",
+            "x-application/hl7-v2+xml",
+        ] {
+            let (status, _, _) = handle_message(
+                State(server.clone()),
+                headers(Some(ok_type), None),
+                VALID_HL7.into(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(status, StatusCode::OK, "rejected: {ok_type}");
+        }
     }
 
     #[tokio::test]

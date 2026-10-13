@@ -261,7 +261,12 @@ impl ProfileParser {
                         break;
                     }
                 }
-                Ok(Event::Eof) => break,
+                Ok(Event::Eof) => {
+                    return Err(ConformanceError::ParseError(format!(
+                        "Truncated profile: unclosed Segment '{}'",
+                        segment.name
+                    )));
+                }
                 Err(e) => return Err(ConformanceError::XmlError(e)),
                 _ => {}
             }
@@ -316,7 +321,13 @@ impl ProfileParser {
         let mut field = FieldProfile::new(position, usage, cardinality);
         field.name = name;
         field.datatype = datatype;
-        field.length = length.and_then(|l| l.parse::<usize>().ok());
+        field.length = length
+            .map(|l| {
+                l.parse::<usize>().map_err(|_| {
+                    ConformanceError::ParseError(format!("Invalid Length value: {}", l))
+                })
+            })
+            .transpose()?;
         field.item_no = item_no;
 
         Ok(field)
@@ -491,5 +502,40 @@ mod tests {
         assert_eq!(nk1.usage, Usage::Optional);
         assert_eq!(nk1.cardinality.min, 0);
         assert_eq!(nk1.cardinality.max, None); // Unbounded (*)
+    }
+
+    #[test]
+    fn test_truncated_segment_errors() {
+        // EOF before </Segment> must error, not yield a partial profile.
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<HL7v2xConformanceProfile HL7Version="2.5">
+  <HL7v2xStaticDef MsgType="ADT" EventType="A01">
+    <MetaData Name="T" Version="1"/>
+    <Segment Name="MSH" Usage="R" Min="1" Max="1">
+      <Field Usage="R" Min="1" Max="1"/>"#;
+        let err = ProfileParser::parse_xml(xml).unwrap_err();
+        assert!(
+            matches!(err, ConformanceError::ParseError(_)),
+            "expected ParseError, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_invalid_length_errors() {
+        // A malformed Length must error, not drop the constraint.
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<HL7v2xConformanceProfile HL7Version="2.5">
+  <HL7v2xStaticDef MsgType="ADT" EventType="A01">
+    <MetaData Name="T" Version="1"/>
+    <Segment Name="MSH" Usage="R" Min="1" Max="1">
+      <Field Usage="R" Min="1" Max="1" Length="abc"/>
+    </Segment>
+  </HL7v2xStaticDef>
+</HL7v2xConformanceProfile>"#;
+        let err = ProfileParser::parse_xml(xml).unwrap_err();
+        assert!(
+            matches!(err, ConformanceError::ParseError(_)),
+            "expected ParseError, got {err:?}"
+        );
     }
 }

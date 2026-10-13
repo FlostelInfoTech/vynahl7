@@ -32,6 +32,37 @@ jobs:
       - name: WASM target check
         run: cargo build -p vyna-hl7-wasm --target wasm32-unknown-unknown
 
+  # Optional features the default build never exercises: targeted combos
+  # only (cli fhir/tls, http compression/oauth/websocket), not a powerset.
+  feature-combos:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: vyna-hl7-cli
+            features: fhir
+          - package: vyna-hl7-cli
+            features: tls
+          - package: vyna-hl7-cli
+            features: fhir,tls
+          - package: vyna-hl7-http
+            features: compression
+          - package: vyna-hl7-http
+            features: oauth
+          - package: vyna-hl7-http
+            features: websocket
+          - package: vyna-hl7-http
+            features: compression,oauth,websocket
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build ${{ matrix.package }} (${{ matrix.features }})
+        run: cargo build -p ${{ matrix.package }} --features ${{ matrix.features }}
+      - name: Test ${{ matrix.package }} (${{ matrix.features }})
+        run: cargo test -p ${{ matrix.package }} --features ${{ matrix.features }}
+
   fmt:
     runs-on: ubuntu-latest
     # Advisory only until the repo-wide rustfmt normalization lands

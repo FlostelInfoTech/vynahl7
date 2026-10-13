@@ -16,6 +16,8 @@ use vyna_hl7_fhir::converters::{
 };
 use vyna_hl7_parser::parse_message;
 
+use super::http::read_capped_response_text;
+
 /// State shared between UI and async FHIR send task
 #[derive(Default)]
 struct FhirSendState {
@@ -24,7 +26,7 @@ struct FhirSendState {
     error: Option<String>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct FhirSendResponse {
     status_code: u16,
     status_text: String,
@@ -890,14 +892,123 @@ async fn send_fhir_request(request: FhirSendRequest) -> Result<FhirSendResponse,
         .unwrap_or("")
         .to_string();
 
-    let resp_body = response
-        .text()
-        .await
-        .map_err(|e| format!("Failed to read response: {}", e))?;
+    let resp_body = read_capped_response_text(response).await?;
 
     Ok(FhirSendResponse {
         status_code,
         status_text,
         body: resp_body,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+
+    /// Drain a full client request (head plus body) on a fake server,
+    /// so the socket closes cleanly instead of resetting.
+    async fn drain_request(stream: &mut TcpStream) {
+        let mut acc = Vec::new();
+        let mut one = [0u8; 1];
+        while acc.len() < 65536 {
+            match stream.read(&mut one).await {
+                Ok(1) => {
+                    acc.push(one[0]);
+                    if acc.len() >= 4 && &acc[acc.len() - 4..] == b"\r\n\r\n" {
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+        let head = String::from_utf8_lossy(&acc);
+        let body_len: usize = head
+            .lines()
+            .filter_map(|l| l.split_once(':'))
+            .filter(|(k, _)| k.trim().eq_ignore_ascii_case("content-length"))
+            .filter_map(|(_, v)| v.trim().parse::<usize>().ok())
+            .sum();
+        let mut remaining = body_len;
+        let mut buf = [0u8; 4096];
+        while remaining > 0 {
+            let take = remaining.min(buf.len());
+            match stream.read(&mut buf[..take]).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => remaining -= n,
+            }
+        }
+    }
+
+    fn send_request(url: String) -> FhirSendRequest {
+        FhirSendRequest {
+            url,
+            body: r#"{"resourceType":"Patient"}"#.to_string(),
+            auth_type: FhirAuthType::None,
+            username: String::new(),
+            password: String::new(),
+            api_key_header: String::new(),
+            api_key: String::new(),
+            bearer_token: String::new(),
+            verify_tls: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn fhir_response_body_is_capped() {
+        // Close-delimited body past the cap: no Content-Length, so
+        // only a streaming cap can catch it.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            drain_request(&mut stream).await;
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/fhir+json\r\n\
+                      Connection: close\r\n\r\n",
+                )
+                .await
+                .unwrap();
+            let chunk = vec![b'X'; 1024 * 1024];
+            for _ in 0..11 {
+                if stream.write_all(&chunk).await.is_err() {
+                    break;
+                }
+            }
+        });
+        let err = send_fhir_request(send_request(format!(
+            "http://127.0.0.1:{}/fhir/R4/Patient",
+            port
+        )))
+        .await
+        .unwrap_err();
+        assert!(err.contains("limit"), "unexpected error: {err}");
+    }
+
+    #[tokio::test]
+    async fn fhir_small_response_still_works() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            drain_request(&mut stream).await;
+            stream
+                .write_all(
+                    b"HTTP/1.1 201 Created\r\nContent-Type: application/fhir+json\r\n\
+                      Content-Length: 2\r\nConnection: close\r\n\r\n{}",
+                )
+                .await
+                .unwrap();
+        });
+        let resp = send_fhir_request(send_request(format!(
+            "http://127.0.0.1:{}/fhir/R4/Patient",
+            port
+        )))
+        .await
+        .unwrap();
+        assert_eq!(resp.status_code, 201);
+        assert_eq!(resp.body, "{}");
+    }
 }

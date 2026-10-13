@@ -183,6 +183,20 @@ impl WebhookConfig {
     }
 }
 
+/// Upper bound for the exponential retry backoff in [`WebhookClient::send`].
+#[cfg(feature = "webhooks")]
+const MAX_BACKOFF_MILLIS: u64 = 30_000;
+
+/// Exponential backoff for the given (1-based) retry count: 100ms * 2^retries.
+///
+/// Saturating arithmetic plus a [`MAX_BACKOFF_MILLIS`] cap keep large
+/// `max_retries` values from overflowing (or sleeping absurdly long).
+#[cfg(feature = "webhooks")]
+fn backoff_delay(retries: u32) -> Duration {
+    let shift = 1u64.checked_shl(retries).unwrap_or(u64::MAX);
+    Duration::from_millis(100u64.saturating_mul(shift).min(MAX_BACKOFF_MILLIS))
+}
+
 /// Webhook client for sending notifications
 #[cfg(feature = "webhooks")]
 pub struct WebhookClient {
@@ -266,7 +280,7 @@ impl WebhookClient {
                         && retries < self.config.max_retries
                     {
                         retries += 1;
-                        tokio::time::sleep(Duration::from_millis(100 * (1 << retries))).await;
+                        tokio::time::sleep(backoff_delay(retries)).await;
                         continue;
                     } else {
                         return Err(Error::Http(format!(
@@ -277,7 +291,7 @@ impl WebhookClient {
                 }
                 Err(_) if retries < self.config.max_retries => {
                     retries += 1;
-                    tokio::time::sleep(Duration::from_millis(100 * (1 << retries))).await;
+                    tokio::time::sleep(backoff_delay(retries)).await;
                     continue;
                 }
                 Err(e) => {
@@ -399,6 +413,19 @@ mod tests {
         assert_eq!(config.max_retries, 5);
         assert!(config.include_message_content);
         assert_eq!(config.headers.len(), 1);
+    }
+
+    #[test]
+    fn test_backoff_delay_capped_no_overflow() {
+        // Exact exponential backoff for small retry counts ...
+        assert_eq!(backoff_delay(1), Duration::from_millis(200));
+        assert_eq!(backoff_delay(2), Duration::from_millis(400));
+        assert_eq!(backoff_delay(3), Duration::from_millis(800));
+        assert_eq!(backoff_delay(8), Duration::from_millis(25_600));
+        // ... capped, never overflowing, even at absurd counts.
+        assert_eq!(backoff_delay(9), Duration::from_secs(30));
+        assert_eq!(backoff_delay(60), Duration::from_secs(30));
+        assert_eq!(backoff_delay(u32::MAX), Duration::from_secs(30));
     }
 
     #[test]

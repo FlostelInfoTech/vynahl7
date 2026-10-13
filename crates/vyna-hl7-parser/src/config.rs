@@ -130,19 +130,21 @@ pub struct ParserConfig {
 /// Used by `ParserConfig::validate_segment_ids`: any parsed segment ID
 /// not in this table produces an `UnknownSegmentId` warning. Site-defined
 /// Z-segments are intentionally not listed and warn when validation is on.
+/// Note `BLC` (Blood Code) and `BLG` (Billing) are distinct real segments.
 pub(crate) const KNOWN_SEGMENT_IDS: &[&str] = &[
     "ABS", "ACC", "ADD", "ADJ", "AFF", "AIG", "AIL", "AIP", "AIS", "AL1", "APR", "ARQ", "ARV",
-    "AUT", "BHS", "BLC", "BPO", "BPX", "BTS", "BTX", "CDM", "CM0", "CM1", "CM2", "CNS", "CON",
-    "CSP", "CSR", "CSS", "CTD", "CTI", "DB1", "DG1", "DON", "DRG", "DSC", "DSP", "ECD", "ECR",
-    "EDU", "EQL", "EQU", "ERQ", "ERR", "EVN", "FAC", "FHS", "FT1", "FTS", "GOL", "GP1", "GP2",
-    "GT1", "IAM", "IN1", "IN2", "IN3", "INV", "IPC", "ISD", "LAN", "LCH", "LDP", "LOC", "LRL",
-    "MFA", "MFE", "MFI", "MRG", "MSA", "MSH", "NCK", "NDS", "NK1", "NPU", "NSC", "NST", "NTE",
-    "OBR", "OBX", "ODS", "ODT", "OH1", "OH2", "OH3", "OH4", "OM1", "OM2", "OM3", "OM4", "OM5",
-    "OM6", "OM7", "ORC", "ORG", "OVR", "PCR", "PD1", "PDC", "PDA", "PEO", "PES", "PID", "PR1",
-    "PRA", "PRB", "PRC", "PRD", "PRT", "PSG", "PSH", "PTH", "PV1", "PV2", "PYE", "QAK", "QID",
-    "QPD", "QRD", "QRF", "QRI", "RCP", "RDF", "RDT", "REL", "RF1", "RGS", "RMI", "ROL", "RQ1",
-    "RQD", "RXA", "RXC", "RXD", "RXE", "RXG", "RXO", "RXR", "SAC", "SCH", "SDD", "SFT", "SID",
-    "SPM", "STF", "TAX", "TCD", "TQ1", "TQ2", "TXA", "UAC", "UB1", "UB2", "URD", "URS", "VAR",
+    "AUT", "BHS", "BLC", "BLG", "BPO", "BPX", "BTS", "BTX", "CDM", "CDO", "CM0", "CM1", "CM2",
+    "CNS", "CON", "CSP", "CSR", "CSS", "CTD", "CTI", "DB1", "DG1", "DON", "DRG", "DSC", "DSP",
+    "ECD", "ECR", "EDU", "EQL", "EQU", "ERQ", "ERR", "EVN", "FAC", "FHS", "FT1", "FTS", "GOL",
+    "GP1", "GP2", "GT1", "IAM", "IN1", "IN2", "IN3", "INV", "IPC", "ISD", "LAN", "LCH", "LDP",
+    "LOC", "LRL", "MFA", "MFE", "MFI", "MRG", "MSA", "MSH", "NCK", "NDS", "NK1", "NPU", "NSC",
+    "NST", "NTE", "OBR", "OBX", "ODS", "ODT", "OH1", "OH2", "OH3", "OH4", "OM1", "OM2", "OM3",
+    "OM4", "OM5", "OM6", "OM7", "ORC", "ORG", "ORO", "OVR", "PCR", "PD1", "PDC", "PDA", "PEO",
+    "PES", "PID", "PR1", "PRA", "PRB", "PRC", "PRD", "PRT", "PSG", "PSH", "PTH", "PV1", "PV2",
+    "PYE", "QAK", "QID", "QPD", "QRD", "QRF", "QRI", "RCP", "RDF", "RDT", "REL", "RF1", "RGS",
+    "RMI", "ROL", "RQ1", "RQD", "RX1", "RXA", "RXC", "RXD", "RXE", "RXG", "RXO", "RXR", "RXV",
+    "SAC", "SCH", "SDD", "SFT", "SID", "SPM", "STF", "TCD", "TQ1", "TQ2", "TXA", "UAC", "UB1",
+    "UB2", "URD", "URS", "VAR",
 ];
 
 /// Check whether `id` is a standard HL7 segment ID.
@@ -450,5 +452,18 @@ mod tests {
             format!("{}", WarningCode::NonStandardSegmentId),
             "NON_STANDARD_SEGMENT_ID"
         );
+    }
+
+    #[test]
+    fn test_known_segment_ids_match_shipped_schemas() {
+        // Schema-attested IDs (BLG in 20 schema files; CDO/ORO/RX1/RXV
+        // in versioned schemas) must not warn under validate_segment_ids.
+        for id in ["BLG", "CDO", "ORO", "RX1", "RXV"] {
+            assert!(is_known_segment_id(id), "{id} should be known");
+        }
+        // BLC (Blood Code) and BLG (Billing) are distinct real segments.
+        assert!(is_known_segment_id("BLC"));
+        // TAX is a table-0203 code value, not a segment ID.
+        assert!(!is_known_segment_id("TAX"));
     }
 }

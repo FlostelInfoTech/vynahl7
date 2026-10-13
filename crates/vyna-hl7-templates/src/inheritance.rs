@@ -3,6 +3,12 @@
 use crate::{Error, MessageTemplate, Result, SegmentTemplate};
 use std::collections::HashMap;
 
+/// Maximum template inheritance chain depth.
+///
+/// Bounds `resolve_internal` recursion so a crafted extends-chain cannot
+/// overflow the stack; legitimate hierarchies are far shallower.
+const MAX_INHERITANCE_DEPTH: usize = 64;
+
 /// Template resolver for handling inheritance
 pub struct TemplateResolver {
     /// Template registry
@@ -43,6 +49,14 @@ impl TemplateResolver {
         name: &str,
         visited: &mut Vec<String>,
     ) -> Result<MessageTemplate> {
+        // Bound recursion depth before following another extends link.
+        if visited.len() >= MAX_INHERITANCE_DEPTH {
+            return Err(Error::inheritance(format!(
+                "Template inheritance depth exceeded (>{} levels) at '{}'",
+                MAX_INHERITANCE_DEPTH, name
+            )));
+        }
+
         // Check for circular dependency
         if visited.contains(&name.to_string()) {
             return Err(Error::inheritance(format!(
@@ -386,5 +400,33 @@ mod tests {
         assert!(resolver.resolve("T1").is_ok());
         assert!(resolver.resolve("T2").is_ok());
         assert!(resolver.resolve("T3").is_ok());
+    }
+
+    #[test]
+    fn test_inheritance_depth_within_limit_resolves() {
+        let mut resolver = TemplateResolver::new();
+        resolver.register(MessageTemplate::new("D0", "2.5", "ADT", "A01"));
+        for i in 1..10 {
+            resolver.register(
+                MessageTemplate::new(format!("D{i}"), "2.5", "ADT", "A01")
+                    .with_extends(format!("D{}", i - 1)),
+            );
+        }
+        assert!(resolver.resolve("D9").is_ok());
+    }
+
+    #[test]
+    fn test_excessive_inheritance_depth_errors() {
+        let mut resolver = TemplateResolver::new();
+        resolver.register(MessageTemplate::new("C0", "2.5", "ADT", "A01"));
+        for i in 1..150 {
+            resolver.register(
+                MessageTemplate::new(format!("C{i}"), "2.5", "ADT", "A01")
+                    .with_extends(format!("C{}", i - 1)),
+            );
+        }
+        let result = resolver.resolve("C149");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("depth"));
     }
 }

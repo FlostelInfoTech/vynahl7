@@ -454,6 +454,15 @@ async fn send_mllp_message(addr: &str, message: &str, timeout_secs: u32) -> Resu
             }
             response_buf.extend_from_slice(&buf[..n]);
 
+            // Same cap the test server enforces: never buffer an
+            // unterminated peer flood without bound.
+            if response_buf.len() > MAX_FRAME_SIZE {
+                return Err(std::io::Error::other(format!(
+                    "Response exceeds the maximum frame size of {} bytes",
+                    MAX_FRAME_SIZE
+                )));
+            }
+
             // Check for end of MLLP frame
             if response_buf.len() >= 2
                 && response_buf[response_buf.len() - 2] == FS
@@ -705,6 +714,18 @@ fn format_hl7_for_display(message: &str) -> String {
     message.replace('\r', "\n").trim_end_matches('\n').to_string()
 }
 
+/// Strip HL7 structural characters from a peer-supplied ACK field.
+///
+/// Peer MSH values are interpolated into the ACK's MSH/MSA segments; a
+/// raw line break or delimiter would inject/shift segments, fields, or
+/// components, or smuggle escape sequences to downstream parsers.
+pub(crate) fn sanitize_ack_field(value: &str) -> String {
+    value
+        .chars()
+        .filter(|c| !matches!(c, '\r' | '\n' | '|' | '^' | '~' | '\\' | '&'))
+        .collect()
+}
+
 /// Generate an ACK response for an HL7 message
 fn generate_ack(message: &str) -> String {
     // Parse the message to extract MSH fields
@@ -738,8 +759,14 @@ fn generate_ack(message: &str) -> String {
 
     format!(
         "MSH|^~\\&|{}|{}|{}|{}|{}||ACK|ACK{}|P|{}\rMSA|AA|{}|Message accepted\r",
-        receiving_app, receiving_fac, sending_app, sending_fac,
-        timestamp, timestamp, version, control_id
+        sanitize_ack_field(receiving_app),
+        sanitize_ack_field(receiving_fac),
+        sanitize_ack_field(sending_app),
+        sanitize_ack_field(sending_fac),
+        timestamp,
+        timestamp,
+        sanitize_ack_field(version),
+        sanitize_ack_field(control_id)
     )
 }
 
@@ -748,7 +775,7 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpStream;
+    use tokio::net::{TcpListener, TcpStream};
 
     /// Oversized frame payload: 1 byte over the enforced limit.
     const OVERSIZED_LEN: usize = MAX_FRAME_SIZE + 1;
@@ -851,5 +878,48 @@ mod tests {
         shutdown.store(true, Ordering::SeqCst);
         assert!(got_ack, "no ACK for small frame");
         assert!(String::from_utf8_lossy(&ack).contains("MSA|AA"));
+    }
+
+    #[test]
+    fn generate_ack_strips_structural_chars_from_peer_fields() {
+        // Peer MSH-10/MSH-12 carry line breaks, delimiters, and an
+        // escape char; none may survive into the ACK's MSH/MSA.
+        let msg = "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1^X~Y&Z\\Q\nEVN|P|2.5^X";
+        let ack = generate_ack(msg);
+        assert!(!ack.contains('\n'), "LF survived into ACK: {:?}", ack);
+        let segments: Vec<&str> = ack.split('\r').filter(|s| !s.is_empty()).collect();
+        assert_eq!(segments.len(), 2, "ACK segment count: {:?}", ack);
+        let msa: Vec<&str> = segments[1].split('|').collect();
+        assert_eq!(msa.len(), 4, "MSA field shift: {:?}", ack);
+        assert_eq!(msa[2], "M1XYZQEVN");
+        let msh: Vec<&str> = segments[0].split('|').collect();
+        assert_eq!(msh.len(), 12, "MSH field shift: {:?}", ack);
+        assert_eq!(msh[11], "2.5X");
+    }
+
+    #[tokio::test]
+    async fn client_ack_read_is_size_capped() {
+        // Fake peer floods past MAX_FRAME_SIZE without ever sending
+        // the FS CR terminator, then holds the connection open.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut tmp = [0u8; 8192];
+            let _ = stream.read(&mut tmp).await;
+            let _ = stream.write_all(&[0x0Bu8]).await;
+            let chunk = vec![b'X'; 1024 * 1024];
+            for _ in 0..11 {
+                if stream.write_all(&chunk).await.is_err() {
+                    break;
+                }
+            }
+            let _ = stream.flush().await;
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        });
+        let err = send_mllp_message(&format!("127.0.0.1:{}", port), "MSH|^~\\&|S\r", 10)
+            .await
+            .unwrap_err();
+        assert!(err.contains("maximum"), "unexpected error: {err}");
     }
 }

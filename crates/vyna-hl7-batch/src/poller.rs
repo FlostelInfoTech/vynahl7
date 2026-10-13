@@ -100,6 +100,14 @@ impl SettledKey {
 /// that fail to download or settle stay unsettled for retry. A redrop at an
 /// already-consumed path is treated as a new file when its size or mtime
 /// differs.
+///
+/// Same-second, same-size redrops are a known blind spot: FTP/SFTP
+/// timestamps have 1-second granularity, so a redrop that lands within
+/// the same second with the same byte count keeps the consumed key and
+/// is not reprocessed. Content-aware redetection would require
+/// re-downloading every settled file on every poll, which defeats the
+/// settled cache; senders that redrop in place should change the size
+/// (or wait a second) when the content changed.
 pub struct Poller<T> {
     transport: T,
     inbox: String,
@@ -110,10 +118,16 @@ pub struct Poller<T> {
     require_stable: bool,
     verify_counts: bool,
     max_files_per_poll: usize,
+    max_bytes_per_poll: u64,
     max_file_bytes: u64,
-    seen_stability: HashMap<String, (u64, Option<u64>)>,
+    seen_stability: HashMap<String, (Option<u64>, Option<u64>)>,
     settled: HashSet<SettledKey>,
 }
+
+/// Default cap (256 MiB) on the raw bytes one [`Poller::poll_once`] call
+/// consumes. Parsed [`Intake`]s are retained alongside the bytes, so the
+/// cap bounds total retained memory per poll to a small multiple of this.
+const DEFAULT_MAX_BYTES_PER_POLL: u64 = 256 * 1024 * 1024;
 
 impl<T: FileTransport> Poller<T> {
     /// Poll `inbox` ("", the transport root, by default) with deletion after
@@ -129,6 +143,7 @@ impl<T: FileTransport> Poller<T> {
             require_stable: true,
             verify_counts: true,
             max_files_per_poll: crate::DEFAULT_MAX_FILES_PER_POLL,
+            max_bytes_per_poll: DEFAULT_MAX_BYTES_PER_POLL,
             max_file_bytes: crate::DEFAULT_MAX_FILE_BYTES,
             seen_stability: HashMap::new(),
             settled: HashSet::new(),
@@ -149,7 +164,9 @@ impl<T: FileTransport> Poller<T> {
     }
 
     /// Move unparseable files under this directory instead of leaving them in
-    /// the inbox.
+    /// the inbox. Files whose every message failed to parse are quarantined
+    /// here too: they carry nothing deliverable, so settling them as
+    /// consumed would silently drop the failure.
     pub fn with_error_dir(mut self, dir: &str) -> Self {
         self.error_dir = Some(dir.to_string());
         self
@@ -192,6 +209,19 @@ impl<T: FileTransport> Poller<T> {
         self
     }
 
+    /// Consume at most this many raw bytes per [`Poller::poll_once`] call
+    /// (default 256 MiB). File counts alone cannot bound memory (100
+    /// files at the 64 MiB per-file cap would retain gigabytes of bytes
+    /// plus parsed [`Intake`]s), so the poll stops once the next file
+    /// would exceed the budget. Leftovers stay for the next poll without
+    /// losing files; a lone file bigger than the remaining budget is
+    /// still consumed when the poll has taken nothing yet, so one large
+    /// file can never stall the inbox.
+    pub fn with_max_bytes_per_poll(mut self, max: u64) -> Self {
+        self.max_bytes_per_poll = max;
+        self
+    }
+
     /// Refuse files larger than this (default
     /// [`DEFAULT_MAX_FILE_BYTES`](crate::DEFAULT_MAX_FILE_BYTES)). Oversize
     /// files are reported in [`PollReport::skipped`] and remembered for the
@@ -206,16 +236,37 @@ impl<T: FileTransport> Poller<T> {
         &mut self.transport
     }
 
+    /// Move a poison file to the error dir (when configured) and record it
+    /// as skipped. A file that failed quarantine stays unsettled for retry.
+    async fn quarantine(&mut self, entry: &FileEntry, report: &mut PollReport, reason: String) {
+        if let Some(dir) = &self.error_dir {
+            let dest = join_dir(dir, &relative_to(&self.inbox, &entry.path));
+            if let Err(e) = self.transport.rename(&entry.path, &dest).await {
+                report.errors.push(PollFileError {
+                    path: entry.path.clone(),
+                    reason: format!("quarantine failed: {e}"),
+                });
+                return;
+            }
+        }
+        self.settled.insert(SettledKey::of(entry));
+        report.skipped.push(SkippedFile {
+            path: entry.path.clone(),
+            reason,
+        });
+    }
+
     /// List, download, parse, and settle inbox files.
     ///
     /// Only the initial inbox listing aborts the poll with an error (nothing
     /// was consumed yet). Per-file download/parse/settle failures are
     /// collected into the report and the poll continues: unparseable files
-    /// are quarantined (or left in place) and reported in
-    /// [`PollReport::skipped`], operational failures in
-    /// [`PollReport::errors`], never fatal.
+    /// (and files whose every message failed) are quarantined (or left in
+    /// place) and reported in [`PollReport::skipped`], operational failures
+    /// in [`PollReport::errors`], never fatal.
     pub async fn poll_once(&mut self) -> Result<PollReport, BatchError> {
         let mut report = PollReport::default();
+        let mut bytes_used: u64 = 0;
         let entries = self.transport.list(&self.inbox).await?;
 
         // Forget state for paths that left the inbox (consumed elsewhere,
@@ -227,6 +278,9 @@ impl<T: FileTransport> Poller<T> {
 
         for entry in entries {
             if report.files.len() >= self.max_files_per_poll {
+                break;
+            }
+            if bytes_used >= self.max_bytes_per_poll {
                 break;
             }
             if self.settled.contains(&SettledKey::of(&entry)) {
@@ -252,25 +306,39 @@ impl<T: FileTransport> Poller<T> {
                 });
                 continue;
             }
+            // Stability covers size-unknown entries too (FTP's NLST
+            // fallback reports no size): then the mtime alone must repeat
+            // across two polls before the file is consumed.
             if self.require_stable
-                && let Some(size) = entry.size
-                && self.seen_stability.get(&entry.path) != Some(&(size, entry.modified_ms))
+                && self.seen_stability.get(&entry.path) != Some(&(entry.size, entry.modified_ms))
             {
                 let seen = self
                     .seen_stability
-                    .insert(entry.path.clone(), (size, entry.modified_ms));
+                    .insert(entry.path.clone(), (entry.size, entry.modified_ms));
                 // Same size but a moved mtime means a stalled slow writer:
                 // the size-only check would consume it mid-write.
-                let reason = if seen.is_some_and(|(prev_size, _)| prev_size == size) {
+                let reason = if seen.is_some_and(|(prev_size, _)| prev_size == entry.size) {
                     "modification time not yet stable"
-                } else {
+                } else if entry.size.is_some() {
                     "size not yet stable"
+                } else {
+                    "metadata not yet stable"
                 };
                 report.skipped.push(SkippedFile {
                     path: entry.path.clone(),
                     reason: reason.to_string(),
                 });
                 continue;
+            }
+            // Byte budget: stop before a download that would exceed it,
+            // unless nothing was consumed yet (a lone over-budget file
+            // must still make progress instead of stalling the inbox).
+            if bytes_used > 0
+                && entry
+                    .size
+                    .is_some_and(|size| bytes_used + size > self.max_bytes_per_poll)
+            {
+                break;
             }
 
             let bytes = match self.transport.get(&entry.path).await {
@@ -299,30 +367,29 @@ impl<T: FileTransport> Poller<T> {
             let intake = match Intake::parse_bytes(&bytes) {
                 Ok(intake) => intake,
                 Err(e) => {
-                    if let Some(dir) = &self.error_dir {
-                        let dest = join_dir(dir, &relative_to(&self.inbox, &entry.path));
-                        if let Err(e) = self.transport.rename(&entry.path, &dest).await {
-                            report.errors.push(PollFileError {
-                                path: entry.path.clone(),
-                                reason: format!("quarantine failed: {e}"),
-                            });
-                            continue;
-                        }
-                    }
-                    self.settled.insert(SettledKey::of(&entry));
-                    report.skipped.push(SkippedFile {
-                        path: entry.path.clone(),
-                        reason: format!("unparseable: {e}"),
-                    });
+                    self.quarantine(&entry, &mut report, format!("unparseable: {e}"))
+                        .await;
                     continue;
                 }
             };
+            // Every message failed: nothing deliverable, so quarantine the
+            // file instead of settling it as consumed.
+            if intake.message_count() > 0 && intake.ok_count() == 0 {
+                self.quarantine(
+                    &entry,
+                    &mut report,
+                    format!("all {} message(s) failed to parse", intake.message_count()),
+                )
+                .await;
+                continue;
+            }
 
             let count_error = if self.verify_counts {
                 intake.verify_counts().err()
             } else {
                 None
             };
+            bytes_used = bytes_used.saturating_add(bytes.len() as u64);
             report.files.push(PolledFile {
                 name: entry.path.clone(),
                 bytes,
@@ -470,6 +537,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn all_failed_files_route_to_error_dir() {
+        // A bare "MSH" line parses structurally but its only message
+        // fails: 100% failed, nothing deliverable.
+        let dir = scratch_dir();
+        let mut t = FilesystemTransport::open(&dir).unwrap();
+        t.put("inbox/broken.hl7", b"MSH").await.unwrap();
+        t.put("inbox/good.hl7", MSH.as_bytes()).await.unwrap();
+
+        let mut poller = Poller::new(t)
+            .with_inbox("inbox")
+            .with_error_dir("error")
+            .with_require_stable(false);
+        let report = poller.poll_once().await.unwrap();
+        assert_eq!(report.files.len(), 1);
+        assert_eq!(report.files[0].name, "inbox/good.hl7");
+        assert_eq!(report.skipped.len(), 1);
+        assert_eq!(report.skipped[0].path, "inbox/broken.hl7");
+        assert!(report.skipped[0].reason.contains("failed"));
+
+        let t = poller.transport_mut();
+        assert_eq!(t.get("error/broken.hl7").await.unwrap(), b"MSH");
+
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn all_failed_files_settle_in_place_without_error_dir() {
+        let dir = scratch_dir();
+        let mut t = FilesystemTransport::open(&dir).unwrap();
+        t.put("inbox/broken.hl7", b"MSH").await.unwrap();
+
+        let mut poller = Poller::new(t)
+            .with_inbox("inbox")
+            .with_require_stable(false);
+        let report = poller.poll_once().await.unwrap();
+        assert!(report.files.is_empty());
+        assert_eq!(report.skipped.len(), 1);
+        assert_eq!(report.skipped[0].path, "inbox/broken.hl7");
+
+        // Left in the inbox but remembered for the session.
+        let report = poller.poll_once().await.unwrap();
+        assert!(report.files.is_empty());
+        assert_eq!(report.skipped.len(), 1);
+        assert_eq!(report.skipped[0].reason, "already settled");
+
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
+    }
+
+    #[tokio::test]
     async fn max_files_per_poll_bounds_work_without_losing_files() {
         let dir = scratch_dir();
         let mut t = FilesystemTransport::open(&dir).unwrap();
@@ -490,6 +606,36 @@ mod tests {
         assert!(report.files.is_empty());
 
         tokio::fs::remove_dir_all(&dir).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn max_bytes_per_poll_stops_before_blowing_the_budget() {
+        // Three files at exactly the budget each: one consumed per poll,
+        // leftovers waiting without loss.
+        let size = MSH.len() as u64;
+        let entry = |name: &str| FileEntry {
+            path: format!("inbox/{name}"),
+            size: Some(size),
+            modified_ms: Some(1),
+        };
+        let transport = ScriptedTransport {
+            listings: vec![vec![entry("a.hl7"), entry("b.hl7"), entry("c.hl7")]],
+            polls: 0,
+            body: MSH.as_bytes().to_vec(),
+        };
+        let mut poller = Poller::new(transport)
+            .with_inbox("inbox")
+            .with_require_stable(false)
+            .with_delete_after(false)
+            .with_max_bytes_per_poll(size);
+
+        for expected in ["inbox/a.hl7", "inbox/b.hl7", "inbox/c.hl7"] {
+            let report = poller.poll_once().await.unwrap();
+            assert_eq!(report.files.len(), 1);
+            assert_eq!(report.files[0].name, expected);
+        }
+        let report = poller.poll_once().await.unwrap();
+        assert!(report.files.is_empty());
     }
 
     #[tokio::test]
@@ -676,6 +822,63 @@ mod tests {
 
         let report = poller.poll_once().await.unwrap();
         assert_eq!(report.files.len(), 1); // size and mtime stable: consumed
+    }
+
+    #[tokio::test]
+    async fn stability_gate_tracks_entries_with_unknown_size() {
+        // FTP's NLST fallback reports no size: those entries must still
+        // wait out the stability gate (mtime-only) instead of being
+        // consumed on first sight.
+        let entry = |modified_ms| FileEntry {
+            path: "inbox/nlst.hl7".to_string(),
+            size: None,
+            modified_ms,
+        };
+        let transport = ScriptedTransport {
+            listings: vec![
+                vec![entry(Some(1000))],
+                vec![entry(Some(2000))], // mtime moved: still writing
+                vec![entry(Some(2000))], // now stable
+            ],
+            polls: 0,
+            body: MSH.as_bytes().to_vec(),
+        };
+        let mut poller = Poller::new(transport)
+            .with_inbox("inbox")
+            .with_delete_after(false);
+
+        let report = poller.poll_once().await.unwrap();
+        assert!(report.files.is_empty(), "first sighting: unstable");
+
+        let report = poller.poll_once().await.unwrap();
+        assert!(report.files.is_empty(), "mtime moved: still writing");
+
+        let report = poller.poll_once().await.unwrap();
+        assert_eq!(report.files.len(), 1, "stable mtime: consumed");
+    }
+
+    #[tokio::test]
+    async fn unknown_size_files_hit_the_cap_when_bytes_materialize() {
+        // Size unknown at listing time, but the download itself exceeds
+        // the cap: skipped, settled, never consumed.
+        let transport = ScriptedTransport {
+            listings: vec![vec![FileEntry {
+                path: "inbox/big.hl7".to_string(),
+                size: None,
+                modified_ms: None,
+            }]],
+            polls: 0,
+            body: vec![b'x'; 2048],
+        };
+        let mut poller = Poller::new(transport)
+            .with_inbox("inbox")
+            .with_require_stable(false)
+            .with_max_file_bytes(1024);
+
+        let report = poller.poll_once().await.unwrap();
+        assert!(report.files.is_empty());
+        assert_eq!(report.skipped.len(), 1);
+        assert!(report.skipped[0].reason.contains("exceeds limit"));
     }
 
     #[tokio::test]

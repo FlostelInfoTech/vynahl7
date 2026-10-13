@@ -66,6 +66,11 @@ pub trait FileTransport {
 /// Reject absolute paths and `..` escapes; normalize to `/`-separated parts.
 pub(crate) fn clean_relative_parts(path: &str) -> Result<Vec<String>, BatchError> {
     let normalized = path.replace('\\', "/");
+    if normalized.starts_with('/') {
+        return Err(BatchError::Invalid(format!(
+            "absolute path rejected: '{path}'"
+        )));
+    }
     let mut parts = Vec::new();
     for part in normalized.split('/') {
         match part {
@@ -166,7 +171,18 @@ impl FilesystemTransport {
     }
 
     fn get_sync(&self, path: &str) -> Result<Vec<u8>, BatchError> {
-        Ok(std::fs::read(self.resolve(path)?)?)
+        let resolved = self.resolve(path)?;
+        // Listings skip symlinks; reads must refuse them too, or a planted
+        // link inside the root would let a read escape it.
+        let is_link = std::fs::symlink_metadata(&resolved)
+            .map(|meta| meta.file_type().is_symlink())
+            .unwrap_or(false);
+        if is_link {
+            return Err(BatchError::Invalid(format!(
+                "refusing symlinked path: '{path}'"
+            )));
+        }
+        Ok(std::fs::read(resolved)?)
     }
 
     fn put_sync(&self, path: &str, data: &[u8]) -> Result<(), BatchError> {
@@ -324,6 +340,67 @@ mod tests {
         assert!(t.list("missing").await.unwrap().is_empty());
 
         tokio::fs::remove_dir_all(&dir).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn absolute_paths_are_rejected() {
+        let dir = scratch_dir();
+        let mut t = FilesystemTransport::open(&dir).unwrap();
+        t.put("inbox/a.hl7", b"MSH").await.unwrap();
+
+        // The module docs promise absolute paths are rejected; a leading
+        // `/` must not silently resolve under the root.
+        for path in ["/a.hl7", "/inbox/a.hl7", "//inbox//a.hl7"] {
+            assert!(
+                matches!(t.get(path).await, Err(BatchError::Invalid(_))),
+                "get({path:?}) must be rejected"
+            );
+            assert!(
+                matches!(t.put(path, b"x").await, Err(BatchError::Invalid(_))),
+                "put({path:?}) must be rejected"
+            );
+        }
+        assert!(matches!(
+            clean_relative_parts("/a"),
+            Err(BatchError::Invalid(_))
+        ));
+
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn reads_refuse_planted_symlinks() {
+        let dir = scratch_dir();
+        let outside = scratch_dir();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("secret.txt"), b"outside-root").unwrap();
+        let mut t = FilesystemTransport::open(&dir).unwrap();
+        t.put("inbox/real.hl7", b"MSH").await.unwrap();
+        // Plant a symlink inside the root pointing outside it.
+        std::os::unix::fs::symlink(
+            outside.join("secret.txt"),
+            dir.join("inbox").join("evil.hl7"),
+        )
+        .unwrap();
+
+        // Listings already skip symlinks; reads must refuse them too
+        // instead of following them out of the root.
+        let listed: Vec<_> = t
+            .list("inbox")
+            .await
+            .unwrap()
+            .iter()
+            .map(|e| e.path.clone())
+            .collect();
+        assert_eq!(listed, ["inbox/real.hl7"]);
+        assert!(
+            matches!(t.get("inbox/evil.hl7").await, Err(BatchError::Invalid(_))),
+            "get() must refuse symlinked paths"
+        );
+
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
+        tokio::fs::remove_dir_all(&outside).await.unwrap();
     }
 
     #[tokio::test]

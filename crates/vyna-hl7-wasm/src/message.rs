@@ -30,6 +30,24 @@ impl From<Message> for WasmMessage {
     }
 }
 
+/// Serializable JSON form of a message (built by [`WasmMessage::json_data`]).
+#[derive(Serialize)]
+struct JsonMessage {
+    version: Option<String>,
+    message_type: Option<String>,
+    sending_application: Option<String>,
+    sending_facility: Option<String>,
+    control_id: Option<String>,
+    segments: Vec<JsonSegment>,
+}
+
+/// Serializable JSON form of one segment.
+#[derive(Serialize)]
+struct JsonSegment {
+    id: String,
+    fields: Vec<String>,
+}
+
 #[wasm_bindgen]
 impl WasmMessage {
     /// Get the HL7 version as a string
@@ -103,27 +121,9 @@ impl WasmMessage {
         terser.set(path, value).map_err(|e| e.to_string())
     }
 
-    /// Convert to JSON
-    #[wasm_bindgen(js_name = toJson)]
-    pub fn to_json(&self) -> Result<JsValue, JsValue> {
-        // Create a serializable structure
-        #[derive(Serialize)]
-        struct JsonMessage {
-            version: Option<String>,
-            message_type: Option<String>,
-            sending_application: Option<String>,
-            sending_facility: Option<String>,
-            control_id: Option<String>,
-            segments: Vec<JsonSegment>,
-        }
-
-        #[derive(Serialize)]
-        struct JsonSegment {
-            id: String,
-            fields: Vec<String>,
-        }
-
-        let json_msg = JsonMessage {
+    /// Build the serializable JSON structure (pure helper for testing).
+    fn json_data(&self) -> JsonMessage {
+        JsonMessage {
             version: self.version().map(|v| v.to_string()),
             message_type: self.message_type(),
             sending_application: self.sending_application(),
@@ -138,12 +138,26 @@ impl WasmMessage {
                     fields: seg
                         .fields
                         .iter()
-                        .map(|f| f.encode(&self.inner.delimiters))
+                        .enumerate()
+                        .map(|(i, f)| {
+                            // MSH-1/MSH-2 hold raw delimiter chars; encode()
+                            // would escape them ("|" becomes "\\F\\").
+                            if seg.id == "MSH" && i < 2 {
+                                f.value().unwrap_or("").to_string()
+                            } else {
+                                f.encode(&self.inner.delimiters)
+                            }
+                        })
                         .collect(),
                 })
                 .collect(),
-        };
+        }
+    }
 
+    /// Convert to JSON
+    #[wasm_bindgen(js_name = toJson)]
+    pub fn to_json(&self) -> Result<JsValue, JsValue> {
+        let json_msg = self.json_data();
         serde_wasm_bindgen::to_value(&json_msg).map_err(|e| JsValue::from_str(&e.to_string()))
     }
 }
@@ -178,5 +192,16 @@ mod tests {
         // not the Debug form "V2_5".
         let msg = parse_wasm(ADT).unwrap();
         assert_eq!(msg.version(), Some("2.5".to_string()));
+    }
+
+    #[test]
+    fn json_keeps_msh_delimiters_raw() {
+        // toJson must match parse display: MSH-1/MSH-2 stay raw
+        // ("|", "^~\\&"), not HL7-escaped ("\\F\\", ...).
+        let msg = parse_wasm(ADT).unwrap();
+        let data = msg.json_data();
+        assert_eq!(data.segments[0].id, "MSH");
+        assert_eq!(data.segments[0].fields[0], "|");
+        assert_eq!(data.segments[0].fields[1], "^~\\&");
     }
 }

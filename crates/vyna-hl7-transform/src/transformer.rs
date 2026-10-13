@@ -210,6 +210,10 @@ impl MessageTransformer {
 
     /// Transform a message in place
     ///
+    /// This is atomic: rules apply to a staged copy, and the message is
+    /// only updated when every rule succeeds. A failing rule leaves the
+    /// message unchanged.
+    ///
     /// # Arguments
     ///
     /// * `message` - The message to transform
@@ -218,8 +222,9 @@ impl MessageTransformer {
         let source = message.clone();
         let source_terser = Terser::new(&source);
 
-        // Create mutable terser for modifying the target
-        let mut target_terser = TerserMut::new(message);
+        // Apply rules to a staged copy; commit only on full success.
+        let mut staged = source.clone();
+        let mut target_terser = TerserMut::new(&mut staged);
 
         // Apply each rule
         for (rule, params) in self.rules.iter().zip(self.rule_params.iter()) {
@@ -241,6 +246,8 @@ impl MessageTransformer {
                     .map_err(|e| Error::field_access(format!("Failed to set {}: {}", rule.target_path, e)))?;
             }
         }
+
+        *message = staged;
 
         Ok(())
     }
@@ -420,6 +427,27 @@ mod tests {
 
         let terser = Terser::new(&message);
         assert_eq!(terser.get("PID-3").unwrap(), Some("ABC123"));
+    }
+
+    #[test]
+    fn test_transform_in_place_is_atomic_on_later_rule_failure() {
+        use vyna_hl7_parser::parse_message;
+
+        let msg = AdtBuilder::a01(Version::V2_5)
+            .patient_id("abc123")
+            .build()
+            .unwrap();
+        let encoded = msg.encode();
+        let mut message = parse_message(&encoded).unwrap();
+
+        let mut transformer = MessageTransformer::new();
+        transformer.add_transform("PID-3", "PID-3", transforms::uppercase);
+        // Second rule fails only when the transform runs.
+        transformer.add_mapping("INVALID", "PID-8");
+
+        let before = message.encode();
+        assert!(transformer.transform_in_place(&mut message).is_err());
+        assert_eq!(message.encode(), before);
     }
 
     #[test]

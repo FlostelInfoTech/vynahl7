@@ -95,15 +95,6 @@ enum ParserState {
     Done,
 }
 
-/// Floor a byte index down to a char boundary so slicing never panics.
-fn floor_char_boundary(s: &str, mut end: usize) -> usize {
-    end = end.min(s.len());
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    end
-}
-
 /// Streaming parser for HL7 messages
 ///
 /// Parses HL7 messages incrementally, emitting events for each segment and field.
@@ -373,16 +364,41 @@ impl<'a> StreamingParser<'a> {
             return self.parse_next_segment();
         }
 
-        // Extract segment ID (first 3 bytes typically, floored to a char boundary)
+        // Extract segment ID with strict parity: exactly 3 ASCII
+        // alphanumerics followed by the field separator or end of line.
         let delims = self.delimiters.as_ref()?;
-        let seg_end = line.find(delims.field_separator).unwrap_or(line.len());
-        let id_end = floor_char_boundary(line, seg_end.min(3));
-        let segment_id = &line[..id_end];
+        let mut id_len = 0usize;
+        let mut id_end = 0usize;
+        for c in line.chars().take_while(|c| c.is_ascii_alphanumeric()) {
+            id_len += 1;
+            id_end += c.len_utf8();
+        }
 
-        // Validate segment ID (should be 3 uppercase letters typically)
-        if segment_id.len() < 2 {
+        if id_len == 0 {
             return Some(Err(Error::parse_at(
-                format!("Invalid segment ID: {}", segment_id),
+                "Empty segment ID",
+                ErrorLocation::new().line(self.current_line),
+            )));
+        }
+
+        let segment_id = &line[..id_end];
+        if id_len != 3 {
+            return Some(Err(Error::parse_at(
+                format!(
+                    "Segment ID must be 3 characters, got {} ('{}')",
+                    id_len, segment_id
+                ),
+                ErrorLocation::new().line(self.current_line),
+            )));
+        }
+
+        let after_id = &line[id_end..];
+        if !(after_id.is_empty() || after_id.starts_with(delims.field_separator)) {
+            return Some(Err(Error::parse_at(
+                format!(
+                    "Expected field separator after segment ID, got '{}'",
+                    after_id.chars().next().unwrap_or(' ')
+                ),
                 ErrorLocation::new().line(self.current_line),
             )));
         }
@@ -927,6 +943,19 @@ mod tests {
             }
         }
         assert!(saw_error);
+    }
+
+    #[test]
+    fn test_streaming_rejects_non_3char_segment_id_like_strict() {
+        // Strict parity: IDs that are not exactly 3 characters error.
+        for line in ["ZABC|1|2", "AB|1|2", "A|1|2"] {
+            let hl7 = format!("MSH|^~\\&|APP\r{line}\r");
+            assert!(crate::parse_message(&hl7).is_err(), "{line}: strict");
+            assert!(parse_streaming(&hl7).is_err(), "{line}: streaming");
+        }
+        // A 3-character ID still parses.
+        let ok = "MSH|^~\\&|APP\rPID|1||PAT001\r";
+        assert!(parse_streaming(ok).is_ok());
     }
 
     #[test]

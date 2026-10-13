@@ -260,33 +260,65 @@ pub fn parse_date(s: &str) -> Option<NaiveDate> {
     }
 }
 
-/// Parse HL7 timestamp (TS/DTM) format: `YYYYMMDDHHMMSS[.SSSS][+/-ZZZZ]`
+/// Parse HL7 timestamp (TS/DTM) into a naive local datetime.
+///
+/// Accepted grammar: 8, 10, 12, or 14 digits (`YYYYMMDD[HH[MM[SS]]]`)
+/// with an optional fractional-seconds suffix (`.S...`, folded into
+/// nanoseconds). Values carrying a UTC offset (`+/-ZZZZ`) are refused
+/// (`None`): a `NaiveDateTime` cannot represent an offset, and silently
+/// dropping one shifts the instant by hours. For offset-carrying
+/// values, use [`Hl7DateTime`](crate::datetime::Hl7DateTime) instead.
 pub fn parse_timestamp(s: &str) -> Option<NaiveDateTime> {
-    if s.len() < 8 {
+    // A sign character can only start an offset suffix, which this
+    // return type cannot represent.
+    if s.contains(['+', '-']) {
         return None;
     }
 
-    let year = s.get(0..4)?.parse::<i32>().ok()?;
-    let month = s.get(4..6)?.parse::<u32>().ok()?;
-    let day = s.get(6..8)?.parse::<u32>().ok()?;
+    let (digits, fraction) = match s.split_once('.') {
+        Some((head, tail)) => (head, Some(tail)),
+        None => (s, None),
+    };
+    if !matches!(digits.len(), 8 | 10 | 12 | 14) || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
 
-    let (hour, minute, second) = if s.len() >= 14 {
-        let h = s.get(8..10)?.parse::<u32>().ok()?;
-        let m = s.get(10..12)?.parse::<u32>().ok()?;
-        let sec = s.get(12..14)?.parse::<u32>().ok()?;
-        (h, m, sec)
-    } else if s.len() >= 12 {
-        let h = s.get(8..10)?.parse::<u32>().ok()?;
-        let m = s.get(10..12)?.parse::<u32>().ok()?;
-        (h, m, 0)
-    } else if s.len() >= 10 {
-        let h = s.get(8..10)?.parse::<u32>().ok()?;
-        (h, 0, 0)
-    } else {
-        (0, 0, 0)
+    let nanos = match fraction {
+        None => 0,
+        Some(frac) => {
+            if frac.is_empty() || !frac.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            // ASCII-only, so byte slicing is a char boundary.
+            let head = &frac[..frac.len().min(9)];
+            let mut nanos = head.parse::<u32>().ok()?;
+            for _ in head.len()..9 {
+                nanos *= 10;
+            }
+            nanos
+        }
     };
 
-    NaiveDate::from_ymd_opt(year, month, day)?.and_hms_opt(hour, minute, second)
+    let year = digits.get(0..4)?.parse::<i32>().ok()?;
+    let month = digits.get(4..6)?.parse::<u32>().ok()?;
+    let day = digits.get(6..8)?.parse::<u32>().ok()?;
+
+    let (hour, minute, second) = match digits.len() {
+        14 => (
+            digits.get(8..10)?.parse::<u32>().ok()?,
+            digits.get(10..12)?.parse::<u32>().ok()?,
+            digits.get(12..14)?.parse::<u32>().ok()?,
+        ),
+        12 => (
+            digits.get(8..10)?.parse::<u32>().ok()?,
+            digits.get(10..12)?.parse::<u32>().ok()?,
+            0,
+        ),
+        10 => (digits.get(8..10)?.parse::<u32>().ok()?, 0, 0),
+        _ => (0, 0, 0),
+    };
+
+    NaiveDate::from_ymd_opt(year, month, day)?.and_hms_nano_opt(hour, minute, second, nanos)
 }
 
 /// Format a date to HL7 DT format (YYYYMMDD)
@@ -361,5 +393,26 @@ mod tests {
         assert_eq!(parse_timestamp("1234567é901234"), None);
         assert_eq!(parse_timestamp("2024é315143045"), None);
         assert!(parse_timestamp("20240315143045").is_some());
+    }
+
+    #[test]
+    fn test_parse_timestamp_rejects_offsets() {
+        // A NaiveDateTime cannot hold a UTC offset; silently dropping
+        // +0800 shifts the instant by 8h, so offset values are refused.
+        assert_eq!(parse_timestamp("20240101120000+0800"), None);
+        assert_eq!(parse_timestamp("20240101120000.123-0530"), None);
+    }
+
+    #[test]
+    fn test_parse_timestamp_fraction_and_trailing_junk() {
+        let ts = parse_timestamp("20240101120000.5").unwrap();
+        assert_eq!(
+            ts.format("%Y%m%d%H%M%S%.3f").to_string(),
+            "20240101120000.500"
+        );
+        // Digit runs must be exactly 8/10/12/14; trailing junk fails.
+        assert_eq!(parse_timestamp("202401011"), None);
+        assert_eq!(parse_timestamp("20240101120000XYZ"), None);
+        assert_eq!(parse_timestamp("20240101120000+0800"), None);
     }
 }

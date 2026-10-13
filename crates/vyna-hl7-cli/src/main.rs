@@ -1,11 +1,11 @@
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use colored::Colorize;
-use serde_json::json;
+use serde_json::{Value, json};
 use std::fs;
 use std::io::{self, Read};
 use std::time::Duration;
-use vyna_hl7_core::{CharacterSet, Version, diff::DiffKind};
+use vyna_hl7_core::{CharacterSet, Delimiters, Field, Message, Version, diff::DiffKind};
 use vyna_hl7_parser::parse_message;
 use vyna_hl7_terser::Terser;
 use vyna_hl7_validator::{Validator, schema_loader};
@@ -296,13 +296,12 @@ fn parse_command(
                         "field_count": s.fields.len(),
                         "fields": s.fields.iter().enumerate().filter_map(|(field_idx, field)| {
                             let field_num = field_idx + 1;
-                            // MSH-1 (field separator) and MSH-2 (encoding characters)
-                            // contain delimiter chars - use raw value, not encode()
-                            let encoded = if s.id == "MSH" && field_num <= 2 {
-                                field.value().unwrap_or("").to_string()
-                            } else {
-                                field.encode(&message.delimiters)
-                            };
+                            let encoded = display_field_value(
+                                &s.id,
+                                field_num,
+                                field,
+                                &message.delimiters,
+                            );
                             if encoded.is_empty() {
                                 return None;
                             }
@@ -316,7 +315,8 @@ fn parse_command(
                                 field_json["data_type"] = json!(fd.data_type);
                                 // Add component names for composite values
                                 if let Some(components) = &fd.components {
-                                    let comp_parts: Vec<&str> = encoded.split('^').collect();
+                                    let comp_parts =
+                                        split_field_components(&encoded, &message.delimiters);
                                     let comp_details: Vec<_> = comp_parts.iter().enumerate().filter_map(|(i, val)| {
                                         if val.is_empty() { return None; }
                                         let comp_num = format!("{}", i + 1);
@@ -382,13 +382,8 @@ fn parse_command(
                     );
                     for (field_idx, field) in segment.fields.iter().enumerate() {
                         let field_num = field_idx + 1;
-                        // MSH-1 (field separator) and MSH-2 (encoding characters)
-                        // contain delimiter chars - use raw value, not encode()
-                        let encoded = if segment.id == "MSH" && field_num <= 2 {
-                            field.value().unwrap_or("").to_string()
-                        } else {
-                            field.encode(&message.delimiters)
-                        };
+                        let encoded =
+                            display_field_value(&segment.id, field_num, field, &message.delimiters);
                         if encoded.is_empty() {
                             continue;
                         }
@@ -405,7 +400,8 @@ fn parse_command(
                                 );
                                 // Show component breakdown for composite types
                                 if let Some(components) = &fd.components {
-                                    let comp_parts: Vec<&str> = encoded.split('^').collect();
+                                    let comp_parts =
+                                        split_field_components(&encoded, &message.delimiters);
                                     if comp_parts.len() > 1 {
                                         for (i, val) in comp_parts.iter().enumerate() {
                                             if val.is_empty() {
@@ -684,6 +680,50 @@ fn extract_command(
     Ok(())
 }
 
+/// Build the JSON value for `convert --to json` (pure helper for testing).
+fn convert_message_to_json(message: &Message) -> Value {
+    json!({
+        "version": message.get_version().map(|v| format!("{:?}", v)),
+        "message_type": message.get_message_type().map(|(m, e)| format!("{}^{}", m, e)),
+        "control_id": message.get_control_id(),
+        "sending_application": message.get_sending_application(),
+        "sending_facility": message.get_sending_facility(),
+        "receiving_application": message.get_receiving_application(),
+        "receiving_facility": message.get_receiving_facility(),
+        "segments": message.segments.iter().map(|seg| {
+            json!({
+                "id": seg.id,
+                "fields": seg.fields.iter().enumerate().map(|(i, f)| {
+                    display_field_value(&seg.id, i + 1, f, &message.delimiters)
+                }).collect::<Vec<_>>(),
+            })
+        }).collect::<Vec<_>>(),
+    })
+}
+
+/// Render one field for human/JSON display.
+///
+/// MSH-1 (field separator) and MSH-2 (encoding characters) hold raw
+/// delimiter characters, so they use the stored value instead of
+/// `encode()`, which would escape them (`|` becomes `\F\`).
+fn display_field_value(
+    seg_id: &str,
+    field_num: usize,
+    field: &Field,
+    delimiters: &Delimiters,
+) -> String {
+    if seg_id == "MSH" && field_num <= 2 {
+        field.value().unwrap_or("").to_string()
+    } else {
+        field.encode(delimiters)
+    }
+}
+
+/// Split an encoded field value into components for schema display.
+fn split_field_components<'a>(encoded: &'a str, delimiters: &Delimiters) -> Vec<&'a str> {
+    encoded.split(delimiters.component_separator).collect()
+}
+
 fn convert_command(
     input: &str,
     to: &str,
@@ -695,21 +735,7 @@ fn convert_command(
 
     match to {
         "json" => {
-            let json = json!({
-                "version": message.get_version().map(|v| format!("{:?}", v)),
-                "message_type": message.get_message_type().map(|(m, e)| format!("{}^{}", m, e)),
-                "control_id": message.get_control_id(),
-                "sending_application": message.get_sending_application(),
-                "sending_facility": message.get_sending_facility(),
-                "receiving_application": message.get_receiving_application(),
-                "receiving_facility": message.get_receiving_facility(),
-                "segments": message.segments.iter().map(|seg| {
-                    json!({
-                        "id": seg.id,
-                        "fields": seg.fields.iter().map(|f| f.encode(&message.delimiters)).collect::<Vec<_>>(),
-                    })
-                }).collect::<Vec<_>>(),
-            });
+            let json = convert_message_to_json(&message);
 
             if pretty {
                 println!("{}", serde_json::to_string_pretty(&json)?);
@@ -1091,4 +1117,48 @@ fn diff_command(
         std::process::exit(1);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ADT: &str = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240101||ADT^A01|M1|P|2.5\r\
+         PID|1||MRN123||DOE^JOHN||19800101|M";
+
+    #[test]
+    fn convert_json_keeps_msh_delimiters_raw() {
+        // convert --to json must match parse: MSH-1/MSH-2 stay raw
+        // ("|", "^~\\&"), not HL7-escaped ("\\F\\", ...).
+        let message = parse_message(ADT).unwrap();
+        let json = convert_message_to_json(&message);
+        let msh = &json["segments"][0];
+        assert_eq!(msh["id"], "MSH");
+        assert_eq!(msh["fields"][0], "|");
+        assert_eq!(msh["fields"][1], "^~\\&");
+    }
+
+    #[test]
+    fn convert_json_still_encodes_other_fields() {
+        let message = parse_message(ADT).unwrap();
+        let json = convert_message_to_json(&message);
+        // MSH-9 keeps its component separator intact.
+        assert_eq!(json["segments"][0]["fields"][8], "ADT^A01");
+    }
+
+    #[test]
+    fn component_split_uses_message_delimiters() {
+        let custom = Delimiters {
+            component_separator: '$',
+            ..Default::default()
+        };
+        assert_eq!(
+            split_field_components("ADT$A01", &custom),
+            vec!["ADT", "A01"]
+        );
+        assert_eq!(
+            split_field_components("ADT^A01", &Delimiters::default()),
+            vec!["ADT", "A01"]
+        );
+    }
 }

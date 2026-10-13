@@ -5,6 +5,7 @@
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
 use crate::resources::patient::Patient;
+use chrono::{NaiveDate, NaiveTime};
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
 
@@ -79,14 +80,14 @@ impl PatientConverter {
         }
 
         // PID-29: Patient Death Date and Time -> Patient.deceased
+        // PID-30: Patient Death Indicator -> Patient.deceased
+        // FHIR deceased[x] is a choice: emit exactly one. The date wins
+        // when present; the boolean applies only without a death date.
         if let Ok(Some(death_date)) = terser.get("PID-29")
             && !death_date.is_empty()
         {
             patient.deceased_date_time = Some(Self::convert_datetime(death_date)?);
-        }
-
-        // PID-30: Patient Death Indicator -> Patient.deceased
-        if let Ok(Some(death_ind)) = terser.get("PID-30")
+        } else if let Ok(Some(death_ind)) = terser.get("PID-30")
             && death_ind == "Y"
         {
             patient.deceased_boolean = Some(true);
@@ -455,15 +456,17 @@ impl PatientConverter {
         // all-ASCII-digit prefix makes the `&str` slices below safe.
         let bytes = date.as_bytes();
         if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
-            Ok(format!("{}-{}-{}", &date[0..4], &date[4..6], &date[6..8]))
+            // Full-date precision requires a real calendar date; an
+            // impossible month/day is an error, not a truncation to year.
+            if valid_hl7_date(&date[0..8]) {
+                Ok(format!("{}-{}-{}", &date[0..4], &date[4..6], &date[6..8]))
+            } else {
+                Err(Self::invalid_date_format())
+            }
         } else if bytes.len() >= 4 && bytes[..4].iter().all(|b| b.is_ascii_digit()) {
             Ok(date[0..4].to_string())
         } else {
-            Err(ConversionError::InvalidFormat(
-                "date".to_string(),
-                "PID-7".to_string(),
-                format!("Invalid date format: {}", date),
-            ))
+            Err(Self::invalid_date_format())
         }
     }
 
@@ -471,25 +474,77 @@ impl PatientConverter {
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
         let bytes = datetime.as_bytes();
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
-            Ok(format!(
-                "{}-{}-{}T{}:{}:{}",
-                &datetime[0..4],
-                &datetime[4..6],
-                &datetime[6..8],
-                &datetime[8..10],
-                &datetime[10..12],
-                &datetime[12..14]
-            ))
+            if valid_hl7_date(&datetime[0..8]) && valid_hl7_time(&datetime[8..14]) {
+                Ok(format!(
+                    "{}-{}-{}T{}:{}:{}",
+                    &datetime[0..4],
+                    &datetime[4..6],
+                    &datetime[6..8],
+                    &datetime[8..10],
+                    &datetime[10..12],
+                    &datetime[12..14]
+                ))
+            } else {
+                Err(Self::invalid_datetime_format())
+            }
         } else if bytes.len() >= 8 {
             Self::convert_date(datetime)
         } else {
-            Err(ConversionError::InvalidFormat(
-                "datetime".to_string(),
-                "PID".to_string(),
-                format!("Invalid datetime format: {}", datetime),
-            ))
+            Err(Self::invalid_datetime_format())
         }
     }
+
+    /// Redacted bad-date error: field location + reason only, never the value.
+    fn invalid_date_format() -> ConversionError {
+        ConversionError::InvalidFormat(
+            "date".to_string(),
+            "PID-7".to_string(),
+            "expected YYYYMMDD calendar date or YYYY year".to_string(),
+        )
+    }
+
+    /// Redacted bad-datetime error: field location + reason only, never the value.
+    fn invalid_datetime_format() -> ConversionError {
+        ConversionError::InvalidFormat(
+            "datetime".to_string(),
+            "PID".to_string(),
+            "expected YYYYMMDDHHMMSS calendar datetime".to_string(),
+        )
+    }
+}
+
+/// Validate an HL7 date (`YYYYMMDD`) as a real calendar date.
+///
+/// Shared by the converters in this module so digit-prefix checks alone
+/// never accept impossible dates such as month 13 or February 30.
+pub(crate) fn valid_hl7_date(ymd: &str) -> bool {
+    let digits = ymd.as_bytes();
+    digits.len() == 8
+        && digits.iter().all(|b| b.is_ascii_digit())
+        && NaiveDate::from_ymd_opt(
+            digit_value(&digits[0..4]) as i32,
+            digit_value(&digits[4..6]),
+            digit_value(&digits[6..8]),
+        )
+        .is_some()
+}
+
+/// Validate an HL7 time (`HHMMSS`) as a real time of day.
+pub(crate) fn valid_hl7_time(hms: &str) -> bool {
+    let digits = hms.as_bytes();
+    digits.len() == 6
+        && digits.iter().all(|b| b.is_ascii_digit())
+        && NaiveTime::from_hms_opt(
+            digit_value(&digits[0..2]),
+            digit_value(&digits[2..4]),
+            digit_value(&digits[4..6]),
+        )
+        .is_some()
+}
+
+/// Numeric value of an all-ASCII-digit slice (callers guarantee the digits).
+fn digit_value(digits: &[u8]) -> u32 {
+    digits.iter().fold(0, |acc, b| acc * 10 + (b - b'0') as u32)
 }
 
 #[cfg(test)]
@@ -607,5 +662,71 @@ mod tests {
         assert_eq!(addresses.len(), 2);
         assert_eq!(addresses[1].city, Some("Chicago".to_string()));
         assert_eq!(addresses[1].postal_code, Some("60601".to_string()));
+    }
+
+    fn pid_message_with_death_fields(death_date: &str, death_ind: &str) -> String {
+        let mut fields = vec![String::new(); 30];
+        fields[0] = "1".to_string();
+        fields[28] = death_date.to_string();
+        fields[29] = death_ind.to_string();
+        format!(
+            "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\rPID|{}",
+            fields.join("|")
+        )
+    }
+
+    #[test]
+    fn test_deceased_date_wins_over_indicator() {
+        // FHIR deceased[x] is a choice: date and boolean must not both serialize.
+        let hl7 = pid_message_with_death_fields("20240315100000", "Y");
+        let message = parse_message(&hl7).unwrap();
+        let patient = PatientConverter::convert(&message).unwrap();
+        assert_eq!(
+            patient.deceased_date_time.as_deref(),
+            Some("2024-03-15T10:00:00")
+        );
+        assert_eq!(patient.deceased_boolean, None);
+    }
+
+    #[test]
+    fn test_deceased_indicator_without_date_sets_boolean() {
+        let hl7 = pid_message_with_death_fields("", "Y");
+        let message = parse_message(&hl7).unwrap();
+        let patient = PatientConverter::convert(&message).unwrap();
+        assert_eq!(patient.deceased_date_time, None);
+        assert_eq!(patient.deceased_boolean, Some(true));
+    }
+
+    #[test]
+    fn test_impossible_calendar_dates_rejected() {
+        assert!(PatientConverter::convert_date("20241345").is_err());
+        assert!(PatientConverter::convert_date("20240230").is_err());
+        assert!(PatientConverter::convert_date("20240015").is_err());
+        assert_eq!(
+            PatientConverter::convert_date("20240229").unwrap(),
+            "2024-02-29"
+        );
+        assert_eq!(
+            PatientConverter::convert_date("19800101").unwrap(),
+            "1980-01-01"
+        );
+        assert!(PatientConverter::convert_datetime("20240315250000").is_err());
+        assert!(PatientConverter::convert_datetime("20240230100000").is_err());
+        assert_eq!(
+            PatientConverter::convert_datetime("20240315100000").unwrap(),
+            "2024-03-15T10:00:00"
+        );
+    }
+
+    #[test]
+    fn test_invalid_date_error_redacts_source_value() {
+        let err = PatientConverter::convert_date("nonsense").unwrap_err();
+        let msg = err.to_string();
+        assert!(!msg.contains("nonsense"), "error leaks source: {msg}");
+        assert!(msg.contains("PID-7"));
+
+        let err = PatientConverter::convert_datetime("bad-dt!!").unwrap_err();
+        let msg = err.to_string();
+        assert!(!msg.contains("bad-dt!!"), "error leaks source: {msg}");
     }
 }

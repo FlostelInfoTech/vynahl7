@@ -46,11 +46,23 @@ pub fn encode_basic_auth(username: &str, password: &str) -> String {
 /// assert!(verify_basic_auth(&header, "user", "pass"));
 /// assert!(!verify_basic_auth(&header, "wrong", "creds"));
 /// ```
+/// Strip an auth scheme (case-insensitive per RFC 9110 section 11.1)
+/// from an `Authorization` header value, returning the credentials part.
+#[cfg(feature = "auth")]
+fn strip_auth_scheme<'a>(header: &'a str, scheme: &str) -> Option<&'a str> {
+    let (name, credentials) = header.split_once(' ')?;
+    if name.eq_ignore_ascii_case(scheme) {
+        Some(credentials)
+    } else {
+        None
+    }
+}
+
 #[cfg(feature = "auth")]
 pub fn verify_basic_auth(header: &str, username: &str, password: &str) -> bool {
     use base64::prelude::*;
 
-    if let Some(encoded) = header.strip_prefix("Basic ")
+    if let Some(encoded) = strip_auth_scheme(header, "Basic")
         && let Ok(decoded) = BASE64_STANDARD.decode(encoded)
         && let Ok(credentials) = String::from_utf8(decoded)
     {
@@ -102,7 +114,7 @@ pub fn verify_api_key(header_value: &str, valid_api_keys: &[String]) -> bool {
 /// ```
 #[cfg(feature = "auth")]
 pub fn extract_bearer_token(header: &str) -> Option<&str> {
-    header.strip_prefix("Bearer ")
+    strip_auth_scheme(header, "Bearer")
 }
 
 /// Constant-time comparison for API keys to prevent timing attacks
@@ -387,6 +399,27 @@ mod tests {
         assert!(!verify_basic_auth("Invalid Header", "user", "pass"));
         assert!(!verify_basic_auth("Bearer token", "user", "pass"));
         assert!(!verify_basic_auth("Basic !!invalid!!", "user", "pass"));
+    }
+
+    #[test]
+    fn test_verify_basic_auth_scheme_case_insensitive() {
+        // RFC 9110: the auth scheme token is case-insensitive.
+        let encoded = encode_basic_auth("user", "pass");
+        let creds = encoded.strip_prefix("Basic ").unwrap();
+        for scheme in ["basic", "BASIC", "BaSiC"] {
+            let header = format!("{scheme} {creds}");
+            assert!(
+                verify_basic_auth(&header, "user", "pass"),
+                "scheme {scheme}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_extract_bearer_token_scheme_case_insensitive() {
+        assert_eq!(extract_bearer_token("bearer tok-1"), Some("tok-1"));
+        assert_eq!(extract_bearer_token("BEARER tok-2"), Some("tok-2"));
+        assert_eq!(extract_bearer_token("Bearer tok-3"), Some("tok-3"));
     }
 
     #[test]

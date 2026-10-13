@@ -15,16 +15,81 @@ use std::sync::Arc;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 #[cfg(feature = "tls")]
 use rustls::{ClientConfig, RootCertStore, ServerConfig};
+/// Context wrapper preserving the file path (when any) alongside the
+/// underlying TLS failure so errors report *what* failed, not just how.
+#[cfg(feature = "tls")]
+#[derive(Debug)]
+struct TlsLoadError {
+    context: String,
+    source: Option<Box<dyn std::error::Error + Send + Sync>>,
+}
+
+#[cfg(feature = "tls")]
+impl std::fmt::Display for TlsLoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.source {
+            Some(source) => write!(f, "{}: {source}", self.context),
+            None => f.write_str(&self.context),
+        }
+    }
+}
+
+#[cfg(feature = "tls")]
+impl std::error::Error for TlsLoadError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source
+            .as_deref()
+            .map(|s| s as &(dyn std::error::Error + 'static))
+    }
+}
+
+/// Wrap a TLS load/parse/config failure as [`Error::Io`], preserving the
+/// path-bearing context and the underlying cause.
+#[cfg(feature = "tls")]
+fn tls_io_error(
+    kind: std::io::ErrorKind,
+    context: String,
+    source: Option<Box<dyn std::error::Error + Send + Sync>>,
+) -> Error {
+    Error::Io(std::io::Error::new(kind, TlsLoadError { context, source }))
+}
+
+/// Wrap a rustls configuration failure, keeping the underlying cause.
+#[cfg(feature = "tls")]
+fn config_error(context: &str, e: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> Error {
+    tls_io_error(
+        std::io::ErrorKind::InvalidData,
+        context.to_string(),
+        Some(e.into()),
+    )
+}
+
+/// Wrap a file read failure, keeping the path, the I/O kind, and the cause.
+#[cfg(feature = "tls")]
+fn read_error(path: &Path, what: &str, e: std::io::Error) -> Error {
+    let kind = e.kind();
+    tls_io_error(
+        kind,
+        format!("Failed to read {what} file '{}'", path.display()),
+        Some(Box::new(e)),
+    )
+}
+
 /// Load PEM certificates via `rustls::pki_types` (replaces the
 /// unmaintained rustls-pemfile crate; same file-in, DER-out contract).
 #[cfg(feature = "tls")]
 fn load_certs(path: impl AsRef<Path>, what: &str) -> Result<Vec<CertificateDer<'static>>> {
-    let bytes = std::fs::read(path.as_ref())
-        .map_err(|e| Error::InvalidUrl(format!("Failed to read {what} file: {e}")))?;
+    let path: &Path = path.as_ref();
+    let bytes = std::fs::read(path).map_err(|e| read_error(path, what, e))?;
     CertificateDer::pem_slice_iter(&bytes)
         .map(|item| {
-            item.map(|cert| cert.into_owned())
-                .map_err(|e| Error::InvalidUrl(format!("Failed to parse {what}: {e}")))
+            item.map(|cert| cert.into_owned()).map_err(|e| {
+                tls_io_error(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Failed to parse {what} file '{}'", path.display()),
+                    Some(Box::new(e)),
+                )
+            })
         })
         .collect()
 }
@@ -32,14 +97,26 @@ fn load_certs(path: impl AsRef<Path>, what: &str) -> Result<Vec<CertificateDer<'
 /// Load the first PEM private key (PKCS#8, PKCS#1, or SEC1).
 #[cfg(feature = "tls")]
 fn load_private_key(path: impl AsRef<Path>, what: &str) -> Result<PrivateKeyDer<'static>> {
-    let bytes = std::fs::read(path.as_ref())
-        .map_err(|e| Error::InvalidUrl(format!("Failed to read {what} file: {e}")))?;
+    let path: &Path = path.as_ref();
+    let bytes = std::fs::read(path).map_err(|e| read_error(path, what, e))?;
     PrivateKeyDer::pem_slice_iter(&bytes)
         .next()
         .transpose()
-        .map_err(|e| Error::InvalidUrl(format!("Failed to parse {what}: {e}")))?
+        .map_err(|e| {
+            tls_io_error(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to parse {what} file '{}'", path.display()),
+                Some(Box::new(e)),
+            )
+        })?
         .map(|k| k.clone_key())
-        .ok_or_else(|| Error::InvalidUrl(format!("No private key found in {what} file")))
+        .ok_or_else(|| {
+            tls_io_error(
+                std::io::ErrorKind::InvalidData,
+                format!("No private key found in {what} file '{}'", path.display()),
+                None,
+            )
+        })
 }
 
 /// TLS configuration for client connections
@@ -105,7 +182,7 @@ impl TlsClientConfig {
         for cert in ca_certs {
             root_store
                 .add(cert)
-                .map_err(|e| Error::InvalidUrl(format!("Failed to add CA certificate: {}", e)))?;
+                .map_err(|e| config_error("Failed to add CA certificate", e))?;
         }
 
         let config = ClientConfig::builder()
@@ -152,7 +229,7 @@ impl TlsClientConfig {
         for cert in ca_certs {
             root_store
                 .add(cert)
-                .map_err(|e| Error::InvalidUrl(format!("Failed to add CA certificate: {}", e)))?;
+                .map_err(|e| config_error("Failed to add CA certificate", e))?;
         }
 
         // Load client certificate
@@ -164,7 +241,7 @@ impl TlsClientConfig {
         let config = ClientConfig::builder()
             .with_root_certificates(root_store)
             .with_client_auth_cert(client_certs, client_key)
-            .map_err(|e| Error::InvalidUrl(format!("Failed to configure client auth: {}", e)))?;
+            .map_err(|e| config_error("Failed to configure client auth", e))?;
 
         Ok(Self {
             config: Arc::new(config),
@@ -211,7 +288,7 @@ impl TlsServerConfig {
         let config = ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(certs, key)
-            .map_err(|e| Error::InvalidUrl(format!("Failed to configure server TLS: {}", e)))?;
+            .map_err(|e| config_error("Failed to configure server TLS", e))?;
 
         Ok(Self {
             config: Arc::new(config),
@@ -252,7 +329,7 @@ impl TlsServerConfig {
         for cert in ca_certs {
             client_auth_roots
                 .add(cert)
-                .map_err(|e| Error::InvalidUrl(format!("Failed to add CA certificate: {}", e)))?;
+                .map_err(|e| config_error("Failed to add CA certificate", e))?;
         }
 
         // Load server certificate
@@ -263,12 +340,12 @@ impl TlsServerConfig {
 
         let client_cert_verifier = rustls::server::WebPkiClientVerifier::builder(Arc::new(client_auth_roots))
             .build()
-            .map_err(|e| Error::InvalidUrl(format!("Failed to build client verifier: {}", e)))?;
+            .map_err(|e| config_error("Failed to build client verifier", e))?;
 
         let config = ServerConfig::builder()
             .with_client_cert_verifier(client_cert_verifier)
             .with_single_cert(certs, key)
-            .map_err(|e| Error::InvalidUrl(format!("Failed to configure server TLS: {}", e)))?;
+            .map_err(|e| config_error("Failed to configure server TLS", e))?;
 
         Ok(Self {
             config: Arc::new(config),
@@ -396,6 +473,38 @@ nCxb/gJF/elKGU4Z9nNlshhlJTXQ2ZOdvuEmJ+k6kZjAdfH0MXht
             );
             let _ = std::fs::remove_file(&path);
         }
+    }
+
+    #[test]
+    fn test_missing_files_report_io_error_with_path() {
+        let missing =
+            std::env::temp_dir().join(format!("vyna_hl7_tls_missing_{}.pem", std::process::id()));
+        assert!(!missing.exists());
+        let err = match TlsServerConfig::new(&missing, &missing) {
+            Ok(_) => panic!("expected an error for missing files"),
+            Err(e) => e,
+        };
+        match err {
+            Error::Io(e) => {
+                assert_eq!(e.kind(), std::io::ErrorKind::NotFound);
+                assert!(e.to_string().contains(missing.to_str().unwrap()));
+            }
+            other => panic!("expected Error::Io, got: {other}"),
+        }
+    }
+
+    #[test]
+    fn test_garbage_key_reports_parse_error_with_path() {
+        let path = write_fixture("junk-key.pem", "not a pem file\n");
+        let err = load_private_key(&path, "private key").unwrap_err();
+        match err {
+            Error::Io(e) => {
+                assert_eq!(e.kind(), std::io::ErrorKind::InvalidData);
+                assert!(e.to_string().contains(path.to_str().unwrap()));
+            }
+            other => panic!("expected Error::Io, got: {other}"),
+        }
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

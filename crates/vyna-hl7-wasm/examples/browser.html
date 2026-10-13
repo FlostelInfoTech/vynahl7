@@ -122,6 +122,17 @@
         // Store message globally
         window.currentMessage = null;
 
+        // Escape message-derived values before injecting them into
+        // innerHTML: HL7 fields may carry markup (XSS) otherwise.
+        function escapeHtml(value) {
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         // Sample messages
         window.adtSample = `MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315143000||ADT^A01|MSG12345|P|2.5
 PID|1|PAT001|MRN123456^^^Hospital^MR||DOE^JOHN^ALLEN^JR^DR^PhD||19800101|M|||123 Main St^Apt 4B^Boston^MA^02101^USA||555-1234^PRN^PH~555-5678^WPN^PH||EN^English^HL70296|M^Married^HL70002|||123-45-6789|||N
@@ -158,21 +169,26 @@ OBX|3|NM|HGB^Hemoglobin^LN||14.5|g/dL|12.0-16.0|N|||F|||20240315120000`;
                 window.currentMessage = message;
 
                 let result = '<div class="success">✓ Message parsed successfully!</div>\n\n';
-                result += `<strong>Message Type:</strong> ${message.messageType() || 'N/A'}\n`;
-                result += `<strong>Version:</strong> ${message.version() || 'N/A'}\n`;
-                result += `<strong>Sending Application:</strong> ${message.sendingApplication() || 'N/A'}\n`;
-                result += `<strong>Sending Facility:</strong> ${message.sendingFacility() || 'N/A'}\n`;
-                result += `<strong>Control ID:</strong> ${message.controlId() || 'N/A'}\n`;
-                result += `<strong>Segment Count:</strong> ${message.segmentCount()}\n`;
-                result += `<strong>Segments:</strong> ${message.segmentIds().join(', ')}\n\n`;
+                result += `<strong>Message Type:</strong> ` +
+                    `${escapeHtml(message.messageType() || 'N/A')}\n`;
+                result += `<strong>Version:</strong> ${escapeHtml(message.version() || 'N/A')}\n`;
+                result += `<strong>Sending Application:</strong> ` +
+                    `${escapeHtml(message.sendingApplication() || 'N/A')}\n`;
+                result += `<strong>Sending Facility:</strong> ` +
+                    `${escapeHtml(message.sendingFacility() || 'N/A')}\n`;
+                result += `<strong>Control ID:</strong> ` +
+                    `${escapeHtml(message.controlId() || 'N/A')}\n`;
+                result += `<strong>Segment Count:</strong> ${escapeHtml(message.segmentCount())}\n`;
+                result += `<strong>Segments:</strong> ` +
+                    `${escapeHtml(message.segmentIds().join(', '))}\n\n`;
 
                 // Show JSON representation
                 result += '<strong>JSON Representation:</strong>\n';
-                result += JSON.stringify(message.toJson(), null, 2);
+                result += escapeHtml(JSON.stringify(message.toJson(), null, 2));
 
                 output.innerHTML = result;
             } catch (error) {
-                output.innerHTML = `<div class="error">✗ Error: ${error}</div>`;
+                output.innerHTML = `<div class="error">✗ Error: ${escapeHtml(error)}</div>`;
             }
         };
 
@@ -190,28 +206,30 @@ OBX|3|NM|HGB^Hemoglobin^LN||14.5|g/dL|12.0-16.0|N|||F|||20240315120000`;
                     html = '<div class="success">✓ Message is valid!</div>';
                 } else {
                     html = `<div class="error">✗ Validation failed</div>`;
-                    html += `<strong>Errors:</strong> ${result.errorCount()}\n`;
-                    html += `<strong>Warnings:</strong> ${result.warningCount()}\n\n`;
+                    html += `<strong>Errors:</strong> ${escapeHtml(result.errorCount())}\n`;
+                    html += `<strong>Warnings:</strong> ${escapeHtml(result.warningCount())}\n\n`;
 
                     const validationJson = result.toJson();
                     if (validationJson.errors.length > 0) {
                         html += '<strong>Validation Errors:</strong>\n';
                         validationJson.errors.forEach(err => {
-                            html += `  • ${err.location}: ${err.message}\n`;
+                            html += `  • ${escapeHtml(err.location)}: ` +
+                                `${escapeHtml(err.message)}\n`;
                         });
                     }
 
                     if (validationJson.warnings.length > 0) {
                         html += '\n<strong>Warnings:</strong>\n';
                         validationJson.warnings.forEach(warn => {
-                            html += `  • ${warn.location}: ${warn.message}\n`;
+                            html += `  • ${escapeHtml(warn.location)}: ` +
+                                `${escapeHtml(warn.message)}\n`;
                         });
                     }
                 }
 
                 output.innerHTML = html;
             } catch (error) {
-                output.innerHTML = `<div class="error">✗ Error: ${error}</div>`;
+                output.innerHTML = `<div class="error">✗ Error: ${escapeHtml(error)}</div>`;
             }
         };
 
@@ -230,12 +248,25 @@ OBX|3|NM|HGB^Hemoglobin^LN||14.5|g/dL|12.0-16.0|N|||F|||20240315120000`;
                 try {
                     const demographics = extractPatientDemographics(message);
                     result += '<h3>Patient Demographics</h3>\n';
-                    result += `<div class="field-value"><span class="label">MRN:</span> ${demographics.mrn || 'N/A'}</div>`;
-                    result += `<div class="field-value"><span class="label">Name:</span> ${demographics.family_name || ''}, ${demographics.given_name || ''}</div>`;
-                    result += `<div class="field-value"><span class="label">DOB:</span> ${demographics.date_of_birth || 'N/A'}</div>`;
-                    result += `<div class="field-value"><span class="label">Gender:</span> ${demographics.gender || 'N/A'}</div>`;
-                    result += `<div class="field-value"><span class="label">Address:</span> ${demographics.address || 'N/A'}</div>`;
-                    result += `<div class="field-value"><span class="label">Phone:</span> ${demographics.phone || 'N/A'}</div>\n\n`;
+                    result += `<div class="field-value">` +
+                        `<span class="label">MRN:</span> ` +
+                        `${escapeHtml(demographics.mrn || 'N/A')}</div>`;
+                    result += `<div class="field-value">` +
+                        `<span class="label">Name:</span> ` +
+                        `${escapeHtml(demographics.family_name || '')}, ` +
+                        `${escapeHtml(demographics.given_name || '')}</div>`;
+                    result += `<div class="field-value">` +
+                        `<span class="label">DOB:</span> ` +
+                        `${escapeHtml(demographics.date_of_birth || 'N/A')}</div>`;
+                    result += `<div class="field-value">` +
+                        `<span class="label">Gender:</span> ` +
+                        `${escapeHtml(demographics.gender || 'N/A')}</div>`;
+                    result += `<div class="field-value">` +
+                        `<span class="label">Address:</span> ` +
+                        `${escapeHtml(demographics.address || 'N/A')}</div>`;
+                    result += `<div class="field-value">` +
+                        `<span class="label">Phone:</span> ` +
+                        `${escapeHtml(demographics.phone || 'N/A')}</div>\n\n`;
                 } catch (e) {
                     result += '<p>No patient demographics found</p>\n\n';
                 }
@@ -247,10 +278,12 @@ OBX|3|NM|HGB^Hemoglobin^LN||14.5|g/dL|12.0-16.0|N|||F|||20240315120000`;
                         result += '<h3>Observations</h3>\n';
                         observations.forEach((obs, idx) => {
                             result += `<div class="field-value">`;
-                            result += `<span class="label">${obs.test_name || 'Test ' + (idx + 1)}:</span> `;
-                            result += `${obs.value || 'N/A'} ${obs.units || ''} `;
-                            result += `(${obs.reference_range || 'N/A'}) `;
-                            result += `[${obs.abnormal_flags || 'N'}]`;
+                            result += `<span class="label">` +
+                                `${escapeHtml(obs.test_name || 'Test ' + (idx + 1))}:</span> `;
+                            result += `${escapeHtml(obs.value || 'N/A')} ` +
+                                `${escapeHtml(obs.units || '')} `;
+                            result += `(${escapeHtml(obs.reference_range || 'N/A')}) `;
+                            result += `[${escapeHtml(obs.abnormal_flags || 'N')}]`;
                             result += `</div>`;
                         });
                     } catch (e) {
@@ -260,7 +293,7 @@ OBX|3|NM|HGB^Hemoglobin^LN||14.5|g/dL|12.0-16.0|N|||F|||20240315120000`;
 
                 output.innerHTML = result;
             } catch (error) {
-                output.innerHTML = `<div class="error">✗ Error: ${error}</div>`;
+                output.innerHTML = `<div class="error">✗ Error: ${escapeHtml(error)}</div>`;
             }
         };
 

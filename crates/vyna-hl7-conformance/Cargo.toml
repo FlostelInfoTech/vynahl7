@@ -7,7 +7,8 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-documentation.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/vyna-hl7-conformance"
 keywords.workspace = true
 categories.workspace = true
 description = "HL7 v2.x conformance profile validation for VynaHL7"
@@ -19,7 +20,7 @@ vyna-hl7-validator.workspace = true
 vyna-hl7-terser.workspace = true
 
 # XML parsing
-quick-xml = "0.42"
+quick-xml.workspace = true
 
 # Error handling
 thiserror.workspace = true

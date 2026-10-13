@@ -20,12 +20,15 @@
 //!
 //! ## Data Type Validation
 //!
-//! The validator supports format validation for all HL7 data types including:
+//! The validator supports format validation for HL7 data types including:
 //! - Date/Time types (DT, TM, DTM, TS)
 //! - Numeric types (NM, SI)
 //! - String types (ST, TX, FT)
-//! - Coded elements (CE, CWE, CNE, ID, IS)
-//! - Composite types (XPN, XAD, XTN, CX, XCN, EI, HD, PL, VID, CP, CQ, DR, TQ, XON, MO, FC, SN)
+//! - Identifiers (ID) and message/processing types (MSG, PT)
+//! - Composite values (CE, CWE, CNE, IS, XPN, XAD, XTN, CX, XCN, EI,
+//!   HD, PL, VID, CP, CQ, DR, TQ, XON, MO, FC, SN), accepted as
+//!   scalars here while schema component definitions enforce their
+//!   component structure from the parsed field
 //!
 //! ## Vocabulary Validation
 //!
@@ -359,6 +362,12 @@ impl Validator {
     }
 
     /// Validate a message
+    ///
+    /// When a schema is set, segments absent from it are flagged as
+    /// warnings in every mode: shipped schemas are minimal skeletons
+    /// (they omit many legal segments), so absence from the schema
+    /// means "not covered", never "invalid". Site-defined Z-segments
+    /// always pass through silently.
     pub fn validate(&self, message: &Message) -> ValidationResult {
         let mut result = ValidationResult::new();
 
@@ -486,6 +495,11 @@ impl Validator {
     }
 
     /// Validate against schema
+    ///
+    /// Segments absent from the schema warn in every mode (shipped
+    /// schemas omit many legal segments, so absence means "not
+    /// covered", never "invalid"), except site-defined Z-segments,
+    /// which always pass through silently.
     fn validate_against_schema(
         &self,
         message: &Message,
@@ -496,6 +510,19 @@ impl Validator {
         for (i, segment) in message.segments.iter().enumerate() {
             if let Some(seg_def) = schema.segments.get(&segment.id) {
                 self.validate_segment(segment, seg_def, i, &message.delimiters, result);
+            } else if !segment.id.starts_with('Z') {
+                let schema_name = if schema.trigger_event.is_empty() {
+                    schema.message_type.clone()
+                } else {
+                    format!("{}_{}", schema.message_type, schema.trigger_event)
+                };
+                result.add_warning(ValidationWarning::new(
+                    format!("{}[{}]", segment.id, i),
+                    format!(
+                        "Segment {} is not covered by the {} schema; skipped",
+                        segment.id, schema_name
+                    ),
+                ));
             }
         }
 
@@ -1014,6 +1041,15 @@ mod tests {
         );
         let mut segments = HashMap::new();
         segments.insert(
+            "MSH".to_string(),
+            SegmentDefinition {
+                name: "Message Header".to_string(),
+                required: false,
+                repeating: false,
+                fields: HashMap::new(),
+            },
+        );
+        segments.insert(
             "PID".to_string(),
             SegmentDefinition {
                 name: "Patient Identification".to_string(),
@@ -1053,6 +1089,77 @@ mod tests {
         let result = validator.validate(&msg);
 
         assert!(!result.is_valid());
+    }
+
+    /// Minimal MSH+PID schema: anything else is out of schema.
+    fn create_msh_pid_schema() -> MessageSchema {
+        let mut segments = HashMap::new();
+        for id in ["MSH", "PID"] {
+            segments.insert(
+                id.to_string(),
+                SegmentDefinition {
+                    name: id.to_string(),
+                    required: false,
+                    repeating: false,
+                    fields: HashMap::new(),
+                },
+            );
+        }
+        MessageSchema {
+            message_type: "ADT".to_string(),
+            trigger_event: "A01".to_string(),
+            version: "2.5".to_string(),
+            segments,
+        }
+    }
+
+    #[test]
+    fn test_out_of_schema_segment_warns_even_when_strict() {
+        let mut msg = Message::new();
+        msg.add_segment(Segment::new("MSH"));
+        msg.add_segment(Segment::new("PID"));
+        msg.add_segment(Segment::new("OBX")); // Well-formed but not in schema
+
+        let validator = Validator::with_schema(Version::V2_5, create_msh_pid_schema());
+        let result = validator.validate(&msg);
+
+        // Schemas are minimal skeletons omitting many legal segments, so
+        // absence warns ("not covered") instead of failing.
+        assert!(result.is_valid(), "errors: {:?}", result.errors);
+        assert!(
+            result.warnings.iter().any(|w| w.message.contains("OBX")),
+            "expected an out-of-schema warning for OBX, got {:?}",
+            result.warnings
+        );
+    }
+
+    #[test]
+    fn test_out_of_schema_segment_warns_in_lenient_mode() {
+        let mut msg = Message::new();
+        msg.add_segment(Segment::new("MSH"));
+        msg.add_segment(Segment::new("PID"));
+        msg.add_segment(Segment::new("OBX"));
+
+        let validator = Validator::with_schema(Version::V2_5, create_msh_pid_schema())
+            .with_context(ValidationContext::lenient());
+        let result = validator.validate(&msg);
+
+        assert!(result.is_valid());
+        assert!(result.warnings.iter().any(|w| w.message.contains("OBX")));
+    }
+
+    #[test]
+    fn test_z_segments_pass_through_schema_validation() {
+        let mut msg = Message::new();
+        msg.add_segment(Segment::new("MSH"));
+        msg.add_segment(Segment::new("PID"));
+        msg.add_segment(Segment::new("ZAB")); // Site-defined, never in schema
+
+        let validator = Validator::with_schema(Version::V2_5, create_msh_pid_schema());
+        let result = validator.validate(&msg);
+
+        assert!(result.is_valid(), "errors: {:?}", result.errors);
+        assert!(result.warnings.is_empty());
     }
 
     /// Helper to build a schema with component definitions for testing

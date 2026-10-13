@@ -100,6 +100,7 @@ pub struct FtpTab {
 
     // Server settings
     server_port: String,
+    server_bind: String,
     server_root: String,
     server_username: String,
     server_password: String,
@@ -134,7 +135,8 @@ impl Default for FtpTab {
 
             // Server defaults
             server_port: "2121".to_string(),
-            server_root: std::env::temp_dir().to_string_lossy().to_string(),
+            server_bind: "127.0.0.1".to_string(),
+            server_root: default_ftp_root().to_string_lossy().to_string(),
             server_username: "test".to_string(),
             server_password: "test".to_string(),
 
@@ -557,6 +559,12 @@ impl FtpTab {
                 !running && !starting,
                 egui::TextEdit::singleline(&mut self.server_port).desired_width(60.0),
             );
+            ui.label("Bind:");
+            ui.add_enabled(
+                !running && !starting,
+                egui::TextEdit::singleline(&mut self.server_bind).desired_width(90.0),
+            )
+            .on_hover_text("Bind address (127.0.0.1 = this machine only; 0.0.0.0 = LAN)");
         });
 
         ui.horizontal(|ui| {
@@ -992,6 +1000,7 @@ impl FtpTab {
         }
         let protocol = self.protocol;
         let port: u16 = self.server_port.parse().unwrap_or(protocol.default_port());
+        let bind = self.server_bind.clone();
         let root = self.server_root.clone();
         let username = self.server_username.clone();
         let password = self.server_password.clone();
@@ -1018,6 +1027,7 @@ impl FtpTab {
                     Protocol::Ftp => {
                         run_ftp_server(
                             port,
+                            &bind,
                             &root,
                             &username,
                             &password,
@@ -1030,6 +1040,7 @@ impl FtpTab {
                     Protocol::Sftp => {
                         run_sftp_server(
                             port,
+                            &bind,
                             &root,
                             &username,
                             &password,
@@ -1329,8 +1340,28 @@ impl Authenticator for SimpleAuthenticator {
 
 // === FTP Server Implementation ===
 
+/// Build the server listen address. Loopback by default; a LAN bind
+/// (`0.0.0.0`) is an explicit opt-in in the Bind box. Blank input
+/// fails closed to loopback.
+fn server_listen_addr(bind: &str, port: u16) -> String {
+    let bind = bind.trim();
+    let bind = if bind.is_empty() { "127.0.0.1" } else { bind };
+    format!("{}:{}", bind, port)
+}
+
+/// Dedicated FTP root under the OS temp dir (never the shared temp
+/// dir itself), created on demand.
+fn default_ftp_root() -> PathBuf {
+    let dir = std::env::temp_dir().join("vynahl7-testpanel-ftp");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+// Private test-harness entry point; the flat arg list mirrors its caller.
+#[allow(clippy::too_many_arguments)]
 async fn run_ftp_server(
     port: u16,
+    bind: &str,
     root: &str,
     username: &str,
     password: &str,
@@ -1339,6 +1370,8 @@ async fn run_ftp_server(
     ctx: egui::Context,
 ) -> Result<(), String> {
     use libunftp::ServerBuilder;
+
+    let addr = server_listen_addr(bind, port);
 
     // Mark server as running
     {
@@ -1353,7 +1386,7 @@ async fn run_ftp_server(
         s.log_entries.push(LogEntry {
             timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
             direction: Direction::Info,
-            message: format!("FTP server started on port {} ({})", port, auth_msg),
+            message: format!("FTP server started on {} ({})", addr, auth_msg),
         });
     }
     ctx.request_repaint();
@@ -1379,8 +1412,6 @@ async fn run_ftp_server(
     .passive_ports(50000..=50099)
     .build()
     .map_err(|e| format!("Failed to build server: {}", e))?;
-
-    let addr = format!("0.0.0.0:{}", port);
 
     // Run server until shutdown
     tokio::select! {
@@ -1749,8 +1780,11 @@ fn sftp_download_sync(
 const SFTP_SERVER_UNSUPPORTED: &str =
     "SFTP server mode is not implemented; use FTP server mode instead";
 
+// Private test-harness entry point; the flat arg list mirrors its caller.
+#[allow(clippy::too_many_arguments)]
 async fn run_sftp_server(
     port: u16,
+    bind: &str,
     root: &str,
     username: &str,
     password: &str,
@@ -1785,6 +1819,8 @@ async fn run_sftp_server(
         ctx: ctx.clone(),
     };
 
+    let addr = server_listen_addr(bind, port);
+
     // Mark server as running
     {
         let mut s = state.lock().unwrap();
@@ -1793,12 +1829,10 @@ async fn run_sftp_server(
         s.log_entries.push(LogEntry {
             timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
             direction: Direction::Info,
-            message: format!("SFTP server started on port {}", port),
+            message: format!("SFTP server started on {}", addr),
         });
     }
     ctx.request_repaint();
-
-    let addr = format!("0.0.0.0:{}", port);
 
     // Run server until shutdown
     tokio::select! {
@@ -2162,6 +2196,7 @@ mod tests {
             tokio::spawn(async move {
                 let _ = run_sftp_server(
                     port,
+                    "127.0.0.1",
                     &root,
                     "test",
                     "test",
@@ -2222,5 +2257,33 @@ mod tests {
             s.log_entries.iter().any(|e| e.message.contains("SFTP")),
             "server must log the SFTP outcome"
         );
+    }
+
+    #[test]
+    fn ftp_default_root_is_not_shared_temp_dir() {
+        // One click must not share the whole OS temp dir: the default
+        // root is a dedicated subdir (created on demand).
+        let tab = FtpTab::default();
+        let shared = std::env::temp_dir().to_string_lossy().to_string();
+        assert_ne!(tab.server_root, shared);
+        assert!(
+            PathBuf::from(&tab.server_root).starts_with(std::env::temp_dir()),
+            "default root should stay under the temp dir: {}",
+            tab.server_root
+        );
+        assert!(
+            PathBuf::from(&tab.server_root).is_dir(),
+            "default root should exist: {}",
+            tab.server_root
+        );
+    }
+
+    #[test]
+    fn ftp_server_defaults_to_loopback_bind() {
+        let tab = FtpTab::default();
+        assert_eq!(tab.server_bind, "127.0.0.1");
+        assert_eq!(server_listen_addr(&tab.server_bind, 2121), "127.0.0.1:2121");
+        // LAN bind stays available as an explicit opt-in.
+        assert_eq!(server_listen_addr("0.0.0.0", 2121), "0.0.0.0:2121");
     }
 }

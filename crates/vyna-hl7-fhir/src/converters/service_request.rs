@@ -1,5 +1,6 @@
 //! ServiceRequest converter - ORC/OBR segments to FHIR ServiceRequest resource
 
+use super::patient::{valid_hl7_date, valid_hl7_time};
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
 use crate::resources::service_request::*;
@@ -113,18 +114,25 @@ impl ServiceRequestConverter {
             });
         }
 
-        // ORC-15: Order Effective Date/Time -> authoredOn
+        // ORC-15: Order Effective Date/Time -> authoredOn, with ORC-9 fallback.
         // Lenient by design (see crate docs "Invalid datetime handling"):
-        // authored-on is ancillary, with ORC-9 as fallback.
-        if let Ok(Some(effective_dt)) = terser.get(&orc_path("15")) {
-            if let Ok(authored) = Self::convert_datetime(effective_dt) {
-                service_request.authored_on = Some(authored);
-            }
-        } else if let Ok(Some(transaction_dt)) = terser.get(&orc_path("9")) {
-            // ORC-9: Date/Time of Transaction (fallback)
-            if let Ok(authored) = Self::convert_datetime(transaction_dt) {
-                service_request.authored_on = Some(authored);
-            }
+        // authored-on is ancillary, so a present-but-unparseable ORC-15
+        // falls through to ORC-9 instead of dropping the timestamp.
+        let authored_on = terser
+            .get(&orc_path("15"))
+            .ok()
+            .flatten()
+            .and_then(|dt| Self::convert_datetime(dt).ok())
+            .or_else(|| {
+                // ORC-9: Date/Time of Transaction (fallback)
+                terser
+                    .get(&orc_path("9"))
+                    .ok()
+                    .flatten()
+                    .and_then(|dt| Self::convert_datetime(dt).ok())
+            });
+        if let Some(authored) = authored_on {
+            service_request.authored_on = Some(authored);
         }
 
         // ORC-12: Ordering Provider -> requester
@@ -271,30 +279,43 @@ impl ServiceRequestConverter {
         // all-ASCII-digit prefix makes the `&str` slices below safe.
         let bytes = datetime.as_bytes();
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
-            Ok(format!(
-                "{}-{}-{}T{}:{}:{}",
-                &datetime[0..4],
-                &datetime[4..6],
-                &datetime[6..8],
-                &datetime[8..10],
-                &datetime[10..12],
-                &datetime[12..14]
-            ))
+            if valid_hl7_date(&datetime[0..8]) && valid_hl7_time(&datetime[8..14]) {
+                Ok(format!(
+                    "{}-{}-{}T{}:{}:{}",
+                    &datetime[0..4],
+                    &datetime[4..6],
+                    &datetime[6..8],
+                    &datetime[8..10],
+                    &datetime[10..12],
+                    &datetime[12..14]
+                ))
+            } else {
+                Err(Self::invalid_datetime_format())
+            }
         } else if bytes.len() >= 8 && bytes[..8].iter().all(|b| b.is_ascii_digit()) {
-            // Date only
-            Ok(format!(
-                "{}-{}-{}",
-                &datetime[0..4],
-                &datetime[4..6],
-                &datetime[6..8]
-            ))
+            // Date only; still requires a real calendar date.
+            if valid_hl7_date(&datetime[0..8]) {
+                Ok(format!(
+                    "{}-{}-{}",
+                    &datetime[0..4],
+                    &datetime[4..6],
+                    &datetime[6..8]
+                ))
+            } else {
+                Err(Self::invalid_datetime_format())
+            }
         } else {
-            Err(ConversionError::InvalidFormat(
-                "ORC-15/ORC-9".to_string(),
-                "ORC".to_string(),
-                format!("Invalid datetime format: {}", datetime),
-            ))
+            Err(Self::invalid_datetime_format())
         }
+    }
+
+    /// Redacted bad-datetime error: field location + reason only, never the value.
+    fn invalid_datetime_format() -> ConversionError {
+        ConversionError::InvalidFormat(
+            "ORC-15/ORC-9".to_string(),
+            "ORC".to_string(),
+            "expected YYYYMMDDHHMMSS calendar datetime or YYYYMMDD date".to_string(),
+        )
     }
 
     /// Extract patient reference from PID segment
@@ -453,5 +474,68 @@ mod tests {
             Err(ConversionError::MissingSegment(seg)) => assert_eq!(seg, "ORC"),
             _ => panic!("Expected MissingSegment error"),
         }
+    }
+
+    fn orc_message_with_dates(orc9: &str, orc15: &str) -> String {
+        let mut fields = vec![String::new(); 15];
+        fields[0] = "NW".to_string();
+        fields[1] = "ORD123".to_string();
+        fields[4] = "A".to_string();
+        fields[8] = orc9.to_string();
+        fields[14] = orc15.to_string();
+        format!(
+            "MSH|^~\\&|CPOE|H|LAB|H|20240315||ORM^O01|M|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+             ORC|{}",
+            fields.join("|")
+        )
+    }
+
+    #[test]
+    fn test_authored_on_falls_back_to_orc9_when_orc15_invalid() {
+        let hl7 = orc_message_with_dates("20240315100000", "not-a-datetime");
+        let message = parse_message(&hl7).unwrap();
+        let requests = ServiceRequestConverter::convert_all(&message).unwrap();
+        assert_eq!(
+            requests[0].authored_on.as_deref(),
+            Some("2024-03-15T10:00:00")
+        );
+    }
+
+    #[test]
+    fn test_authored_on_prefers_valid_orc15() {
+        let hl7 = orc_message_with_dates("20240101000000", "20240315100000");
+        let message = parse_message(&hl7).unwrap();
+        let requests = ServiceRequestConverter::convert_all(&message).unwrap();
+        assert_eq!(
+            requests[0].authored_on.as_deref(),
+            Some("2024-03-15T10:00:00")
+        );
+    }
+
+    #[test]
+    fn test_impossible_calendar_datetimes_rejected() {
+        assert!(ServiceRequestConverter::convert_datetime("20241345100000").is_err());
+        assert!(ServiceRequestConverter::convert_datetime("20240230").is_err());
+        assert!(ServiceRequestConverter::convert_datetime("20240315250000").is_err());
+        assert_eq!(
+            ServiceRequestConverter::convert_datetime("20240315100000").unwrap(),
+            "2024-03-15T10:00:00"
+        );
+        assert_eq!(
+            ServiceRequestConverter::convert_datetime("20240229").unwrap(),
+            "2024-02-29"
+        );
+    }
+
+    #[test]
+    fn test_invalid_datetime_error_redacts_source_value() {
+        let err = ServiceRequestConverter::convert_datetime("sensitive-timestamp").unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            !msg.contains("sensitive-timestamp"),
+            "error leaks source: {msg}"
+        );
+        assert!(msg.contains("ORC-15/ORC-9"));
     }
 }

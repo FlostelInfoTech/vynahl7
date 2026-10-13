@@ -220,14 +220,20 @@ pub trait MessageQueue {
     fn stats(&self) -> Result<QueueStats, QueueError>;
 }
 
-/// Next queue id: hex nanos plus a per-process counter (filename-safe).
-fn next_id(counter: &AtomicU64) -> String {
+/// Process-wide id sequence: two handles on one directory must never mint
+/// the same id, so the counter cannot live per handle.
+static NEXT_ID_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// Next queue id: hex nanos, pid, and a process-wide sequence
+/// (filename-safe). Unique across same-process handles even when the clock
+/// does not advance between enqueues.
+fn next_id() -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos() as u64;
-    let seq = counter.fetch_add(1, Ordering::SeqCst);
-    format!("{nanos:x}-{seq:x}")
+    let seq = NEXT_ID_SEQ.fetch_add(1, Ordering::SeqCst);
+    format!("{nanos:x}-{:x}-{seq:x}", std::process::id())
 }
 
 #[derive(Debug, Clone)]
@@ -254,7 +260,6 @@ pub struct MemoryQueue {
     order: VecDeque<String>,
     policy: RetryPolicy,
     clock: Arc<dyn QueueClock>,
-    id_counter: AtomicU64,
     max_depth: Option<usize>,
     live: usize,
 }
@@ -280,7 +285,6 @@ impl MemoryQueue {
                 ..policy
             },
             clock,
-            id_counter: AtomicU64::new(0),
             max_depth: None,
             live: 0,
         }
@@ -328,7 +332,7 @@ impl MessageQueue for MemoryQueue {
         {
             return Err(QueueError::Full { limit });
         }
-        let id = next_id(&self.id_counter);
+        let id = next_id();
         let now = self.clock.now_ms();
         self.order.push_back(id.clone());
         self.entries.insert(
@@ -485,7 +489,6 @@ pub struct FileQueue {
     dead: PathBuf,
     policy: RetryPolicy,
     clock: Arc<dyn QueueClock>,
-    id_counter: AtomicU64,
     max_depth: Option<usize>,
 }
 
@@ -524,7 +527,6 @@ impl FileQueue {
                 ..policy
             },
             clock,
-            id_counter: AtomicU64::new(0),
             max_depth: None,
         };
         let report = queue.recover()?;
@@ -633,7 +635,7 @@ impl MessageQueue for FileQueue {
         {
             return Err(QueueError::Full { limit });
         }
-        let id = next_id(&self.id_counter);
+        let id = next_id();
         let now = self.clock.now_ms();
         let meta = FileMeta {
             id: id.clone(),
@@ -1038,6 +1040,35 @@ mod tests {
     fn scratch_dir() -> PathBuf {
         let seq = TEST_DIR_COUNTER.fetch_add(1, Ordering::SeqCst);
         std::env::temp_dir().join(format!("vyna-queue-test-{}-{seq}", std::process::id()))
+    }
+
+    #[test]
+    fn two_handles_on_one_dir_mint_unique_ids() {
+        let dir = scratch_dir();
+        let (mut first, _) = FileQueue::open(&dir).unwrap();
+        let (mut second, _) = FileQueue::open(&dir).unwrap();
+        let one = first.enqueue(b"one", HashMap::new()).unwrap();
+        let two = second.enqueue(b"two", HashMap::new()).unwrap();
+        // Same-process handles share one directory: ids must differ even
+        // when the clock does not advance between the two enqueues.
+        // Per-handle counters both start at zero, so the id sequence
+        // space itself must be process-wide, not per handle.
+        let seq = |id: &str| id.rsplit('-').next().unwrap_or("").to_string();
+        assert_ne!(seq(&one), seq(&two), "sequence space must be process-wide");
+        assert_ne!(one, two);
+        drop(first);
+        drop(second);
+
+        // Both bodies survive: no overwrite of one entry by the other.
+        let (mut queue, _) = FileQueue::open(&dir).unwrap();
+        let mut bodies = Vec::new();
+        while let Some(leased) = queue.dequeue().unwrap() {
+            bodies.push(leased.body.clone());
+            queue.ack(&leased.id).unwrap();
+        }
+        bodies.sort();
+        assert_eq!(bodies, vec![b"one".to_vec(), b"two".to_vec()]);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

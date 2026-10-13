@@ -214,6 +214,29 @@ fn is_file_unavailable(e: &FtpError) -> bool {
     )
 }
 
+/// True when the server answered MLSD with "unknown / not implemented"
+/// (500/502/504, or a 202 shrug): the only case where falling back to
+/// NLST is sound. Anything else (auth, connection, ...) must propagate
+/// instead of being masked by the fallback.
+fn is_unsupported_command(e: &FtpError) -> bool {
+    matches!(
+        e,
+        FtpError::UnexpectedResponse(resp) if matches!(
+            resp.status,
+            Status::BadCommand
+                | Status::NotImplemented
+                | Status::NotImplementedParameter
+                | Status::CommandNotImplemented
+        )
+    )
+}
+
+/// Clean a transport path the way the SFTP transport resolves every op:
+/// `/`-separated, relative, `..` and absolute paths rejected.
+fn clean_remote(path: &str) -> Result<String, BatchError> {
+    Ok(crate::transport::clean_relative_parts(path)?.join("/"))
+}
+
 /// Staging name for an upload: a sibling of `path` carrying the `.tmp-`
 /// prefix, so pollers skip it via [`is_staged_upload`] (the same skip
 /// convention the filesystem transport uses).
@@ -295,25 +318,28 @@ fn parse_mlsd_entries(dir: Option<&str>, lines: &[String]) -> Vec<FileEntry> {
 
 impl FileTransport for FtpTransport {
     async fn list(&mut self, dir: &str) -> Result<Vec<FileEntry>, BatchError> {
-        let dir = match dir.trim_matches('/').is_empty() {
-            true => None,
-            false => Some(dir.trim_matches('/')),
+        let cleaned = clean_remote(dir)?;
+        let dir = if cleaned.is_empty() {
+            None
+        } else {
+            Some(cleaned.as_str())
         };
         match self.list_via_mlsd(dir).await {
             Ok(entries) => Ok(entries),
             // Missing dir behaves like the filesystem transport; servers
             // without MLSD fall back to NLST.
             Err(BatchError::Ftp(e)) if is_file_unavailable(&e) => Ok(Vec::new()),
-            Err(BatchError::Ftp(_)) => self.list_via_nlst(dir).await,
+            Err(BatchError::Ftp(e)) if is_unsupported_command(&e) => self.list_via_nlst(dir).await,
             Err(e) => Err(e),
         }
     }
 
     async fn get(&mut self, path: &str) -> Result<Vec<u8>, BatchError> {
+        let remote = clean_remote(path)?;
         let timeout = self.config.command_timeout;
         let limit = self.config.max_file_bytes;
         // Refuse huge files before RETR when the server reports a size.
-        if let Ok(size) = crate::timed(timeout, self.stream()?.size(path)).await
+        if let Ok(size) = crate::timed(timeout, self.stream()?.size(&remote)).await
             && size as u64 > limit
         {
             return Err(BatchError::TooLarge {
@@ -321,7 +347,7 @@ impl FileTransport for FtpTransport {
                 limit,
             });
         }
-        let download = match crate::timed(timeout, self.stream()?.retr_as_stream(path)).await {
+        let download = match crate::timed(timeout, self.stream()?.retr_as_stream(&remote)).await {
             Ok(s) => s,
             Err(BatchError::Ftp(e)) if is_file_unavailable(&e) => {
                 return Err(BatchError::Invalid(format!("no such file: '{path}'")));
@@ -373,14 +399,15 @@ impl FileTransport for FtpTransport {
             self.mkdir_p(&parent).await?;
         }
         self.temp_counter += 1;
-        let temp = staging_temp_name(path, self.temp_counter);
+        let remote = parts.join("/");
+        let temp = staging_temp_name(&remote, self.temp_counter);
         let mut cursor = std::io::Cursor::new(data);
         let timeout = self.config.command_timeout;
         if let Err(e) = crate::timed(timeout, self.stream()?.put_file(&temp, &mut cursor)).await {
             let _ = crate::timed(timeout, self.stream()?.rm(&temp)).await;
             return Err(e);
         }
-        if let Err(e) = crate::timed(timeout, self.stream()?.rename(temp.as_str(), path)).await {
+        if let Err(e) = crate::timed(timeout, self.stream()?.rename(temp.as_str(), &remote)).await {
             let _ = crate::timed(timeout, self.stream()?.rm(&temp)).await;
             return Err(e);
         }
@@ -388,8 +415,9 @@ impl FileTransport for FtpTransport {
     }
 
     async fn delete(&mut self, path: &str) -> Result<(), BatchError> {
+        let remote = clean_remote(path)?;
         let timeout = self.config.command_timeout;
-        match crate::timed(timeout, self.stream()?.rm(path)).await {
+        match crate::timed(timeout, self.stream()?.rm(&remote)).await {
             Ok(()) => Ok(()),
             Err(BatchError::Ftp(e)) if is_file_unavailable(&e) => Ok(()),
             Err(e) => Err(e),
@@ -397,13 +425,15 @@ impl FileTransport for FtpTransport {
     }
 
     async fn rename(&mut self, from: &str, to: &str) -> Result<(), BatchError> {
+        let from_remote = clean_remote(from)?;
         let parts = crate::transport::clean_relative_parts(to)?;
         if parts.len() > 1 {
             let parent = parts[..parts.len() - 1].join("/");
             self.mkdir_p(&parent).await?;
         }
+        let to_remote = parts.join("/");
         let timeout = self.config.command_timeout;
-        match crate::timed(timeout, self.stream()?.rename(from, to)).await {
+        match crate::timed(timeout, self.stream()?.rename(&from_remote, &to_remote)).await {
             Ok(()) => Ok(()),
             Err(BatchError::Ftp(e)) if is_file_unavailable(&e) => {
                 Err(BatchError::Invalid(format!("no such file: '{from}'")))
@@ -480,6 +510,51 @@ mod tests {
         let entries = parse_mlsd_entries(Some("inbox"), &lines);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].path, "inbox/a.hl7");
+    }
+
+    #[test]
+    fn remote_paths_are_cleaned_like_sftp() {
+        assert_eq!(clean_remote("inbox/a.hl7").unwrap(), "inbox/a.hl7");
+        assert_eq!(clean_remote("inbox\\a.hl7").unwrap(), "inbox/a.hl7");
+        assert_eq!(clean_remote("inbox/./a.hl7").unwrap(), "inbox/a.hl7");
+        assert_eq!(clean_remote("").unwrap(), "");
+        assert!(clean_remote("../evil").is_err());
+        assert!(clean_remote("a/../../evil").is_err());
+        assert!(clean_remote("/abs/path.hl7").is_err());
+    }
+
+    #[test]
+    fn only_unsupported_command_errors_fall_back_to_nlst() {
+        use suppaftp::types::Response;
+
+        let unexpected = |status| {
+            FtpError::UnexpectedResponse(Response {
+                status,
+                body: Vec::new(),
+            })
+        };
+        // Unknown / not implemented: fall back.
+        for status in [
+            Status::BadCommand,
+            Status::NotImplemented,
+            Status::NotImplementedParameter,
+            Status::CommandNotImplemented,
+        ] {
+            assert!(is_unsupported_command(&unexpected(status)), "{status:?}");
+        }
+        // Auth, missing files, and transport failures: propagate.
+        for status in [
+            Status::NotLoggedIn,
+            Status::InvalidCredentials,
+            Status::FileUnavailable,
+            Status::CannotOpenDataConnection,
+        ] {
+            assert!(!is_unsupported_command(&unexpected(status)), "{status:?}");
+        }
+        assert!(!is_unsupported_command(&FtpError::BadResponse));
+        assert!(!is_unsupported_command(&FtpError::ConnectionError(
+            std::io::Error::new(std::io::ErrorKind::BrokenPipe, "gone")
+        )));
     }
 
     #[test]
@@ -571,6 +646,120 @@ mod tests {
 
         ftp.close().await.unwrap();
         tokio::fs::remove_dir_all(&dir).await.unwrap();
+    }
+
+    /// A transport with no connection: path validation must fire before
+    /// any I/O is attempted.
+    fn disconnected() -> FtpTransport {
+        FtpTransport {
+            config: FtpConfig::new("127.0.0.1:1", "u", "p"),
+            stream: None,
+            temp_counter: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn ops_reject_escape_paths_before_touching_the_wire() {
+        let mut ftp = disconnected();
+        // SFTP normalizes every op; FTP must too, so `..` escapes and
+        // absolute paths fail validation instead of reaching the wire.
+        assert!(matches!(
+            ftp.get("../evil").await,
+            Err(BatchError::Invalid(_))
+        ));
+        assert!(matches!(
+            ftp.delete("a/../../evil").await,
+            Err(BatchError::Invalid(_))
+        ));
+        assert!(matches!(
+            ftp.rename("../a", "b").await,
+            Err(BatchError::Invalid(_))
+        ));
+        assert!(matches!(
+            ftp.rename("a", "../b").await,
+            Err(BatchError::Invalid(_))
+        ));
+        assert!(matches!(
+            ftp.list("../evil").await,
+            Err(BatchError::Invalid(_))
+        ));
+        assert!(matches!(
+            ftp.get("/abs/path.hl7").await,
+            Err(BatchError::Invalid(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn mlsd_auth_failure_is_not_masked_by_nlst_fallback() {
+        use std::sync::{Arc, Mutex};
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+        // Scripted server: login works, MLSD answers 530 (auth failure),
+        // NLST would answer 550 (empty). Falling back would mask the 530
+        // as an empty listing.
+        let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let seen_srv = seen.clone();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let (reader, mut writer) = socket.into_split();
+            let mut lines = BufReader::new(reader).lines();
+            writer.write_all(b"220 fake\r\n").await.unwrap();
+            // Held so the data ports stay open until the session ends.
+            let mut data_ports: Vec<tokio::net::TcpListener> = Vec::new();
+            while let Some(line) = lines.next_line().await.unwrap() {
+                let verb = line
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .to_ascii_uppercase();
+                seen_srv.lock().unwrap().push(verb.clone());
+                match verb.as_str() {
+                    "USER" => writer.write_all(b"331 need password\r\n").await.unwrap(),
+                    "PASS" => writer.write_all(b"230 logged in\r\n").await.unwrap(),
+                    "TYPE" => writer.write_all(b"200 binary\r\n").await.unwrap(),
+                    "PASV" => {
+                        let data = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                        let port = data.local_addr().unwrap().port();
+                        data_ports.push(data);
+                        let reply = format!(
+                            "227 Entering Passive Mode (127,0,0,1,{},{})\r\n",
+                            port / 256,
+                            port % 256
+                        );
+                        writer.write_all(reply.as_bytes()).await.unwrap();
+                    }
+                    "MLSD" => writer.write_all(b"530 Not logged in.\r\n").await.unwrap(),
+                    "NLST" => writer.write_all(b"550 No files.\r\n").await.unwrap(),
+                    "QUIT" => {
+                        writer.write_all(b"221 bye\r\n").await.unwrap();
+                        break;
+                    }
+                    _ => writer.write_all(b"502 nah\r\n").await.unwrap(),
+                }
+            }
+        });
+
+        let config = FtpConfig::new(&addr.to_string(), "u", "p");
+        let mut ftp = FtpTransport::connect(config).await.unwrap();
+        let result = ftp.list("inbox").await;
+        assert!(
+            matches!(result, Err(BatchError::Ftp(_))),
+            "the 530 must surface, got {result:?}"
+        );
+        // Drop the guard before `close()`: the server task locks the same
+        // mutex to record QUIT, and holding it across an await deadlocks
+        // the test runtime.
+        {
+            let seen = seen.lock().unwrap();
+            assert!(seen.contains(&"MLSD".to_string()));
+            assert!(
+                !seen.iter().any(|v| v == "NLST"),
+                "must not fall back to NLST on auth errors: {seen:?}"
+            );
+        }
+        let _ = ftp.close().await;
     }
 
     #[tokio::test]

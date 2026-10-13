@@ -143,7 +143,11 @@ macro_rules! z_segment {
                 use $crate::segment::SerializeSegmentField;
                 let mut segment = vyna_hl7_core::Segment::new($id);
                 $(
-                    SerializeSegmentField::set_field(&self.$field_name, &mut segment, $field_num);
+                    // Field numbers are validated at expansion (0 and
+                    // non-Z ids rejected), and set_field only fails for
+                    // field 0, so this is infallible for macro-built code.
+                    SerializeSegmentField::set_field(&self.$field_name, &mut segment, $field_num)
+                        .expect("z_segment! field numbers are validated at expansion");
                 )*
                 segment
             }

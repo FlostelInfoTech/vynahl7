@@ -102,11 +102,13 @@ impl Intake {
         Ok(intake)
     }
 
-    /// Parse raw drop bytes as UTF-8.
+    /// Parse raw drop bytes, decoding them via the first MSH segment's
+    /// MSH-18 declaration (HL7 table 0211) and defaulting to UTF-8 when no
+    /// MSH segment or declaration is present. Decoding is strict: bytes
+    /// the declared set cannot represent are an error, never silent
+    /// replacements.
     pub fn parse_bytes(bytes: &[u8]) -> Result<Self, BatchError> {
-        let text = std::str::from_utf8(bytes)
-            .map_err(|e| BatchError::Invalid(format!("drop is not valid UTF-8: {e}")))?;
-        Self::parse(text)
+        Self::parse(&decode_drop_bytes(bytes)?)
     }
 
     /// Total message slots across all batches.
@@ -180,6 +182,37 @@ impl Intake {
         }
         Ok(())
     }
+}
+
+/// Decode drop bytes via the MSH-18 charset path. The first MSH segment's
+/// declaration governs the whole drop (file/batch envelopes carry no
+/// charset of their own); drops without an MSH segment decode as UTF-8.
+fn decode_drop_bytes(bytes: &[u8]) -> Result<String, BatchError> {
+    use vyna_hl7_core::charset::CharacterSet;
+
+    let charset = match first_msh_offset(bytes) {
+        Some(offset) => CharacterSet::detect(&bytes[offset..]),
+        None => Ok(CharacterSet::Utf8),
+    }
+    .map_err(|e| BatchError::Invalid(e.to_string()))?;
+    charset
+        .decode(bytes)
+        .map_err(|e| BatchError::Invalid(e.to_string()))
+}
+
+/// Byte offset of the first MSH segment, looking past any FHS/BHS wrapper
+/// lines and a leading UTF-8 byte-order mark.
+fn first_msh_offset(bytes: &[u8]) -> Option<usize> {
+    let body = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
+    let base = bytes.len() - body.len();
+    if body.starts_with(b"MSH") {
+        return Some(base);
+    }
+    body.windows(4)
+        .position(|w| {
+            (w[0] == b'\r' || w[0] == b'\n') && w[1] == b'M' && w[2] == b'S' && w[3] == b'H'
+        })
+        .map(|index| base + index + 1)
 }
 
 /// Split file-body lines into `BHS`...`BTS` groups. Lines outside any group
@@ -442,6 +475,47 @@ mod tests {
         assert_eq!(intake.ok_count(), 1);
         assert!(intake.verify_counts().is_ok());
         assert_eq!(intake.batches[0].control_id.as_deref(), Some("B7"));
+    }
+
+    #[test]
+    fn latin1_drops_decode_via_msh18() {
+        // ISO-8859-1 bytes for "Müller" with MSH-18 = 8859/1: not valid
+        // UTF-8, but decodable via the declared character set.
+        let mut bytes = concat!(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5||||||8859/1\r",
+            "PID|1||1||M",
+        )
+        .as_bytes()
+        .to_vec();
+        bytes.extend_from_slice(b"\xfcller||19800101|M\r");
+        assert!(std::str::from_utf8(&bytes).is_err());
+
+        let intake = Intake::parse_bytes(&bytes).unwrap();
+        assert_eq!(intake.ok_count(), 1);
+        let message = &intake.ok_messages()[0];
+        let pid = message.get_segment_by_id("PID").unwrap();
+        assert_eq!(pid.get_field_value(5), Some("Müller"));
+    }
+
+    #[test]
+    fn latin1_drops_decode_inside_envelopes() {
+        // MSH-18 detection must look past FHS/BHS wrappers to the first
+        // MSH segment, not just the first line of the drop.
+        let mut bytes = concat!(
+            "FHS|^~\\&|S|F|R|D|20240101||||F001\r",
+            "BHS|^~\\&|S|F|R|D|20240101||||B001\r",
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5||||||8859/1\r",
+            "PID|1||1||M",
+        )
+        .as_bytes()
+        .to_vec();
+        bytes.extend_from_slice(b"\xfcller\rBTS|1\rFTS|1");
+
+        let intake = Intake::parse_bytes(&bytes).unwrap();
+        assert_eq!(intake.ok_count(), 1);
+        let message = &intake.ok_messages()[0];
+        let pid = message.get_segment_by_id("PID").unwrap();
+        assert_eq!(pid.get_field_value(5), Some("Müller"));
     }
 
     #[test]
