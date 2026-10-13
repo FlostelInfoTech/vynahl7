@@ -166,6 +166,18 @@ impl ConditionConverter {
             });
         }
 
+        condition.clinical_status = Some(CodeableConcept {
+            coding: Some(vec![Coding {
+                system: Some(
+                    "http://terminology.hl7.org/CodeSystem/condition-clinical".to_string(),
+                ),
+                version: None,
+                code: Some("active".to_string()),
+                display: None,
+            }]),
+            text: None,
+        });
+
         Ok(condition)
     }
 }
@@ -300,6 +312,28 @@ mod tests {
         assert_eq!(
             coding.system.as_deref(),
             Some("http://hl7.org/fhir/sid/icd-10")
+        );
+    }
+
+    #[test]
+    fn test_dg1_sets_active_clinical_status() {
+        // The DG1 path sets the same active clinicalStatus as PRB.
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||ADT^A01|1|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   DG1|1||I10^Essential Hypertension^ICD10";
+        let message = parse_message(hl7).unwrap();
+        let conditions = ConditionConverter::convert_all(&message).unwrap();
+        let coding = &conditions[0]
+            .clinical_status
+            .as_ref()
+            .unwrap()
+            .coding
+            .as_ref()
+            .unwrap()[0];
+        assert_eq!(coding.code.as_deref(), Some("active"));
+        assert_eq!(
+            coding.system.as_deref(),
+            Some("http://terminology.hl7.org/CodeSystem/condition-clinical")
         );
     }
 }

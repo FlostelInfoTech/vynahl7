@@ -72,6 +72,8 @@ jobs:
             features: webhooks
           - package: vyna-hl7-http
             features: full
+          - package: vyna-hl7-mllp
+            features: full
           - package: vyna-hl7-batch
             features: ftp,sftp,testing
           - package: vyna-hl7-core

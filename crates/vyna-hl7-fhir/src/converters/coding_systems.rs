@@ -12,6 +12,7 @@ pub fn convert_coding_system(system: &str) -> String {
         "CVX" => "http://hl7.org/fhir/sid/cvx".to_string(),
         "NDC" => "http://hl7.org/fhir/sid/ndc".to_string(),
         "MVX" => "http://hl7.org/fhir/sid/mvx".to_string(),
+        "RXNORM" => "http://www.nlm.nih.gov/research/umls/rxnorm".to_string(),
         "LN" | "LNC" => "http://loinc.org".to_string(),
         "SNM" | "SCT" => "http://snomed.info/sct".to_string(),
         "ICD9" => "http://hl7.org/fhir/sid/icd-9-cm".to_string(),
@@ -30,6 +31,10 @@ mod tests {
         assert_eq!(convert_coding_system("CVX"), "http://hl7.org/fhir/sid/cvx");
         assert_eq!(convert_coding_system("NDC"), "http://hl7.org/fhir/sid/ndc");
         assert_eq!(convert_coding_system("MVX"), "http://hl7.org/fhir/sid/mvx");
+        assert_eq!(
+            convert_coding_system("RXNORM"),
+            "http://www.nlm.nih.gov/research/umls/rxnorm"
+        );
         assert_eq!(convert_coding_system("LN"), "http://loinc.org");
         assert_eq!(convert_coding_system("LNC"), "http://loinc.org");
         assert_eq!(convert_coding_system("SCT"), "http://snomed.info/sct");

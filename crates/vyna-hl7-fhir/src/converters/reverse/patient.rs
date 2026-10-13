@@ -72,6 +72,11 @@ impl PatientReverseConverter {
             let _ = pid.set_field_value(24, if multiple_birth { "Y" } else { "N" });
         }
 
+        // Birth order - PID-25
+        if let Some(birth_order) = patient.multiple_birth_integer {
+            let _ = pid.set_field_value(25, birth_order.to_string());
+        }
+
         // Death date/time - PID-29
         if let Some(ref deceased_dt) = patient.deceased_date_time {
             let hl7_datetime = Self::convert_datetime_to_hl7(deceased_dt)?;
@@ -610,6 +615,16 @@ mod tests {
         // XPN-4 keeps the suffix, XPN-6 keeps the degree.
         assert_eq!(rep_component(&pid, 5, 0, 3).as_deref(), Some("JR"));
         assert_eq!(rep_component(&pid, 5, 0, 5).as_deref(), Some("MD"));
+    }
+
+    #[test]
+    fn test_multiple_birth_integer_writes_pid25() {
+        let mut patient = Patient::new();
+        patient.multiple_birth_boolean = Some(true);
+        patient.multiple_birth_integer = Some(2);
+        let pid = PatientReverseConverter::convert(&patient).unwrap();
+        assert_eq!(pid.get_field_value(24), Some("Y"));
+        assert_eq!(pid.get_field_value(25), Some("2"));
     }
 
     #[test]

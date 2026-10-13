@@ -302,7 +302,8 @@ impl SftpTransport {
         }
     }
 
-    /// Create parent directories one level at a time.
+    /// Create parent directories one level at a time, ignoring "already
+    /// exists" failures.
     async fn mkdir_p(&mut self, remote_dir: &str) -> Result<(), BatchError> {
         let mut prefix = String::new();
         for part in remote_dir.split('/').filter(|p| !p.is_empty()) {
@@ -313,7 +314,11 @@ impl SftpTransport {
             let timeout = self.config.command_timeout;
             let exists = crate::timed(timeout, self.sftp()?.try_exists(&prefix)).await?;
             if !exists {
-                crate::timed(timeout, self.sftp()?.create_dir(&prefix)).await?;
+                match crate::timed(timeout, self.sftp()?.create_dir(&prefix)).await {
+                    Ok(()) => {}
+                    Err(BatchError::Sftp(e)) if is_already_exists(&e) => {}
+                    Err(e) => return Err(e),
+                }
             }
         }
         Ok(())
@@ -325,6 +330,20 @@ fn is_no_such_file(e: &russh_sftp::client::error::Error) -> bool {
         e,
         russh_sftp::client::error::Error::Status(status)
             if status.status_code == StatusCode::NoSuchFile
+    )
+}
+
+/// True for "already exists" mkdir failures: a concurrent put winning the
+/// try_exists/create_dir race reports generic `Failure` (this client only
+/// speaks draft-02 status codes, which have no `FileAlreadyExists`), so
+/// `mkdir_p` tolerates that class like the FTP transport tolerates 550.
+/// Best-effort only: genuine failures surface at the subsequent file
+/// create or rename.
+fn is_already_exists(e: &russh_sftp::client::error::Error) -> bool {
+    matches!(
+        e,
+        russh_sftp::client::error::Error::Status(status)
+            if status.status_code == StatusCode::Failure
     )
 }
 
@@ -595,6 +614,38 @@ mod tests {
         let err = map_connect_error(russh::Error::UnknownKey, "host:22");
         assert!(matches!(err, BatchError::HostKey(_)));
         assert!(err.to_string().contains("host:22"));
+    }
+
+    #[test]
+    fn mkdir_tolerates_only_raced_create_failures() {
+        use russh_sftp::client::error::Error as SftpError;
+        use russh_sftp::protocol::{Status, StatusCode};
+
+        let status = |code| {
+            SftpError::Status(Status {
+                id: 0,
+                status_code: code,
+                error_message: String::new(),
+                language_tag: String::new(),
+            })
+        };
+        // A concurrent put winning the mkdir race reports generic
+        // Failure: tolerated (no live-server repro available).
+        assert!(is_already_exists(&status(StatusCode::Failure)));
+        // Anything else still propagates from mkdir_p.
+        for code in [
+            StatusCode::Ok,
+            StatusCode::Eof,
+            StatusCode::NoSuchFile,
+            StatusCode::PermissionDenied,
+            StatusCode::BadMessage,
+            StatusCode::NoConnection,
+            StatusCode::ConnectionLost,
+            StatusCode::OpUnsupported,
+        ] {
+            assert!(!is_already_exists(&status(code)), "{code:?}");
+        }
+        assert!(!is_already_exists(&SftpError::Timeout));
     }
 
     #[test]

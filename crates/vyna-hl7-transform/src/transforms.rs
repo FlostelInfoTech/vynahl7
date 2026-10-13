@@ -150,6 +150,14 @@ pub fn format_date(value: &str, ctx: &TransformContext) -> Result<String> {
     if !head.bytes().all(|b| b.is_ascii_digit()) {
         return Err(Error::transform_fn(format!("Invalid date format: {value}")));
     }
+    // Whole-value validation like `format_datetime`: only documented
+    // numeric time tails (HH, HHMM, HHMMSS) may follow the date, so
+    // trailing garbage can never be silently dropped. Byte 8 is a char
+    // boundary (the `.get(..8)` above succeeded), so slicing is safe.
+    let tail = &value[8..];
+    if !tail.bytes().all(|b| b.is_ascii_digit()) || !matches!(tail.len(), 0 | 2 | 4 | 6) {
+        return Err(Error::transform_fn(format!("Invalid date format: {value}")));
+    }
     let date = chrono::NaiveDate::parse_from_str(head, "%Y%m%d")
         .map_err(|e| Error::transform_fn(format!("Invalid date format: {}", e)))?;
 
@@ -412,6 +420,11 @@ pub fn pad(value: &str, ctx: &TransformContext) -> Result<String> {
         .ok_or_else(|| Error::transform_fn("pad requires 'pad_char' in context"))?;
 
     let side = ctx.get_data("side").map(|s| s.as_str()).unwrap_or("left");
+    // Validate before the length short-circuit: otherwise a config error
+    // hides behind any value already long enough to skip padding.
+    if !matches!(side, "left" | "right") {
+        return Err(Error::transform_fn(format!("Invalid pad side: {}", side)));
+    }
 
     // Compare in characters, not bytes: padding appends `char`s, so a
     // byte-length comparison under-pads multi-byte values.
@@ -676,6 +689,42 @@ mod tests {
                 format_datetime(bad, &ctx).is_err(),
                 "{bad} must be rejected"
             );
+        }
+    }
+
+    #[test]
+    fn test_pad_rejects_invalid_side_for_long_values() {
+        // The side must be validated before the length short-circuit:
+        // a config error cannot hide behind a long-enough value.
+        let ctx = TransformContext::new()
+            .add_data("length".to_string(), "3".to_string())
+            .add_data("pad_char".to_string(), "0".to_string())
+            .add_data("side".to_string(), "sideways".to_string());
+
+        assert!(pad("1", &ctx).is_err());
+        assert!(pad("12345", &ctx).is_err());
+    }
+
+    #[test]
+    fn test_format_date_rejects_trailing_garbage() {
+        let ctx = TransformContext::new().add_data("format".to_string(), "YYYY-MM-DD".to_string());
+
+        // Non-numeric tails, ragged and overlong digit tails are rejected,
+        // matching format_datetime's trailing-garbage rejection.
+        for bad in [
+            "20240315XYZ",
+            "20240315123045X",
+            "20240315+0000",
+            "202403151",
+            "20240315123",
+            "2024031512304",
+            "2024031512304599",
+        ] {
+            assert!(format_date(bad, &ctx).is_err(), "{bad} must be rejected");
+        }
+        // Documented numeric time tails still parse to the date part.
+        for good in ["20240315", "2024031512", "202403151230", "20240315123045"] {
+            assert_eq!(format_date(good, &ctx).unwrap(), "2024-03-15");
         }
     }
 

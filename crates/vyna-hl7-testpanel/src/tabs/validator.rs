@@ -39,6 +39,8 @@ enum Severity {
 enum VersionOption {
     #[default]
     Auto,
+    V2_1,
+    V2_2,
     V23,
     V231,
     V24,
@@ -46,12 +48,18 @@ enum VersionOption {
     V251,
     V26,
     V27,
+    V2_7_1,
+    V2_8,
+    V2_8_1,
+    V2_8_2,
 }
 
 impl VersionOption {
     fn to_version(self) -> Option<Version> {
         match self {
             VersionOption::Auto => None,
+            VersionOption::V2_1 => Some(Version::V2_1),
+            VersionOption::V2_2 => Some(Version::V2_2),
             VersionOption::V23 => Some(Version::V2_3),
             VersionOption::V231 => Some(Version::V2_3_1),
             VersionOption::V24 => Some(Version::V2_4),
@@ -59,12 +67,18 @@ impl VersionOption {
             VersionOption::V251 => Some(Version::V2_5_1),
             VersionOption::V26 => Some(Version::V2_6),
             VersionOption::V27 => Some(Version::V2_7),
+            VersionOption::V2_7_1 => Some(Version::V2_7_1),
+            VersionOption::V2_8 => Some(Version::V2_8),
+            VersionOption::V2_8_1 => Some(Version::V2_8_1),
+            VersionOption::V2_8_2 => Some(Version::V2_8_2),
         }
     }
 
     fn label(&self) -> &str {
         match self {
             VersionOption::Auto => "Auto-detect",
+            VersionOption::V2_1 => "2.1",
+            VersionOption::V2_2 => "2.2",
             VersionOption::V23 => "2.3",
             VersionOption::V231 => "2.3.1",
             VersionOption::V24 => "2.4",
@@ -72,6 +86,10 @@ impl VersionOption {
             VersionOption::V251 => "2.5.1",
             VersionOption::V26 => "2.6",
             VersionOption::V27 => "2.7",
+            VersionOption::V2_7_1 => "2.7.1",
+            VersionOption::V2_8 => "2.8",
+            VersionOption::V2_8_1 => "2.8.1",
+            VersionOption::V2_8_2 => "2.8.2",
         }
     }
 }
@@ -125,6 +143,8 @@ impl ValidatorTab {
                         VersionOption::Auto,
                         "Auto-detect",
                     );
+                    ui.selectable_value(&mut self.selected_version, VersionOption::V2_1, "2.1");
+                    ui.selectable_value(&mut self.selected_version, VersionOption::V2_2, "2.2");
                     ui.selectable_value(&mut self.selected_version, VersionOption::V23, "2.3");
                     ui.selectable_value(&mut self.selected_version, VersionOption::V231, "2.3.1");
                     ui.selectable_value(&mut self.selected_version, VersionOption::V24, "2.4");
@@ -132,6 +152,10 @@ impl ValidatorTab {
                     ui.selectable_value(&mut self.selected_version, VersionOption::V251, "2.5.1");
                     ui.selectable_value(&mut self.selected_version, VersionOption::V26, "2.6");
                     ui.selectable_value(&mut self.selected_version, VersionOption::V27, "2.7");
+                    ui.selectable_value(&mut self.selected_version, VersionOption::V2_7_1, "2.7.1");
+                    ui.selectable_value(&mut self.selected_version, VersionOption::V2_8, "2.8");
+                    ui.selectable_value(&mut self.selected_version, VersionOption::V2_8_1, "2.8.1");
+                    ui.selectable_value(&mut self.selected_version, VersionOption::V2_8_2, "2.8.2");
                 });
 
             ui.separator();
@@ -589,6 +613,33 @@ mod tests {
         assert!(matches!(warning.severity, Severity::Warning));
         assert_eq!(warning.location, "MSH-12");
         assert_eq!(warning.message, "Version drift: message says 2.3");
+    }
+
+    #[test]
+    fn version_option_covers_every_supported_version() {
+        // Every core Version must be pinnable in the dropdown.
+        let cases = [
+            (VersionOption::V2_1, Version::V2_1, "2.1"),
+            (VersionOption::V2_2, Version::V2_2, "2.2"),
+            (VersionOption::V23, Version::V2_3, "2.3"),
+            (VersionOption::V231, Version::V2_3_1, "2.3.1"),
+            (VersionOption::V24, Version::V2_4, "2.4"),
+            (VersionOption::V25, Version::V2_5, "2.5"),
+            (VersionOption::V251, Version::V2_5_1, "2.5.1"),
+            (VersionOption::V26, Version::V2_6, "2.6"),
+            (VersionOption::V27, Version::V2_7, "2.7"),
+            (VersionOption::V2_7_1, Version::V2_7_1, "2.7.1"),
+            (VersionOption::V2_8, Version::V2_8, "2.8"),
+            (VersionOption::V2_8_1, Version::V2_8_1, "2.8.1"),
+            (VersionOption::V2_8_2, Version::V2_8_2, "2.8.2"),
+        ];
+        assert_eq!(cases.len(), 13);
+        for (option, version, label) in cases {
+            assert_eq!(option.to_version(), Some(version));
+            assert_eq!(option.label(), label);
+        }
+        assert_eq!(VersionOption::Auto.to_version(), None);
+        assert_eq!(VersionOption::Auto.label(), "Auto-detect");
     }
 
     #[test]

@@ -1209,6 +1209,10 @@ fn parse_hl7_bool(s: &str) -> Option<bool> {
 /// outside the first repetition/component/subcomponent is rejected
 /// instead of being silently truncated to the first component. Use
 /// tuple types for components and `Vec` types for repetitions.
+///
+/// A present-but-empty field counts as absent (`None`), matching
+/// [`parse_optional_scalar`]: `Option<String>` parses to `None` and
+/// required `String` reports `MissingField`.
 fn parse_simple_string(
     segment: &Segment,
     field_num: usize,
@@ -1225,7 +1229,10 @@ fn parse_simple_string(
              use a tuple type for components or Vec for repetitions",
         ));
     }
-    Ok(field.value().map(|s| s.to_string()))
+    Ok(field
+        .value()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string()))
 }
 
 /// Parse a repeating scalar field, rejecting invalid repetitions.
@@ -2406,21 +2413,11 @@ impl ParseSegmentField for Vec<(String, String)> {
                 let c0 = rep.get_component(0).and_then(|c| c.value()).unwrap_or("");
                 let c1 = rep.get_component(1).and_then(|c| c.value()).unwrap_or("");
 
-                // Empty repetitions are skipped like parse_repeating_scalar,
-                // but partial tuples are an error, never silently dropped.
-                let present = [!c0.is_empty(), !c1.is_empty()]
-                    .iter()
-                    .filter(|&&p| p)
-                    .count();
-                if present == 0 {
+                // Empty repetitions are skipped like parse_repeating_scalar;
+                // partial tuples default missing parts to "" like the
+                // single-tuple path, so serialize output parses back.
+                if c0.is_empty() && c1.is_empty() {
                     continue;
-                }
-                if present < 2 {
-                    return Err(crate::error::CustomSegmentError::invalid_field(
-                        format!("{seg_id}-{field_num}"),
-                        seg_id,
-                        format!("repetition {} has {present} of 2 components", idx + 1),
-                    ));
                 }
                 results.push((c0.to_string(), c1.to_string()));
             }
@@ -2484,21 +2481,11 @@ impl ParseSegmentField for Vec<(String, String, String)> {
                 let c1 = rep.get_component(1).and_then(|c| c.value()).unwrap_or("");
                 let c2 = rep.get_component(2).and_then(|c| c.value()).unwrap_or("");
 
-                // Empty repetitions are skipped like parse_repeating_scalar,
-                // but partial tuples are an error, never silently dropped.
-                let present = [!c0.is_empty(), !c1.is_empty(), !c2.is_empty()]
-                    .iter()
-                    .filter(|&&p| p)
-                    .count();
-                if present == 0 {
+                // Empty repetitions are skipped like parse_repeating_scalar;
+                // partial tuples default missing parts to "" like the
+                // single-tuple path, so serialize output parses back.
+                if c0.is_empty() && c1.is_empty() && c2.is_empty() {
                     continue;
-                }
-                if present < 3 {
-                    return Err(crate::error::CustomSegmentError::invalid_field(
-                        format!("{seg_id}-{field_num}"),
-                        seg_id,
-                        format!("repetition {} has {present} of 3 components", idx + 1),
-                    ));
                 }
                 results.push((c0.to_string(), c1.to_string(), c2.to_string()));
             }
@@ -2564,26 +2551,11 @@ impl ParseSegmentField for Vec<(String, String, String, String)> {
                 let c2 = rep.get_component(2).and_then(|c| c.value()).unwrap_or("");
                 let c3 = rep.get_component(3).and_then(|c| c.value()).unwrap_or("");
 
-                // Empty repetitions are skipped like parse_repeating_scalar,
-                // but partial tuples are an error, never silently dropped.
-                let present = [
-                    !c0.is_empty(),
-                    !c1.is_empty(),
-                    !c2.is_empty(),
-                    !c3.is_empty(),
-                ]
-                .iter()
-                .filter(|&&p| p)
-                .count();
-                if present == 0 {
+                // Empty repetitions are skipped like parse_repeating_scalar;
+                // partial tuples default missing parts to "" like the
+                // single-tuple path, so serialize output parses back.
+                if c0.is_empty() && c1.is_empty() && c2.is_empty() && c3.is_empty() {
                     continue;
-                }
-                if present < 4 {
-                    return Err(crate::error::CustomSegmentError::invalid_field(
-                        format!("{seg_id}-{field_num}"),
-                        seg_id,
-                        format!("repetition {} has {present} of 4 components", idx + 1),
-                    ));
                 }
                 results.push((
                     c0.to_string(),
@@ -2656,27 +2628,12 @@ impl ParseSegmentField for Vec<(String, String, String, String, String)> {
                 let c3 = rep.get_component(3).and_then(|c| c.value()).unwrap_or("");
                 let c4 = rep.get_component(4).and_then(|c| c.value()).unwrap_or("");
 
-                // Empty repetitions are skipped like parse_repeating_scalar,
-                // but partial tuples are an error, never silently dropped.
-                let present = [
-                    !c0.is_empty(),
-                    !c1.is_empty(),
-                    !c2.is_empty(),
-                    !c3.is_empty(),
-                    !c4.is_empty(),
-                ]
-                .iter()
-                .filter(|&&p| p)
-                .count();
-                if present == 0 {
+                // Empty repetitions are skipped like parse_repeating_scalar;
+                // partial tuples default missing parts to "" like the
+                // single-tuple path, so serialize output parses back.
+                if c0.is_empty() && c1.is_empty() && c2.is_empty() && c3.is_empty() && c4.is_empty()
+                {
                     continue;
-                }
-                if present < 5 {
-                    return Err(crate::error::CustomSegmentError::invalid_field(
-                        format!("{seg_id}-{field_num}"),
-                        seg_id,
-                        format!("repetition {} has {present} of 5 components", idx + 1),
-                    ));
                 }
                 results.push((
                     c0.to_string(),
@@ -4633,7 +4590,7 @@ mod tests {
     }
 
     #[test]
-    fn test_vec_tuple_incomplete_components_error() {
+    fn test_vec_tuple_incomplete_components_default() {
         use vyna_hl7_core::{Component, Field, Repetition};
 
         let mut segment = Segment::new("ZVT");
@@ -4660,10 +4617,17 @@ mod tests {
 
         segment.set_field(1, field).unwrap();
 
-        // An incomplete repetition is an error like the Vec scalar path,
-        // never silently dropped even when other repetitions are complete.
-        let err = Vec::<(String, String)>::parse_field(&segment, 1, "ZVT").unwrap_err();
-        assert!(err.to_string().contains("repetition 2"));
+        // An incomplete repetition defaults missing parts to "" like
+        // the single-tuple path, even when other repetitions are complete.
+        let result = Vec::<(String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
+        assert_eq!(
+            result,
+            vec![
+                ("AAA".to_string(), "BBB".to_string()),
+                ("CCC".to_string(), String::new()),
+                ("DDD".to_string(), "EEE".to_string()),
+            ]
+        );
     }
 
     #[test]
@@ -4820,20 +4784,59 @@ mod tests {
     }
 
     #[test]
-    fn test_vec_tuple2_incomplete_repetition_errors() {
+    fn test_string_empty_field_maps_to_none_or_missing() {
         use vyna_hl7_core::Field;
 
+        // A present-but-empty field is absent for String, matching the
+        // numeric/optional scalar paths (None / MissingField).
+        let mut segment = Segment::new("TEST");
+        segment.set_field(1, Field::from_delimited("")).unwrap();
+
+        assert_eq!(
+            Option::<u32>::parse_field(&segment, 1, "TEST").unwrap(),
+            None
+        );
+        assert_eq!(
+            Option::<String>::parse_field(&segment, 1, "TEST").unwrap(),
+            None
+        );
+        let err = String::parse_field(&segment, 1, "TEST").unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::CustomSegmentError::MissingField { .. }
+        ));
+    }
+
+    #[test]
+    fn test_vec_tuple2_partial_repetition_defaults() {
+        use vyna_hl7_core::Field;
+
+        // Fewer-than-arity components default to "" like the
+        // single-tuple path; only extra structure is an error.
         let mut segment = Segment::new("ZVT");
         segment
             .set_field(1, Field::from_delimited("555-1234^Home~555-5678"))
             .unwrap();
 
-        let err = Vec::<(String, String)>::parse_field(&segment, 1, "ZVT").unwrap_err();
-        assert!(err.to_string().contains("repetition 2"));
+        let result = Vec::<(String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
+        assert_eq!(
+            result,
+            vec![
+                ("555-1234".to_string(), "Home".to_string()),
+                ("555-5678".to_string(), String::new()),
+            ]
+        );
+
+        // Serialize-then-parse round-trips with "" defaults.
+        let mut segment = Segment::new("ZVT");
+        let value = vec![("555-1234".to_string(), String::new())];
+        value.set_field(&mut segment, 1).unwrap();
+        let back = Vec::<(String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
+        assert_eq!(back, value);
     }
 
     #[test]
-    fn test_vec_tuple3_incomplete_repetition_errors() {
+    fn test_vec_tuple3_partial_repetition_defaults() {
         use vyna_hl7_core::Field;
 
         let mut segment = Segment::new("ZVT");
@@ -4841,11 +4844,24 @@ mod tests {
             .set_field(1, Field::from_delimited("AAA^BBB^CCC~DDD^EEE"))
             .unwrap();
 
-        assert!(Vec::<(String, String, String)>::parse_field(&segment, 1, "ZVT").is_err());
+        let result = Vec::<(String, String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
+        assert_eq!(
+            result,
+            vec![
+                ("AAA".to_string(), "BBB".to_string(), "CCC".to_string()),
+                ("DDD".to_string(), "EEE".to_string(), String::new()),
+            ]
+        );
+
+        let mut segment = Segment::new("ZVT");
+        let value = vec![("A".to_string(), String::new(), "C".to_string())];
+        value.set_field(&mut segment, 1).unwrap();
+        let back = Vec::<(String, String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
+        assert_eq!(back, value);
     }
 
     #[test]
-    fn test_vec_tuple4_incomplete_repetition_errors() {
+    fn test_vec_tuple4_partial_repetition_defaults() {
         use vyna_hl7_core::Field;
 
         let mut segment = Segment::new("ZVT");
@@ -4853,11 +4869,41 @@ mod tests {
             .set_field(1, Field::from_delimited("A^B^C^D~E^F^G"))
             .unwrap();
 
-        assert!(Vec::<(String, String, String, String)>::parse_field(&segment, 1, "ZVT").is_err());
+        let result =
+            Vec::<(String, String, String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
+        assert_eq!(
+            result,
+            vec![
+                (
+                    "A".to_string(),
+                    "B".to_string(),
+                    "C".to_string(),
+                    "D".to_string()
+                ),
+                (
+                    "E".to_string(),
+                    "F".to_string(),
+                    "G".to_string(),
+                    String::new()
+                ),
+            ]
+        );
+
+        let mut segment = Segment::new("ZVT");
+        let value = vec![(
+            "A".to_string(),
+            String::new(),
+            String::new(),
+            "D".to_string(),
+        )];
+        value.set_field(&mut segment, 1).unwrap();
+        let back =
+            Vec::<(String, String, String, String)>::parse_field(&segment, 1, "ZVT").unwrap();
+        assert_eq!(back, value);
     }
 
     #[test]
-    fn test_vec_tuple5_incomplete_repetition_errors() {
+    fn test_vec_tuple5_partial_repetition_defaults() {
         use vyna_hl7_core::Field;
 
         let mut segment = Segment::new("ZVT");
@@ -4865,10 +4911,33 @@ mod tests {
             .set_field(1, Field::from_delimited("A^B^C^D^E~F^G^H^I"))
             .unwrap();
 
-        assert!(
+        let result =
             Vec::<(String, String, String, String, String)>::parse_field(&segment, 1, "ZVT")
-                .is_err()
+                .unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(
+            result[1],
+            (
+                "F".to_string(),
+                "G".to_string(),
+                "H".to_string(),
+                "I".to_string(),
+                String::new()
+            )
         );
+
+        let mut segment = Segment::new("ZVT");
+        let value = vec![(
+            "A".to_string(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "E".to_string(),
+        )];
+        value.set_field(&mut segment, 1).unwrap();
+        let back = Vec::<(String, String, String, String, String)>::parse_field(&segment, 1, "ZVT")
+            .unwrap();
+        assert_eq!(back, value);
     }
 
     #[test]

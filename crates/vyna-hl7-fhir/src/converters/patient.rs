@@ -367,26 +367,25 @@ impl PatientConverter {
                 continue;
             }
 
+            // Either line part can start the list: other-designation
+            // alone (empty street) still yields a line entry.
+            let mut lines = Vec::new();
+            if !street.is_empty() {
+                lines.push(street.to_string());
+            }
+            if !other.is_empty() {
+                lines.push(other.to_string());
+            }
             let mut address = Address {
                 use_: None,
                 type_: None,
                 text: None,
-                line: if street.is_empty() {
-                    None
-                } else {
-                    Some(vec![street.to_string()])
-                },
+                line: if lines.is_empty() { None } else { Some(lines) },
                 city: None,
                 state: None,
                 postal_code: None,
                 country: None,
             };
-
-            if !other.is_empty()
-                && let Some(ref mut lines) = address.line
-            {
-                lines.push(other.to_string());
-            }
 
             if !city.is_empty() {
                 address.city = Some(city.to_string());
@@ -570,14 +569,16 @@ impl PatientConverter {
         let bytes = stem.as_bytes();
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
             if valid_hl7_date(&stem[0..8]) && valid_hl7_time(&stem[8..14]) {
+                let fraction = hl7_fraction_suffix(stem, 14);
                 Ok(format!(
-                    "{}-{}-{}T{}:{}:{}{}",
+                    "{}-{}-{}T{}:{}:{}{}{}",
                     &stem[0..4],
                     &stem[4..6],
                     &stem[6..8],
                     &stem[8..10],
                     &stem[10..12],
                     &stem[12..14],
+                    fraction,
                     zone
                 ))
             } else {
@@ -597,7 +598,8 @@ impl PatientConverter {
             } else {
                 Err(Self::invalid_datetime_format())
             }
-        } else if bytes.len() >= 8 {
+        } else if bytes.len() >= 4 {
+            // Date, month, or year precision, like the mapping engine.
             Self::convert_date(stem)
         } else {
             Err(Self::invalid_datetime_format())
@@ -691,6 +693,26 @@ pub(crate) fn split_hl7_offset(value: &str) -> (&str, Option<String>) {
         }
     }
     (value, None)
+}
+
+/// Fractional-seconds suffix (`.S...`) after `digits` time digits.
+///
+/// HL7 appends fractional seconds as `.S...` directly after the
+/// time digits (before any zone, which callers already split off).
+/// Only a dot followed by one or more ASCII digits counts; the run
+/// is returned with its dot, and anything after the run is trailing
+/// junk the digit-prefix checks ignore as before.
+pub(crate) fn hl7_fraction_suffix(stem: &str, digits: usize) -> &str {
+    let rest = stem.get(digits..).unwrap_or("");
+    let tail = match rest.strip_prefix('.') {
+        Some(tail) => tail,
+        None => return "",
+    };
+    let run = tail.bytes().take_while(|b| b.is_ascii_digit()).count();
+    if run == 0 {
+        return "";
+    }
+    &rest[..run + 1]
 }
 
 /// Numeric value of an all-ASCII-digit slice (callers guarantee the digits).
@@ -1115,5 +1137,49 @@ mod tests {
         assert_eq!(telecoms.len(), 2);
         assert_eq!(telecoms[0].value.as_deref(), Some("111"));
         assert_eq!(telecoms[1].value.as_deref(), Some("222"));
+    }
+
+    #[test]
+    fn test_address_other_designation_without_street_starts_line() {
+        // XAD-1 empty with XAD-2 valued: the designation starts the
+        // line list instead of being dropped.
+        let hl7 = "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                   PID|1||MRN123^^^MRN||SMITH^JANE||19900215|F|||^Suite 200^Springfield^IL^62701";
+        let message = parse_message(hl7).unwrap();
+        let patient = PatientConverter::convert(&message).unwrap();
+        let addresses = patient.address.as_ref().unwrap();
+        assert_eq!(addresses[0].line, Some(vec!["Suite 200".to_string()]));
+        assert_eq!(addresses[0].city, Some("Springfield".to_string()));
+    }
+
+    #[test]
+    fn test_convert_datetime_accepts_year_and_month_precision() {
+        assert_eq!(PatientConverter::convert_datetime("2024").unwrap(), "2024");
+        assert_eq!(
+            PatientConverter::convert_datetime("202401").unwrap(),
+            "2024-01"
+        );
+        // End to end: a year PID-29 no longer fails the conversion.
+        let hl7 = pid_message_with_death_fields("2024", "");
+        let message = parse_message(&hl7).unwrap();
+        let patient = PatientConverter::convert(&message).unwrap();
+        assert_eq!(patient.deceased_date_time.as_deref(), Some("2024"));
+    }
+
+    #[test]
+    fn test_convert_datetime_preserves_fractional_seconds() {
+        assert_eq!(
+            PatientConverter::convert_datetime("20240315100000.123").unwrap(),
+            "2024-03-15T10:00:00.123"
+        );
+        assert_eq!(
+            PatientConverter::convert_datetime("20240315100000.123+0500").unwrap(),
+            "2024-03-15T10:00:00.123+05:00"
+        );
+        // A bare dot with no digits is not a fraction.
+        assert_eq!(
+            PatientConverter::convert_datetime("20240315100000.").unwrap(),
+            "2024-03-15T10:00:00"
+        );
     }
 }

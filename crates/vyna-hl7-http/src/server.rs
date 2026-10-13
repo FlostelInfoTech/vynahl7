@@ -5,7 +5,7 @@ use axum::{
     Router,
     body::Bytes,
     extract::{DefaultBodyLimit, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode, header::WWW_AUTHENTICATE},
     response::IntoResponse,
     routing::post,
 };
@@ -533,12 +533,30 @@ pub(crate) fn is_hl7_content_type(content_type: &str) -> bool {
     media_type.eq_ignore_ascii_case(CONTENT_TYPE_HL7_ER7)
 }
 
+/// Build an error triple with no extra headers.
+fn plain_error(status: StatusCode, message: String) -> (StatusCode, HeaderMap, String) {
+    (status, HeaderMap::new(), message)
+}
+
+/// Build a 401 triple carrying the `Basic` challenge (RFC 9110 §11.6.1).
+fn unauthorized_error(message: String) -> (StatusCode, HeaderMap, String) {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        WWW_AUTHENTICATE,
+        HeaderValue::from_static("Basic realm=\"vyna-hl7\""),
+    );
+    (StatusCode::UNAUTHORIZED, headers, message)
+}
+
 /// Handle incoming HTTP POST requests with HL7 messages
+// `result_large_err` is intentionally allowed: axum boxes the handler
+// future, so the `Err` triple's stack size is irrelevant on this path.
+#[allow(clippy::result_large_err)]
 pub(crate) async fn handle_message(
     State(server): State<HttpServer>,
     headers: HeaderMap,
     body: Bytes,
-) -> std::result::Result<(StatusCode, HeaderMap, Vec<u8>), (StatusCode, String)> {
+) -> std::result::Result<(StatusCode, HeaderMap, Vec<u8>), (StatusCode, HeaderMap, String)> {
     // Check authentication first so unauthenticated callers cannot probe
     // validation (content type, parsing) and learn about the endpoint.
     if let Some((_username, _password)) = &server.auth {
@@ -547,22 +565,18 @@ pub(crate) async fn handle_message(
             {
                 use crate::auth::verify_basic_auth;
                 if !verify_basic_auth(_auth_header, _username, _password) {
-                    return Err((
-                        StatusCode::UNAUTHORIZED,
-                        "Authentication failed".to_string(),
-                    ));
+                    return Err(unauthorized_error("Authentication failed".to_string()));
                 }
             }
             #[cfg(not(feature = "auth"))]
             {
-                return Err((
+                return Err(plain_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Authentication configured but 'auth' feature not enabled".to_string(),
                 ));
             }
         } else {
-            return Err((
-                StatusCode::UNAUTHORIZED,
+            return Err(unauthorized_error(
                 "Authentication required but no Authorization header provided".to_string(),
             ));
         }
@@ -575,7 +589,7 @@ pub(crate) async fn handle_message(
         .unwrap_or("");
 
     if !is_hl7_content_type(content_type) {
-        return Err((
+        return Err(plain_error(
             StatusCode::BAD_REQUEST,
             format!(
                 "Invalid content type: expected {}, got {}",
@@ -586,7 +600,7 @@ pub(crate) async fn handle_message(
 
     // Decode the body, preferring the Content-Type charset parameter
     let text = decode_body(&body, content_type).map_err(|e| {
-        (
+        plain_error(
             StatusCode::BAD_REQUEST,
             format!("Failed to decode HL7 message: {}", e),
         )
@@ -594,7 +608,7 @@ pub(crate) async fn handle_message(
 
     // Parse HL7 message
     let message = parse_message(&text).map_err(|e| {
-        (
+        plain_error(
             StatusCode::BAD_REQUEST,
             format!("Failed to parse HL7 message: {}", e),
         )
@@ -602,7 +616,7 @@ pub(crate) async fn handle_message(
 
     // Handle message
     let response = (server.handler)(message).map_err(|e| {
-        (
+        plain_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to handle message: {}", e),
         )
@@ -610,13 +624,13 @@ pub(crate) async fn handle_message(
 
     // Encode the response in its own MSH-18 character set
     let response_charset = response.get_character_set().map_err(|e| {
-        (
+        plain_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to encode HL7 response: {}", e),
         )
     })?;
     let response_body = response_charset.encode(&response.encode()).map_err(|e| {
-        (
+        plain_error(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to encode HL7 response: {}", e),
         )
@@ -810,7 +824,7 @@ mod tests {
         // Missing content type.
         let result =
             handle_message(State(server.clone()), HeaderMap::new(), VALID_HL7.into()).await;
-        let (status, _) = result.unwrap_err();
+        let (status, _, _) = result.unwrap_err();
         assert_eq!(status, StatusCode::BAD_REQUEST);
 
         // Wrong content type.
@@ -820,7 +834,7 @@ mod tests {
             VALID_HL7.into(),
         )
         .await;
-        let (status, _) = result.unwrap_err();
+        let (status, _, _) = result.unwrap_err();
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 
@@ -840,7 +854,7 @@ mod tests {
                 VALID_HL7.into(),
             )
             .await;
-            let (status, _) = result.unwrap_err();
+            let (status, _, _) = result.unwrap_err();
             assert_eq!(status, StatusCode::BAD_REQUEST, "spoof accepted: {spoof}");
         }
     }
@@ -880,7 +894,7 @@ mod tests {
                 body.into(),
             )
             .await;
-            let (status, message) = result.unwrap_err();
+            let (status, _, message) = result.unwrap_err();
             assert_eq!(status, StatusCode::BAD_REQUEST, "{label}");
             assert!(
                 message.contains("Invalid content type"),
@@ -893,7 +907,7 @@ mod tests {
     async fn test_handle_message_rejects_unparseable_body() {
         let server = HttpServer::new();
         let result = handle_message(State(server), hl7_headers(), "not hl7".into()).await;
-        let (status, _) = result.unwrap_err();
+        let (status, _, _) = result.unwrap_err();
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 
@@ -1110,7 +1124,7 @@ mod tests {
 
         // Missing Authorization header.
         let result = handle_message(State(server.clone()), hl7_headers(), VALID_HL7.into()).await;
-        let (status, _) = result.unwrap_err();
+        let (status, _, _) = result.unwrap_err();
         assert_eq!(status, StatusCode::UNAUTHORIZED);
 
         // Wrong credentials.
@@ -1121,7 +1135,7 @@ mod tests {
             VALID_HL7.into(),
         )
         .await;
-        let (status, _) = result.unwrap_err();
+        let (status, _, _) = result.unwrap_err();
         assert_eq!(status, StatusCode::UNAUTHORIZED);
 
         // Correct credentials succeed.
@@ -1150,12 +1164,72 @@ mod tests {
             VALID_HL7.into(),
         )
         .await;
-        let (status, _) = result.unwrap_err();
+        let (status, _, _) = result.unwrap_err();
         assert_eq!(status, StatusCode::UNAUTHORIZED);
 
         // Missing content type, no credentials: still 401.
         let result = handle_message(State(server), HeaderMap::new(), VALID_HL7.into()).await;
-        let (status, _) = result.unwrap_err();
+        let (status, _, _) = result.unwrap_err();
         assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "auth")]
+    async fn test_unauthorized_responses_carry_www_authenticate() {
+        use crate::auth::encode_basic_auth;
+
+        // RFC 9110 section 11.6.1: a 401 response MUST carry a
+        // WWW-Authenticate challenge so clients can complete auth.
+        let app = HttpServer::new()
+            .with_auth("user".to_string(), "pass".to_string())
+            .build_router();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = reqwest::Client::new();
+
+        // Missing credentials.
+        let resp = client
+            .post(format!("http://{addr}/"))
+            .header("content-type", CONTENT_TYPE_HL7_ER7)
+            .body(VALID_HL7)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), reqwest::StatusCode::UNAUTHORIZED);
+        let challenge = resp
+            .headers()
+            .get("www-authenticate")
+            .expect("401 lacks WWW-Authenticate")
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            challenge.starts_with("Basic"),
+            "unexpected challenge: {challenge}"
+        );
+
+        // Wrong credentials.
+        let wrong = encode_basic_auth("user", "wrong");
+        let resp = client
+            .post(format!("http://{addr}/"))
+            .header("content-type", CONTENT_TYPE_HL7_ER7)
+            .header("authorization", wrong)
+            .body(VALID_HL7)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), reqwest::StatusCode::UNAUTHORIZED);
+        let challenge = resp
+            .headers()
+            .get("www-authenticate")
+            .expect("401 lacks WWW-Authenticate")
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            challenge.starts_with("Basic"),
+            "unexpected challenge: {challenge}"
+        );
     }
 }

@@ -11,6 +11,10 @@ fields:
   - target: code.coding[0].system
     source: PRB-3-3
     map:
+      CVX: http://hl7.org/fhir/sid/cvx
+      NDC: http://hl7.org/fhir/sid/ndc
+      MVX: http://hl7.org/fhir/sid/mvx
+      RXNORM: http://www.nlm.nih.gov/research/umls/rxnorm
       LN: http://loinc.org
       LNC: http://loinc.org
       SNM: http://snomed.info/sct

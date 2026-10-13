@@ -1,6 +1,10 @@
 //! ServiceRequest converter - ORC/OBR segments to FHIR ServiceRequest resource
 
-use super::patient::{split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time};
+use super::coding_systems::convert_coding_system;
+use super::patient::{
+    hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min,
+    valid_hl7_time,
+};
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
 use crate::resources::service_request::*;
@@ -191,7 +195,7 @@ impl ServiceRequestConverter {
             if let Ok(Some(system)) = terser.get(&format!("{}-3", obr_path("4")))
                 && !system.is_empty()
             {
-                coding.system = Some(Self::convert_coding_system(system));
+                coding.system = Some(convert_coding_system(system));
             }
 
             service_request.code = Some(CodeableConcept {
@@ -304,20 +308,11 @@ impl ServiceRequestConverter {
         .to_string()
     }
 
-    /// Convert HL7 coding system (OBR-4-3) to a FHIR system URI.
-    fn convert_coding_system(system: &str) -> String {
-        match system {
-            "LN" | "LNC" => "http://loinc.org".to_string(),
-            "SNM" | "SCT" => "http://snomed.info/sct".to_string(),
-            "C4" | "CPT" => "http://www.ama-assn.org/go/cpt".to_string(),
-            _ => format!("urn:oid:{system}"),
-        }
-    }
-
     /// Convert HL7 datetime (YYYYMMDDHHMMSS) to FHIR ISO 8601 format
     ///
     /// `YYYYMMDDHHMM` keeps its minutes and a trailing HL7 zone is
-    /// preserved as `±HH:MM`.
+    /// preserved as `±HH:MM`. Validated fractional seconds are kept
+    /// as `.digits`.
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
         let (stem, offset) = split_hl7_offset(datetime);
         let zone = offset.as_deref().unwrap_or("");
@@ -327,13 +322,14 @@ impl ServiceRequestConverter {
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
             if valid_hl7_date(&stem[0..8]) && valid_hl7_time(&stem[8..14]) {
                 Ok(format!(
-                    "{}-{}-{}T{}:{}:{}{}",
+                    "{}-{}-{}T{}:{}:{}{}{}",
                     &stem[0..4],
                     &stem[4..6],
                     &stem[6..8],
                     &stem[8..10],
                     &stem[10..12],
                     &stem[12..14],
+                    hl7_fraction_suffix(stem, 14),
                     zone
                 ))
             } else {
@@ -364,6 +360,7 @@ impl ServiceRequestConverter {
             Err(Self::invalid_datetime_format())
         }
     }
+
 
     /// Redacted bad-datetime error: field location + reason only, never the value.
     fn invalid_datetime_format() -> ConversionError {
@@ -768,6 +765,36 @@ mod tests {
         assert_eq!(
             requests[0].authored_on.as_deref(),
             Some("2024-03-15T10:00:00+05:00")
+        );
+    }
+
+    #[test]
+    fn test_coding_system_maps_icd_via_shared_table() {
+        // OBR-4-3 resolves via the shared table: ICD9/ICD10 must
+        // not fall back to `urn:oid:`.
+        let cases = [
+            ("I10^HTN^ICD10", "http://hl7.org/fhir/sid/icd-10"),
+            ("410^MI^ICD9", "http://hl7.org/fhir/sid/icd-9-cm"),
+        ];
+        for (obr4, expected) in cases {
+            let hl7 = format!(
+                "MSH|^~\\&|CPOE|H|LAB|H|20240315||ORM^O01|M|P|2.5\r\
+                 PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+                 ORC|NW|ORD123|||A\r\
+                 OBR|1|ORD123||{obr4}"
+            );
+            let message = parse_message(&hl7).unwrap();
+            let requests = ServiceRequestConverter::convert_all(&message).unwrap();
+            let coding = &requests[0].code.as_ref().unwrap().coding.as_ref().unwrap()[0];
+            assert_eq!(coding.system.as_deref(), Some(expected), "OBR-4 {obr4}");
+        }
+    }
+
+    #[test]
+    fn test_datetime_preserves_fractional_seconds() {
+        assert_eq!(
+            ServiceRequestConverter::convert_datetime("20240315100000.123").unwrap(),
+            "2024-03-15T10:00:00.123"
         );
     }
 }

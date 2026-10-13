@@ -165,8 +165,15 @@ impl FtpTransport {
         Ok(parse_mlsd_entries(dir, &lines))
     }
 
-    /// Legacy listing: NLST plus SIZE/MDTM per file (2N round trips).
+    /// Legacy listing: NLST plus a CWD probe and SIZE/MDTM per file.
     /// Kept for servers without MLSD.
+    ///
+    /// NLST carries no type facts, so every entry is probed with CWD:
+    /// success proves a directory and the entry is skipped. Without that
+    /// check a subdirectory surfaces as an ordinary file that the poller
+    /// download-fails on every poll forever (SIZE/MDTM answer for
+    /// directories on some servers, so their failure cannot gate the
+    /// probe).
     async fn list_via_nlst(&mut self, dir: Option<&str>) -> Result<Vec<FileEntry>, BatchError> {
         let timeout = self.config.command_timeout;
         let names = match crate::timed(timeout, self.stream()?.nlst(dir)).await {
@@ -174,6 +181,11 @@ impl FtpTransport {
             Err(BatchError::Ftp(e)) if is_file_unavailable(&e) => return Ok(Vec::new()),
             Err(e) => return Err(e),
         };
+        // CWD probes change the server's working directory; capture it
+        // once so every probe can restore it. When PWD itself fails,
+        // probing is skipped (degrading to the old list-everything shape
+        // rather than breaking the listing).
+        let home = crate::timed(timeout, self.stream()?.pwd()).await.ok();
         let mut entries = Vec::new();
         for name in names {
             // NLST may return bare names or full paths; only the final
@@ -190,6 +202,11 @@ impl FtpTransport {
                 Some(d) => format!("{d}/{base}"),
                 None => base.to_string(),
             };
+            // Directories probe first: SIZE/MDTM may still answer for
+            // them, so the probe cannot wait on those failing.
+            if self.is_remote_dir(&path, home.as_deref()).await? {
+                continue;
+            }
             let size = crate::timed(timeout, self.stream()?.size(&path))
                 .await
                 .ok()
@@ -206,6 +223,32 @@ impl FtpTransport {
         }
         entries.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(entries)
+    }
+
+    /// CWD probe: success proves `path` is a directory. A failed probe
+    /// (a file, a race-deleted entry, a transient error) keeps the entry
+    /// listed, so files stay consumable. The working directory is
+    /// restored afterwards; when the restore fails the control
+    /// connection is re-established so later commands still resolve
+    /// against the login directory.
+    async fn is_remote_dir(&mut self, path: &str, home: Option<&str>) -> Result<bool, BatchError> {
+        let Some(home) = home else {
+            return Ok(false);
+        };
+        let timeout = self.config.command_timeout;
+        if crate::timed(timeout, self.stream()?.cwd(path))
+            .await
+            .is_err()
+        {
+            return Ok(false);
+        }
+        if crate::timed(timeout, self.stream()?.cwd(home))
+            .await
+            .is_err()
+        {
+            self.reconnect().await?;
+        }
+        Ok(true)
     }
 }
 
@@ -662,6 +705,66 @@ mod tests {
         // A real upload still lands visibly and leaves no temp behind.
         ftp.put("inbox/c.hl7", b"MSH").await.unwrap();
         assert_eq!(ftp.list("inbox").await.unwrap().len(), 2);
+
+        ftp.close().await.unwrap();
+        tokio::fs::remove_dir_all(&dir).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn nlst_fallback_skips_subdirectories() {
+        use libunftp::ServerBuilder;
+        use libunftp::auth::AnonymousAuthenticator;
+        use unftp_sbe_fs::Filesystem;
+
+        let dir = std::env::temp_dir().join(format!(
+            "vyna-ftp-nlstdir-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        tokio::fs::create_dir_all(dir.join("inbox/sub"))
+            .await
+            .unwrap();
+        std::fs::write(dir.join("inbox/a.hl7"), "MSH").unwrap();
+
+        let root = dir.clone();
+        let server = ServerBuilder::new(Box::new(move || Filesystem::new(root.clone()).unwrap()))
+            .authenticator(std::sync::Arc::new(AnonymousAuthenticator))
+            .greeting("vyna nlst test")
+            .passive_ports(33100..=33109)
+            .build()
+            .unwrap();
+        let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = probe.local_addr().unwrap();
+        drop(probe);
+        tokio::spawn(async move {
+            server.listen(addr.to_string()).await.unwrap();
+        });
+        for _ in 0..100 {
+            if tokio::net::TcpStream::connect(addr).await.is_ok() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        let config = FtpConfig::new(&addr.to_string(), "anonymous", "test");
+        let mut ftp = FtpTransport::connect(config).await.unwrap();
+        // NLST carries no type facts: without a directory check the
+        // subdir surfaces as a size-None file that the poller would
+        // download-fail on every poll forever. (libunftp speaks MLSD,
+        // so the fallback is exercised directly.)
+        let listed = ftp.list_via_nlst(Some("inbox")).await.unwrap();
+        assert_eq!(
+            listed.iter().map(|e| e.path.clone()).collect::<Vec<_>>(),
+            ["inbox/a.hl7"]
+        );
+        assert_eq!(listed[0].size, Some(3));
+        // Grounds the forever-retry: RETR on the skipped subdir fails,
+        // so listing it would download-fail on every poll without
+        // settling (poll errors are retried, never quarantined).
+        assert!(ftp.get("inbox/sub").await.is_err());
 
         ftp.close().await.unwrap();
         tokio::fs::remove_dir_all(&dir).await.unwrap();

@@ -1,5 +1,6 @@
 //! AllergyIntolerance converter - AL1 segment to FHIR AllergyIntolerance resource
 
+use super::coding_systems::convert_coding_system;
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::allergy_intolerance::*;
 use crate::resources::common::*;
@@ -85,7 +86,7 @@ impl AllergyIntoleranceConverter {
             .ok()
             .flatten()
             .filter(|s| !s.is_empty())
-            .map(|s| s.to_string());
+            .map(convert_coding_system);
         match (code, text) {
             (Some(code), text) => {
                 allergy.code = Some(CodeableConcept {
@@ -224,7 +225,10 @@ mod tests {
 
         assert_eq!(coding.code.as_deref(), Some("1191"));
         assert_eq!(coding.display.as_deref(), Some("ASPIRIN"));
-        assert_eq!(coding.system.as_deref(), Some("RXNORM"));
+        assert_eq!(
+            coding.system.as_deref(),
+            Some("http://www.nlm.nih.gov/research/umls/rxnorm")
+        );
         assert_eq!(concept.text.as_deref(), Some("ASPIRIN"));
     }
 
@@ -274,6 +278,31 @@ mod tests {
         let message = parse_message(hl7).unwrap();
         let allergies = AllergyIntoleranceConverter::convert_all(&message).unwrap();
         assert_eq!(allergies[0].patient, None);
+    }
+
+    #[test]
+    fn test_allergy_system_uses_shared_table() {
+        // AL1-3-3 resolves through the shared coding-system table:
+        // known systems become FHIR URIs, unknown ones keep the
+        // `urn:oid:` fallback.
+        let hl7 = "MSH|^~\\&|System|Hospital|EMR|Hospital|20240315||ADT^A01|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   AL1|1|DA|1191^ASPIRIN^RXNORM|SV";
+        let message = parse_message(hl7).unwrap();
+        let allergies = AllergyIntoleranceConverter::convert_all(&message).unwrap();
+        let coding = &allergies[0].code.as_ref().unwrap().coding.as_ref().unwrap()[0];
+        assert_eq!(
+            coding.system.as_deref(),
+            Some("http://www.nlm.nih.gov/research/umls/rxnorm")
+        );
+
+        let hl7 = "MSH|^~\\&|System|Hospital|EMR|Hospital|20240315||ADT^A01|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   AL1|1|DA|1191^ASPIRIN^LOCAL|SV";
+        let message = parse_message(hl7).unwrap();
+        let allergies = AllergyIntoleranceConverter::convert_all(&message).unwrap();
+        let coding = &allergies[0].code.as_ref().unwrap().coding.as_ref().unwrap()[0];
+        assert_eq!(coding.system.as_deref(), Some("urn:oid:LOCAL"));
     }
 
     #[test]

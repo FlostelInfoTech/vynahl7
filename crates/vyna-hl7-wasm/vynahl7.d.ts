@@ -6,10 +6,33 @@
  */
 
 /**
- * Initialize the WebAssembly module
- * Must be called before using any other functions
+ * Initialize the WebAssembly module (web/bundler targets)
+ * Must be awaited before using any other functions.
+ *
+ * NOTE: the Rust `#[wasm_bindgen(start)]` hook is additionally exported as a
+ * synchronous named `init(): void` which runs automatically on instantiation.
+ * It does not load the module, so never `await` it for initialization —
+ * always await this default-export loader instead. On the nodejs target the
+ * module loads synchronously at require time and no call is needed at all.
+ *
+ * @example
+ * ```typescript
+ * import init, { parseMessage } from 'vyna-hl7-wasm';
+ * await init();
+ * const message = parseMessage(hl7);
+ * ```
  */
-export function init(): Promise<void>;
+export default function init(
+  module_or_path?: InitInput | Promise<InitInput>
+): Promise<InitOutput>;
+
+/** Loader input accepted by the default `init` (mirrors wasm-bindgen). */
+export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
+
+/** Instantiated wasm module exports (mirrors wasm-bindgen). */
+export interface InitOutput {
+  readonly memory: WebAssembly.Memory;
+}
 
 /**
  * HL7 Message wrapper

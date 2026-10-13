@@ -90,6 +90,11 @@ impl Segment {
     }
 
     /// Set a field from a simple string value
+    ///
+    /// The value is stored literally as one component: delimiter characters
+    /// (`~`, `^`, `&`) are data, not structure, and are read literally by
+    /// validation and [`Message`](crate::message::Message) accessors. For
+    /// composite values use [`Field::from_delimited`] via [`Segment::set_field`].
     pub fn set_field_value<S: Into<String>>(&mut self, index: usize, value: S) -> Result<()> {
         self.set_field(index, Field::from_value(value))
     }

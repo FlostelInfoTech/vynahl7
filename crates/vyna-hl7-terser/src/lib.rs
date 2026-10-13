@@ -76,6 +76,11 @@ impl<'a> Terser<'a> {
     /// `set` value read back whole here (`PID-5` returns `DOE^JOHN^A`)
     /// while the same characters in a parsed message are structure
     /// (`PID-5` returns `DOE`, `PID-5-2` returns `JOHN`).
+    ///
+    /// Component-level `set` is likewise literal: `set("PID-5-1",
+    /// "a&b")` stores one subcomponent, so `PID-5-1` reads `a&b` whole
+    /// while `PID-5-1-2` stays absent (parsed `a&b` instead yields
+    /// `b` there).
     pub fn get(&self, path: &str) -> Result<Option<&str>> {
         let parsed_path = TerserPath::parse(path)?;
 
@@ -149,6 +154,12 @@ impl<'a> TerserMut<'a> {
     /// `value` are stored literally, not parsed as structure. Address
     /// components explicitly (`PID-5-1`) to change one component
     /// while keeping the rest.
+    ///
+    /// A component path (e.g. `PID-5-1`) likewise stores `value`
+    /// literally as a single subcomponent: `&` in the value is text,
+    /// not structure, so `set("PID-5-1", "a&b")` reads back whole via
+    /// `PID-5-1` while `PID-5-1-2` stays absent. Address subcomponents
+    /// explicitly (`PID-5-1-2`) to write them as structure.
     ///
     /// Returns [`Error::terser_path`](Error::terser_path) when the path is
     /// malformed, uses a 0 index (all path indices are 1-based),
@@ -623,6 +634,20 @@ mod tests {
         let terser = Terser::new(&message);
         assert_eq!(terser.get("PID-5").unwrap(), Some("DOE^JOHN^A"));
         assert_eq!(terser.get("PID-5-2").unwrap(), None);
+    }
+
+    #[test]
+    fn test_component_set_stores_subcomponent_separator_literally() {
+        // Component-level set stores `&` literally as one subcomponent
+        // (like whole-field set stores `^` literally): the value reads
+        // back whole, with no second subcomponent.
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\rPID|1\r";
+        let mut message = parse_message(hl7).unwrap();
+        TerserMut::new(&mut message).set("PID-5-1", "a&b").unwrap();
+        let terser = Terser::new(&message);
+        assert_eq!(terser.get("PID-5-1").unwrap(), Some("a&b"));
+        assert_eq!(terser.get("PID-5-1-2").unwrap(), None);
+        assert!(message.encode().contains("a\\T\\b"));
     }
 
     #[test]

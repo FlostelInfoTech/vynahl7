@@ -1,7 +1,10 @@
 //! Medication converter - RXA segment to FHIR MedicationAdministration resource
 
 use super::coding_systems::convert_coding_system;
-use super::patient::{split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time};
+use super::patient::{
+    hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min,
+    valid_hl7_time,
+};
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
 use crate::resources::medication::*;
@@ -65,7 +68,9 @@ impl MedicationConverter {
         } else {
             format!("RXA({})-5", rxa_index + 1)
         };
-        if let Ok(Some(code)) = terser.get(&code_path) {
+        if let Ok(Some(code)) = terser.get(&code_path)
+            && !code.is_empty()
+        {
             let mut coding = Coding {
                 system: None,
                 version: None,
@@ -220,6 +225,7 @@ impl MedicationConverter {
 
     /// `YYYYMMDDHHMM` keeps its minutes (`YYYY-MM-DDTHH:MM`) and a
     /// trailing HL7 zone (`±HHMM`) is preserved as `±HH:MM`.
+    /// Validated fractional seconds are kept as `.digits`.
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
         let (stem, offset) = split_hl7_offset(datetime);
         let zone = offset.as_deref().unwrap_or("");
@@ -229,13 +235,14 @@ impl MedicationConverter {
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
             if valid_hl7_date(&stem[0..8]) && valid_hl7_time(&stem[8..14]) {
                 Ok(format!(
-                    "{}-{}-{}T{}:{}:{}{}",
+                    "{}-{}-{}T{}:{}:{}{}{}",
                     &stem[0..4],
                     &stem[4..6],
                     &stem[6..8],
                     &stem[8..10],
                     &stem[10..12],
                     &stem[12..14],
+                    hl7_fraction_suffix(stem, 14),
                     zone
                 ))
             } else {
@@ -266,6 +273,7 @@ impl MedicationConverter {
             Err(Self::invalid_datetime(datetime))
         }
     }
+
 
     /// Redacted bad-datetime error: field location + reason only, never the value.
     fn invalid_datetime(_datetime: &str) -> ConversionError {
@@ -493,5 +501,29 @@ mod tests {
             .unwrap()[0];
         assert_eq!(coding.code.as_deref(), Some("1191"));
         assert!(coding.display.is_none());
+    }
+
+    #[test]
+    fn test_empty_rxa5_omits_medication_concept() {
+        // RXA-5 present-but-empty (RXA-6 forces presence) leaves the
+        // whole concept unset instead of coding code "".
+        let hl7 = "MSH|^~\\&|Pharmacy|Hospital|EMR|Hospital|20240315||RAS^O17|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000|||100|MG||||||||||||CP";
+
+        let message = parse_message(hl7).unwrap();
+        let admin = &MedicationConverter::convert_all(&message).unwrap()[0];
+        assert!(admin.medication_codeable_concept.is_none());
+        // Valued sibling still converts.
+        let dose = admin.dosage.as_ref().unwrap().dose.as_ref().unwrap();
+        assert_eq!(dose.value, Some(100.0));
+    }
+
+    #[test]
+    fn test_datetime_preserves_fractional_seconds() {
+        assert_eq!(
+            MedicationConverter::convert_datetime("20240315100000.123").unwrap(),
+            "2024-03-15T10:00:00.123"
+        );
     }
 }

@@ -453,12 +453,16 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("PV1", 50),
         ("ORC", 2),
         ("ORC", 3),
+        ("ORC", 4),
         ("OBR", 2),
         ("OBR", 3),
         ("GT1", 2),
         ("GT1", 29),
+        ("IN1", 10),
+        ("IN1", 28),
         ("IN1", 36),
         ("IN1", 49),
+        ("NK1", 12),
         ("NK1", 33),
         ("BLG", 3),
         ("IN3", 2),
@@ -469,6 +473,7 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("MRG", 5),
         ("MRG", 6),
         ("SPM", 2),
+        ("SPM", 3),
         ("STF", 1),
         ("STF", 2),
         ("STF", 14),
@@ -478,6 +483,30 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("TXA", 14),
         ("TXA", 15),
         ("TXA", 16),
+        ("IN2", 1),
+        ("IN2", 6),
+        ("IN2", 8),
+        ("IN2", 10),
+        ("IN2", 25),
+        ("IN2", 26),
+        ("IN2", 61),
+        ("FT1", 2),
+        ("FT1", 23),
+        ("FT1", 30),
+        ("FT1", 31),
+        ("RXD", 7),
+        ("RXE", 15),
+        ("CTD", 7),
+        ("SCH", 1),
+        ("SCH", 2),
+        ("SCH", 4),
+        ("SCH", 23),
+        ("SCH", 24),
+        ("SCH", 26),
+        ("SCH", 27),
+        ("DG1", 20),
+        ("ROL", 1),
+        ("PR1", 19),
     ];
     let removed: &[(&str, usize)] = &[
         ("PID", 5),
@@ -549,12 +578,18 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("IN2", 22),
         ("IN2", 40),
         ("IN2", 49),
+        ("IN2", 50),
         ("IN2", 52),
+        ("IN2", 53),
+        ("IN2", 58),
+        ("IN2", 63),
+        ("IN2", 64),
         ("SCH", 12),
         ("SCH", 13),
         ("SCH", 16),
         ("SCH", 17),
         ("SCH", 20),
+        ("SCH", 21),
         ("ROL", 4),
         ("ROL", 12),
         ("PR1", 8),
@@ -562,10 +597,12 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("PR1", 12),
         ("CTD", 2),
         ("CTD", 5),
+        ("FT1", 4),
         ("FT1", 20),
         ("FT1", 21),
         ("FT1", 24),
         ("ACC", 7),
+        ("ACC", 9),
         ("PDA", 5),
         ("PDA", 7),
         ("PDA", 8),
@@ -590,23 +627,36 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("TXA", 9),
         ("TXA", 10),
         ("TXA", 11),
+        ("TXA", 22),
         ("TXA", 23),
+        ("SPM", 17),
     ];
     let shifted: &[(&str, usize)] = &[
         ("MSH", 7),
         ("EVN", 2),
+        ("EVN", 3),
         ("EVN", 6),
         ("PID", 7),
         ("PID", 29),
         ("PID", 33),
-        ("PD1", 19),
+        ("PD1", 13),
+        ("PD1", 17),
+        ("PD1", 18),
+        ("PV1", 25),
+        ("PV1", 30),
+        ("PV1", 35),
         ("PV1", 44),
         ("PV1", 45),
         ("ORC", 9),
         ("ORC", 15),
+        ("ORC", 27),
+        ("OBR", 6),
         ("OBR", 7),
         ("OBR", 8),
+        ("OBR", 14),
         ("OBR", 22),
+        ("OBR", 36),
+        ("OBX", 12),
         ("OBX", 14),
         ("OBX", 19),
         ("TQ1", 7),
@@ -624,16 +674,28 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("PRB", 24),
         ("PRB", 25),
         ("DG1", 5),
+        ("DG1", 19),
         ("GT1", 8),
+        ("GT1", 13),
+        ("GT1", 14),
+        ("GT1", 24),
+        ("GT1", 31),
+        ("GT1", 32),
         ("IN1", 12),
         ("IN1", 13),
         ("IN1", 14),
         ("IN1", 15),
         ("IN1", 18),
+        ("IN1", 24),
+        ("IN1", 26),
+        ("IN1", 29),
+        ("IN1", 51),
+        ("NK1", 8),
+        ("NK1", 9),
         ("NK1", 16),
         ("AL1", 6),
-        ("SPM", 17),
         ("SPM", 18),
+        ("SPM", 19),
         ("STF", 6),
         ("STF", 12),
         ("STF", 13),
@@ -650,6 +712,20 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("IN3", 10),
         ("IN3", 13),
         ("IN3", 22),
+        ("RXD", 3),
+        ("RXD", 19),
+        ("RXE", 18),
+        ("RXE", 32),
+        ("FT1", 5),
+        ("ROL", 5),
+        ("ROL", 6),
+        ("PR1", 5),
+        ("ACC", 1),
+        ("IN2", 17),
+        ("IN2", 44),
+        ("IN2", 45),
+        ("IN2", 55),
+        ("IN2", 56),
     ];
     let mut rules = Vec::new();
     for (segment, field) in hashed {
@@ -663,7 +739,7 @@ fn safe_harbor_rules() -> Vec<Rule> {
     }
     // Addresses: drop street/city/geo, generalize ZIP to 3 digits, keep
     // state/country/type. Applies to PID-11, NK1-4/32, GT1-5/17,
-    // STF-11, PRD-3/11, IN1-19, ORC-22/24, SCH-14/18, ROL-11,
+    // STF-11, PRD-3/11, IN1-19/44, ORC-22/24, SCH-14/18, ROL-11,
     // CTD-3, RXD-31, RXE-41/43, ACC-11.
     for (segment, field) in [
         ("PID", 11),
@@ -675,6 +751,7 @@ fn safe_harbor_rules() -> Vec<Rule> {
         ("PRD", 3),
         ("PRD", 11),
         ("IN1", 19),
+        ("IN1", 44),
         ("ORC", 22),
         ("ORC", 24),
         ("SCH", 14),
@@ -1630,5 +1707,271 @@ mod tests {
         for field in [3, 8, 14, 15, 16, 19, 21, 25] {
             assert!(in3.get_field_value(field).is_none(), "IN3-{field}");
         }
+    }
+
+    #[test]
+    fn safe_harbor_removes_insurance_and_schedule_telecom() {
+        // XTN audit over the covered segments: every phone field the
+        // profile missed (numbers and datatypes cross-checked against
+        // crates/vyna-hl7-validator/schemas).
+        let message = redact_segments(&[
+            seg(
+                "IN2",
+                &[
+                    (50, "555-1111"),
+                    (53, "555-2222"),
+                    (58, "555-3333"),
+                    (63, "555-4444"),
+                    (64, "555-5555"),
+                ],
+            ),
+            seg("SCH", &[(21, "555-6666")]),
+        ]);
+
+        let in2 = message.get_segment_by_id("IN2").unwrap();
+        for field in [50, 53, 58, 63, 64] {
+            assert!(in2.get_field_value(field).is_none(), "IN2-{field} survives");
+        }
+        let sch = message.get_segment_by_id("SCH").unwrap();
+        assert!(sch.get_field_value(21).is_none(), "SCH-21 survives");
+    }
+
+    #[test]
+    fn safe_harbor_hashes_insurance_order_and_document_ids() {
+        // EI/CX/ST identifier audit: every ID field the profile missed
+        // (numbers, names and datatypes cross-checked against
+        // crates/vyna-hl7-validator/schemas). TXA-22 (PPN person stamp)
+        // and ACC-9 (person name) hold person identity directly, so they
+        // are removed instead of hashed.
+        let key = b"site-secret";
+        let message = redact_segments(&[
+            seg(
+                "IN2",
+                &[
+                    (1, "EMP1"),
+                    (6, "MEDICARE123"),
+                    (8, "MCD1"),
+                    (10, "MIL1"),
+                    (25, "PAY1"),
+                    (26, "SUB1"),
+                    (61, "MEM1"),
+                ],
+            ),
+            seg("IN1", &[(10, "GRP1"), (28, "PAC1")]),
+            seg("NK1", &[(12, "NKEMP1")]),
+            seg(
+                "FT1",
+                &[(2, "TXN1"), (23, "FILL1"), (30, "PAYREF1"), (31, "5")],
+            ),
+            seg("RXD", &[(7, "RXN1")]),
+            seg("RXE", &[(15, "RXN2")]),
+            seg("CTD", &[(7, "CID1")]),
+            seg(
+                "SCH",
+                &[
+                    (1, "PA1"),
+                    (2, "FA1"),
+                    (4, "PG1"),
+                    (23, "PPA1"),
+                    (24, "PFA1"),
+                    (26, "PON1"),
+                    (27, "FON1"),
+                ],
+            ),
+            seg("ORC", &[(4, "OG1")]),
+            seg("DG1", &[(20, "DIAG1")]),
+            seg("ROL", &[(1, "ROLE1")]),
+            seg("PR1", &[(19, "PROC1")]),
+            seg("SPM", &[(3, "SPP1")]),
+            seg("TXA", &[(22, "DOC1^Auth^Amy")]),
+            seg("ACC", &[(9, "John Doe")]),
+        ]);
+
+        for (segment, field, original) in [
+            ("IN2", 1, "EMP1"),
+            ("IN2", 6, "MEDICARE123"),
+            ("IN2", 8, "MCD1"),
+            ("IN2", 10, "MIL1"),
+            ("IN2", 25, "PAY1"),
+            ("IN2", 26, "SUB1"),
+            ("IN2", 61, "MEM1"),
+            ("IN1", 10, "GRP1"),
+            ("IN1", 28, "PAC1"),
+            ("NK1", 12, "NKEMP1"),
+            ("FT1", 2, "TXN1"),
+            ("FT1", 23, "FILL1"),
+            ("FT1", 30, "PAYREF1"),
+            ("FT1", 31, "5"),
+            ("RXD", 7, "RXN1"),
+            ("RXE", 15, "RXN2"),
+            ("CTD", 7, "CID1"),
+            ("SCH", 1, "PA1"),
+            ("SCH", 2, "FA1"),
+            ("SCH", 4, "PG1"),
+            ("SCH", 23, "PPA1"),
+            ("SCH", 24, "PFA1"),
+            ("SCH", 26, "PON1"),
+            ("SCH", 27, "FON1"),
+            ("ORC", 4, "OG1"),
+            ("DG1", 20, "DIAG1"),
+            ("ROL", 1, "ROLE1"),
+            ("PR1", 19, "PROC1"),
+            ("SPM", 3, "SPP1"),
+        ] {
+            let segment_id = segment;
+            let segment = message.get_segment_by_id(segment).unwrap();
+            assert_eq!(
+                full_value_of(segment, field),
+                hash_of(key, original),
+                "{segment_id}-{field} survives"
+            );
+        }
+        let txa = message.get_segment_by_id("TXA").unwrap();
+        assert!(txa.get_field_value(22).is_none(), "TXA-22 survives");
+        let acc = message.get_segment_by_id("ACC").unwrap();
+        assert!(acc.get_field_value(9).is_none(), "ACC-9 survives");
+    }
+
+    #[test]
+    fn safe_harbor_shifts_remaining_clinical_and_coverage_dates() {
+        // TS/DT/DTM audit: every date field the profile missed (numbers
+        // and datatypes cross-checked against
+        // crates/vyna-hl7-validator/schemas). IN1-44 is an employer
+        // address (generalized like the other XAD fields); FT1-4 is a DR
+        // range (removed like PDA-7, not half-shifted).
+        let message = redact_segments(&[
+            seg(
+                "OBR",
+                &[(6, "20240101"), (14, "20240101"), (36, "20240101")],
+            ),
+            seg("PR1", &[(5, "20240101")]),
+            seg("RXD", &[(3, "20240101"), (19, "20240101")]),
+            seg("RXE", &[(18, "20240101"), (32, "20240101")]),
+            seg("EVN", &[(3, "20240101")]),
+            seg("ACC", &[(1, "20240101")]),
+            seg("DG1", &[(19, "20240101")]),
+            seg(
+                "GT1",
+                &[
+                    (13, "20240101"),
+                    (14, "20240101"),
+                    (24, "20240101"),
+                    (31, "20240101"),
+                    (32, "20240101"),
+                ],
+            ),
+            seg(
+                "IN1",
+                &[
+                    (24, "20240101"),
+                    (26, "20240101"),
+                    (29, "20240101"),
+                    (51, "20240101"),
+                    (44, "123 Main St^^Springfield^IL^62701^USA"),
+                ],
+            ),
+            seg(
+                "IN2",
+                &[
+                    (17, "20240101"),
+                    (44, "20240101"),
+                    (45, "20240101"),
+                    (55, "20240101"),
+                    (56, "20240101"),
+                ],
+            ),
+            seg("NK1", &[(8, "20240101"), (9, "20240101")]),
+            seg("ORC", &[(27, "20240101")]),
+            seg(
+                "PD1",
+                &[(13, "20240101"), (17, "20240101"), (18, "20240101")],
+            ),
+            seg(
+                "PV1",
+                &[(25, "20240101"), (30, "20240101"), (35, "20240101")],
+            ),
+            seg("ROL", &[(5, "20240101"), (6, "20240101")]),
+            seg("FT1", &[(5, "20240101"), (4, "20240101^20240102")]),
+            seg("SPM", &[(19, "20240101")]),
+            seg("OBX", &[(12, "20240101")]),
+        ]);
+
+        for (segment, field) in [
+            ("OBR", 6),
+            ("OBR", 14),
+            ("OBR", 36),
+            ("PR1", 5),
+            ("RXD", 3),
+            ("RXE", 18),
+            ("RXE", 32),
+            ("EVN", 3),
+            ("ACC", 1),
+            ("DG1", 19),
+            ("GT1", 13),
+            ("GT1", 14),
+            ("GT1", 24),
+            ("GT1", 31),
+            ("GT1", 32),
+            ("IN1", 24),
+            ("IN1", 26),
+            ("IN1", 29),
+            ("IN1", 51),
+            ("IN2", 17),
+            ("IN2", 44),
+            ("IN2", 45),
+            ("IN2", 55),
+            ("IN2", 56),
+            ("NK1", 8),
+            ("NK1", 9),
+            ("ORC", 27),
+            ("PD1", 13),
+            ("PD1", 17),
+            ("PD1", 18),
+            ("PV1", 25),
+            ("PV1", 30),
+            ("PV1", 35),
+            ("ROL", 5),
+            ("ROL", 6),
+            ("FT1", 5),
+            ("SPM", 19),
+            ("RXD", 19),
+            ("OBX", 12),
+        ] {
+            let segment_id = segment;
+            let segment = message.get_segment_by_id(segment).unwrap();
+            assert_eq!(
+                segment.get_field_value(field),
+                Some("20240131"),
+                "{segment_id}-{field} not shifted"
+            );
+        }
+        let in1 = message.get_segment_by_id("IN1").unwrap();
+        assert_address_generalized(in1, 44, "627");
+        let ft1 = message.get_segment_by_id("FT1").unwrap();
+        assert!(ft1.get_field_value(4).is_none(), "FT1-4 DR survives");
+    }
+
+    #[test]
+    fn safe_harbor_keeps_pd1_military_branch() {
+        // PD1-19 is Military Branch (IS/CWE), not a date: a DateShift
+        // rule silently removed it while the real PD1 dates leaked.
+        let message = redact_segments(&[seg("PD1", &[(19, "ARMY")])]);
+        let pd1 = message.get_segment_by_id("PD1").unwrap();
+        assert_eq!(pd1.get_field_value(19), Some("ARMY"));
+    }
+
+    #[test]
+    fn safe_harbor_removes_specimen_collection_range() {
+        // SPM-17 is a DR range: shifting its joined text corrupted the
+        // wire form ('^' escaped, range end untouched), so like PDA-7 it
+        // is removed instead of shifted.
+        let message = redact_segments(&[seg("SPM", &[(17, "20240101^20240102")])]);
+        let spm = message.get_segment_by_id("SPM").unwrap();
+        assert!(spm.get_field_value(17).is_none(), "SPM-17 DR survives");
+        assert!(
+            !message.encode().contains("\\S\\"),
+            "escape-corrupted range: {}",
+            message.encode()
+        );
     }
 }

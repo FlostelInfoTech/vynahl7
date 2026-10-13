@@ -323,6 +323,17 @@ impl<'a> StreamingParser<'a> {
         };
 
         if remaining.is_empty() {
+            // Line ends right after a separator ("MSH|^~\&|"): strict
+            // split yields one empty MSH-3, so emit it here.
+            if line.trim_end().ends_with(delims.field_separator) {
+                let field_index = self.current_field_index;
+                self.current_field_index += 1;
+                self.field_position = line.len() + 1;
+                return Some(Ok(SegmentEvent::Field {
+                    index: field_index,
+                    value: "",
+                }));
+            }
             self.state = ParserState::BetweenSegments;
             self.line_index += 1;
             self.current_line += 1;
@@ -1177,5 +1188,15 @@ mod tests {
             streaming.segments[0].fields.len(),
             regular.segments[0].fields.len()
         );
+    }
+
+    #[test]
+    fn test_streaming_msh_explicit_empty_msh3_is_some_empty() {
+        // 'MSH|^~\&|' carries an explicit empty MSH-3, like any other
+        // trailing empty field; only the bare header has no MSH-3.
+        let streaming = parse_streaming("MSH|^~\\&|\r").unwrap();
+        assert_eq!(streaming.segments[0].get_field_value(3), Some(""));
+        let bare = parse_streaming("MSH|^~\\&").unwrap();
+        assert_eq!(bare.segments[0].get_field(3), None);
     }
 }

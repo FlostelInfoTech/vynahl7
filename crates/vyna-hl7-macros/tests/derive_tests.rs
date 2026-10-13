@@ -570,6 +570,123 @@ fn test_hl7_type_missing_required_component_is_none() {
 }
 
 #[test]
+fn test_component_mapping_preserves_escaped_subcomponent() {
+    use vyna_hl7_core::delimiters::Delimiters;
+    use vyna_hl7_core::field::Component;
+
+    // Parsed PID-5 `R\T\D` is ONE subcomponent holding literal `R&D`:
+    // a no-change round trip must preserve the wire form instead of
+    // rewriting it as two subcomponents (`R&D`).
+    let mut segment = Segment::new("PID");
+    let _ = segment.set_field_value(3, "12345");
+    let mut rep = Repetition::new();
+    rep.add_component(Component::from_value("R&D"));
+    let mut field = Field::new();
+    field.add_repetition(rep);
+    let _ = segment.set_field(5, field);
+
+    let pid = PatientIdentification::from_segment(&segment).unwrap();
+    // Component reads are escape-aware like whole-field reads.
+    assert_eq!(pid.family_name, "R\\T\\D");
+
+    let back = pid.to_segment();
+    let comp = back
+        .get_field(5)
+        .unwrap()
+        .get_repetition(0)
+        .unwrap()
+        .get_component(0)
+        .unwrap();
+    assert_eq!(comp.subcomponents.len(), 1);
+    assert_eq!(comp.subcomponents[0].as_str(), "R&D");
+    assert!(back.encode(&Delimiters::default()).contains("R\\T\\D"));
+}
+
+#[test]
+fn test_hl7_type_preserves_subcomponents() {
+    use vyna_hl7_core::field::{Component, SubComponent};
+
+    // Component 0 holding ["A", "B"] must read as "A&B" like the
+    // Segment-derive component path, not drop "B" via value().
+    let mut comp = Component::from_value("A");
+    comp.add_subcomponent(SubComponent::new("B"));
+    let mut rep = Repetition::new();
+    rep.add_component(comp);
+    rep.add_component(Component::from_value("John"));
+
+    let name = ExtendedPersonName::from_repetition(&rep).unwrap();
+    assert_eq!(name.family_name, "A&B");
+
+    let back = name.to_repetition();
+    let comp0 = back.get_component(0).unwrap();
+    assert_eq!(comp0.subcomponents.len(), 2);
+    assert_eq!(comp0.subcomponents[1].as_str(), "B");
+}
+
+/// Segment with a required repeating field.
+#[derive(DeriveSegment, Default, Debug, PartialEq)]
+#[hl7(id = "PID")]
+struct RequiredRepeatingPid {
+    #[hl7(field = 3, required)]
+    patient_ids: Vec<String>,
+}
+
+/// Message with a required repeating segment.
+#[derive(Message, Default, Debug)]
+#[hl7(message_type = "ORU", trigger_event = "R01")]
+struct RequiredOruR01 {
+    #[hl7(segment)]
+    pid: PatientIdentification,
+
+    #[hl7(segment, repeating, required)]
+    obx: Vec<Observation>,
+}
+
+#[test]
+fn test_required_repeating_field_absent_is_none() {
+    // Total absence fails the conversion instead of yielding an
+    // empty Vec.
+    let mut segment = Segment::new("PID");
+    let _ = segment.set_field_value(1, "1");
+
+    assert!(RequiredRepeatingPid::from_segment(&segment).is_none());
+}
+
+#[test]
+fn test_required_repeating_field_present_succeeds() {
+    let mut field = Field::new();
+    field.add_repetition(Repetition::from_value("ID-A"));
+    field.add_repetition(Repetition::from_value("ID-B"));
+    let mut segment = Segment::new("PID");
+    let _ = segment.set_field(3, field);
+
+    let pid = RequiredRepeatingPid::from_segment(&segment).unwrap();
+    assert_eq!(
+        pid.patient_ids,
+        vec!["ID-A".to_string(), "ID-B".to_string()]
+    );
+}
+
+#[test]
+fn test_required_repeating_segment_absent_is_none() {
+    let mut message = Message::new();
+    message.add_segment(sample_pid_segment());
+
+    assert!(RequiredOruR01::from_message(&message).is_none());
+}
+
+#[test]
+fn test_required_repeating_segment_present_succeeds() {
+    let mut message = Message::new();
+    message.add_segment(sample_pid_segment());
+    message.add_segment(sample_obx_segment("1", "100"));
+
+    let oru = RequiredOruR01::from_message(&message).unwrap();
+    assert_eq!(oru.obx.len(), 1);
+    assert_eq!(oru.obx[0].observation_value, Some("100".to_string()));
+}
+
+#[test]
 fn test_optional_segment_serialization() {
     let adt_with_obx = AdtA01 {
         pid: PatientIdentification::default(),

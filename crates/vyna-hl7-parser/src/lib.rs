@@ -104,6 +104,15 @@ pub fn parse_message_with_config(
 
     let input = input.trim_matches(|c| c == '\r' || c == '\n');
 
+    // Skip leading blank lines before delimiter extraction so a
+    // whitespace-only first line does not fail when blank lines are
+    // skipped anyway (mirrors StreamingParser::parse_initial).
+    let input = if config.skip_blank_lines {
+        skip_leading_blank_lines(input)
+    } else {
+        input
+    };
+
     // Extract delimiters from MSH segment
     let delimiters = extract_delimiters_with_config(input, config)?;
 
@@ -204,6 +213,21 @@ pub fn parse_message_with_config(
         value: message,
         warnings,
     })
+}
+
+/// Skip leading blank (whitespace-only) lines.
+///
+/// Returns the input unchanged when every line is blank so the caller
+/// still reports the real problem instead of an empty slice.
+fn skip_leading_blank_lines(input: &str) -> &str {
+    let mut offset = 0;
+    for line in input.split(['\r', '\n']) {
+        if !line.trim().is_empty() {
+            return &input[offset..];
+        }
+        offset += line.len() + 1;
+    }
+    input
 }
 
 /// Extract delimiters with configuration options
@@ -310,9 +334,11 @@ fn parse_msh_segment_with_config(
     // Add MSH-2 (encoding characters)
     segment.add_field(Field::from_value(delimiters.encoding_characters()));
 
-    // Parse the rest of the fields
+    // Parse the rest of the fields. Only the bare eight-byte header
+    // has no content fields; 'MSH|^~\&|' falls through so the empty
+    // remainder yields one explicit empty MSH-3.
     let field_start = 9;
-    if input.len() <= field_start {
+    if input.len() < field_start {
         return Ok((segment, warnings));
     }
 
@@ -1420,8 +1446,9 @@ BTS|1";
         let text = "MSH|^~\\&|SND|FAC|RCV|RFAC|20240115120000||ADT^A01|1|P|2.5.1||||||ASCII\rPID|1||12345^^^FAC^MR||Müller||19800101|M\r";
         let message = parse_message(text).unwrap();
 
-        let error = message.encode_bytes().unwrap_err();
-        assert!(error.to_string().contains('ü'));
+        let error = message.encode_bytes().unwrap_err().to_string();
+        assert!(error.contains("U+00FC"), "{error}");
+        assert!(!error.contains('ü'), "{error}");
     }
 
     #[test]
@@ -1736,5 +1763,28 @@ BTS|1";
         assert!(!err.contains(&long), "{err}");
         assert!(err.contains("66"), "{err}");
         assert!(err.contains("chars total"), "{err}");
+    }
+
+    #[test]
+    fn test_leading_blank_line_before_msh_is_skipped() {
+        // A whitespace-only first line is blank and skipped when
+        // skip_blank_lines is set, like the streaming parser does.
+        let msg = "   \rMSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1||PAT001\r";
+        let message = parse_message_with_config(msg, &ParserConfig::strict())
+            .unwrap()
+            .value;
+        assert_eq!(message.segments.len(), 2);
+        assert_eq!(message.segments[0].id, "MSH");
+        assert_eq!(message.segments[1].id, "PID");
+    }
+
+    #[test]
+    fn test_msh_explicit_empty_msh3_is_some_empty() {
+        // 'MSH|^~\&|' carries an explicit empty MSH-3, like any other
+        // trailing empty field; only the bare header has no MSH-3.
+        let message = parse_message("MSH|^~\\&|").unwrap();
+        assert_eq!(message.segments[0].get_field_value(3), Some(""));
+        let bare = parse_message("MSH|^~\\&").unwrap();
+        assert_eq!(bare.segments[0].get_field(3), None);
     }
 }

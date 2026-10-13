@@ -248,7 +248,19 @@ impl XmlEncoder {
             // Multiple components - wrap in field element with component children
             writer.write_event(Event::Start(BytesStart::new(field_name)))?;
 
+            // Interior empties are skipped (numbered gaps preserve them on
+            // decode), but trailing empties past the last value need explicit
+            // elements: the decoder only rebuilds up to the highest number
+            // it sees, so 'A^' would otherwise come back as 'A'.
+            let last_value = repetition.components.iter().rposition(|c| !c.is_empty());
             for (comp_idx, component) in repetition.components.iter().enumerate() {
+                let trailing_empty =
+                    component.is_empty() && last_value.is_none_or(|last| comp_idx > last);
+                if trailing_empty {
+                    let comp_name = self.get_component_element_name(field_name, comp_idx + 1);
+                    writer.write_event(Event::Empty(BytesStart::new(&comp_name)))?;
+                    continue;
+                }
                 if component.is_empty() && !self.config.include_empty_fields {
                     continue;
                 }
@@ -287,12 +299,21 @@ impl XmlEncoder {
             // Component with subcomponents
             writer.write_event(Event::Start(BytesStart::new(&comp_name)))?;
 
+            // Like components above: interior empties ride on numbered gaps,
+            // trailing empties need explicit elements ('A&' not 'A').
+            let last_value = component.subcomponents.iter().rposition(|s| !s.is_empty());
             for (sub_idx, subcomp) in component.subcomponents.iter().enumerate() {
+                let sub_name = format!("{}.{}", comp_name, sub_idx + 1);
+                let trailing_empty =
+                    subcomp.is_empty() && last_value.is_none_or(|last| sub_idx > last);
+                if trailing_empty {
+                    writer.write_event(Event::Empty(BytesStart::new(&sub_name)))?;
+                    continue;
+                }
                 if subcomp.is_empty() && !self.config.include_empty_fields {
                     continue;
                 }
 
-                let sub_name = format!("{}.{}", comp_name, sub_idx + 1);
                 writer.write_event(Event::Start(BytesStart::new(&sub_name)))?;
                 writer.write_event(self.text_event(&subcomp.value))?;
                 writer.write_event(Event::End(BytesEnd::new(&sub_name)))?;
@@ -315,7 +336,10 @@ impl XmlEncoder {
 /// Replace characters illegal in XML names with `_`.
 ///
 /// Element names derive from message content (MSH-9, segment IDs);
-/// unsanitized values like `AD<T` would emit malformed XML.
+/// unsanitized values like `AD<T` would emit malformed XML. Dots are
+/// legal XML but are also sanitized: dotted depth-1 names never
+/// classify as the message root on decode, so a root like `<ADT.A01>`
+/// would make the strict decoder reject our own output.
 fn sanitize_element_name(name: &str) -> String {
     if name.is_empty() {
         return "_".to_string();
@@ -332,7 +356,7 @@ fn sanitize_element_name(name: &str) -> String {
         out.push('_');
     }
     for ch in chars {
-        if ch.is_ascii_alphanumeric() || ch == '_' || ch == '.' || ch == '-' {
+        if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
             out.push(ch);
         } else {
             out.push('_');
@@ -500,5 +524,56 @@ mod tests {
         assert_eq!(back.segments[1].id, "MSA");
         assert_eq!(back.segments[0].get_field_value(9), Some("ACK"));
         assert_eq!(back.segments[1].get_field_value(1), Some("AA"));
+    }
+
+    #[test]
+    fn test_trailing_empty_components_round_trip() {
+        use crate::{XmlDecoder, XmlDecoderConfig};
+
+        // Trailing empties are significant on the wire ('A^' != 'A'),
+        // like empty repetitions (which are position-preserved): the
+        // encoded form must survive a decode round-trip either way.
+        for wire in ["A^", "A&"] {
+            let text = format!("MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1||||{wire}\r");
+            let message = vyna_hl7_parser::parse_message(&text).unwrap();
+            let xml = XmlEncoder::new().encode(&message).unwrap();
+            for decoder in [
+                XmlDecoder::new(),
+                XmlDecoder::with_config(XmlDecoderConfig {
+                    lenient: false,
+                    ..Default::default()
+                }),
+            ] {
+                let back = decoder.decode(&xml).unwrap();
+                assert_eq!(back.encode(), message.encode(), "wire {wire:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_dotted_msh9_root_round_trips_strict() {
+        use crate::{XmlDecoder, XmlDecoderConfig};
+
+        // MSH-9 'ADT.A01' (single component containing a dot) must not
+        // emit a dotted root: dotted depth-1 names never classify as
+        // Root, so the strict decoder would reject our own output.
+        let mut message =
+            vyna_hl7_parser::parse_message("MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1\r")
+                .unwrap();
+        message
+            .get_segment_by_id_mut("MSH")
+            .unwrap()
+            .set_field_value(9, "ADT.A01")
+            .unwrap();
+
+        let xml = XmlEncoder::new().encode(&message).unwrap();
+        assert!(!xml.contains("<ADT.A01>"), "dotted root: {xml}");
+        let strict = XmlDecoder::with_config(XmlDecoderConfig {
+            lenient: false,
+            ..Default::default()
+        });
+        let back = strict.decode(&xml).unwrap();
+        assert_eq!(back.segments.len(), 2);
+        assert_eq!(back.segments[0].get_field_value(9), Some("ADT.A01"));
     }
 }

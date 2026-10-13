@@ -209,6 +209,14 @@ pub fn generate_segment(segment_id: &str, def: &SegmentDefinition) -> String {
     let mut numbers: Vec<usize> = def.fields.keys().copied().collect();
     numbers.sort_unstable();
     for number in numbers {
+        if segment_id == "MSH" && (number == 1 || number == 2) {
+            // MSH-1/2 hold the message delimiters, which live on the
+            // message: encode derives them from Delimiters (skipping
+            // stored fields) and TerserMut::set rejects writes there,
+            // so a generated mapping would fail from_segment on real
+            // messages and silently drop edits.
+            continue;
+        }
         let field = &def.fields[&number];
         if !field.repeating
             && let Some(components) = field.components.as_ref()
@@ -216,11 +224,13 @@ pub fn generate_segment(segment_id: &str, def: &SegmentDefinition) -> String {
             let mut keys: Vec<(&String, &ComponentDefinition)> = components.iter().collect();
             keys.sort_by_key(|(key, _)| key.parse::<usize>().unwrap_or(usize::MAX));
             if !keys.is_empty() {
+                let mut parsed = 0;
                 for (key, component) in keys {
                     let Some(component_number) = key.parse::<usize>().ok().filter(|n| *n > 0)
                     else {
                         continue;
                     };
+                    parsed += 1;
                     render_component_field(
                         &mut body,
                         segment_id,
@@ -231,7 +241,11 @@ pub fn generate_segment(segment_id: &str, def: &SegmentDefinition) -> String {
                         &mut used,
                     );
                 }
-                continue;
+                if parsed > 0 {
+                    continue;
+                }
+                // No component key parsed: fall through to the
+                // whole-field render instead of emitting no field.
             }
         }
         render_whole_field(&mut body, segment_id, number, field, &mut used);
@@ -772,5 +786,70 @@ mod tests {
             module.contains("pub struct AdtA01pubstructEvil {"),
             "{module}"
         );
+    }
+
+    #[test]
+    fn msh_delimiter_fields_are_skipped() {
+        // MSH-1/2 hold the message delimiters, which encode derives
+        // from Delimiters and TerserMut::set rejects: generated Msh
+        // must not map them, or from_segment fails on real messages
+        // and edits to them are silently dropped.
+        let def = SegmentDefinition {
+            name: "Message Header".to_string(),
+            required: true,
+            repeating: false,
+            fields: HashMap::from([
+                (1, field("Field Separator", true, false)),
+                (2, field("Encoding Characters", true, false)),
+                (3, field("Sending Application", false, false)),
+            ]),
+        };
+
+        let source = generate_segment("MSH", &def);
+        assert!(!source.contains("field_separator"), "{source}");
+        assert!(!source.contains("encoding_characters"), "{source}");
+        assert!(!source.contains("#[hl7(field = 1"), "{source}");
+        assert!(!source.contains("#[hl7(field = 2"), "{source}");
+        assert!(source.contains("sending_application"), "{source}");
+    }
+
+    #[test]
+    fn unparseable_component_keys_fall_back_to_whole_field() {
+        // Component keys that are all unparseable ('0'/non-numeric)
+        // must fall back to a whole-field render, not silently emit
+        // no struct field for the HL7 field at all.
+        let mut composite = field("Patient Name", false, false);
+        composite.components = Some(HashMap::from([
+            (
+                "0".to_string(),
+                ComponentDefinition {
+                    name: "Bogus".to_string(),
+                    data_type: "ST".to_string(),
+                    required: false,
+                    max_length: None,
+                    table_id: None,
+                },
+            ),
+            (
+                "bogus".to_string(),
+                ComponentDefinition {
+                    name: "Bogus Too".to_string(),
+                    data_type: "ST".to_string(),
+                    required: false,
+                    max_length: None,
+                    table_id: None,
+                },
+            ),
+        ]));
+        let def = SegmentDefinition {
+            name: "Patient Identification".to_string(),
+            required: true,
+            repeating: false,
+            fields: HashMap::from([(5, composite)]),
+        };
+
+        let source = generate_segment("PID", &def);
+        assert!(source.contains("pub patient_name"), "{source}");
+        assert!(source.contains("#[hl7(field = 5)]"), "{source}");
     }
 }

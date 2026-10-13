@@ -13,23 +13,23 @@ WebAssembly bindings for the VynaHL7 HL7 v2.x library, enabling HL7 message pars
 
 ## Installation
 
-### Using npm
+This package is not published to the npm registry. Build it from source
+with [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/) and import
+the local `pkg` output:
 
 ```bash
-npm install vyna-hl7-wasm
+cargo install wasm-pack
+
+# For browsers and bundlers (generates ./pkg)
+wasm-pack build --target web --out-dir pkg
+
+# For Node.js (generates ./pkg-node)
+wasm-pack build --target nodejs --out-dir pkg-node
 ```
 
-### Using yarn
-
-```bash
-yarn add vyna-hl7-wasm
-```
-
-### Using pnpm
-
-```bash
-pnpm add vyna-hl7-wasm
-```
+Then import from the local build output (see Quick Start below). The rich
+hand-maintained TypeScript definitions in `vynahl7.d.ts` describe the full
+API; the generated `pkg/*.d.ts` types every `JsValue` API as `any`.
 
 ## Quick Start
 
@@ -44,7 +44,7 @@ pnpm add vyna-hl7-wasm
 </head>
 <body>
     <script type="module">
-        import init, { parseMessage, getTerserValue } from './node_modules/vyna-hl7-wasm/pkg/vyna_hl7_wasm.js';
+        import init, { parseMessage, getTerserValue } from './pkg/vyna_hl7_wasm.js';
 
         async function main() {
             // Initialize the WebAssembly module
@@ -74,31 +74,25 @@ PID|1||MRN123||DOE^JOHN^ALLEN||19800101|M|||123 Main St^^Boston^MA^02101||555-12
 
 ### Node.js
 
-```typescript
-import init, { parseMessage, extractPatientDemographics } from 'vyna-hl7-wasm';
+```javascript
+const { parseMessage, extractPatientDemographics } = require('./pkg-node/vyna_hl7_wasm.js');
 
-async function main() {
-    // Initialize WASM module
-    await init();
-
-    const hl7 = `MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5
+// The nodejs target loads synchronously at require time; no init() call needed.
+const hl7 = `MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5
 PID|1||MRN123||DOE^JOHN||19800101|M`;
 
-    const message = parseMessage(hl7);
+const message = parseMessage(hl7);
 
-    // Extract patient demographics
-    const demographics = extractPatientDemographics(message);
-    console.log(demographics);
-    // {
-    //   mrn: "MRN123",
-    //   family_name: "DOE",
-    //   given_name: "JOHN",
-    //   date_of_birth: "19800101",
-    //   gender: "M"
-    // }
-}
-
-main();
+// Extract patient demographics
+const demographics = extractPatientDemographics(message);
+console.log(demographics);
+// {
+//   mrn: "MRN123",
+//   family_name: "DOE",
+//   given_name: "JOHN",
+//   date_of_birth: "19800101",
+//   gender: "M"
+// }
 ```
 
 ### TypeScript
@@ -110,7 +104,7 @@ import init, {
     setTerserValue,
     validateMessage,
     WasmMessage
-} from 'vyna-hl7-wasm';
+} from './pkg/vyna_hl7_wasm.js';
 
 async function processHL7(hl7String: string): Promise<void> {
     await init();
@@ -279,19 +273,19 @@ The Terser API uses simple path notation to access fields:
 
 ```bash
 cd crates/vyna-hl7-wasm
-wasm-pack build --target web
+wasm-pack build --target web --out-dir pkg
 ```
 
 ### Build for Node.js
 
 ```bash
-wasm-pack build --target nodejs
+wasm-pack build --target nodejs --out-dir pkg-node
 ```
 
 ### Build for Bundlers (webpack, etc.)
 
 ```bash
-wasm-pack build --target bundler
+wasm-pack build --target bundler --out-dir pkg-bundler
 ```
 
 ### Run Tests

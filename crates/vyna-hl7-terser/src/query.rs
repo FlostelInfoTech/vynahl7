@@ -235,6 +235,9 @@ impl<'a> TerserQuery<'a> {
 
     /// Filter segments by component value
     ///
+    /// Every repetition of the field is searched: a match in any
+    /// repetition selects the segment.
+    ///
     /// # Examples
     ///
     /// ```
@@ -268,18 +271,16 @@ impl<'a> TerserQuery<'a> {
             .get_segments_by_id(segment_id)
             .iter()
             .filter(|seg| {
-                seg.get_field(field)
-                    .and_then(|f| f.get_repetition(0))
-                    .and_then(|r| {
-                        if component > 0 {
-                            r.get_component(component - 1)
-                        } else {
-                            None
-                        }
+                if component == 0 {
+                    return false;
+                }
+                seg.get_field(field).is_some_and(|f| {
+                    f.repetitions.iter().any(|r| {
+                        r.get_component(component - 1)
+                            .and_then(|c| c.value())
+                            .is_some_and(|v| v == value)
                     })
-                    .and_then(|c| c.value())
-                    .map(|v| v == value)
-                    .unwrap_or(false)
+                })
             })
             .copied()
             .collect()
@@ -688,6 +689,22 @@ PID|1||PAT001||DOE^JOHN||19800101|M";
         let found = query.find_first("OBX", 3, "GLU").unwrap();
         assert_eq!(found.get_field(5).and_then(|f| f.value()), Some("98"));
         assert!(query.find_first("OBX", 3, "ZZZ").is_none());
+    }
+
+    #[test]
+    fn test_filter_by_component_searches_all_repetitions() {
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ORU^R01|123|P|2.5\r\
+                   OBX|1|NM|AAA~GLU||98\r\
+                   OBX|2|NM|NA||140\r";
+
+        let message = parse_message(hl7).unwrap();
+        let query = TerserQuery::new(&message);
+
+        // GLU sits in the second repetition: like filter_repeating it
+        // must match instead of searching repetition 0 only.
+        assert_eq!(query.filter_repeating("OBX", 3, "GLU").len(), 1);
+        assert_eq!(query.filter_by_component("OBX", 3, 1, "GLU").len(), 1);
+        assert!(query.filter_by_component("OBX", 3, 1, "ZZZ").is_empty());
     }
 
     #[test]

@@ -105,7 +105,9 @@ impl PractitionerReverseConverter {
             if let Some(ref use_) = first_name.use_ {
                 components[9] = match use_.as_str() {
                     "official" => "L".to_string(),
+                    "maiden" => "M".to_string(),
                     "nickname" => "N".to_string(),
+                    "temp" => "T".to_string(),
                     _ => "L".to_string(),
                 };
             }
@@ -204,7 +206,9 @@ impl PractitionerReverseConverter {
             if let Some(ref use_) = first_name.use_ {
                 let type_code = match use_.as_str() {
                     "official" => "L",
+                    "maiden" => "M",
                     "nickname" => "N",
+                    "temp" => "T",
                     _ => "L",
                 };
                 components.push((9, type_code.to_string()));
@@ -309,6 +313,29 @@ mod tests {
         let components =
             PractitionerReverseConverter::convert_to_components(&practitioner).unwrap();
         assert!(components.contains(&(6, "MD".to_string())));
+    }
+
+    #[test]
+    fn test_name_use_maiden_and_temp_map_to_xcn10() {
+        for (use_, expected) in [("maiden", "M"), ("temp", "T")] {
+            let mut practitioner = Practitioner::new();
+            practitioner.name = Some(vec![HumanName {
+                use_: Some(use_.to_string()),
+                text: None,
+                family: Some("Smith".to_string()),
+                given: Some(vec!["John".to_string()]),
+                prefix: None,
+                suffix: None,
+            }]);
+            let xcn = PractitionerReverseConverter::convert_to_xcn(&practitioner).unwrap();
+            assert_eq!(xcn.split('^').nth(9), Some(expected), "xcn {use_}");
+            let components =
+                PractitionerReverseConverter::convert_to_components(&practitioner).unwrap();
+            assert!(
+                components.contains(&(9, expected.to_string())),
+                "components {use_}"
+            );
+        }
     }
 
     #[test]

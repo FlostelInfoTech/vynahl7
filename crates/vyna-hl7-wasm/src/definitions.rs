@@ -477,6 +477,16 @@ pub fn get_vocabulary_table(table_id: &str) -> Result<JsValue, JsValue> {
     }
 }
 
+/// Sort rank for search hits: segments (0) before fields (1).
+/// `match_type` strings must not be compared directly: ascending
+/// lexicographic order puts `"field"` before `"segment"`.
+fn match_type_rank(match_type: &str) -> u8 {
+    match match_type {
+        "segment" => 0,
+        _ => 1,
+    }
+}
+
 /// Search across segment and field definitions for a given query
 ///
 /// Searches segment names and field names within all message schemas for the
@@ -579,8 +589,8 @@ pub fn search_definitions(version: &str, query: &str) -> Result<JsValue, JsValue
 
     // Sort: segments first, then fields, alphabetically
     results.sort_by(|a, b| {
-        a.match_type
-            .cmp(&b.match_type)
+        match_type_rank(&a.match_type)
+            .cmp(&match_type_rank(&b.match_type))
             .then(a.segment_id.cmp(&b.segment_id))
             .then(a.field_index.cmp(&b.field_index))
     });
@@ -718,6 +728,16 @@ mod tests {
         assert!(find_segment_definition(Version::V2_5, "ZZZ").is_none());
     }
 
+    #[test]
+    fn search_sort_places_segments_before_fields() {
+        // Ascending lexicographic order puts "field" before
+        // "segment", so the comparator must rank explicitly.
+        assert!(match_type_rank("segment") < match_type_rank("field"));
+        let mut hits = ["field", "segment", "field", "segment"];
+        hits.sort_by_key(|m| match_type_rank(m));
+        assert_eq!(hits, ["segment", "segment", "field", "field"]);
+    }
+
     #[cfg(target_arch = "wasm32")]
     #[wasm_bindgen_test]
     fn test_vocabulary_table_serializes_values_as_object() {
@@ -779,6 +799,17 @@ mod tests {
             json.contains("\"matchType\":\"field\""),
             "no field hit: {json}"
         );
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen_test]
+    fn test_search_definitions_sorts_segments_first() {
+        // "patient" matches both the PID segment and several fields;
+        // segment hits must sort before field hits (see rustdoc).
+        let json = crate::test_stringify(&search_definitions("2.5", "patient").unwrap());
+        let first_segment = json.find("\"matchType\":\"segment\"").expect("segment hit");
+        let first_field = json.find("\"matchType\":\"field\"").expect("field hit");
+        assert!(first_segment < first_field, "segments sort first: {json}");
     }
 
     #[test]

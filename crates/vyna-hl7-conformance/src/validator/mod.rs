@@ -130,7 +130,8 @@ impl ConformanceValidator {
                                         ),
                                         ConformanceErrorType::UnmappableCharacter,
                                         format!(
-                                            "character '{offender}' (U+{:04X}) cannot be encoded in the MSH-18 character set '{declared}'",
+                                            "character U+{:04X} cannot be encoded in \
+                                             the MSH-18 character set '{declared}'",
                                             offender as u32
                                         ),
                                     )
@@ -305,6 +306,11 @@ impl ConformanceValidator {
 
         // Count field occurrences (for repeating fields)
         let occurrence_count = field.map(|f| f.repetitions.len()).unwrap_or(0);
+        // Cardinality counts content: empty repetitions mean absent in HL7,
+        // mirroring the schema Validator's repetition check.
+        let cardinality_count = field
+            .map(|f| f.repetitions.iter().filter(|r| !r.is_empty()).count())
+            .unwrap_or(0);
         // Parsed empty fields still carry one empty repetition, so usage
         // checks need content awareness beyond the repetition count.
         let has_content = field.is_some_and(|f| !f.is_empty());
@@ -326,7 +332,7 @@ impl ConformanceValidator {
             segment_id: &segment.id,
             segment_index,
             field_position,
-            occurrence_count,
+            occurrence_count: cardinality_count,
             has_content,
             field_profile,
             message,
@@ -818,6 +824,33 @@ mod tests {
             "expected valid, got: {:?}",
             result.errors
         );
+    }
+
+    #[test]
+    fn test_field_cardinality_ignores_empty_repetitions() {
+        // PID-3 'A~' is two repetitions but one is empty, and empty
+        // repetitions mean absent in HL7: max 1 must pass.
+        let validator = ConformanceValidator::new(create_test_profile());
+        let result = validator.validate(&conditional_message("PID|1||A~"));
+        assert!(
+            result.is_valid(),
+            "expected valid, got: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_charset_error_redacts_character_keeps_codepoint() {
+        // Patient data must not echo in errors; only the codepoint is shown.
+        let message = charset_message("ASCII", "Müller");
+        let errors = charset_errors(&message);
+        assert_eq!(errors.len(), 1);
+        assert!(
+            errors[0].message.contains("U+00FC"),
+            "{}",
+            errors[0].message
+        );
+        assert!(!errors[0].message.contains('ü'), "{}", errors[0].message);
     }
 
     /// Profile with PID-2 marked not-used (X).

@@ -97,10 +97,17 @@ impl TlsClientConfig {
     /// # }
     /// ```
     pub fn with_ca_cert(ca_cert_path: impl AsRef<Path>) -> Result<Self> {
+        let ca_cert_path = ca_cert_path.as_ref();
         let mut root_store = RootCertStore::empty();
 
         // Load CA certificate
         let ca_certs = load_certs(ca_cert_path, "CA certificate")?;
+        if ca_certs.is_empty() {
+            return Err(Error::Network(format!(
+                "No certificates found in CA certificate file '{}'",
+                ca_cert_path.display()
+            )));
+        }
 
         for cert in ca_certs {
             root_store
@@ -144,10 +151,17 @@ impl TlsClientConfig {
         client_cert_path: impl AsRef<Path>,
         client_key_path: impl AsRef<Path>,
     ) -> Result<Self> {
+        let ca_cert_path = ca_cert_path.as_ref();
         let mut root_store = RootCertStore::empty();
 
         // Load CA certificate
         let ca_certs = load_certs(ca_cert_path, "CA certificate")?;
+        if ca_certs.is_empty() {
+            return Err(Error::Network(format!(
+                "No certificates found in CA certificate file '{}'",
+                ca_cert_path.display()
+            )));
+        }
 
         for cert in ca_certs {
             root_store
@@ -245,9 +259,16 @@ impl TlsServerConfig {
         key_path: impl AsRef<Path>,
         ca_cert_path: impl AsRef<Path>,
     ) -> Result<Self> {
+        let ca_cert_path = ca_cert_path.as_ref();
         // Load CA certificate for client verification
         let mut client_auth_roots = RootCertStore::empty();
         let ca_certs = load_certs(ca_cert_path, "CA certificate")?;
+        if ca_certs.is_empty() {
+            return Err(Error::Network(format!(
+                "No certificates found in CA certificate file '{}'",
+                ca_cert_path.display()
+            )));
+        }
 
         for cert in ca_certs {
             client_auth_roots
@@ -285,6 +306,72 @@ mod tests {
     fn test_client_config_new() {
         let config = TlsClientConfig::new();
         assert!(config.is_ok());
+    }
+
+    fn write_temp_file(name: &str, contents: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "vyna_hl7_mllp_tls_test_{}_{}",
+            std::process::id(),
+            name
+        ));
+        std::fs::write(&path, contents).expect("write fixture");
+        path
+    }
+
+    fn missing_path(name: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "vyna_hl7_mllp_tls_missing_{}_{}",
+            std::process::id(),
+            name
+        ));
+        assert!(!path.exists());
+        path
+    }
+
+    #[test]
+    fn test_with_ca_cert_rejects_file_without_certificates() {
+        for (name, contents) in [("junk.pem", "not a pem file\n"), ("empty.pem", "")] {
+            let path = write_temp_file(name, contents);
+            let err = match TlsClientConfig::with_ca_cert(&path) {
+                Ok(_) => panic!("{name}: expected an error for a CA file without certificates"),
+                Err(e) => e,
+            };
+            let message = err.to_string();
+            assert!(
+                message.contains("No certificates found"),
+                "{name}: {message}"
+            );
+            assert!(message.contains(name), "{name}: {message}");
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    #[test]
+    fn test_client_with_mtls_rejects_empty_ca_file() {
+        let ca = write_temp_file("junk-ca-client.pem", "not a pem file\n");
+        let missing = missing_path("client.pem");
+        let err = match TlsClientConfig::with_mtls(&ca, &missing, &missing) {
+            Ok(_) => panic!("expected an error for an mTLS CA file without certificates"),
+            Err(e) => e,
+        };
+        let message = err.to_string();
+        assert!(message.contains("No certificates found"), "{message}");
+        assert!(message.contains("junk-ca-client.pem"), "{message}");
+        let _ = std::fs::remove_file(&ca);
+    }
+
+    #[test]
+    fn test_server_with_mtls_rejects_empty_ca_file() {
+        let ca = write_temp_file("junk-ca-server.pem", "not a pem file\n");
+        let missing = missing_path("server.pem");
+        let err = match TlsServerConfig::with_mtls(&missing, &missing, &ca) {
+            Ok(_) => panic!("expected an error for an mTLS CA file without certificates"),
+            Err(e) => e,
+        };
+        let message = err.to_string();
+        assert!(message.contains("No certificates found"), "{message}");
+        assert!(message.contains("junk-ca-server.pem"), "{message}");
+        let _ = std::fs::remove_file(&ca);
     }
 
     // Note: Additional tests would require test certificates

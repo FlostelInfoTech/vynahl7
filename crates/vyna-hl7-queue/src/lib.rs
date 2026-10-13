@@ -762,6 +762,9 @@ impl MessageQueue for FileQueue {
     }
 
     fn dead_letters(&self) -> Result<Vec<DeadLetter>, QueueError> {
+        // Under the lock: move_entry stages dest-before-source-removal,
+        // so an unlocked scan can catch one message in two states.
+        let _guard = queue_lock();
         let mut dead = Vec::new();
         for id in list_ids(&self.dead)? {
             let (Some(meta), Some(body)) =
@@ -782,6 +785,10 @@ impl MessageQueue for FileQueue {
     }
 
     fn stats(&self) -> Result<QueueStats, QueueError> {
+        // Under the lock: without it a concurrent move_entry (dest
+        // staged before the source is removed) double-counts one
+        // message across the three directory scans below.
+        let _guard = queue_lock();
         Ok(QueueStats {
             pending: list_ids(&self.pending)?.len(),
             inflight: list_ids(&self.inflight)?.len(),
@@ -1721,6 +1728,57 @@ mod tests {
             assert!(!entry.contains('/'), "mixed skipped format: {entry}");
         }
         assert_eq!(queue.stats().unwrap().dead, 2);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn file_stats_never_double_counts_under_concurrent_moves() {
+        use std::sync::atomic::AtomicBool;
+
+        let dir = scratch_dir();
+        let policy = RetryPolicy {
+            max_attempts: u32::MAX,
+            base_delay: Duration::ZERO,
+            max_delay: Duration::ZERO,
+            lease: Duration::from_secs(30),
+        };
+        {
+            let (mut seeder, _) = FileQueue::open_with_policy(&dir, policy.clone()).unwrap();
+            seeder.enqueue(b"MSH", HashMap::new()).unwrap();
+        }
+        // One live message cycling pending -> inflight -> pending: the
+        // total across states is always exactly 1. move_entry stages
+        // dest-before-source-removal, so an unlocked stats() can catch
+        // both copies and report 2.
+        let stop = Arc::new(AtomicBool::new(false));
+        std::thread::scope(|s| {
+            let mover = s.spawn(|| {
+                let (mut queue, _) = FileQueue::open_with_policy(&dir, policy).unwrap();
+                for _ in 0..300 {
+                    let leased = queue.dequeue().unwrap().expect("message visible");
+                    assert!(matches!(
+                        queue.nack(&leased.id, None).unwrap(),
+                        NackOutcome::Requeued { .. }
+                    ));
+                }
+            });
+            let sampler = s.spawn(|| {
+                let (queue, _) = FileQueue::open(&dir).unwrap();
+                let mut worst = 0;
+                while !stop.load(Ordering::SeqCst) {
+                    let stats = queue.stats().unwrap();
+                    worst = worst.max(stats.pending + stats.inflight + stats.dead);
+                    // Nothing dead-letters here; dead_letters must stay
+                    // empty (and race-free) throughout the movement.
+                    assert!(queue.dead_letters().unwrap().is_empty());
+                }
+                worst
+            });
+            mover.join().unwrap();
+            stop.store(true, Ordering::SeqCst);
+            let worst = sampler.join().unwrap();
+            assert_eq!(worst, 1, "stats() double-counted a moving message");
+        });
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

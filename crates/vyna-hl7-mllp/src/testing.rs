@@ -6,7 +6,6 @@ use crate::{MllpConfig, MllpServer};
 use vyna_hl7_core::{builders::ack::AckBuilder, error::Result, Message};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 /// Message handler function type
 pub type MessageHandler = Arc<dyn Fn(Message) -> Result<Message> + Send + Sync>;
@@ -132,7 +131,6 @@ impl MockMllpServer {
     /// begin accepting connections.
     pub async fn start(mut self) -> Result<Self> {
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
-        let shutdown_rx = Arc::new(Mutex::new(Some(shutdown_rx)));
 
         // Bind to random port
         #[cfg(feature = "tls")]
@@ -152,33 +150,25 @@ impl MockMllpServer {
 
         // Spawn server task
         let server_task = tokio::spawn(async move {
-            let shutdown_rx = shutdown_rx;
+            let mut shutdown_rx = shutdown_rx;
 
             loop {
-                // Accept connection with timeout to allow checking shutdown
-                let conn_result = tokio::time::timeout(
-                    std::time::Duration::from_millis(100),
-                    server.accept()
-                ).await;
+                // `select!` on shutdown instead of wrapping `accept()` in
+                // a short timeout: the timeout would also bound (and
+                // abort) a TLS handshake in progress, while `accept()`
+                // alone honors the configured `connect_timeout` like the
+                // real server.
+                let accepted = tokio::select! {
+                    biased;
 
-                // Check if shutdown was signaled
-                let mut rx_guard = shutdown_rx.lock().await;
-                if let Some(ref mut rx) = *rx_guard {
-                    match rx.try_recv() {
-                        Ok(_) | Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
-                            break;
-                        }
-                        Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {
-                            // Continue
-                        }
-                    }
-                }
-                drop(rx_guard);
+                    _ = &mut shutdown_rx => break,
 
-                let mut conn = match conn_result {
-                    Ok(Ok(conn)) => conn,
-                    Ok(Err(_e)) => continue, // Accept error
-                    Err(_) => continue, // Timeout, check shutdown again
+                    accepted = server.accept() => accepted,
+                };
+
+                let mut conn = match accepted {
+                    Ok(conn) => conn,
+                    Err(_e) => continue, // Accept error
                 };
 
                 let handler = handler.clone();
@@ -406,5 +396,155 @@ mod tests {
 
         client.close().await.unwrap();
         server.shutdown().await.unwrap();
+    }
+
+    /// Generate a CA plus a server certificate signed by it (requires
+    /// openssl). Returns `(ca_cert, server_cert, server_key)`.
+    #[cfg(feature = "tls")]
+    fn generate_test_certs(dir: &std::path::Path) -> (String, String, String) {
+        use std::process::Command;
+
+        let path = |name: &str| dir.join(name).to_str().unwrap().to_string();
+        let (ca_key, ca_cert) = (path("ca-key.pem"), path("ca-cert.pem"));
+        let (srv_key, srv_csr, srv_cert, srv_ext) = (
+            path("srv-key.pem"),
+            path("srv.csr"),
+            path("srv-cert.pem"),
+            path("srv-ext.cnf"),
+        );
+        std::fs::write(
+            &srv_ext,
+            "[v3_req]\nbasicConstraints = CA:FALSE\n\
+             keyUsage = digitalSignature, keyEncipherment\n\
+             extendedKeyUsage = serverAuth\n\
+             subjectAltName = DNS:localhost,IP:127.0.0.1\n",
+        )
+        .unwrap();
+        let run = |args: &[&str]| {
+            let status = Command::new("openssl")
+                .args(args)
+                .status()
+                .expect("openssl must be installed for TLS tests");
+            assert!(status.success(), "openssl {args:?} failed");
+        };
+        run(&[
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            &ca_key,
+            "-out",
+            &ca_cert,
+            "-days",
+            "2",
+            "-subj",
+            "/CN=Test CA",
+        ]);
+        run(&[
+            "req",
+            "-new",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            &srv_key,
+            "-out",
+            &srv_csr,
+            "-subj",
+            "/CN=localhost",
+        ]);
+        run(&[
+            "x509",
+            "-req",
+            "-in",
+            &srv_csr,
+            "-CA",
+            &ca_cert,
+            "-CAkey",
+            &ca_key,
+            "-CAcreateserial",
+            "-out",
+            &srv_cert,
+            "-days",
+            "2",
+            "-extfile",
+            &srv_ext,
+            "-extensions",
+            "v3_req",
+        ]);
+        (ca_cert, srv_cert, srv_key)
+    }
+
+    /// A client that connects and then takes longer than the mock's old
+    /// 100 ms poll quantum to speak TLS must still complete the
+    /// handshake: the mock must honor the configured `connect_timeout`
+    /// like the real `MllpServer` instead of dropping the handshake.
+    #[cfg(feature = "tls")]
+    #[tokio::test]
+    async fn test_tls_mock_server_tolerates_slow_handshake() {
+        use crate::tls::{TlsClientConfig, TlsServerConfig};
+        use crate::{CARRIAGE_RETURN, END_OF_BLOCK, START_OF_BLOCK};
+        use std::time::Duration;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let dir = std::env::temp_dir().join(format!(
+            "vyna_mllp_mocktls_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (ca, cert, key) = generate_test_certs(&dir);
+
+        let server = MockMllpServer::new()
+            .with_tls(TlsServerConfig::new(&cert, &key).unwrap())
+            .start()
+            .await
+            .unwrap();
+        let addr = server.local_addr();
+
+        let flow = async {
+            // Connect, then stall past the old 100 ms accept quantum
+            // before speaking TLS — well within the 10 s default.
+            let tcp = tokio::net::TcpStream::connect(addr).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(300)).await;
+
+            let tls_client = TlsClientConfig::with_ca_cert(&ca).unwrap();
+            let connector = tokio_rustls::TlsConnector::from(tls_client.config.clone());
+            let name = rustls::pki_types::ServerName::try_from("localhost")
+                .unwrap()
+                .to_owned();
+            let mut tls = connector.connect(name, tcp).await.unwrap();
+
+            // MLLP round trip over the delayed handshake.
+            let hl7 = "MSH|^~\\&|SND|FAC|RCV|RFAC|20240115120000||ADT^A01|1|P|2.5\r";
+            let mut framed = vec![START_OF_BLOCK];
+            framed.extend_from_slice(hl7.as_bytes());
+            framed.extend_from_slice(&[END_OF_BLOCK, CARRIAGE_RETURN]);
+            tls.write_all(&framed).await.unwrap();
+
+            let mut reply = Vec::new();
+            let mut byte = [0u8; 1];
+            loop {
+                tls.read_exact(&mut byte).await.unwrap();
+                reply.push(byte[0]);
+                let n = reply.len();
+                if n >= 2 && reply[n - 2] == END_OF_BLOCK && reply[n - 1] == CARRIAGE_RETURN {
+                    break;
+                }
+            }
+            let text = String::from_utf8(reply).unwrap();
+            assert!(text.contains("ADT^A01"), "unexpected reply: {text}");
+        };
+        tokio::time::timeout(Duration::from_secs(15), flow)
+            .await
+            .expect("slow-handshake round trip timed out");
+
+        server.shutdown().await.unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

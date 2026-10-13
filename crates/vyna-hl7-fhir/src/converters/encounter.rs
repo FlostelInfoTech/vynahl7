@@ -2,7 +2,10 @@
 //!
 //! Based on HL7 v2-to-FHIR mapping: <https://build.fhir.org/ig/HL7/v2-to-fhir/ConceptMap-segment-pv1-to-encounter.html>
 
-use super::patient::{split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time};
+use super::patient::{
+    hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min,
+    valid_hl7_time,
+};
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
 use crate::resources::encounter::*;
@@ -373,6 +376,7 @@ impl EncounterConverter {
     ///
     /// `YYYYMMDDHHMM` keeps its minutes (`YYYY-MM-DDTHH:MM`) and a
     /// trailing HL7 zone (`±HHMM`) is preserved as `±HH:MM`.
+    /// Validated fractional seconds are kept as `.digits`.
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
         let (stem, offset) = split_hl7_offset(datetime);
         let zone = offset.as_deref().unwrap_or("");
@@ -382,13 +386,14 @@ impl EncounterConverter {
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
             if valid_hl7_date(&stem[0..8]) && valid_hl7_time(&stem[8..14]) {
                 Ok(format!(
-                    "{}-{}-{}T{}:{}:{}{}",
+                    "{}-{}-{}T{}:{}:{}{}{}",
                     &stem[0..4],
                     &stem[4..6],
                     &stem[6..8],
                     &stem[8..10],
                     &stem[10..12],
                     &stem[12..14],
+                    hl7_fraction_suffix(stem, 14),
                     zone
                 ))
             } else {
@@ -419,6 +424,7 @@ impl EncounterConverter {
             Err(Self::invalid_datetime(datetime))
         }
     }
+
 
     /// Redacted bad-datetime error: field location + reason only, never the value.
     fn invalid_datetime(_datetime: &str) -> ConversionError {
@@ -602,5 +608,13 @@ mod tests {
         let location = &encounter.location.unwrap()[0].location;
         assert_eq!(location.reference, Some("Location/4N".to_string()));
         assert_eq!(location.display, Some("4N, 401, 01, HOSP".to_string()));
+    }
+
+    #[test]
+    fn test_datetime_preserves_fractional_seconds() {
+        assert_eq!(
+            EncounterConverter::convert_datetime("20240315100000.123").unwrap(),
+            "2024-03-15T10:00:00.123"
+        );
     }
 }

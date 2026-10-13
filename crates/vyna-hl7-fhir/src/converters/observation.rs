@@ -3,7 +3,8 @@
 //! Based on HL7 v2-to-FHIR mapping: <https://build.fhir.org/ig/HL7/v2-to-fhir/ConceptMap-segment-obx-to-observation.html>
 
 use super::patient::{
-    split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time, valid_hl7_year_month,
+    hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time,
+    valid_hl7_year_month,
 };
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
@@ -145,10 +146,27 @@ impl ObservationConverter {
         } else {
             format!("OBX({})-5", obx_index + 1)
         };
-        if let Ok(Some(value)) = terser.get(&value_path)
-            && !value.is_empty()
-        {
-            Self::set_observation_value(&mut observation, value_type, value, &terser, &value_path)?;
+        if let Ok(Some(value)) = terser.get(&value_path) {
+            // A text-only CE/CWE (empty component 1, valued component
+            // 2) still converts, like the allergy converter; other
+            // types keep the whole-field empty check, and a coded
+            // value with both components empty is still absent.
+            let text_only_coded = value.is_empty()
+                && matches!(value_type, "CE" | "CWE")
+                && terser
+                    .get(&format!("{value_path}-2"))
+                    .ok()
+                    .flatten()
+                    .is_some_and(|text| !text.is_empty());
+            if !value.is_empty() || text_only_coded {
+                Self::set_observation_value(
+                    &mut observation,
+                    value_type,
+                    value,
+                    &terser,
+                    &value_path,
+                )?;
+            }
         }
 
         // OBX-6: Units -> Observation.valueQuantity.unit (if applicable)
@@ -277,6 +295,20 @@ impl ObservationConverter {
                 observation.value_string = Some(value.to_string());
             }
             "CE" | "CWE" => {
+                // Component 2: Text (1-based indexing)
+                let text = terser
+                    .get(&format!("{value_path}-2"))
+                    .ok()
+                    .flatten()
+                    .filter(|text| !text.is_empty());
+                if value.is_empty() {
+                    // Text-only: the gate guarantees text is present.
+                    observation.value_codeable_concept = Some(CodeableConcept {
+                        coding: None,
+                        text: text.map(|text| text.to_string()),
+                    });
+                    return Ok(());
+                }
                 // Coded Element
                 let mut coding = Coding {
                     system: None,
@@ -285,10 +317,7 @@ impl ObservationConverter {
                     display: None,
                 };
 
-                // Component 2: Text (1-based indexing)
-                if let Ok(Some(text)) = terser.get(&format!("{}-2", value_path))
-                    && !text.is_empty()
-                {
+                if let Some(text) = text {
                     coding.display = Some(text.to_string());
                 }
 
@@ -311,8 +340,8 @@ impl ObservationConverter {
             "TM" => {
                 // Time: a present-but-malformed value is an error,
                 // not a silent pass-through into valueTime.
-                if Self::valid_tm_value(value) {
-                    observation.value_time = Some(value.to_string());
+                if let Some(formatted) = Self::convert_time(value) {
+                    observation.value_time = Some(formatted);
                 } else {
                     return Err(Self::invalid_time());
                 }
@@ -401,14 +430,16 @@ impl ObservationConverter {
         let bytes = stem.as_bytes();
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
             if valid_hl7_date(&stem[0..8]) && valid_hl7_time(&stem[8..14]) {
+                let fraction = hl7_fraction_suffix(stem, 14);
                 Ok(format!(
-                    "{}-{}-{}T{}:{}:{}{}",
+                    "{}-{}-{}T{}:{}:{}{}{}",
                     &stem[0..4],
                     &stem[4..6],
                     &stem[6..8],
                     &stem[8..10],
                     &stem[10..12],
                     &stem[12..14],
+                    fraction,
                     zone
                 ))
             } else {
@@ -449,12 +480,26 @@ impl ObservationConverter {
         )
     }
 
-    /// An HL7 TM value must at least carry an HHMMSS clock value.
-    fn valid_tm_value(value: &str) -> bool {
+    /// Format an HL7 TM (`HHMMSS[.S...]`) as FHIR `HH:MM:SS[.S...]`.
+    ///
+    /// `None` when the stem is not a real clock time; a validated
+    /// fractional second is preserved, and anything after it is
+    /// trailing junk the digit-prefix checks ignore as before.
+    fn convert_time(value: &str) -> Option<String> {
         let bytes = value.as_bytes();
-        bytes.len() >= 6
-            && bytes[..6].iter().all(|b| b.is_ascii_digit())
-            && valid_hl7_time(&value[0..6])
+        if bytes.len() < 6
+            || !bytes[..6].iter().all(|b| b.is_ascii_digit())
+            || !valid_hl7_time(&value[0..6])
+        {
+            return None;
+        }
+        Some(format!(
+            "{}:{}:{}{}",
+            &value[0..2],
+            &value[2..4],
+            &value[4..6],
+            hl7_fraction_suffix(value, 6)
+        ))
     }
 
     /// Redacted bad-time error: field location + reason only, never the value.
@@ -639,7 +684,7 @@ mod tests {
         let good = format!("{base}103000|||||||F");
         let message = parse_message(&good).unwrap();
         let obs = &ObservationConverter::convert_all(&message).unwrap()[0];
-        assert_eq!(obs.value_time, Some("103000".to_string()));
+        assert_eq!(obs.value_time, Some("10:30:00".to_string()));
     }
 
     #[test]
@@ -650,5 +695,63 @@ mod tests {
         let err = ObservationConverter::convert_all(&message).unwrap_err();
         let msg = err.to_string();
         assert!(!msg.contains("SECRET-DOSE"), "error leaks source: {msg}");
+    }
+
+    #[test]
+    fn test_tm_formats_hhmmss_with_colons() {
+        assert_eq!(
+            ObservationConverter::convert_time("103000").as_deref(),
+            Some("10:30:00")
+        );
+        assert_eq!(
+            ObservationConverter::convert_time("103000.5").as_deref(),
+            Some("10:30:00.5")
+        );
+        // An impossible clock time is still an error, end to end.
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||ORU^R01|1|P|2.5\r\
+                   OBX|1|TM|T^Time^LN||256000|||||||F";
+        let message = parse_message(hl7).unwrap();
+        assert!(matches!(
+            ObservationConverter::convert_all(&message),
+            Err(ConversionError::InvalidFormat(_, _, _))
+        ));
+    }
+
+    #[test]
+    fn test_ce_text_only_value_preserved() {
+        // Empty component 1 with valued text: text survives, like the
+        // allergy converter.
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||ORU^R01|1|P|2.5\r\
+                   OBX|1|CE|T^Text^LN||^Positive|||||||F";
+        let message = parse_message(hl7).unwrap();
+        let obs = &ObservationConverter::convert_all(&message).unwrap()[0];
+        let concept = obs.value_codeable_concept.as_ref().unwrap();
+        assert_eq!(concept.coding, None);
+        assert_eq!(concept.text.as_deref(), Some("Positive"));
+
+        // Both components empty: still no value[x].
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||ORU^R01|1|P|2.5\r\
+                   OBX|1|CE|T^Text^LN||||||||F";
+        let message = parse_message(hl7).unwrap();
+        let obs = &ObservationConverter::convert_all(&message).unwrap()[0];
+        assert_eq!(obs.value_codeable_concept, None);
+        assert_eq!(obs.value_string, None);
+    }
+
+    #[test]
+    fn test_convert_datetime_preserves_fractional_seconds() {
+        assert_eq!(
+            ObservationConverter::convert_datetime("20240315100000.123").unwrap(),
+            "2024-03-15T10:00:00.123"
+        );
+        // End to end through OBX-14.
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||ORU^R01|1|P|2.5\r\
+                   OBX|1|NM|WBC^W^LN||7.5|mg/dL|||||F|||20240315100000.123";
+        let message = parse_message(hl7).unwrap();
+        let obs = &ObservationConverter::convert_all(&message).unwrap()[0];
+        assert_eq!(
+            obs.effective_date_time.as_deref(),
+            Some("2024-03-15T10:00:00.123")
+        );
     }
 }

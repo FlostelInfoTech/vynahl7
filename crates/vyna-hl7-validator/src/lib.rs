@@ -495,7 +495,8 @@ impl Validator {
                                     result,
                                     format!("{}-{}", segment.id, field_index + 1),
                                     format!(
-                                        "character '{offender}' (U+{:04X}) cannot be represented in the declared character set {}",
+                                        "character U+{:04X} cannot be represented in \
+                                         the declared character set {}",
                                         offender as u32,
                                         charset.msh18()
                                     ),
@@ -666,7 +667,7 @@ impl Validator {
 
                     // Validate vocabulary/code set
                     if let Some(table_id) = &field_def.table_id
-                        && let Some(code) = field_table_code(f, rep_idx, field_def, delimiters)
+                        && let Some(code) = field_table_code(f, rep_idx, field_def)
                     {
                         let vocab_validation = self.table_registry.validate(table_id, code);
                         if !vocab_validation.is_valid()
@@ -830,11 +831,12 @@ impl Validator {
 
 /// Code a field-level table check applies to.
 ///
-/// For composite fields the table constrains component 1 (the code), not the
-/// whole joined value. Builder-created fields may store composites as a single
-/// unsplit component, so the value is split on the component separator when
-/// the schema (or datatype) says the field is composite. Parsed messages
-/// already expose component 1 via `value()`, making the split a no-op there.
+/// For composite fields the table constrains component 1 (the code), read
+/// literally from the parsed structure: `value()` already returns the first
+/// component, so split fields check just the code. A single unsplit component
+/// (e.g. via `Field::from_value("ZZ^Not a vaccine^CVX")`) is one literal value
+/// and is checked whole, exactly like the length, datatype, and required
+/// checks treat it; composite values must use `Field::from_delimited`.
 ///
 /// When the schema assigns the same table to a component other than 1 (e.g.
 /// XPN name-type table 0200 on component 7), the component-level checks own
@@ -849,7 +851,6 @@ fn field_table_code<'a>(
     field: &'a vyna_hl7_core::field::Field,
     rep_index: usize,
     field_def: &FieldDefinition,
-    delimiters: &vyna_hl7_core::delimiters::Delimiters,
 ) -> Option<&'a str> {
     let value = field.get_repetition(rep_index)?.value()?;
     if field_def.components.is_some() || is_composite_datatype(&field_def.data_type) {
@@ -863,17 +864,9 @@ fn field_table_code<'a>(
             return None;
         }
         if field_def.data_type == "CQ" {
-            if let Some(units) = field.get_component(rep_index, 1).and_then(|c| c.value()) {
-                return Some(units);
-            }
-            return value.split(delimiters.component_separator).nth(1);
+            return field.get_component(rep_index, 1).and_then(|c| c.value());
         }
-        Some(
-            value
-                .split(delimiters.component_separator)
-                .next()
-                .unwrap_or(value),
-        )
+        Some(value)
     } else {
         Some(value)
     }
@@ -1600,12 +1593,15 @@ mod tests {
         assert_eq!(result.errors[0].location, "PID-5");
         assert!(result.errors[0].message.contains("U+00FC"));
         assert!(result.errors[0].message.contains("ASCII"));
+        // Patient data is redacted: only the codepoint is reported.
+        assert!(!result.errors[0].message.contains('ü'));
 
         let msg = message_with_charset(Some("8859/2"), "price: €");
         let result = validator.validate(&msg);
         assert!(!result.is_valid());
         assert_eq!(result.errors[0].location, "PID-5");
-        assert!(result.errors[0].message.contains('€'));
+        assert!(result.errors[0].message.contains("U+20AC"));
+        assert!(!result.errors[0].message.contains('€'));
     }
 
     #[test]
@@ -1650,8 +1646,8 @@ mod tests {
     fn test_composite_table_check_uses_component_code() {
         use vyna_hl7_core::builders::vxu::{ImmunizationDose, VxuV04Builder};
 
-        // Builders store composites via from_value (single unsplit component);
-        // the field-level table check must still validate the code (RXA-5.1).
+        // RXA-5/RXR-1 carry split CE composites; the field-level table
+        // check validates the code in component 1 (RXA-5.1, RXR-1.1).
         let message = VxuV04Builder::new(Version::V2_5)
             .sending_application("SEND")
             .sending_facility("SFAC")
@@ -1680,6 +1676,31 @@ mod tests {
         assert!(table_errors.iter().any(|e| e.location.starts_with("RXR")
             && e.message.contains("'XX'")
             && e.message.contains("0162")));
+    }
+
+    #[test]
+    fn test_field_table_code_reads_unsplit_value_literally() {
+        // An unsplit composite (one component via from_value) is a single
+        // literal value: the table check sees it whole, exactly like the
+        // length, datatype, and required checks do.
+        let field_def = FieldDefinition {
+            name: "Patient Identifier List".to_string(),
+            data_type: "CX".to_string(),
+            required: true,
+            repeating: true,
+            max_length: Some(250),
+            table_id: Some("0203".to_string()),
+            components: None,
+        };
+        let unsplit = Field::from_value("12345^^^FACILITYWITHLONGNAME^MR^EXTRA");
+        assert_eq!(
+            field_table_code(&unsplit, 0, &field_def),
+            Some("12345^^^FACILITYWITHLONGNAME^MR^EXTRA")
+        );
+
+        // Split fields still check component 1 (the code).
+        let split = Field::from_delimited("12345^^^FACILITYWITHLONGNAME^MR^EXTRA");
+        assert_eq!(field_table_code(&split, 0, &field_def), Some("12345"));
     }
 
     #[test]

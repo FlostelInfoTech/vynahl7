@@ -448,9 +448,13 @@ impl MappingEngine {
             value = Value::String(formatted);
         }
 
-        if let Some(template) = &rule.template
-            && let Value::String(text) = &value
-        {
+        if let Some(template) = &rule.template {
+            let Value::String(text) = &value else {
+                return Err(ConversionError::Mapping(format!(
+                    "field '{}': template requires a string value",
+                    rule.target
+                )));
+            };
             value = Value::String(template.replace("{value}", text));
         }
 
@@ -1130,6 +1134,61 @@ fields:
         .unwrap();
         let out = MappingEngine::apply(&mapping, &message).unwrap();
         assert_eq!(out[0]["birthDate"], "1980");
+    }
+
+    #[test]
+    fn engine_template_on_non_string_constant_errors() {
+        // A numeric constant with `template` must error like
+        // `map`/`format` do, not pass through with it ignored.
+        let mapping = Mapping::from_yaml(concat!(
+            "resourceType: X\nfields:\n",
+            "  - target: a\n    constant: 123\n",
+            "    template: \"Patient/{value}\"\n",
+        ))
+        .unwrap();
+        let err = MappingEngine::apply(&mapping, &message()).unwrap_err();
+        assert!(err.to_string().contains('a'), "{err}");
+
+        // String constants still accept templates.
+        let mapping = Mapping::from_yaml(concat!(
+            "resourceType: X\nfields:\n",
+            "  - target: a\n    constant: \"7\"\n",
+            "    template: \"Patient/{value}\"\n",
+        ))
+        .unwrap();
+        let out = MappingEngine::apply(&mapping, &message()).unwrap();
+        assert_eq!(out[0]["a"], "Patient/7");
+    }
+
+    #[test]
+    fn shipped_condition_mapping_matches_vaccine_systems() {
+        // CVX/NDC/MVX/RXNORM resolve identically on both sides of
+        // the converter/mapping parity, not to `urn:oid:` on the
+        // mapping side.
+        for (code, system) in [
+            ("08^HepB^CVX", "http://hl7.org/fhir/sid/cvx"),
+            ("1191^ASPIRIN^NDC", "http://hl7.org/fhir/sid/ndc"),
+            ("MFR^Maker^MVX", "http://hl7.org/fhir/sid/mvx"),
+            (
+                "1191^ASPIRIN^RXNORM",
+                "http://www.nlm.nih.gov/research/umls/rxnorm",
+            ),
+        ] {
+            let message = parse_message(&format!(
+                "MSH|^~\\&|A|B|C|D|20240101||PPR^PC1|1|P|2.5\rPID|1||7\rPRB|AD|20240101|{code}|P1",
+            ))
+            .unwrap();
+            let mapping = Mapping::from_yaml(mappings::CONDITION).unwrap();
+            let declarative = MappingEngine::apply(&mapping, &message).unwrap();
+            let coded = ConditionConverter::convert_all(&message).unwrap();
+            assert_eq!(declarative.len(), 1);
+            assert_eq!(declarative[0]["code"]["coding"][0]["system"], system);
+            assert_eq!(
+                declarative[0],
+                serde_json::to_value(&coded[0]).unwrap(),
+                "{code}"
+            );
+        }
     }
 
     #[test]

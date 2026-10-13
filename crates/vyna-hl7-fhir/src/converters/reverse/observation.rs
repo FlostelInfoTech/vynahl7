@@ -224,11 +224,11 @@ impl ObservationReverseConverter {
         } else if system.contains("snomed") {
             "SCT".to_string()
         } else if system.contains("icd-10") {
-            "I10".to_string()
+            "ICD10".to_string()
         } else if system.contains("icd-9") {
-            "I9".to_string()
+            "ICD9".to_string()
         } else if system.contains("cpt") {
-            "C4".to_string()
+            "CPT".to_string()
         } else if system.contains("rxnorm") {
             "RXNORM".to_string()
         } else if system.contains("ucum") {
@@ -416,7 +416,8 @@ mod tests {
         // FHIR colons are stripped: HL7 TM is HHMMSS.
         assert_eq!(obx.get_field_value(5), Some("100000"));
         let back = round_trip(&obx);
-        assert_eq!(back.value_time.as_deref(), Some("100000"));
+        // Full circle: forward formats the TM stem back to FHIR time.
+        assert_eq!(back.value_time.as_deref(), Some("10:00:00"));
     }
 
     #[test]
@@ -442,6 +443,60 @@ mod tests {
         let back = round_trip(&obx);
         assert_eq!(back.value_boolean, None);
         assert_eq!(back.value_string.as_deref(), Some("Y"));
+    }
+
+    #[test]
+    fn test_coding_system_names_match_forward_converter() {
+        // The forward converter maps ICD10/ICD9/CPT to the FHIR
+        // system URIs; anything else re-forwards to urn:oid:<name>.
+        assert_eq!(
+            ObservationReverseConverter::extract_coding_system_name(
+                "http://hl7.org/fhir/sid/icd-10"
+            ),
+            "ICD10"
+        );
+        assert_eq!(
+            ObservationReverseConverter::extract_coding_system_name(
+                "http://hl7.org/fhir/sid/icd-9-cm"
+            ),
+            "ICD9"
+        );
+        assert_eq!(
+            ObservationReverseConverter::extract_coding_system_name(
+                "http://www.ama-assn.org/go/cpt"
+            ),
+            "CPT"
+        );
+    }
+
+    #[test]
+    fn test_icd10_code_round_trips_stably() {
+        let mut observation = Observation::new(
+            "final".to_string(),
+            CodeableConcept {
+                coding: Some(vec![Coding {
+                    system: Some("http://hl7.org/fhir/sid/icd-10".to_string()),
+                    version: None,
+                    code: Some("E11".to_string()),
+                    display: Some("Type 2 diabetes".to_string()),
+                }]),
+                text: None,
+            },
+        );
+        observation.value_string = Some("x".to_string());
+        let obx = ObservationReverseConverter::convert(&observation, 1).unwrap();
+        let system = obx
+            .get_field(3)
+            .and_then(|f| f.repetitions.first())
+            .and_then(|r| r.components.get(2))
+            .and_then(|c| c.value());
+        assert_eq!(system, Some("ICD10"));
+        let back = round_trip(&obx);
+        let coding = back.code.coding.as_ref().unwrap();
+        assert_eq!(
+            coding[0].system.as_deref(),
+            Some("http://hl7.org/fhir/sid/icd-10")
+        );
     }
 
     #[test]

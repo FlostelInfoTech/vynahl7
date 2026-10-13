@@ -2,7 +2,8 @@
 
 use super::coding_systems::convert_coding_system;
 use super::patient::{
-    split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time, valid_hl7_year_month,
+    hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time,
+    valid_hl7_year_month,
 };
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
@@ -236,8 +237,11 @@ impl ImmunizationConverter {
             }]);
         }
 
-        // RXA-11: Administered-at Location -> site
-        if let Ok(Some(site_code)) = terser.get(&path("11"))
+        // RXR-2: Administration Site -> site, paired with this RXA
+        // by order. RXA-11 is the administered-at facility location
+        // (LA2), never the body site, so it is not read here.
+        if let Some(site_path) = Self::rxr_site_path(message, rxa_index)
+            && let Ok(Some(site_code)) = terser.get(&site_path)
             && !site_code.is_empty()
         {
             let mut coding = Coding {
@@ -247,8 +251,8 @@ impl ImmunizationConverter {
                 version: None,
             };
 
-            // Component 1: Site text
-            if let Ok(Some(site_text)) = terser.get(&format!("{}-2", path("11")))
+            // Component 2: Site text
+            if let Ok(Some(site_text)) = terser.get(&format!("{site_path}-2"))
                 && !site_text.is_empty()
             {
                 coding.display = Some(site_text.to_string());
@@ -263,6 +267,45 @@ impl ImmunizationConverter {
         // RXA-21 is the HL7 Action Code, not Administration Notes
         // (RXA-9, already mapped above); it has no Immunization mapping.
         Ok(immunization)
+    }
+
+    /// Terser path of the RXR-2 paired with the Nth RXA, if any.
+    ///
+    /// Pairing is by segment order: the first RXR at/after the RXA,
+    /// up to the next RXA. When the RXA index is absent (the Nth RXA
+    /// is not in the message), pairing is impossible and the first
+    /// RXR is used instead; with no RXR at all there is no site.
+    fn rxr_site_path(message: &Message, rxa_index: usize) -> Option<String> {
+        let mut rxr_ordinals: Vec<(usize, usize)> = Vec::new();
+        let mut rxa_positions: Vec<usize> = Vec::new();
+        for (pos, segment) in message.segments.iter().enumerate() {
+            if segment.id == "RXR" {
+                rxr_ordinals.push((pos, rxr_ordinals.len() + 1));
+            } else if segment.id == "RXA" {
+                rxa_positions.push(pos);
+            }
+        }
+        if rxr_ordinals.is_empty() {
+            return None;
+        }
+        let path_for = |ordinal: usize| {
+            if ordinal == 1 {
+                "RXR-2".to_string()
+            } else {
+                format!("RXR({ordinal})-2")
+            }
+        };
+        let Some(rxa_pos) = rxa_positions.get(rxa_index).copied() else {
+            return Some(path_for(1));
+        };
+        let end = rxa_positions
+            .get(rxa_index + 1)
+            .copied()
+            .unwrap_or(usize::MAX);
+        rxr_ordinals
+            .iter()
+            .find(|(pos, _)| *pos >= rxa_pos && *pos < end)
+            .map(|(_, ordinal)| path_for(*ordinal))
     }
 
     /// Convert HL7 v2 RXA-20 completion status to FHIR Immunization status
@@ -289,14 +332,16 @@ impl ImmunizationConverter {
         let bytes = stem.as_bytes();
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
             if valid_hl7_date(&stem[0..8]) && valid_hl7_time(&stem[8..14]) {
+                let fraction = hl7_fraction_suffix(stem, 14);
                 Ok(format!(
-                    "{}-{}-{}T{}:{}:{}{}",
+                    "{}-{}-{}T{}:{}:{}{}{}",
                     &stem[0..4],
                     &stem[4..6],
                     &stem[6..8],
                     &stem[8..10],
                     &stem[10..12],
                     &stem[12..14],
+                    fraction,
                     zone
                 ))
             } else {
@@ -355,6 +400,8 @@ impl ImmunizationConverter {
             } else {
                 Err(Self::invalid_date())
             }
+        } else if bytes.len() >= 4 && bytes[..4].iter().all(|b| b.is_ascii_digit()) {
+            Ok(stem[0..4].to_string())
         } else {
             Err(Self::invalid_date())
         }
@@ -366,15 +413,21 @@ impl ImmunizationConverter {
             "RXA-16".to_string(),
             "RXA".to_string(),
             // Redacted: never embed the source value (may be PHI).
-            "expected YYYYMMDD calendar date or YYYYMM month".to_string(),
+            "expected YYYYMMDD calendar date, YYYYMM month, or YYYY year".to_string(),
         )
     }
 
     /// Extract vaccine code from RXA-5 field
     fn extract_vaccine_code(terser: &Terser, base_path: &str) -> ConversionResult<CodeableConcept> {
-        let code = terser.get(base_path).ok().flatten().ok_or_else(|| {
-            ConversionError::MissingField(base_path.to_string(), "RXA".to_string())
-        })?;
+        // Empty is missing: it must not become an empty vaccine code.
+        let code = terser
+            .get(base_path)
+            .ok()
+            .flatten()
+            .filter(|code| !code.is_empty())
+            .ok_or_else(|| {
+                ConversionError::MissingField(base_path.to_string(), "RXA".to_string())
+            })?;
 
         // RXA-5-3 selects the system; only an absent one defaults to CVX.
         let system = terser
@@ -657,14 +710,17 @@ mod tests {
 
     #[test]
     fn test_empty_rxa_fields_omit_references_and_codes() {
-        // Present-but-empty RXA-7/10/11/17/27, RXA-5-2, and PV1-19
+        // Present-but-empty RXA-7/10/17/27, RXA-5-2, and PV1-19
         // must not emit empty references, codes, or quantities.
+        // RXA-11 stays valued: the facility location never maps to
+        // site, so with no RXR segment the site is still absent.
         let mut fields = vec![String::new(); 27];
         fields[0] = "0".to_string();
         fields[1] = "1".to_string();
         fields[2] = "20240315100000".to_string();
         fields[4] = "08^^CVX".to_string();
         fields[5] = "1.0".to_string();
+        fields[10] = "ER^Emergency".to_string();
         fields[19] = "CP".to_string();
         let mut pv1 = vec![String::new(); 19];
         pv1[0] = "1".to_string();
@@ -690,8 +746,8 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_rxa11_text_omits_site_display() {
-        // RXA-11 with a code but empty text keeps the code only.
+    fn test_empty_rxr2_text_omits_site_display() {
+        // RXR-2 with a code but empty text keeps the code only.
         let mut fields = vec![String::new(); 20];
         fields[0] = "0".to_string();
         fields[1] = "1".to_string();
@@ -699,11 +755,10 @@ mod tests {
         fields[4] = "08^HepB adult^CVX".to_string();
         fields[5] = "1.0".to_string();
         fields[6] = "mL".to_string();
-        fields[10] = "LA^".to_string();
         fields[19] = "CP".to_string();
         let hl7 = format!(
             "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|MSG123|P|2.5\r\
-             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rRXA|{}",
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rRXA|{}\rRXR|IM^Intramuscular|LA^",
             fields.join("|")
         );
         let message = parse_message(&hl7).unwrap();
@@ -731,6 +786,99 @@ mod tests {
         let imm = &ImmunizationConverter::convert_all(&message).unwrap()[0];
         assert_eq!(imm.status, "not-done");
         assert!(imm.status_reason.is_none());
+    }
+
+    #[test]
+    fn test_site_read_from_paired_rxr2() {
+        // RXR-2 (Administration Site) is the body site; the RXA-11
+        // facility location beside it is ignored.
+        let mut fields = vec![String::new(); 20];
+        fields[0] = "0".to_string();
+        fields[1] = "1".to_string();
+        fields[2] = "20240315100000".to_string();
+        fields[4] = "08^HepB adult^CVX".to_string();
+        fields[10] = "ER^Emergency".to_string();
+        fields[19] = "CP".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rRXA|{}\rRXR|IM^Intramuscular|LA^Left Arm",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let imm = &ImmunizationConverter::convert_all(&message).unwrap()[0];
+        let site = imm.site.as_ref().unwrap().coding.as_ref().unwrap();
+        assert_eq!(site[0].code.as_deref(), Some("LA"));
+        assert_eq!(site[0].display.as_deref(), Some("Left Arm"));
+        assert_eq!(
+            site[0].system.as_deref(),
+            Some("http://terminology.hl7.org/CodeSystem/v2-0163")
+        );
+    }
+
+    #[test]
+    fn test_site_pairs_rxr_with_rxa_by_order() {
+        // Each RXR belongs to the RXA before it; an RXA with no RXR
+        // of its own has no site even when another RXA has one.
+        let hl7 = "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|MSG123|P|2.5\r\
+                   PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000||08^HepB adult^CVX|1.0|mL||||||||||||CP\r\
+                   RXR|IM^Intramuscular|LA^Left Arm\r\
+                   RXA|0|1|20240315101500||20^DTaP^CVX|0.5|mL||||||||||||CP";
+        let message = parse_message(hl7).unwrap();
+        let imms = ImmunizationConverter::convert_all(&message).unwrap();
+        assert_eq!(imms.len(), 2);
+        let site = imms[0].site.as_ref().unwrap().coding.as_ref().unwrap();
+        assert_eq!(site[0].code.as_deref(), Some("LA"));
+        assert!(imms[1].site.is_none());
+    }
+
+    #[test]
+    fn test_empty_rxa5_returns_missing_field() {
+        // RXA-5 present-but-empty is missing, not an empty code.
+        let mut fields = vec![String::new(); 20];
+        fields[0] = "0".to_string();
+        fields[1] = "1".to_string();
+        fields[2] = "20240315100000".to_string();
+        fields[19] = "CP".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rRXA|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        assert!(matches!(
+            ImmunizationConverter::convert_all(&message),
+            Err(ConversionError::MissingField(_, _))
+        ));
+    }
+
+    #[test]
+    fn test_convert_datetime_preserves_fractional_seconds() {
+        assert_eq!(
+            ImmunizationConverter::convert_datetime("20240315100000.123").unwrap(),
+            "2024-03-15T10:00:00.123"
+        );
+    }
+
+    #[test]
+    fn test_convert_date_accepts_year_precision() {
+        assert_eq!(ImmunizationConverter::convert_date("2025").unwrap(), "2025");
+        // End to end: a year RXA-16 yields an expiration date.
+        let mut fields = vec![String::new(); 20];
+        fields[0] = "0".to_string();
+        fields[1] = "1".to_string();
+        fields[2] = "20240315100000".to_string();
+        fields[4] = "08^HepB adult^CVX".to_string();
+        fields[15] = "2025".to_string();
+        fields[19] = "CP".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|MSG123|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rRXA|{}",
+            fields.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let imm = &ImmunizationConverter::convert_all(&message).unwrap()[0];
+        assert_eq!(imm.expiration_date.as_deref(), Some("2025"));
     }
 
     #[test]

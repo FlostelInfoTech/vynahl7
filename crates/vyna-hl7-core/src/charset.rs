@@ -155,7 +155,7 @@ impl CharacterSet {
             Self::Ascii => {
                 if let Some(offender) = text.chars().find(|c| !c.is_ascii()) {
                     return Err(Error::Encoding(format!(
-                        "character '{offender}' (U+{:04X}) cannot be encoded in ASCII",
+                        "character U+{:04X} cannot be encoded in ASCII",
                         offender as u32
                     )));
                 }
@@ -171,7 +171,7 @@ impl CharacterSet {
                 }
                 match Self::Iso8859(number).find_unmappable(text) {
                     Some(offender) => Err(Error::Encoding(format!(
-                        "character '{offender}' (U+{:04X}) cannot be encoded in 8859/{number}",
+                        "character U+{:04X} cannot be encoded in 8859/{number}",
                         offender as u32
                     ))),
                     None => Err(Error::Encoding(format!(
@@ -509,13 +509,30 @@ mod tests {
     #[test]
     fn unmappable_characters_are_errors_not_replacements() {
         let ascii = CharacterSet::Ascii.encode("Müller").unwrap_err();
-        assert!(ascii.to_string().contains('ü'));
+        assert!(ascii.to_string().contains("U+00FC"));
         let latin2 = CharacterSet::Iso8859(2).encode("price: €").unwrap_err();
-        assert!(latin2.to_string().contains('€'));
+        assert!(latin2.to_string().contains("U+20AC"));
         let latin1 = CharacterSet::Iso8859(1).encode("北京").unwrap_err();
         assert!(latin1.to_string().contains("U+5317"));
         // No silent numeric character references may leak into output.
         assert!(CharacterSet::Iso8859(2).encode("€").is_err());
+    }
+
+    #[test]
+    fn encode_errors_redact_the_character_keep_the_codepoint() {
+        // Patient data must not echo in errors; only the codepoint is shown.
+        let ascii = CharacterSet::Ascii
+            .encode("Müller")
+            .unwrap_err()
+            .to_string();
+        assert!(!ascii.contains('ü'), "{ascii}");
+        assert!(ascii.contains("U+00FC"), "{ascii}");
+        let latin = CharacterSet::Iso8859(1)
+            .encode("北京")
+            .unwrap_err()
+            .to_string();
+        assert!(!latin.contains('北'), "{latin}");
+        assert!(latin.contains("U+5317"), "{latin}");
     }
 
     #[test]

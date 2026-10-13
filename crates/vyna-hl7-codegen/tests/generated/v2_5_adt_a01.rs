@@ -5,12 +5,6 @@
 #[derive(vyna_hl7_macros::Segment, Debug, Clone, Default, PartialEq)]
 #[hl7(id = "MSH")]
 pub struct Msh {
-    /// MSH-1 Field Separator (ST)
-    #[hl7(field = 1)]
-    pub field_separator: String,
-    /// MSH-2 Encoding Characters (ST)
-    #[hl7(field = 2)]
-    pub encoding_characters: String,
     /// MSH-3.1 Sending Application / Namespace ID (IS)
     #[hl7(field = 3, component = 1)]
     pub sending_application_namespace_id: Option<String>,

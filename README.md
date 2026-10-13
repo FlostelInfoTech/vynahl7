@@ -790,14 +790,19 @@ See the `query_response.rs` example for complete demonstrations.
 
 ### WebAssembly (JavaScript/TypeScript)
 
-VynaHL7 can be used in browsers and Node.js via WebAssembly:
+VynaHL7 can be used in browsers and Node.js via WebAssembly. The package is
+not published to the npm registry; build it from source with
+[wasm-pack](https://rustwasm.github.io/wasm-pack/installer/):
 
 ```bash
-npm install vyna-hl7-wasm
+cargo install wasm-pack
+cd crates/vyna-hl7-wasm
+wasm-pack build --target web --out-dir pkg      # browsers/bundlers
+wasm-pack build --target nodejs --out-dir pkg-node  # Node.js
 ```
 
 ```javascript
-import init, { parseMessage, getTerserValue } from 'vyna-hl7-wasm';
+import init, { parseMessage, getTerserValue } from './pkg/vyna_hl7_wasm.js';
 
 await init();
 

@@ -88,21 +88,9 @@ impl Message {
         self.get_msh().and_then(|msh| {
             msh.get_field(9).and_then(|field| {
                 let rep = field.get_repetition(0)?;
-                // Unsplit tolerance: a single component holding
-                // "ACK^A01" (via set_field_value) splits on the
-                // component separator, unless escaped.
-                if rep.components.len() == 1
-                    && let Some(value) = rep.get_component(0).and_then(|c| c.value())
-                    && !value.contains(self.delimiters.escape_character)
-                    && let Some((first, rest)) =
-                        value.split_once(self.delimiters.component_separator)
-                {
-                    let trigger = rest
-                        .split(self.delimiters.component_separator)
-                        .next()
-                        .unwrap_or("");
-                    return Some((first.to_string(), trigger.to_string()));
-                }
+                // MSH-9 is read literally from the parsed structure: a
+                // single component is one value, even when it contains a
+                // caret (escaped separator data or set_field_value text).
                 let msg_type = rep.get_component(0)?.value()?.to_string();
                 let trigger = rep
                     .get_component(1)
@@ -272,14 +260,8 @@ impl Message {
         let Some(value) = rep.get_component(0).and_then(|c| c.value()) else {
             return false;
         };
-        // Unsplit tolerance mirrors get_message_type: split a lone
-        // "ACK^A01" on the component separator, unless escaped.
-        if rep.components.len() == 1
-            && !value.contains(self.delimiters.escape_character)
-            && let Some((first, _)) = value.split_once(self.delimiters.component_separator)
-        {
-            return first == "ACK";
-        }
+        // Read literally like get_message_type: a lone "ACK^A01" is one
+        // value, not a (type, trigger) pair.
         value == "ACK"
     }
 }
@@ -574,9 +556,11 @@ mod tests {
     }
 
     #[test]
-    fn test_unsplit_ack_composite_is_recognized() {
-        // set_field_value stores "ACK^A01" as one literal component;
-        // both accessors must still see (ACK, A01).
+    fn test_unsplit_ack_composite_is_literal() {
+        // set_field_value stores "ACK^A01" as one literal component, the
+        // same shape a parsed wire value of 'ACK\S\A01' decodes to; the
+        // caret is data, not structure, so this is neither an ACK nor a
+        // (type, trigger) pair. Composite values must use from_delimited.
         let mut msh = Segment::new("MSH");
         msh.add_field(Field::from_value("|"));
         msh.add_field(Field::from_value("^~\\&"));
@@ -586,10 +570,10 @@ mod tests {
         msh.set_field_value(9, "ACK^A01").unwrap();
         let mut msg = Message::new();
         msg.add_segment(msh);
-        assert!(msg.is_acknowledgment());
+        assert!(!msg.is_acknowledgment());
         assert_eq!(
             msg.get_message_type(),
-            Some(("ACK".to_string(), "A01".to_string()))
+            Some(("ACK^A01".to_string(), "".to_string()))
         );
     }
 

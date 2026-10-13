@@ -381,12 +381,15 @@ fn repetition_to_escaped_tokens() -> proc_macro2::TokenStream {
 
 /// Generate code storing a component value subcomponent-aware.
 ///
-/// The value is split on `&` into subcomponents, the inverse of the
-/// component read (which joins them), so composite component text
-/// survives a no-change round trip. `set_component` first gap-fills the
-/// field/repetition/component structure; the built component then
-/// replaces the placeholder. The generated code avoids let-chains so it
-/// compiles under older editions too.
+/// The value is split on `&` into subcomponents and each piece is
+/// HL7-decoded, the inverse of the component read (which joins escaped
+/// subcomponents), so composite component text — including a literal
+/// `&` carried as `\T\` — survives a no-change round trip. Malformed
+/// escapes survive literally, mirroring [`append_reps_tokens`].
+/// `set_component` first gap-fills the field/repetition/component
+/// structure; the built component then replaces the placeholder. The
+/// generated code avoids let-chains so it compiles under older
+/// editions too.
 fn set_component_split_tokens(
     field_num: usize,
     comp: usize,
@@ -394,10 +397,15 @@ fn set_component_split_tokens(
 ) -> proc_macro2::TokenStream {
     quote! {
         {
+            let __delims = vyna_hl7_core::delimiters::Delimiters::default();
             let mut __comp = vyna_hl7_core::field::Component::new();
             for __sub in (#value_expr).split('&') {
+                let __decoded = vyna_hl7_core::encoding::Encoding::decode(
+                    __sub, &__delims,
+                )
+                .unwrap_or_else(|_| __sub.to_string());
                 __comp.add_subcomponent(
-                    vyna_hl7_core::field::SubComponent::new(__sub.to_string()),
+                    vyna_hl7_core::field::SubComponent::new(__decoded),
                 );
             }
             let _ = segment.set_component(#field_num, 0, #comp - 1, "");
@@ -409,6 +417,64 @@ fn set_component_split_tokens(
                     *__slot = __comp;
                 }
             }
+        }
+    }
+}
+
+/// Generate an expression reading one repetition component's
+/// escape-aware text: every subcomponent HL7-escaped and joined by
+/// `&`, so no subcomponent is silently dropped. A component without
+/// subcomponents yields `None`, like a missing component.
+fn component_to_escaped_expr(comp_idx: usize) -> proc_macro2::TokenStream {
+    quote! {
+        repetition.get_component(#comp_idx)
+            .and_then(|c| {
+                if c.subcomponents.is_empty() {
+                    None
+                } else {
+                    let __delims =
+                        vyna_hl7_core::delimiters::Delimiters::default();
+                    Some(
+                        c.subcomponents
+                            .iter()
+                            .map(|s| {
+                                vyna_hl7_core::encoding::Encoding::encode(
+                                    s.as_str(),
+                                    &__delims,
+                                )
+                            })
+                            .collect::<Vec<String>>()
+                            .join("&"),
+                    )
+                }
+            })
+    }
+}
+
+/// Generate code storing a value into one repetition component,
+/// subcomponent-aware: split on `&` and HL7-decode each piece, the
+/// inverse of [`component_to_escaped_expr`].
+fn set_rep_component_split_tokens(
+    comp_idx: usize,
+    value_expr: &proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    quote! {
+        while repetition.components.len() <= #comp_idx {
+            repetition.add_component(vyna_hl7_core::field::Component::new());
+        }
+        {
+            let __delims = vyna_hl7_core::delimiters::Delimiters::default();
+            let mut __comp = vyna_hl7_core::field::Component::new();
+            for __sub in (#value_expr).split('&') {
+                let __decoded = vyna_hl7_core::encoding::Encoding::decode(
+                    __sub, &__delims,
+                )
+                .unwrap_or_else(|_| __sub.to_string());
+                __comp.add_subcomponent(
+                    vyna_hl7_core::field::SubComponent::new(__decoded),
+                );
+            }
+            repetition.components[#comp_idx] = __comp;
         }
     }
 }
@@ -461,10 +527,11 @@ fn inner_generic_type(ty: &Type) -> Option<&Type> {
 /// decode back, so escaped data survives the round trip. Trailing empty
 /// components are trimmed on read.
 ///
-/// A `component = N` mapping reads and writes one component's full
-/// decoded text with subcomponents joined by `&`; the value is split
-/// back into subcomponents on write, so composite component text
-/// survives a no-change round trip.
+/// A `component = N` mapping reads and writes one component's
+/// escape-aware text: subcomponents are HL7-escaped and joined by `&`
+/// on read, split and decoded back on write, so composite component
+/// text — including a literal `&` carried as `\T\` — survives a
+/// no-change round trip.
 ///
 /// # Example
 ///
@@ -718,10 +785,12 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
 
         // Generate extraction code based on component
         let extraction = if let Some(comp) = attrs.component {
-            // Extract one component's full decoded text: every
-            // subcomponent joined by `&`, so "A&B" reads as "A&B" and a
-            // no-change round trip preserves it. A component without
-            // subcomponents is still None, like a missing field.
+            // Extract one component's escape-aware text: every
+            // subcomponent HL7-escaped and joined by `&`, so "A&B"
+            // reads as "A&B" while one subcomponent holding `R&D`
+            // reads as `R\T\D` and a no-change round trip preserves
+            // it. A component without subcomponents is still None,
+            // like a missing field.
             quote! {
                 segment.get_field(#field_num)
                     .and_then(|f| f.get_repetition(0))
@@ -730,11 +799,18 @@ fn derive_segment_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
                         if c.subcomponents.is_empty() {
                             None
                         } else {
+                            let __delims =
+                                vyna_hl7_core::delimiters::Delimiters::default();
                             Some(
                                 c.subcomponents
                                     .iter()
-                                    .map(|s| s.as_str())
-                                    .collect::<Vec<&str>>()
+                                    .map(|s| {
+                                        vyna_hl7_core::encoding::Encoding::encode(
+                                            s.as_str(),
+                                            &__delims,
+                                        )
+                                    })
+                                    .collect::<Vec<String>>()
                                     .join("&"),
                             )
                         }
@@ -1270,6 +1346,10 @@ fn derive_message_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStre
 /// requires `Option<T>`. `field =`, `subcomponent =`, and `repetition =`
 /// are meaningless here and are rejected, as are unknown keys.
 ///
+/// Component values are escape-aware text like the `Segment`
+/// component path: subcomponents are HL7-escaped and joined by `&` on
+/// read, split and decoded back on write.
+///
 /// `from_repetition` returns `None` when a required component is
 /// missing, mirroring `Segment::from_segment`.
 ///
@@ -1404,20 +1484,18 @@ fn hl7_type_impl(attr_meta: Meta, input: DeriveInput) -> syn::Result<proc_macro2
 
         let comp_idx = comp - 1; // Convert to 0-based (comp >= 1 validated)
 
+        // Component reads join every subcomponent (escape-aware) like
+        // the Segment component path, never just value() (first only).
+        let read = component_to_escaped_expr(comp_idx);
         if is_optional {
             from_rep_fields.push(quote! {
-                #field_name: repetition.get_component(#comp_idx)
-                    .and_then(|c| c.value())
-                    .map(|s| s.to_string())
+                #field_name: #read
             });
 
+            let store = set_rep_component_split_tokens(comp_idx, &quote! { val });
             to_rep_fields.push(quote! {
                 if let Some(ref val) = self.#field_name {
-                    while repetition.components.len() <= #comp_idx {
-                        repetition.add_component(vyna_hl7_core::field::Component::new());
-                    }
-                    repetition.components[#comp_idx] =
-                        vyna_hl7_core::field::Component::from_value(val);
+                    #store
                 }
             });
         } else {
@@ -1425,17 +1503,12 @@ fn hl7_type_impl(attr_meta: Meta, input: DeriveInput) -> syn::Result<proc_macro2
             // mirroring Segment derive: silently defaulting to ""
             // would hide absent data.
             from_rep_fields.push(quote! {
-                #field_name: repetition.get_component(#comp_idx)
-                    .and_then(|c| c.value())
-                    .map(|s| s.to_string())?
+                #field_name: #read?
             });
 
+            let store = set_rep_component_split_tokens(comp_idx, &quote! { &self.#field_name });
             to_rep_fields.push(quote! {
-                while repetition.components.len() <= #comp_idx {
-                    repetition.add_component(vyna_hl7_core::field::Component::new());
-                }
-                repetition.components[#comp_idx] =
-                    vyna_hl7_core::field::Component::from_value(&self.#field_name);
+                #store
             });
         }
     }
@@ -2177,6 +2250,54 @@ mod tests {
         assert!(
             rendered.contains("split"),
             "component write must split subcomponents: {rendered}"
+        );
+    }
+
+    #[test]
+    fn segment_impl_component_mapping_is_escape_aware() {
+        // A component=N mapping must escape subcomponents on read and
+        // decode on write (mirroring the whole-field path), or a
+        // single subcomponent holding `R&D` rewrites as two.
+        let tokens = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct S { \
+             #[hl7(field = 5, component = 1)] x: String }",
+        ))
+        .expect("valid struct must expand");
+        let rendered = tokens.to_string().replace(' ', "");
+        assert!(
+            rendered.contains("Encoding::encode"),
+            "component read must escape: {rendered}"
+        );
+        assert!(
+            rendered.contains("Encoding::decode"),
+            "component write must decode: {rendered}"
+        );
+    }
+
+    #[test]
+    fn hl7_type_impl_component_mapping_is_escape_aware() {
+        // from_repetition must join every subcomponent (escape-aware)
+        // instead of reading value() (first only), and to_repetition
+        // must split them back, mirroring the Segment component path.
+        let meta: Meta = syn::parse_str("data_type = \"XPN\"").unwrap();
+        let tokens = hl7_type_impl(
+            meta,
+            parse_input("struct N { #[hl7(component = 1)] x: String }"),
+        )
+        .expect("valid input must expand");
+        let rendered = tokens.to_string();
+        assert!(
+            rendered.contains("subcomponents"),
+            "hl7_type read must join subcomponents: {rendered}"
+        );
+        let compact = rendered.replace(' ', "");
+        assert!(
+            compact.contains("Encoding::encode"),
+            "hl7_type read must escape: {rendered}"
+        );
+        assert!(
+            compact.contains("Encoding::decode"),
+            "hl7_type write must decode: {rendered}"
         );
     }
 

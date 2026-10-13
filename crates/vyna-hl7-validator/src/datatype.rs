@@ -193,15 +193,12 @@ fn validate_numeric(value: &str) -> DataTypeValidation {
     }
 }
 
-/// Validate SI (Sequence ID) - must be a positive integer
+/// Validate SI (Sequence ID) - must be a nonnegative integer
 fn validate_sequence_id(value: &str) -> DataTypeValidation {
     match value.parse::<u32>() {
-        Ok(n) if n > 0 => DataTypeValidation::Valid,
-        Ok(_) => DataTypeValidation::Invalid {
-            reason: "Sequence ID must be positive".to_string(),
-        },
+        Ok(_) => DataTypeValidation::Valid,
         Err(_) => DataTypeValidation::Invalid {
-            reason: "Sequence ID must be a positive integer".to_string(),
+            reason: "Sequence ID must be a nonnegative integer".to_string(),
         },
     }
 }
@@ -360,9 +357,9 @@ fn validate_processing_type(value: &str) -> DataTypeValidation {
     }
 
     let first_char = value.chars().next().unwrap();
-    if !['P', 'D', 'T', 'I'].contains(&first_char) {
+    if !['P', 'D', 'T'].contains(&first_char) {
         return DataTypeValidation::Invalid {
-            reason: "Processing type should be P, D, T, or I".to_string(),
+            reason: "Processing type should be P, D, or T".to_string(),
         };
     }
 
@@ -380,12 +377,25 @@ fn validate_numeric_array(value: &str) -> DataTypeValidation {
     for v in values {
         if validate_numeric(v) != DataTypeValidation::Valid {
             return DataTypeValidation::Invalid {
-                reason: format!("Invalid numeric value in array: {}", v),
+                reason: format!("Invalid numeric value in array: {}", truncate_value(v)),
             };
         }
     }
 
     DataTypeValidation::Valid
+}
+
+/// Cap an echoed value at 32 chars plus its length, keeping short
+/// values verbatim so existing diagnostics are unchanged.
+fn truncate_value(value: &str) -> String {
+    const MAX: usize = 32;
+    let count = value.chars().count();
+    if count <= MAX {
+        value.to_string()
+    } else {
+        let head: String = value.chars().take(MAX).collect();
+        format!("{head}... ({} chars total)", count)
+    }
 }
 
 /// Accept any scalar for IS (Coded Value for HL7 Defined Tables)
@@ -539,7 +549,8 @@ mod tests {
     fn test_validate_sequence_id() {
         assert!(validate_sequence_id("1").is_valid());
         assert!(validate_sequence_id("123").is_valid());
-        assert!(!validate_sequence_id("0").is_valid()); // Must be positive
+        // HL7 defines SI as a nonnegative integer, so 0 is valid.
+        assert!(validate_sequence_id("0").is_valid());
         assert!(!validate_sequence_id("-1").is_valid());
         assert!(!validate_sequence_id("abc").is_valid());
     }
@@ -567,7 +578,25 @@ mod tests {
         assert!(validate_processing_type("P").is_valid());
         assert!(validate_processing_type("D").is_valid());
         assert!(validate_processing_type("T").is_valid());
+        // HL7 Table 0103 is D/P/T only; 'I' belongs to Table 0207.
+        assert!(!validate_processing_type("I").is_valid());
         assert!(!validate_processing_type("X").is_valid());
+    }
+
+    #[test]
+    fn test_processing_type_agrees_with_table_0103() {
+        use crate::vocabulary::TableRegistry;
+
+        // Datatype and vocabulary layers must agree on every code.
+        let registry = TableRegistry::new();
+        for code in ["D", "P", "T"] {
+            assert!(validate_data_type(code, DataType::PT).is_valid());
+            assert!(registry.validate("0103", code).is_valid());
+        }
+        for code in ["I", "X"] {
+            assert!(!validate_data_type(code, DataType::PT).is_valid());
+            assert!(!registry.validate("0103", code).is_valid());
+        }
     }
 
     #[test]
@@ -575,6 +604,19 @@ mod tests {
         assert!(validate_numeric_array("1~2~3").is_valid());
         assert!(validate_numeric_array("1.5~2.7~3.9").is_valid());
         assert!(!validate_numeric_array("1~abc~3").is_valid());
+    }
+
+    #[test]
+    fn test_numeric_array_long_value_is_truncated() {
+        // Long echoes are capped at 32 chars plus length, like the
+        // vocabulary and datetime errors.
+        let long = "x".repeat(200);
+        let reason = validate_numeric_array(&long)
+            .error_message()
+            .unwrap()
+            .to_string();
+        assert!(reason.contains("chars total"), "{reason}");
+        assert!(reason.len() < long.len(), "{reason}");
     }
 
     #[test]

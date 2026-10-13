@@ -4,9 +4,10 @@
   "private": true,
   "description": "WebAssembly bindings for VynaHL7 - HL7 v2.x library for JavaScript/TypeScript",
   "main": "pkg/vyna_hl7_wasm.js",
-  "types": "pkg/vyna_hl7_wasm.d.ts",
+  "types": "vynahl7.d.ts",
   "files": [
-    "pkg"
+    "pkg",
+    "vynahl7.d.ts"
   ],
   "scripts": {
     "build": "wasm-pack build --target web --out-dir pkg",

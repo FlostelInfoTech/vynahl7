@@ -1,6 +1,10 @@
 //! DiagnosticReport converter - OBR segment to FHIR DiagnosticReport resource
 
-use super::patient::{split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time};
+use super::coding_systems::convert_coding_system;
+use super::patient::{
+    hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min,
+    valid_hl7_time,
+};
 use crate::error::{ConversionError, ConversionResult};
 use crate::resources::common::*;
 use crate::resources::diagnostic_report::*;
@@ -71,7 +75,7 @@ impl DiagnosticReportConverter {
             if let Ok(Some(system)) = terser.get(&format!("{}-3", code_path))
                 && !system.is_empty()
             {
-                coding.system = Some(Self::convert_coding_system(system));
+                coding.system = Some(convert_coding_system(system));
             }
 
             CodeableConcept {
@@ -206,16 +210,9 @@ impl DiagnosticReportConverter {
         }
     }
 
-    fn convert_coding_system(system: &str) -> String {
-        match system {
-            "LN" | "LNC" => "http://loinc.org".to_string(),
-            "SNM" | "SCT" => "http://snomed.info/sct".to_string(),
-            _ => format!("urn:oid:{}", system),
-        }
-    }
-
     /// `YYYYMMDDHHMM` keeps its minutes and a trailing HL7 zone is
-    /// preserved as `±HH:MM`.
+    /// preserved as `±HH:MM`. Validated fractional seconds are kept
+    /// as `.digits`.
     fn convert_datetime(datetime: &str) -> ConversionResult<String> {
         let (stem, offset) = split_hl7_offset(datetime);
         let zone = offset.as_deref().unwrap_or("");
@@ -225,13 +222,14 @@ impl DiagnosticReportConverter {
         if bytes.len() >= 14 && bytes[..14].iter().all(|b| b.is_ascii_digit()) {
             if valid_hl7_date(&stem[0..8]) && valid_hl7_time(&stem[8..14]) {
                 Ok(format!(
-                    "{}-{}-{}T{}:{}:{}{}",
+                    "{}-{}-{}T{}:{}:{}{}{}",
                     &stem[0..4],
                     &stem[4..6],
                     &stem[6..8],
                     &stem[8..10],
                     &stem[10..12],
                     &stem[12..14],
+                    hl7_fraction_suffix(stem, 14),
                     zone
                 ))
             } else {
@@ -262,6 +260,7 @@ impl DiagnosticReportConverter {
             Err(Self::invalid_datetime(datetime))
         }
     }
+
 
     /// Redacted bad-datetime error: field location + reason only, never the value.
     fn invalid_datetime(_datetime: &str) -> ConversionError {
@@ -419,6 +418,36 @@ mod tests {
         assert_eq!(
             reports[1].code.coding.as_ref().unwrap()[0].code,
             Some("24342-8".to_string())
+        );
+    }
+
+    #[test]
+    fn test_coding_system_uses_shared_table() {
+        // OBR-4-3 resolves via the shared table: CPT/ICD9/ICD10
+        // must not fall back to `urn:oid:`.
+        let cases = [
+            ("99213^Visit^CPT", "http://www.ama-assn.org/go/cpt"),
+            ("I10^HTN^ICD10", "http://hl7.org/fhir/sid/icd-10"),
+            ("410^MI^ICD9", "http://hl7.org/fhir/sid/icd-9-cm"),
+        ];
+        for (obr4, expected) in cases {
+            let hl7 = format!(
+                "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||ORU^R01|M|P|2.5\r\
+                 PID|1||12345|||DOE^JOHN||19800101|M\r\
+                 OBR|1|LAB123|LAB123-01|{obr4}"
+            );
+            let message = parse_message(&hl7).unwrap();
+            let reports = DiagnosticReportConverter::convert_all(&message).unwrap();
+            let coding = &reports[0].code.coding.as_ref().unwrap()[0];
+            assert_eq!(coding.system.as_deref(), Some(expected), "OBR-4 {obr4}");
+        }
+    }
+
+    #[test]
+    fn test_datetime_preserves_fractional_seconds() {
+        assert_eq!(
+            DiagnosticReportConverter::convert_datetime("20240315100000.123").unwrap(),
+            "2024-03-15T10:00:00.123"
         );
     }
 }

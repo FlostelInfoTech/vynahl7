@@ -6,7 +6,7 @@
 #[cfg(feature = "auth")]
 use axum::{
     extract::Request,
-    http::StatusCode,
+    http::{HeaderMap, HeaderValue, StatusCode, header::WWW_AUTHENTICATE},
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -56,6 +56,15 @@ impl BasicAuthState {
     }
 }
 
+/// Build a 401 response carrying the given `WWW-Authenticate` challenge
+/// (RFC 9110 section 11.6.1 MUST).
+#[cfg(feature = "auth")]
+fn unauthorized_with_challenge(challenge: &'static str, message: String) -> Response {
+    let mut headers = HeaderMap::new();
+    headers.insert(WWW_AUTHENTICATE, HeaderValue::from_static(challenge));
+    (StatusCode::UNAUTHORIZED, headers, message).into_response()
+}
+
 /// Basic authentication middleware
 ///
 /// Validates HTTP Basic Authentication credentials from the Authorization header.
@@ -98,10 +107,16 @@ pub async fn basic_auth_middleware(
             if verify_basic_auth(header, &auth_state.username, &auth_state.password) {
                 next.run(request).await
             } else {
-                (StatusCode::UNAUTHORIZED, "Invalid credentials").into_response()
+                unauthorized_with_challenge(
+                    "Basic realm=\"vyna-hl7\"",
+                    "Invalid credentials".to_string(),
+                )
             }
         }
-        None => (StatusCode::UNAUTHORIZED, "Missing Authorization header").into_response(),
+        None => unauthorized_with_challenge(
+            "Basic realm=\"vyna-hl7\"",
+            "Missing Authorization header".to_string(),
+        ),
     }
 }
 
@@ -202,14 +217,16 @@ pub async fn api_key_middleware(
             if verify_api_key_secure(key, &auth_state.valid_keys) {
                 next.run(request).await
             } else {
-                (StatusCode::UNAUTHORIZED, "Invalid API key").into_response()
+                unauthorized_with_challenge(
+                    "ApiKey realm=\"vyna-hl7\"",
+                    "Invalid API key".to_string(),
+                )
             }
         }
-        None => (
-            StatusCode::UNAUTHORIZED,
+        None => unauthorized_with_challenge(
+            "ApiKey realm=\"vyna-hl7\"",
             format!("Missing {} header", auth_state.header_name),
-        )
-            .into_response(),
+        ),
     }
 }
 
@@ -258,9 +275,12 @@ pub async fn bearer_token_middleware(
                     return next.run(request).await;
                 }
             }
-            (StatusCode::UNAUTHORIZED, "Invalid token").into_response()
+            unauthorized_with_challenge("Bearer realm=\"vyna-hl7\"", "Invalid token".to_string())
         }
-        None => (StatusCode::UNAUTHORIZED, "Missing Authorization header").into_response(),
+        None => unauthorized_with_challenge(
+            "Bearer realm=\"vyna-hl7\"",
+            "Missing Authorization header".to_string(),
+        ),
     }
 }
 
@@ -342,10 +362,16 @@ pub async fn jwt_middleware(
                     // Could add claims to request extensions here
                     next.run(request).await
                 }
-                Err(_) => (StatusCode::UNAUTHORIZED, "Invalid JWT token").into_response(),
+                Err(_) => unauthorized_with_challenge(
+                    "Bearer realm=\"vyna-hl7\"",
+                    "Invalid JWT token".to_string(),
+                ),
             }
         }
-        None => (StatusCode::UNAUTHORIZED, "Missing Authorization header").into_response(),
+        None => unauthorized_with_challenge(
+            "Bearer realm=\"vyna-hl7\"",
+            "Missing Authorization header".to_string(),
+        ),
     }
 }
 
@@ -385,5 +411,170 @@ mod tests {
         assert!(!rendered.contains("key-2"));
         assert!(rendered.contains("X-API-Key"));
         assert!(rendered.contains("<2 redacted>"));
+    }
+
+    use axum::{Router, routing::post};
+
+    async fn spawn_app(app: Router) -> (reqwest::Client, String) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (reqwest::Client::new(), base)
+    }
+
+    async fn handler() -> &'static str {
+        "OK"
+    }
+
+    /// Assert a 401 carrying a WWW-Authenticate challenge for `scheme`
+    /// (RFC 9110 section 11.6.1 MUST).
+    fn require_challenge(resp: &reqwest::Response, scheme: &str) {
+        assert_eq!(resp.status(), reqwest::StatusCode::UNAUTHORIZED);
+        let challenge = resp
+            .headers()
+            .get("www-authenticate")
+            .expect("401 lacks WWW-Authenticate")
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            challenge.starts_with(scheme),
+            "unexpected challenge: {challenge}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_basic_auth_middleware_401_carries_www_authenticate() {
+        use crate::auth::encode_basic_auth;
+
+        let app =
+            Router::new()
+                .route("/", post(handler))
+                .layer(axum::middleware::from_fn_with_state(
+                    BasicAuthState::new("admin", "secret"),
+                    basic_auth_middleware,
+                ));
+        let (client, base) = spawn_app(app).await;
+
+        // Missing credentials.
+        let resp = client.post(format!("{base}/")).send().await.unwrap();
+        require_challenge(&resp, "Basic");
+
+        // Wrong credentials.
+        let wrong = encode_basic_auth("admin", "wrong");
+        let resp = client
+            .post(format!("{base}/"))
+            .header("authorization", wrong)
+            .send()
+            .await
+            .unwrap();
+        require_challenge(&resp, "Basic");
+
+        // Correct credentials still pass.
+        let right = encode_basic_auth("admin", "secret");
+        let resp = client
+            .post(format!("{base}/"))
+            .header("authorization", right)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_api_key_middleware_401_carries_www_authenticate() {
+        let app =
+            Router::new()
+                .route("/", post(handler))
+                .layer(axum::middleware::from_fn_with_state(
+                    ApiKeyAuthState::new(vec!["secret-key".into()]),
+                    api_key_middleware,
+                ));
+        let (client, base) = spawn_app(app).await;
+
+        // Missing key.
+        let resp = client.post(format!("{base}/")).send().await.unwrap();
+        require_challenge(&resp, "ApiKey");
+
+        // Wrong key.
+        let resp = client
+            .post(format!("{base}/"))
+            .header("X-API-Key", "wrong-key")
+            .send()
+            .await
+            .unwrap();
+        require_challenge(&resp, "ApiKey");
+
+        // Correct key still passes.
+        let resp = client
+            .post(format!("{base}/"))
+            .header("X-API-Key", "secret-key")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_bearer_token_middleware_401_carries_www_authenticate() {
+        let app =
+            Router::new()
+                .route("/", post(handler))
+                .layer(axum::middleware::from_fn_with_state(
+                    ApiKeyAuthState::new(vec!["token123".into()]),
+                    bearer_token_middleware,
+                ));
+        let (client, base) = spawn_app(app).await;
+
+        // Missing token.
+        let resp = client.post(format!("{base}/")).send().await.unwrap();
+        require_challenge(&resp, "Bearer");
+
+        // Wrong token.
+        let resp = client
+            .post(format!("{base}/"))
+            .header("authorization", "Bearer wrong")
+            .send()
+            .await
+            .unwrap();
+        require_challenge(&resp, "Bearer");
+
+        // Correct token still passes.
+        let resp = client
+            .post(format!("{base}/"))
+            .header("authorization", "Bearer token123")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "oauth")]
+    async fn test_jwt_middleware_401_carries_www_authenticate() {
+        use std::sync::Arc;
+
+        let config = Arc::new(crate::auth::JwtConfig::new_hs256(b"secret"));
+        let app =
+            Router::new()
+                .route("/", post(handler))
+                .layer(axum::middleware::from_fn_with_state(
+                    JwtAuthState::new(config),
+                    jwt_middleware,
+                ));
+        let (client, base) = spawn_app(app).await;
+
+        // Missing token.
+        let resp = client.post(format!("{base}/")).send().await.unwrap();
+        require_challenge(&resp, "Bearer");
+
+        // Malformed token.
+        let resp = client
+            .post(format!("{base}/"))
+            .header("authorization", "Bearer not-a-jwt")
+            .send()
+            .await
+            .unwrap();
+        require_challenge(&resp, "Bearer");
     }
 }

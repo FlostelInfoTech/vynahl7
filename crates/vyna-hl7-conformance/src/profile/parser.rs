@@ -12,6 +12,11 @@ use std::io::BufRead;
 use std::path::Path;
 
 /// Parser for HL7 conformance profile XML files
+///
+/// Field `Usage` accepts `R`, `RE`, `O`, and `X`. Conditional `C` usage is
+/// programmatic-only: build it with
+/// [`ConditionalUsage::Conditional`](crate::ConditionalUsage) plus a
+/// [`Predicate`](crate::profile::Predicate) instead of the XML format.
 pub struct ProfileParser;
 
 impl ProfileParser {
@@ -517,6 +522,26 @@ mod tests {
         assert!(
             matches!(err, ConformanceError::ParseError(_)),
             "expected ParseError, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_usage_c_is_programmatic_only() {
+        // Conditional C usage has no XML representation; it must fail
+        // here and be built programmatically instead (see ProfileParser).
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<HL7v2xConformanceProfile HL7Version="2.5">
+  <HL7v2xStaticDef MsgType="ADT" EventType="A01">
+    <MetaData Name="T" Version="1"/>
+    <Segment Name="PID" Usage="R" Min="1" Max="1">
+      <Field Usage="C" Min="0" Max="1"/>
+    </Segment>
+  </HL7v2xStaticDef>
+</HL7v2xConformanceProfile>"#;
+        let err = ProfileParser::parse_xml(xml).unwrap_err();
+        assert!(
+            matches!(err, ConformanceError::InvalidUsage(_)),
+            "expected InvalidUsage, got {err:?}"
         );
     }
 
