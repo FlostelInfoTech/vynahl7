@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-13
+
 ### Removed
 
 - DICOM support removed from the test panel (SCU/SCP tab, `dicom-*` dependencies) to keep the project HL7-only
@@ -59,7 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial VynaHL7 release (Vyna Healthcare product family internal library), forked from rs7 1.6.1 with versioning restarted at 0.1.0
 - Renamed project from rs7 to VynaHL7: all crates renamed from `rs7-*` to `vyna-hl7-*`, Rust paths from `rs7_*` to `vyna_hl7_*`, CLI binary to `vynahl7`, and documentation updated accordingly
 
-[Unreleased]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.3.0...HEAD
+[Unreleased]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.4.0...HEAD
+[0.4.0]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.3.0...v0.4.0
 [0.3.0]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.2.0...v0.3.0
 [0.2.0]: https://gitlab.flostel.com/alexshao/VynaHL7/compare/v0.1.0...v0.2.0
 [0.1.0]: https://gitlab.flostel.com/alexshao/VynaHL7/releases/tag/v0.1.0
