@@ -65,6 +65,7 @@ pub struct ConversionReport {
     /// Fields moved by name to another number, e.g. `PID[0]-5->6`.
     pub moved_fields: Vec<String>,
     /// Target-required segments/fields absent afterwards, e.g. `ERR[0]-3`.
+    /// Sorted so the report order is deterministic across processes.
     pub missing_required: Vec<String>,
 }
 
@@ -247,6 +248,10 @@ pub fn convert_with_schemas(
             report.missing_required.push(id.clone());
         }
     }
+    // Both loops above iterate HashMaps: sort so the report order is
+    // deterministic across processes. dropped/moved stay in message
+    // order (they iterate segments, not maps) and are left alone.
+    report.missing_required.sort();
 
     (out, report)
 }
@@ -298,6 +303,10 @@ fn merge_moved_field(converted: &mut Segment, number: usize, field: &Field) {
 }
 
 /// Target field number holding the same name as source `field_number`.
+///
+/// Duplicate target names (hostile custom schemas only; real schemas
+/// are dup-free) resolve to the lowest number so the destination is
+/// deterministic instead of HashMap-ordered.
 fn find_same_name(
     from_def: Option<&SegmentDefinition>,
     to_def: &SegmentDefinition,
@@ -307,8 +316,9 @@ fn find_same_name(
     to_def
         .fields
         .iter()
-        .find(|(_, def)| &def.name == name)
+        .filter(|(_, def)| &def.name == name)
         .map(|(number, _)| *number)
+        .min()
 }
 
 #[cfg(test)]
@@ -657,6 +667,55 @@ mod tests {
             !down_report.dropped_fields.iter().any(|d| d == "PID[0]-50"),
             "unexpected report: {down_report:?}"
         );
+    }
+
+    #[test]
+    fn missing_required_is_sorted_deterministically() {
+        // to_def.fields is a HashMap: without a sort, the report
+        // order varies per process. Fresh maps per iteration sample
+        // fresh HashMap orders (fresh RandomState seeds).
+        for _ in 0..20 {
+            let from = schema(&[(1, "Set ID", false)]);
+            let to = schema(&[
+                (1, "Set ID", false),
+                (2, "Alpha", true),
+                (3, "Beta", true),
+                (4, "Gamma", true),
+                (5, "Delta", true),
+                (6, "Epsilon", true),
+                (7, "Zeta", true),
+            ]);
+            let message =
+                parse_message("MSH|^~\\&|A|B|C|D|20240101||TST^T01|1|P|2.5\rPID|1\r").unwrap();
+            let (_converted, report) = convert_with_schemas(&message, &from, &to, Version::V2_5);
+            let mut sorted = report.missing_required.clone();
+            sorted.sort();
+            assert_eq!(report.missing_required, sorted, "nondeterministic order");
+        }
+    }
+
+    #[test]
+    fn duplicate_target_names_resolve_to_lowest_number() {
+        // Hostile custom schema: "Nickname" at 4, 6 and 8. The
+        // destination must not depend on HashMap iteration order.
+        for _ in 0..20 {
+            let from = schema(&[(1, "Set ID", false), (2, "Nickname", false)]);
+            let to = schema(&[
+                (1, "Set ID", false),
+                (4, "Nickname", false),
+                (6, "Nickname", false),
+                (8, "Nickname", false),
+            ]);
+            let message =
+                parse_message("MSH|^~\\&|A|B|C|D|20240101||TST^T01|1|P|2.5\rPID|1|Bobby\r")
+                    .unwrap();
+            let (converted, report) = convert_with_schemas(&message, &from, &to, Version::V2_5);
+            assert_eq!(report.moved_fields, vec!["PID[0]-2->4"]);
+            let pid = converted.get_segment_by_id("PID").unwrap();
+            assert_eq!(pid.get_field_value(4), Some("Bobby"));
+            assert_eq!(pid.get_field_value(6), None);
+            assert_eq!(pid.get_field_value(8), None);
+        }
     }
 
     #[test]

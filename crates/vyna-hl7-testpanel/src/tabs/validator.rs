@@ -473,7 +473,7 @@ impl ValidatorTab {
 
         // Check MSH required fields
         let msh = &message.segments[0];
-        if msh.get_field_value(9).is_none() {
+        if msh.get_field_value(9).is_none_or(|v| v.is_empty()) {
             self.validation_results.push(ValidationItem {
                 severity: Severity::Error,
                 location: "MSH-9".to_string(),
@@ -481,7 +481,7 @@ impl ValidatorTab {
             });
         }
 
-        if msh.get_field_value(10).is_none() {
+        if msh.get_field_value(10).is_none_or(|v| v.is_empty()) {
             self.validation_results.push(ValidationItem {
                 severity: Severity::Error,
                 location: "MSH-10".to_string(),
@@ -489,7 +489,7 @@ impl ValidatorTab {
             });
         }
 
-        if msh.get_field_value(12).is_none() {
+        if msh.get_field_value(12).is_none_or(|v| v.is_empty()) {
             self.validation_results.push(ValidationItem {
                 severity: Severity::Warning,
                 location: "MSH-12".to_string(),
@@ -640,6 +640,33 @@ mod tests {
         }
         assert_eq!(VersionOption::Auto.to_version(), None);
         assert_eq!(VersionOption::Auto.label(), "Auto-detect");
+    }
+
+    #[test]
+    fn present_but_empty_msh_fields_are_not_valid() {
+        // Present-but-empty fields parse as Some(""), which the
+        // basic-structure check must treat as missing.
+        let mut tab = ValidatorTab {
+            input_message: "MSH|^~\\&|S|F|R|D|20240101||||P||\r".to_string(),
+            validate_schema: false,
+            validate_datatypes: false,
+            ..ValidatorTab::default()
+        };
+        tab.validate();
+        assert_eq!(tab.is_valid, Some(false));
+        for loc in ["MSH-9", "MSH-10"] {
+            assert!(
+                tab.validation_results
+                    .iter()
+                    .any(|r| { matches!(r.severity, Severity::Error) && r.location == loc }),
+                "missing error for {loc}"
+            );
+        }
+        assert!(
+            tab.validation_results
+                .iter()
+                .any(|r| { matches!(r.severity, Severity::Warning) && r.location == "MSH-12" })
+        );
     }
 
     #[test]

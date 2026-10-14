@@ -143,8 +143,10 @@ struct VariableLocation {
 
 /// Collect every `{{variable}}` used by a template, in first-seen order.
 ///
-/// Placeholders and defaults of fields and components are scanned; a
-/// variable used by any required field or component is marked required.
+/// Only placeholders of fields and components are scanned; defaults are
+/// literal (the engine renders them verbatim, never substituted), so a
+/// `{{...}}` inside a default is not a bindable variable. A variable used
+/// by any required field or component is marked required.
 fn collect_template_variables(template: &MessageTemplate) -> Vec<TemplateVariable> {
     let mut variables: Vec<TemplateVariable> = Vec::new();
     let mut push = |text: &str, required: bool, location: &VariableLocation| {
@@ -179,9 +181,7 @@ fn collect_template_variables(template: &MessageTemplate) -> Vec<TemplateVariabl
                 if let Some(placeholder) = &field.placeholder {
                     push(placeholder, field.required, &field_location);
                 }
-                if let Some(default) = &field.default {
-                    push(default, field.required, &field_location);
-                }
+                // Field defaults are literal: never scanned for variables.
                 if let Some(components) = &field.components {
                     for component in components.iter() {
                         let location = VariableLocation {
@@ -192,9 +192,7 @@ fn collect_template_variables(template: &MessageTemplate) -> Vec<TemplateVariabl
                         if let Some(placeholder) = &component.placeholder {
                             push(placeholder, component.required, &location);
                         }
-                        if let Some(default) = &component.default {
-                            push(default, component.required, &location);
-                        }
+                        // Component defaults are literal: never scanned.
                     }
                 }
             }
@@ -1542,6 +1540,40 @@ mod tests {
         // The built-in itself is untouched.
         let builtin = tab.template_library.get("ADT_A01").unwrap();
         assert!(builtin.variables.is_none());
+    }
+
+    #[test]
+    fn defaults_with_placeholder_syntax_are_not_collected_as_variables() {
+        use vyna_hl7_templates::{ComponentTemplate, FieldTemplate, SegmentTemplate};
+        // Field/component defaults are literal (the engine never
+        // substitutes them), so `{{...}}` inside a default must not be
+        // listed as a bindable variable.
+        let mut template = MessageTemplate::new("LIT", "2.5", "ADT", "A01");
+        let mut pid = SegmentTemplate::new("PID");
+        pid.add_field(5, FieldTemplate::new().with_default("{{who}}"));
+        pid.add_field(
+            6,
+            FieldTemplate::new()
+                .with_components(vec![ComponentTemplate::new(1).with_default("{{them}}")]),
+        );
+        template.add_segment(pid);
+        let variables = collect_template_variables(&template);
+        assert!(
+            variables.is_empty(),
+            "defaults must not contribute variables: {variables:?}"
+        );
+
+        // Binding those names still renders the default literally.
+        let mut engine = TemplateEngine::new();
+        engine.set_variable("who", "DOE");
+        engine.set_variable("them", "X");
+        let message = engine.create_message(&template).unwrap();
+        let pid = message.get_segment_by_id("PID").unwrap();
+        assert_eq!(pid.get_field_value(5), Some("{{who}}"));
+        assert_eq!(
+            pid.get_field(6).unwrap().repetitions[0].components[0].value(),
+            Some("{{them}}")
+        );
     }
 
     #[test]

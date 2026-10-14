@@ -50,12 +50,12 @@ impl PractitionerReverseConverter {
 
             // Component 9: Assigning Authority
             if let Some(ref system) = first_id.system {
-                // Extract authority from system URL. Only urn:oid:
-                // systems round-trip cleanly: anything else is kept
-                // verbatim and gains the prefix on re-forward.
-                let authority = system
-                    .strip_prefix("urn:oid:")
-                    .unwrap_or(system.split('/').next_back().unwrap_or(""));
+                // Only urn:oid: systems round-trip cleanly: anything
+                // else is kept verbatim and gains the prefix back.
+                // Truncating to the last path segment would merge
+                // distinct systems sharing a tail (like patient and
+                // encounter identifiers, which keep the system whole).
+                let authority = system.strip_prefix("urn:oid:").unwrap_or(system);
                 components[8] = authority.to_string();
             }
 
@@ -158,11 +158,11 @@ impl PractitionerReverseConverter {
 
             // Component 9: Assigning Authority (0-indexed: 8).
             // Only urn:oid: systems round-trip cleanly: anything
-            // else is kept verbatim and gains the prefix back.
+            // else is kept verbatim and gains the prefix back (never
+            // truncated to the last path segment, which would merge
+            // distinct systems sharing a tail).
             if let Some(ref system) = first_id.system {
-                let authority = system
-                    .strip_prefix("urn:oid:")
-                    .unwrap_or(system.split('/').next_back().unwrap_or(""));
+                let authority = system.strip_prefix("urn:oid:").unwrap_or(system);
                 if !authority.is_empty() {
                     components.push((8, authority.to_string()));
                 }
@@ -478,6 +478,53 @@ mod tests {
                 back.name.as_ref().unwrap()[0].use_.as_deref(),
                 Some("usual"),
                 "round-trip {use_}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_same_tail_identifier_systems_stay_distinct() {
+        use crate::converters::practitioner::PractitionerConverter;
+        use vyna_hl7_parser::parse_message;
+
+        let with_system = |system: &str| {
+            let mut practitioner = Practitioner::new();
+            practitioner.identifier = Some(vec![Identifier {
+                use_: None,
+                type_: None,
+                system: Some(system.to_string()),
+                value: Some("DOC1".to_string()),
+                assigner: None,
+            }]);
+            practitioner
+        };
+        // Same last path segment ("mrn"): truncating the system
+        // to it would merge two distinct assigning authorities.
+        let a = with_system("http://a-hospital.org/mrn");
+        let b = with_system("http://b-clinic.org/mrn");
+        let xcn_a = PractitionerReverseConverter::convert_to_xcn(&a).unwrap();
+        let xcn_b = PractitionerReverseConverter::convert_to_xcn(&b).unwrap();
+        assert_eq!(xcn_a.split('^').nth(8), Some("http://a-hospital.org/mrn"));
+        assert_eq!(xcn_b.split('^').nth(8), Some("http://b-clinic.org/mrn"));
+        let comps_a = PractitionerReverseConverter::convert_to_components(&a).unwrap();
+        assert!(comps_a.contains(&(8, "http://a-hospital.org/mrn".to_string())));
+        let comps_b = PractitionerReverseConverter::convert_to_components(&b).unwrap();
+        assert!(comps_b.contains(&(8, "http://b-clinic.org/mrn".to_string())));
+        // Re-forward keeps them distinct too (modulo the oid prefix).
+        for (xcn, system) in [
+            (&xcn_a, "http://a-hospital.org/mrn"),
+            (&xcn_b, "http://b-clinic.org/mrn"),
+        ] {
+            let hl7 = format!(
+                "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                 PID|1||MRN123|||DOE^JOHN||19800101|M\r\
+                 PV1|1|I|ER^101^1||||{xcn}"
+            );
+            let message = parse_message(&hl7).unwrap();
+            let back = PractitionerConverter::convert_attending_doctor(&message).unwrap();
+            assert_eq!(
+                back.identifier.as_ref().unwrap()[0].system,
+                Some(format!("urn:oid:{system}"))
             );
         }
     }

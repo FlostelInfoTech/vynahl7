@@ -614,16 +614,16 @@ pub fn format_message_tree_with_schema(message: &Message, schema: Option<&Messag
                     )
                 };
 
-                // Build Terser path for this field
-                // Use segment instance index for repeated segments (e.g., OBX(1)-5, OBX(2)-5)
-                let field_path = if seg_instance > 1 || segment_counts.values().filter(|&&v| v > 0).count() > 0 {
-                    // Check if this segment type appears multiple times in the message
-                    let total_of_this_type = message.segments.iter().filter(|s| s.id == segment.id).count();
-                    if total_of_this_type > 1 {
-                        format!("{}({})-{}", segment.id, seg_instance, field_num)
-                    } else {
-                        format!("{}-{}", segment.id, field_num)
-                    }
+                // Build Terser path for this field: number the
+                // segment instance only when the type repeats
+                // (e.g., OBX(1)-5, OBX(2)-5); singletons stay bare).
+                let total_of_this_type = message
+                    .segments
+                    .iter()
+                    .filter(|s| s.id == segment.id)
+                    .count();
+                let field_path = if total_of_this_type > 1 {
+                    format!("{}({})-{}", segment.id, seg_instance, field_num)
                 } else {
                     format!("{}-{}", segment.id, field_num)
                 };
@@ -919,6 +919,26 @@ mod tests {
         // Every emitted rep path must parse in the terser.
         let terser = vyna_hl7_terser::Terser::new(&msg);
         for path in &rep_paths {
+            assert!(terser.get(path).is_ok(), "terser rejects {path}");
+        }
+    }
+
+    #[test]
+    fn tree_segment_instance_paths_number_repeats_only() {
+        let hl7 = "MSH|^~\\&|S|F|R|D|20240101||ORU^R01|M1|P|2.5\r\
+             PID|1||7||DOE^JOHN\r\
+             OBX|1|ST|WBC||5.2\r\
+             OBX|2|ST|RBC||4.1\r";
+        let msg = vyna_hl7_parser::parse_message(hl7).unwrap();
+        let nodes = format_message_tree(&msg);
+        let mut paths = Vec::new();
+        collect_paths(&nodes, &mut paths);
+        assert!(paths.contains(&"PID-5".to_string()));
+        assert!(paths.contains(&"OBX(1)-5".to_string()));
+        assert!(paths.contains(&"OBX(2)-5".to_string()));
+        assert!(!paths.iter().any(|p| p == "OBX-5"));
+        let terser = vyna_hl7_terser::Terser::new(&msg);
+        for path in ["PID-5", "OBX(1)-5", "OBX(2)-5"] {
             assert!(terser.get(path).is_ok(), "terser rejects {path}");
         }
     }

@@ -7,6 +7,7 @@ use quick_xml::Reader;
 use quick_xml::escape::unescape;
 use quick_xml::events::Event;
 use std::collections::BTreeMap;
+use vyna_hl7_core::Delimiters;
 use vyna_hl7_core::field::{Component, Field, Repetition, SubComponent};
 use vyna_hl7_core::message::Message;
 use vyna_hl7_core::segment::Segment;
@@ -222,8 +223,48 @@ impl XmlDecoder {
             )?;
         }
         Self::flush_segment(&mut current_segment, &mut fields, &mut message);
+        self.restore_delimiters(&mut message)?;
 
         Ok(message)
+    }
+
+    /// Restore the message delimiters from the decoded MSH-1/MSH-2 fields.
+    ///
+    /// The encoder writes MSH-1 (field separator) and MSH-2 (encoding
+    /// characters) as ordinary field elements, so without this step a
+    /// message with custom delimiters would decode with default
+    /// delimiters and re-encode to different wire bytes. A well-formed
+    /// pair (one separator character plus four encoding characters
+    /// forming unique delimiters) replaces the defaults; a present but
+    /// ill-shaped pair is malformed — an error in strict mode, silently
+    /// kept default in lenient mode. A message without MSH-1/MSH-2
+    /// values carries no delimiter information and keeps the defaults
+    /// in both modes.
+    fn restore_delimiters(&self, message: &mut Message) -> XmlResult<()> {
+        let msh = match message.segments.iter().find(|s| s.id == "MSH") {
+            Some(msh) => msh,
+            None => return Ok(()),
+        };
+        let (Some(sep), Some(enc)) = (msh.get_field_value(1), msh.get_field_value(2)) else {
+            return Ok(());
+        };
+        let mut chars = sep.chars();
+        let field_sep = match (chars.next(), chars.next()) {
+            (Some(first), None) => first,
+            _ => {
+                self.check_context(format!(
+                    "MSH-1 must hold exactly one field separator character, got {sep:?}"
+                ))?;
+                return Ok(());
+            }
+        };
+        match Delimiters::from_encoding_characters(field_sep, enc) {
+            Ok(delimiters) => message.delimiters = delimiters,
+            Err(e) => {
+                self.check_context(format!("invalid MSH-1/MSH-2 delimiters: {e}"))?;
+            }
+        }
+        Ok(())
     }
 
     /// Reject or skip a non-conforming element depending on `lenient`.
@@ -1046,6 +1087,43 @@ mod tests {
         assert_eq!(message.segments.len(), 1);
         assert_eq!(message.segments[0].id, "Z12");
         assert_eq!(message.segments[0].get_field_value(1), Some("hello"));
+    }
+
+    #[test]
+    fn test_decode_restores_custom_delimiters_round_trip() {
+        use crate::encoder::XmlEncoder;
+
+        // Custom wire delimiters (MSH-1 `#`, MSH-2 `%~!&`) must survive
+        // an XML round-trip: decode restores them from MSH-1/MSH-2 so
+        // re-encoding yields the original wire bytes.
+        let text = "MSH#%~!&#SEND#FAC#REC#RFAC#202401011200##ADT%A01#MSG001#P#2.5\rPID#1##PATID";
+        let message = vyna_hl7_parser::parse_message(text).unwrap();
+        assert_eq!(message.delimiters.field_separator, '#');
+        let xml = XmlEncoder::new().encode(&message).unwrap();
+        for decoder in [&XmlDecoder::new(), &strict_decoder()] {
+            let back = decoder.decode(&xml).unwrap();
+            assert_eq!(back.delimiters, message.delimiters);
+            assert_eq!(back.encode(), message.encode());
+        }
+    }
+
+    #[test]
+    fn test_decode_malformed_delimiters_strict_errors_lenient_keeps_default() {
+        use vyna_hl7_core::Delimiters;
+
+        for xml in [
+            "<MSH><MSH.1>##</MSH.1><MSH.2>%~!&amp;</MSH.2></MSH>",
+            "<MSH><MSH.1>#</MSH.1><MSH.2>%~!</MSH.2></MSH>",
+            "<MSH><MSH.1>#</MSH.1><MSH.2>%%%%</MSH.2></MSH>",
+        ] {
+            let err = strict_decoder().decode(xml).unwrap_err();
+            assert!(
+                matches!(err, XmlError::InvalidStructure(_)),
+                "expected InvalidStructure for {xml:?}, got {err:?}"
+            );
+            let message = XmlDecoder::new().decode(xml).unwrap();
+            assert_eq!(message.delimiters, Delimiters::default());
+        }
     }
 
     #[test]

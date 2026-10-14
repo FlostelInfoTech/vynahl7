@@ -830,6 +830,16 @@ struct FhirSendRequest {
     verify_tls: bool,
 }
 
+/// Case-insensitive `http(s)://` prefix check: URI schemes are
+/// case-insensitive (RFC 3986 section 3.1).
+fn has_http_scheme(url: &str) -> bool {
+    url.get(..7)
+        .is_some_and(|s| s.eq_ignore_ascii_case("http://"))
+        || url
+            .get(..8)
+            .is_some_and(|s| s.eq_ignore_ascii_case("https://"))
+}
+
 /// Send a FHIR resource to a FHIR server via HTTP/HTTPS POST
 async fn send_fhir_request(request: FhirSendRequest) -> Result<FhirSendResponse, String> {
     let FhirSendRequest {
@@ -844,7 +854,7 @@ async fn send_fhir_request(request: FhirSendRequest) -> Result<FhirSendResponse,
         verify_tls,
     } = request;
     let url = url.trim();
-    if !url.starts_with("http://") && !url.starts_with("https://") {
+    if !has_http_scheme(url) {
         return Err("URL must start with http:// or https://".to_string());
     }
 
@@ -953,6 +963,29 @@ mod tests {
             bearer_token: String::new(),
             verify_tls: true,
         }
+    }
+
+    #[tokio::test]
+    async fn uppercase_scheme_is_not_rejected() {
+        // Closed port: must fail connecting, never with a scheme error.
+        let err = send_fhir_request(send_request(
+            "HTTP://127.0.0.1:9/fhir/R4/Patient".to_string(),
+        ))
+        .await
+        .unwrap_err();
+        assert!(
+            !err.contains("must start with"),
+            "uppercase scheme rejected: {err}"
+        );
+    }
+
+    #[test]
+    fn http_scheme_match_is_case_insensitive() {
+        assert!(has_http_scheme("http://x/fhir"));
+        assert!(has_http_scheme("HTTP://x/fhir"));
+        assert!(has_http_scheme("Https://x/fhir"));
+        assert!(!has_http_scheme("mllp://x:2575"));
+        assert!(!has_http_scheme(""));
     }
 
     #[tokio::test]

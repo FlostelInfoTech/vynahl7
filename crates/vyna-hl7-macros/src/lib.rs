@@ -288,22 +288,41 @@ fn parse_message_field_attrs(attrs: &[Attribute]) -> syn::Result<MessageFieldAtt
 
 /// Check if a type is Option<T>
 fn is_option_type(ty: &Type) -> bool {
-    if let Type::Path(type_path) = ty
-        && let Some(segment) = type_path.path.segments.first()
-    {
-        return segment.ident == "Option";
-    }
-    false
+    is_std_wrapper(ty, "Option", "option")
 }
 
 /// Check if a type is Vec<T>
 fn is_vec_type(ty: &Type) -> bool {
-    if let Type::Path(type_path) = ty
-        && let Some(segment) = type_path.path.segments.first()
-    {
-        return segment.ident == "Vec";
+    is_std_wrapper(ty, "Vec", "vec")
+}
+
+/// Match a std wrapper type by full path: the bare name plus
+/// `std::`/`core::`/`alloc::`-rooted spellings (with or without a
+/// leading `::`, which syn records outside the segments).
+///
+/// A first-segment-only check misreads qualified spellings like
+/// `std::option::Option<T>` as required scalars, producing
+/// downstream E0308/E0599 errors. Same-named types from other
+/// crates never match.
+fn is_std_wrapper(ty: &Type, name: &str, module: &str) -> bool {
+    let Type::Path(type_path) = ty else {
+        return false;
+    };
+    if type_path.qself.is_some() {
+        return false;
     }
-    false
+    let segments = &type_path.path.segments;
+    match segments.len() {
+        1 => segments[0].ident == name,
+        3 => {
+            (segments[0].ident == "std"
+                || segments[0].ident == "core"
+                || segments[0].ident == "alloc")
+                && segments[1].ident == module
+                && segments[2].ident == name
+        }
+        _ => false,
+    }
 }
 
 /// Generate code that parses a delimited string value and appends the resulting
@@ -2471,6 +2490,66 @@ mod tests {
                 .replace(' ', "")
                 .contains("None=>String::new()"),
             "scalar read must keep empty reps: {scalar_tokens}"
+        );
+    }
+
+    #[test]
+    fn wrapper_types_accept_qualified_std_paths() {
+        for path in [
+            "Option<String>",
+            "std::option::Option<String>",
+            "core::option::Option<String>",
+            "alloc::option::Option<String>",
+            "::std::option::Option<String>",
+        ] {
+            let ty: Type = syn::parse_str(path).expect("type must parse");
+            assert!(is_option_type(&ty), "{path} must read as Option");
+            assert!(!is_vec_type(&ty), "{path} must not read as Vec");
+        }
+        for path in [
+            "Vec<String>",
+            "std::vec::Vec<String>",
+            "alloc::vec::Vec<String>",
+            "core::vec::Vec<String>",
+            "::alloc::vec::Vec<String>",
+        ] {
+            let ty: Type = syn::parse_str(path).expect("type must parse");
+            assert!(is_vec_type(&ty), "{path} must read as Vec");
+            assert!(!is_option_type(&ty), "{path} must not read as Option");
+        }
+        // Same-named foreign types are not std wrappers.
+        for path in ["String", "mycrate::Option<String>", "foo::Vec<String>"] {
+            let ty: Type = syn::parse_str(path).expect("type must parse");
+            assert!(!is_option_type(&ty), "{path} must not read as Option");
+            assert!(!is_vec_type(&ty), "{path} must not read as Vec");
+        }
+    }
+
+    #[test]
+    fn segment_derive_expands_qualified_wrappers() {
+        // A qualified Option must expand with the optional shape
+        // (`if let Some`), not the required-scalar shape (`?`), which
+        // fails downstream with E0308/E0599.
+        for ty in ["Option<String>", "std::option::Option<String>"] {
+            let tokens = derive_segment_impl(parse_input(&format!(
+                "#[hl7(id = \"PID\")] struct P {{ #[hl7(field = 5)] n: {ty} }}",
+            )))
+            .expect("valid segment must expand")
+            .to_string();
+            assert!(
+                tokens.contains("if let Some"),
+                "{ty} must expand as optional: {tokens}"
+            );
+        }
+        // A qualified Vec must expand with the repeating shape.
+        let tokens = derive_segment_impl(parse_input(
+            "#[hl7(id = \"PID\")] struct P { #[hl7(field = 5)] n: std::vec::Vec<String> }",
+        ))
+        .expect("valid segment must expand")
+        .to_string();
+        assert!(
+            tokens.contains("iter ()"),
+            "qualified Vec must expand as repeating: {tokens}"
         );
     }
 }

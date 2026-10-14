@@ -1458,7 +1458,15 @@ fn split_hl7_offset(s: &str) -> Option<(&str, i32)> {
         b'-' => -1,
         _ => return Some((s, 0)),
     };
-    let digits: i32 = tail[1..].parse().ok()?;
+    // i32::parse accepts a leading '+', so digit shape is checked
+    // explicitly first; otherwise "++059" applies +59 minutes.
+    // (The tail is 5 bytes with an ASCII lead, so [1..] holds the
+    // 4 offset bytes on a char boundary.)
+    let tail_digits = &tail[1..];
+    if !tail_digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let digits: i32 = tail_digits.parse().ok()?;
     let hours = digits / 100;
     let minutes = digits % 100;
     if !(0..=23).contains(&hours) || !(0..=59).contains(&minutes) {
@@ -3142,6 +3150,17 @@ mod tests {
         // Malformed offsets are rejected, not silently ignored.
         assert!(parse_hl7_datetime_utc("20240101120000+9999").is_none());
         assert!(parse_hl7_datetime_utc("20240101120000+02AB").is_none());
+    }
+
+    #[test]
+    fn test_datetime_utc_rejects_double_sign_offset() {
+        // i32::parse accepts a leading '+', so "++059" must be
+        // rejected by an explicit all-digits check, not the parse.
+        // (It previously applied +59 minutes: 11:01 UTC.)
+        assert!(parse_hl7_datetime_utc("20240101120000++059").is_none());
+        assert!(parse_hl7_datetime_utc("20240101120000+-059").is_none());
+        assert!(parse_hl7_datetime_utc("20240101120000-+059").is_none());
+        assert!(split_hl7_offset("20240101120000++059").is_none());
     }
 
     // Tests for NaiveDateTime type

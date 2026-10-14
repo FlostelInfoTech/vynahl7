@@ -104,7 +104,7 @@ impl OrchestrationStep {
                 Err(e) => {
                     last_error = Some(e);
                     if attempts < max_attempts {
-                        let delay = config.delay_ms * attempts as u64;
+                        let delay = retry_delay_ms(config.delay_ms, attempts as u64);
                         tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
                     }
                 }
@@ -116,6 +116,18 @@ impl OrchestrationStep {
             last_error.expect("a clamped retry loop always attempts once"),
         ))
     }
+}
+
+/// Cap on a single retry wait, mirroring the webhook backoff cap:
+/// even saturated huge `delay_ms` inputs must not stall a step for
+/// years.
+const MAX_RETRY_DELAY_MS: u64 = 30_000;
+
+/// Linear backoff for 1-based attempt `attempts`. Saturating so a
+/// hostile `delay_ms` can't panic (debug) or wrap into a hot loop
+/// (release), capped so it can't stall for years either.
+fn retry_delay_ms(delay_ms: u64, attempts: u64) -> u64 {
+    delay_ms.saturating_mul(attempts).min(MAX_RETRY_DELAY_MS)
 }
 
 /// Retry configuration for orchestration steps
@@ -463,6 +475,40 @@ mod tests {
         let cause = retry.source().expect("retry keeps cause");
         assert_eq!(cause.to_string(), "root cause");
         assert!(cause.source().is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_retry_delay_overflow_saturates() {
+        use std::time::Duration;
+
+        // delay_ms * attempts must not panic (debug) or wrap into a
+        // hot loop (release): it saturates and caps at 30 s per wait.
+        // Paused time drives the capped waits instantly; an uncapped
+        // u64::MAX-ms sleep would never elapse here.
+        let mut orchestrator = MessageOrchestrator::new();
+        orchestrator.add_step_with_retry(
+            "always_fails",
+            |_msg| async move { Err(OrchestrationError::custom("boom")) },
+            RetryConfig::new(3, u64::MAX),
+        );
+        let join = tokio::spawn(async move { orchestrator.execute(create_test_message()).await });
+        for _ in 0..10 {
+            if join.is_finished() {
+                break;
+            }
+            tokio::time::advance(Duration::from_secs(31)).await;
+        }
+        assert!(join.is_finished(), "retry waits never elapsed (uncapped?)");
+        let err = join.await.unwrap().unwrap_err();
+        assert!(err.to_string().contains("3 attempts"), "{err}");
+    }
+
+    #[test]
+    fn test_retry_delay_math_saturates_and_caps() {
+        assert_eq!(retry_delay_ms(100, 1), 100);
+        assert_eq!(retry_delay_ms(100, 2), 200);
+        assert_eq!(retry_delay_ms(u64::MAX, 1), MAX_RETRY_DELAY_MS);
+        assert_eq!(retry_delay_ms(u64::MAX, 2), MAX_RETRY_DELAY_MS);
     }
 
     #[tokio::test]

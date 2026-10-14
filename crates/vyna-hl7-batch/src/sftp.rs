@@ -131,9 +131,14 @@ impl SftpConfig {
 
     /// Resolve transport paths under this remote directory. A leading
     /// `/` is preserved (absolute remote path); trailing slashes are
-    /// stripped.
+    /// stripped. `"/"` stays `"/"` (the filesystem root, not no root).
     pub fn with_root(mut self, root: &str) -> Self {
-        self.root = root.trim_end_matches('/').to_string();
+        let trimmed = root.trim_end_matches('/');
+        self.root = if trimmed.is_empty() && root.starts_with('/') {
+            "/".to_string()
+        } else {
+            trimmed.to_string()
+        };
         self
     }
 
@@ -307,6 +312,8 @@ impl SftpTransport {
             }
         } else if relative.is_empty() {
             Ok(self.config.root.clone())
+        } else if self.config.root == "/" {
+            Ok(format!("/{relative}"))
         } else {
             Ok(format!("{}/{}", self.config.root, relative))
         }
@@ -413,6 +420,22 @@ fn is_staged_upload(path: &str) -> bool {
     }
 }
 
+/// Strip the configured root from a listed server path so entries
+/// report transport-relative. Root `"/"` strips one slash (not
+/// `"//"`); no root drops the `"./"` that `read_dir(".")` joins on.
+fn strip_list_prefix<'a>(root: &str, path: &'a str) -> &'a str {
+    if root.is_empty() {
+        return path.strip_prefix("./").unwrap_or(path);
+    }
+    if root == "/" {
+        return path.strip_prefix('/').unwrap_or(path);
+    }
+    match path.strip_prefix(root) {
+        Some(rest) => rest.strip_prefix('/').unwrap_or(path),
+        None => path,
+    }
+}
+
 impl FileTransport for SftpTransport {
     async fn list(&mut self, dir: &str) -> Result<Vec<FileEntry>, BatchError> {
         let remote = self.remote(dir)?;
@@ -430,14 +453,7 @@ impl FileTransport for SftpTransport {
             }
             // Report paths relative to the configured root.
             let mut path = entry.path();
-            if !self.config.root.is_empty() {
-                let prefix = format!("{}/", self.config.root);
-                path = path.strip_prefix(&prefix).unwrap_or(&path).to_string();
-            } else {
-                // `read_dir(".")` joins a "./" prefix onto names; drop
-                // it so root listings report bare names like any other.
-                path = path.strip_prefix("./").unwrap_or(&path).to_string();
-            }
+            path = strip_list_prefix(&self.config.root, &path).to_string();
             if is_staged_upload(&path) {
                 continue;
             }
@@ -746,6 +762,24 @@ mod tests {
             Err(BatchError::Invalid(msg)) => assert_eq!(msg, "empty path"),
             other => panic!("with-root put(\"\") gave {other:?}"),
         }
+    }
+
+    #[test]
+    fn with_root_slash_stays_absolute() {
+        // "/" is the filesystem root, not "no root": it must survive
+        // with_root, anchor remote() paths absolutely, and strip as a
+        // single "/" in list() rather than "//" or nothing.
+        let config = SftpConfig::new("host:22", "u", SftpAuth::Password("p".into())).with_root("/");
+        assert_eq!(config.root, "/");
+        let transport = unconnected(config);
+        assert_eq!(transport.remote("").unwrap(), "/");
+        assert_eq!(transport.remote("inbox").unwrap(), "/inbox");
+        assert_eq!(strip_list_prefix("/", "/inbox/a.hl7"), "inbox/a.hl7");
+        assert_eq!(
+            strip_list_prefix("/data", "/data/inbox/a.hl7"),
+            "inbox/a.hl7"
+        );
+        assert_eq!(strip_list_prefix("", "./a.hl7"), "a.hl7");
     }
 
     #[test]

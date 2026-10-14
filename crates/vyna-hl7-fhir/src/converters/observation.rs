@@ -204,34 +204,56 @@ impl ObservationConverter {
             }]);
         }
 
-        // OBX-8: Interpretation Codes -> Observation.interpretation
-        let interp_path = if obx_index == 0 {
+        // OBX-8: Interpretation Codes -> Observation.interpretation.
+        // Every repetition converts: terser paths are 1-based, so
+        // the bare base is the first repetition and (n) is the
+        // nth (like the encounter participants).
+        let interp_base = if obx_index == 0 {
             "OBX-8".to_string()
         } else {
             format!("OBX({})-8", obx_index + 1)
         };
-        if let Ok(Some(interp)) = terser.get(&interp_path)
-            && !interp.is_empty()
-        {
-            // OBX-8-2 feeds display and text; without it the text
-            // falls back to the code.
-            let interp_text = terser
-                .get(&format!("{interp_path}-2"))
-                .ok()
-                .flatten()
-                .filter(|s| !s.is_empty());
-            observation.interpretation = Some(vec![CodeableConcept {
-                coding: Some(vec![Coding {
-                    system: Some(
-                        "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation"
-                            .to_string(),
-                    ),
-                    version: None,
-                    code: Some(interp.to_string()),
-                    display: interp_text.map(|text| text.to_string()),
-                }]),
-                text: Some(interp_text.unwrap_or(interp).to_string()),
-            }]);
+        let mut interpretations = Vec::new();
+        let mut rep = 0usize;
+        loop {
+            let base = if rep == 0 {
+                interp_base.clone()
+            } else {
+                format!("{interp_base}({})", rep + 1)
+            };
+            // Only absence ends the scan; a present-but-empty
+            // repetition is skipped inside.
+            match terser.get(&base) {
+                Ok(Some(_)) => {}
+                _ => break,
+            }
+            rep += 1;
+            if let Ok(Some(interp)) = terser.get(&base)
+                && !interp.is_empty()
+            {
+                // OBX-8-2 feeds display and text; without it the text
+                // falls back to the code.
+                let interp_text = terser
+                    .get(&format!("{base}-2"))
+                    .ok()
+                    .flatten()
+                    .filter(|s| !s.is_empty());
+                interpretations.push(CodeableConcept {
+                    coding: Some(vec![Coding {
+                        system: Some(
+                            "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation"
+                                .to_string(),
+                        ),
+                        version: None,
+                        code: Some(interp.to_string()),
+                        display: interp_text.map(|text| text.to_string()),
+                    }]),
+                    text: Some(interp_text.unwrap_or(interp).to_string()),
+                });
+            }
+        }
+        if !interpretations.is_empty() {
+            observation.interpretation = Some(interpretations);
         }
 
         // OBX-14: Date/Time of Observation -> Observation.effectiveDateTime
@@ -381,13 +403,18 @@ impl ObservationConverter {
 
     /// Convert OBX-11 status code to FHIR Observation status
     fn convert_status(code: &str) -> String {
+        // IG ConceptMap table-hl70085-to-observation-status adds
+        // A -> amended and W -> entered-in-error; the R/I/S
+        // arms are existing extensions, left as they are.
         match code {
             "R" => "registered",
             "P" => "preliminary",
             "F" => "final",
             "C" => "corrected",
+            "A" => "amended",
             "X" => "cancelled",
             "D" => "entered-in-error",
+            "W" => "entered-in-error",
             "I" => "preliminary",
             "S" => "preliminary",
             _ => "final",
@@ -890,5 +917,77 @@ mod tests {
             Some("http://unitsofmeasure.org")
         );
         assert_eq!(quantity.code.as_deref(), Some("mg/dL"));
+    }
+
+    #[test]
+    fn test_obx11_maps_aw_per_ig_concept_map() {
+        // IG ConceptMap table-hl70085-to-observation-status: A ->
+        // amended, W -> entered-in-error. The R/I/S arms are
+        // existing extensions and stay as they are.
+        let message_for = |status: &str| {
+            parse_message(&format!(
+                "MSH|^~\\&|A|B|C|D|20240315||ORU^R01|1|P|2.5\r\
+                 OBX|1|NM|WBC^W^LN||7.5|mg/dL|||||{status}"
+            ))
+            .unwrap()
+        };
+        for (status, expected) in [
+            ("A", "amended"),
+            ("W", "entered-in-error"),
+            ("R", "registered"),
+            ("I", "preliminary"),
+            ("S", "preliminary"),
+            ("F", "final"),
+        ] {
+            let message = message_for(status);
+            let obs = &ObservationConverter::convert_all(&message).unwrap()[0];
+            assert_eq!(obs.status, expected, "OBX-11 {status}");
+        }
+    }
+
+    #[test]
+    fn test_obx8_converts_every_repetition() {
+        // OBX-8 repeats: every repetition becomes an
+        // interpretation, like the encounter participants loop.
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||ORU^R01|1|P|2.5\r\
+                   OBX|1|NM|WBC^W^LN||7.5|mg/dL||H^High~L^Low|||F";
+        let message = parse_message(hl7).unwrap();
+        let obs = &ObservationConverter::convert_all(&message).unwrap()[0];
+        let interp = obs.interpretation.as_ref().unwrap();
+        assert_eq!(interp.len(), 2);
+        let codes: Vec<_> = interp
+            .iter()
+            .map(|c| c.coding.as_ref().unwrap()[0].code.clone().unwrap())
+            .collect();
+        assert_eq!(codes, vec!["H", "L"]);
+        assert_eq!(interp[0].text.as_deref(), Some("High"));
+        assert_eq!(interp[1].text.as_deref(), Some("Low"));
+    }
+
+    #[test]
+    fn test_literal_suffixed_set_id_cannot_collide() {
+        // A literal OBX-1 "1-2" would collide with the
+        // disambiguated obs-1-2, so when ANY set id repeats
+        // every valued id carries its ordinal.
+        let hl7 = "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||ORU^R01|M|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   OBX|1|NM|2093-3^Cholesterol^LN||195|mg/dL|||||F\r\
+                   OBX|1|NM|2085-9^HDL^LN||55|mg/dL|||||F\r\
+                   OBX|1-2|NM|2089-1^LDL^LN||100|mg/dL|||||F";
+        let message = parse_message(hl7).unwrap();
+        let observations = ObservationConverter::convert_all(&message).unwrap();
+        let ids: Vec<_> = observations.iter().map(|o| o.id.clone().unwrap()).collect();
+        assert_eq!(ids, vec!["obs-1-1", "obs-1-2", "obs-1-2-3"]);
+
+        // Unique-only messages keep the bare obs-{set} form.
+        let hl7 = "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||ORU^R01|M|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   OBX|1|NM|2093-3^Cholesterol^LN||195|mg/dL|||||F\r\
+                   OBX|2|NM|2085-9^HDL^LN||55|mg/dL|||||F\r\
+                   OBX|3|NM|2089-1^LDL^LN||100|mg/dL|||||F";
+        let message = parse_message(hl7).unwrap();
+        let observations = ObservationConverter::convert_all(&message).unwrap();
+        let ids: Vec<_> = observations.iter().map(|o| o.id.clone().unwrap()).collect();
+        assert_eq!(ids, vec!["obs-1", "obs-2", "obs-3"]);
     }
 }

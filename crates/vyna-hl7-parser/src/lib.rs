@@ -1094,7 +1094,8 @@ fn parse_segment_like_msh(
 ///
 /// A present but unparseable value is a parse error naming the field;
 /// only absent or empty values yield `None`, so bad header datetimes
-/// can no longer vanish into an empty re-encoded field.
+/// can no longer vanish into an empty re-encoded field. A `.SSSS`
+/// fraction on a 14-digit head folds into nanoseconds.
 fn parse_datetime_field(label: &str, value: Option<&str>) -> Result<Option<NaiveDateTime>> {
     let Some(s) = value else {
         return Ok(None);
@@ -1108,26 +1109,46 @@ fn parse_datetime_field(label: &str, value: Option<&str>) -> Result<Option<Naive
     // error, never silent truncation.
     let head = strip_validated_offset(label, s)?;
 
+    // An optional fractional-seconds suffix (documented [.SSSS]) is
+    // allowed only on 14-digit heads and folds into nanoseconds,
+    // mirroring core types::parse_timestamp.
+    let (digits, nanos) = match head.split_once('.') {
+        None => (head, 0),
+        Some((d, frac)) => {
+            if d.len() != 14 || frac.is_empty() || !frac.bytes().all(|b| b.is_ascii_digit()) {
+                return Err(invalid_datetime(label, s));
+            }
+            // ASCII-only, so byte slicing is a char boundary; digits
+            // beyond nanosecond precision are truncated.
+            let head9 = &frac[..frac.len().min(9)];
+            let mut nanos = head9.parse::<u32>().unwrap_or(u32::MAX);
+            for _ in head9.len()..9 {
+                nanos *= 10;
+            }
+            (d, nanos)
+        }
+    };
+
     // Exact-length digit heads: 14/12/10 keep their time, 8 is
     // date-only at midnight. Anything else (trailing garbage, short
     // heads, non-digits) is an error.
-    if !head.bytes().all(|b| b.is_ascii_digit()) {
+    if !digits.bytes().all(|b| b.is_ascii_digit()) {
         return Err(invalid_datetime(label, s));
     }
-    // The head is ASCII digits (checked above), so these slices
+    // The digits are ASCII (checked above), so these slices
     // are char boundaries and the parses cannot fail; out-of-range
-    // values fall out through from_ymd_opt/from_hms_opt.
-    let num = |at: usize| head[at..at + 2].parse::<u32>().unwrap_or(u32::MAX);
-    let (hour, minute, second) = match head.len() {
+    // values fall out through from_ymd_opt/from_hms_nano_opt.
+    let num = |at: usize| digits[at..at + 2].parse::<u32>().unwrap_or(u32::MAX);
+    let (hour, minute, second) = match digits.len() {
         14 => (num(8), num(10), num(12)),
         12 => (num(8), num(10), 0),
         10 => (num(8), 0, 0),
         8 => (0, 0, 0),
         _ => return Err(invalid_datetime(label, s)),
     };
-    let year = head[0..4].parse::<i32>().unwrap_or(-1);
+    let year = digits[0..4].parse::<i32>().unwrap_or(-1);
     let date = chrono::NaiveDate::from_ymd_opt(year, num(4), num(6));
-    let time = chrono::NaiveTime::from_hms_opt(hour, minute, second);
+    let time = chrono::NaiveTime::from_hms_nano_opt(hour, minute, second, nanos);
     match (date, time) {
         (Some(d), Some(t)) => Ok(Some(NaiveDateTime::new(d, t))),
         _ => Err(invalid_datetime(label, s)),
@@ -1145,15 +1166,15 @@ fn strip_validated_offset<'a>(label: &str, s: &'a str) -> Result<&'a str> {
     if head.is_empty() {
         return Err(invalid_datetime(label, s));
     }
-    // (u32 parse accepts ASCII digits only, so a second sign or
-    // non-digit fails here; offset[1..] is a char boundary: the sign
-    // is one ASCII byte.)
+    // u32::parse accepts a leading '+', so digit shape is checked
+    // explicitly first (mirrors core split_offset); offset[1..] is a
+    // char boundary: the sign is one ASCII byte.
     let digits = &offset[1..];
-    let valid = match digits.parse::<u32>() {
-        Ok(n) => digits.len() == 4 && n / 100 <= 23 && n % 100 <= 59,
-        Err(_) => false,
-    };
-    if !valid {
+    if digits.len() != 4 || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(invalid_datetime(label, s));
+    }
+    let n: u32 = digits.parse().unwrap_or(u32::MAX);
+    if n / 100 > 23 || n % 100 > 59 {
         return Err(invalid_datetime(label, s));
     }
     Ok(head)
@@ -1640,6 +1661,35 @@ FTS|5";
         assert!(parse_datetime_field("BHS-7", Some("20240101120000+0800")).is_ok());
         assert!(parse_datetime_field("BHS-7", Some("20240101120000-0500")).is_ok());
         assert!(parse_datetime_field("BHS-7", Some("garbage-datetime")).is_err());
+    }
+
+    #[test]
+    fn test_parse_datetime_field_accepts_fractional_seconds() {
+        // Documented [.SSSS]: fraction folds into nanoseconds.
+        let dt = parse_datetime_field("BHS-7", Some("20240101120000.123"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(dt.nanosecond(), 123_000_000);
+        assert_eq!((dt.hour(), dt.minute(), dt.second()), (12, 0, 0));
+        // Fraction plus validated offset.
+        let dt = parse_datetime_field("BHS-7", Some("20240101120000.123+0800"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(dt.nanosecond(), 123_000_000);
+        // Fraction only on 14-digit heads; malformed fractions rejected.
+        assert!(parse_datetime_field("BHS-7", Some("202401011200.123")).is_err());
+        assert!(parse_datetime_field("BHS-7", Some("20240101120000.")).is_err());
+        assert!(parse_datetime_field("BHS-7", Some("20240101120000.12X")).is_err());
+        assert!(parse_datetime_field("BHS-7", Some("20240101120000.1.2")).is_err());
+    }
+
+    #[test]
+    fn test_parse_datetime_field_rejects_double_sign_offset() {
+        // u32::parse accepts a leading '+', so "++059" must be
+        // rejected by an explicit all-digits check, not the parse.
+        assert!(parse_datetime_field("BHS-7", Some("20240101120000++059")).is_err());
+        assert!(parse_datetime_field("BHS-7", Some("20240101120000+-059")).is_err());
+        assert!(parse_datetime_field("BHS-7", Some("20240101120000-+059")).is_err());
     }
 
     #[test]

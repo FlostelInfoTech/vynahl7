@@ -536,9 +536,9 @@ impl MllpPool {
                         stats.connections_created += 1;
                         stats.idle_connections += 1;
                     }
-                    Err(e) => {
-                        // Log error but continue - don't fail the entire operation
-                        eprintln!("Failed to create min connection: {}", e);
+                    Err(_e) => {
+                        // Best-effort: creation failures are dropped so one
+                        // bad dial doesn't fail the entire maintenance pass.
                     }
                 }
             }

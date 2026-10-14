@@ -51,34 +51,45 @@ impl EncounterReverseConverter {
         {
             // location is a required Reference field (not Optional)
             let location = &first_loc.location;
-            let mut parts: Vec<&str> = location
-                .display
-                .as_deref()
-                .filter(|s| !s.is_empty())
-                .map(|display| display.split(", ").collect())
-                .unwrap_or_default();
-            if let Some(id) = location
-                .reference
-                .as_deref()
-                .and_then(|r| r.strip_prefix("Location/"))
-                .filter(|s| !s.is_empty())
-            {
-                if parts.is_empty() {
-                    parts.push(id);
-                } else {
-                    parts[0] = id;
-                }
-            }
-            for (index, part) in parts.iter().take(4).enumerate() {
-                let _ = pv1.set_component(3, 0, index, *part);
-            }
-            // A non-Location reference with no display keeps the old
-            // whole-field behavior so nothing is silently dropped.
-            if parts.is_empty()
-                && let Some(ref reference) = location.reference
-                && !reference.is_empty()
-            {
+            let reference = location.reference.as_deref().filter(|s| !s.is_empty());
+            // Only an absent or Location/ reference splits the display
+            // into PL components: splitting under any other reference
+            // (e.g. Organization/ABC with display "ER, 101" into
+            // ER^101) re-forwards to a fabricated Location/ER while
+            // the real reference is lost entirely.
+            let splittable = reference.is_none_or(|r| r.starts_with("Location/"));
+            if !splittable && let Some(reference) = reference {
+                // No PL slot fits both: the reference wins verbatim
+                // whole-field (mirroring the no-display branch) and
+                // the display is dropped.
                 let _ = pv1.set_field_value(3, reference);
+            } else {
+                let mut parts: Vec<&str> = location
+                    .display
+                    .as_deref()
+                    .filter(|s| !s.is_empty())
+                    .map(|display| display.split(", ").collect())
+                    .unwrap_or_default();
+                if let Some(id) = reference
+                    .and_then(|r| r.strip_prefix("Location/"))
+                    .filter(|s| !s.is_empty())
+                {
+                    if parts.is_empty() {
+                        parts.push(id);
+                    } else {
+                        parts[0] = id;
+                    }
+                }
+                for (index, part) in parts.iter().take(4).enumerate() {
+                    let _ = pv1.set_component(3, 0, index, *part);
+                }
+                // A Location/ reference with no display keeps the old
+                // whole-field behavior so nothing is silently dropped.
+                if parts.is_empty()
+                    && let Some(reference) = reference
+                {
+                    let _ = pv1.set_field_value(3, reference);
+                }
             }
         }
 
@@ -418,6 +429,26 @@ mod tests {
         let pv1 = EncounterReverseConverter::convert(&encounter).unwrap();
         // The reference id becomes PL component 1, not the whole reference.
         assert_eq!(pv1.get_field_value(3), Some("ER"));
+    }
+
+    #[test]
+    fn test_non_location_reference_with_display_kept_verbatim() {
+        let mut encounter = Encounter::new("finished".to_string());
+        encounter.location = Some(vec![crate::resources::encounter::EncounterLocation {
+            location: Reference {
+                reference: Some("Organization/ABC".to_string()),
+                type_: Some("Organization".to_string()),
+                identifier: None,
+                display: Some("ER, 101".to_string()),
+            },
+            status: Some("active".to_string()),
+            period: None,
+        }]);
+        let pv1 = EncounterReverseConverter::convert(&encounter).unwrap();
+        // Whole-field: the reference survives verbatim instead of the
+        // display split (ER^101) re-forwarding to Location/ER while
+        // the Organization reference is lost entirely.
+        assert_eq!(pv1.get_field_value(3), Some("Organization/ABC"));
     }
 
     #[test]

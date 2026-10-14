@@ -497,6 +497,14 @@ pub fn pad(value: &str, ctx: &TransformContext) -> Result<String> {
 ///
 /// Note: This function expects the context to contain a "default" key.
 ///
+/// When used as a [`TransformationRule`](crate::rule::TransformationRule)
+/// transform, the rule must set `skip_if_empty(false)`: with the default
+/// `skip_if_empty(true)` the rule returns its own default (or nothing)
+/// for empty values without ever calling this function, so the default
+/// here would silently never apply. For plain defaults prefer
+/// [`with_default`](crate::rule::TransformationRule::with_default),
+/// which applies under the default skip setting.
+///
 /// # Examples
 ///
 /// ```rust
@@ -673,6 +681,65 @@ mod tests {
 
         assert_eq!(default_if_empty("", &ctx).unwrap(), "UNKNOWN");
         assert_eq!(default_if_empty("SMITH", &ctx).unwrap(), "SMITH");
+    }
+
+    #[test]
+    fn test_default_if_empty_rule_wiring_requires_opt_out_of_skip() {
+        use crate::rule::TransformationRule;
+
+        let ctx = TransformContext::new().add_data("default".to_string(), "UNKNOWN".to_string());
+        // Direct wiring: the function itself substitutes the default.
+        assert_eq!(default_if_empty("", &ctx).unwrap(), "UNKNOWN");
+
+        // Rule wiring with the default skip_if_empty(true) never calls
+        // the function for empty values, so the target stays absent.
+        let rule = TransformationRule::new("PID-5", "PID-5").with_transform(default_if_empty);
+        assert_eq!(rule.apply("", &ctx).unwrap(), None);
+
+        // With skip_if_empty(false) the function runs and the default
+        // applies through the rule path too.
+        let rule = TransformationRule::new("PID-5", "PID-5")
+            .with_transform(default_if_empty)
+            .skip_if_empty(false);
+        assert_eq!(rule.apply("", &ctx).unwrap(), Some("UNKNOWN".to_string()));
+    }
+
+    #[test]
+    fn test_default_if_empty_end_to_end_through_transformer() {
+        use crate::MessageTransformer;
+        use crate::rule::TransformationRule;
+        use vyna_hl7_terser::Terser;
+
+        // PID-5 is absent, so the rule reads an empty source value.
+        let source = vyna_hl7_parser::parse_message(
+            "MSH|^~\\&|A|B|C|D|202401011200||ADT^A01|1|P|2.5\rPID|1||PATID",
+        )
+        .unwrap();
+
+        // Default wiring: the empty source never reaches the function.
+        let mut transformer = MessageTransformer::new();
+        transformer.set_context_data("default".to_string(), "UNKNOWN".to_string());
+        transformer
+            .add_rule(TransformationRule::new("PID-5", "PID-5").with_transform(default_if_empty));
+        let result = transformer.transform(&source).unwrap();
+        assert!(
+            Terser::new(&result)
+                .get("PID-5")
+                .unwrap()
+                .is_none_or(|v| v.is_empty()),
+            "default-skip wiring must leave the target absent"
+        );
+
+        // With skip_if_empty(false) the transformer path applies the default.
+        let mut transformer = MessageTransformer::new();
+        transformer.set_context_data("default".to_string(), "UNKNOWN".to_string());
+        transformer.add_rule(
+            TransformationRule::new("PID-5", "PID-5")
+                .with_transform(default_if_empty)
+                .skip_if_empty(false),
+        );
+        let result = transformer.transform(&source).unwrap();
+        assert_eq!(Terser::new(&result).get("PID-5").unwrap(), Some("UNKNOWN"));
     }
 
     #[test]

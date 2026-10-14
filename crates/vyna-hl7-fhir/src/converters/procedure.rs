@@ -123,7 +123,10 @@ impl ProcedureConverter {
     fn convert_coding_system(system: &str) -> String {
         match system {
             "I9C" | "I9" => "http://hl7.org/fhir/sid/icd-9-cm".to_string(),
-            "I10" | "I10P" => "http://hl7.org/fhir/sid/icd-10-pcs".to_string(),
+            // Table 0396: only I10P is the procedure system
+            // (icd-10-pcs); I10 (diagnosis) falls through to
+            // the shared table (icd-10).
+            "I10P" => "http://hl7.org/fhir/sid/icd-10-pcs".to_string(),
             "C4" | "CPT" => "http://www.ama-assn.org/go/cpt".to_string(),
             _ => convert_coding_system(system),
         }
@@ -396,5 +399,27 @@ mod tests {
                 "PR1-3 {system}"
             );
         }
+    }
+
+    #[test]
+    fn test_i10_maps_to_icd10_diagnosis_table_0396() {
+        // HL7 table 0396: I10 is the diagnosis system
+        // (http://hl7.org/fhir/sid/icd-10); only I10P is the
+        // procedure system (icd-10-pcs). I10 falls through to
+        // the shared table like everywhere else.
+        let hl7 = "MSH|^~\\&|System|Hospital|EMR|Hospital|20240315||ADT^A01|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   PR1|1||0016^Appendectomy^I10||20240315100000";
+        let message = parse_message(hl7).unwrap();
+        let proc = &ProcedureConverter::convert_all(&message).unwrap()[0];
+        let coding = &proc.code.as_ref().unwrap().coding.as_ref().unwrap()[0];
+        assert_eq!(
+            coding.system.as_deref(),
+            Some("http://hl7.org/fhir/sid/icd-10")
+        );
+        assert_eq!(
+            ProcedureConverter::convert_coding_system("I10P"),
+            "http://hl7.org/fhir/sid/icd-10-pcs"
+        );
     }
 }

@@ -179,8 +179,12 @@ impl ContentRouter {
     }
 
     /// Clear all routes
+    ///
+    /// Also drops the default handler, so a cleared router matches
+    /// nothing until new routes are added.
     pub fn clear(&mut self) {
         self.routes.clear();
+        self.default_handler = None;
     }
 }
 
@@ -269,6 +273,24 @@ mod tests {
         let adt_msg = create_adt_message();
         let result = router.route(adt_msg).await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_clear_drops_default_handler() {
+        // clear() must leave the router matching nothing: routes gone
+        // and the default handler gone (mirrors MLLP MessageRouter).
+        let mut router = ContentRouter::new();
+        router.add_route("test", |_| true, |msg| async move { Ok(msg) });
+        router.set_default_handler(|msg| async move { Ok(msg) });
+        assert!(router.route(create_adt_message()).await.is_ok());
+
+        router.clear();
+        assert_eq!(router.route_count(), 0);
+        let result = router.route(create_adt_message()).await;
+        assert!(
+            matches!(result, Err(OrchestrationError::NoMatchingRoute)),
+            "stale default handler survived clear(): {result:?}"
+        );
     }
 
     #[tokio::test]

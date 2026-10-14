@@ -548,7 +548,7 @@ impl WebSocketClient {
     }
 
     /// Bound how long [`WebSocketClient::send_message`] waits for a
-    /// response (default: 30 s).
+    /// response, including the initial connect (default: 30 s).
     pub fn with_response_timeout(mut self, timeout: Duration) -> Self {
         self.response_timeout = timeout;
         self
@@ -583,9 +583,19 @@ impl WebSocketClient {
     {
         use tokio_tungstenite::connect_async;
 
-        let (ws_stream, _) = connect_async(&self.url)
-            .await
-            .map_err(|e| Error::Io(std::io::Error::other(e)))?;
+        // The handshake itself is bounded: a stalled peer must not hang
+        // us before the response deadline is even built.
+        let connected = tokio::time::timeout(self.response_timeout, connect_async(&self.url)).await;
+        let (ws_stream, _) = match connected {
+            Err(_) => {
+                return Err(Error::Http(format!(
+                    "WebSocket connect timed out after {:?}",
+                    self.response_timeout
+                )));
+            }
+            Ok(Err(e)) => return Err(Error::Io(std::io::Error::other(e))),
+            Ok(Ok(ok)) => ok,
+        };
 
         #[cfg(feature = "logging")]
         tracing::info!("Connected to WebSocket server: {}", self.url);
@@ -645,9 +655,19 @@ impl WebSocketClient {
     pub async fn send_message(&self, message: &Message) -> Result<Message> {
         use tokio_tungstenite::{connect_async, tungstenite::Message as TungsteniteMessage};
 
-        let (ws_stream, _) = connect_async(&self.url)
-            .await
-            .map_err(|e| Error::Io(std::io::Error::other(e)))?;
+        // Bound the handshake itself: without this a stalled peer
+        // hangs here forever, before the response deadline below.
+        let connected = tokio::time::timeout(self.response_timeout, connect_async(&self.url)).await;
+        let (ws_stream, _) = match connected {
+            Err(_) => {
+                return Err(Error::Http(format!(
+                    "WebSocket connect timed out after {:?}",
+                    self.response_timeout
+                )));
+            }
+            Ok(Err(e)) => return Err(Error::Io(std::io::Error::other(e))),
+            Ok(Ok(ok)) => ok,
+        };
 
         let (mut write, mut read) = ws_stream.split();
 
@@ -827,6 +847,54 @@ mod tests {
         let start = Instant::now();
         let err = client.send_message(&msg).await.unwrap_err();
         assert!(start.elapsed() < Duration::from_secs(5));
+        assert!(err.to_string().contains("timed out"), "unexpected: {err}");
+    }
+
+    /// A peer that stalls the handshake must not hang `send_message`
+    /// past `response_timeout`: the connect itself is bounded, not just
+    /// the reply wait.
+    #[tokio::test]
+    async fn test_client_connect_timeout() {
+        use std::time::{Duration, Instant};
+
+        // Stall: accept TCP but never answer the HTTP upgrade.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _held = listener.accept().await.unwrap();
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        });
+
+        let client = WebSocketClient::new(format!("ws://{addr}/ws"))
+            .with_response_timeout(Duration::from_millis(200));
+        let msg = parse_message("MSH|^~\\&|S|A|R|F|20240101||ADT^A01|C1|P|2.5\r").unwrap();
+        let start = Instant::now();
+        let err = tokio::time::timeout(Duration::from_secs(5), client.send_message(&msg))
+            .await
+            .expect("send_message ignored response_timeout on stalled connect")
+            .unwrap_err();
+        assert!(start.elapsed() < Duration::from_secs(5));
+        assert!(err.to_string().contains("timed out"), "unexpected: {err}");
+    }
+
+    /// `connect` shares the same bounded handshake as `send_message`.
+    #[tokio::test]
+    async fn test_connect_respects_response_timeout() {
+        use std::time::Duration;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _held = listener.accept().await.unwrap();
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        });
+
+        let client = WebSocketClient::new(format!("ws://{addr}/ws"))
+            .with_response_timeout(Duration::from_millis(200));
+        let err = tokio::time::timeout(Duration::from_secs(5), client.connect(|_| {}))
+            .await
+            .expect("connect ignored response_timeout on stalled peer")
+            .unwrap_err();
         assert!(err.to_string().contains("timed out"), "unexpected: {err}");
     }
 

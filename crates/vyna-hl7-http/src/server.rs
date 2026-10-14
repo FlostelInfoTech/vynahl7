@@ -292,7 +292,8 @@ impl HttpServer {
         // Bind server
         let listener = tokio::net::TcpListener::bind(addr).await?;
 
-        println!("HTTP server listening on {}", addr);
+        #[cfg(feature = "logging")]
+        tracing::info!("HTTP server listening on {}", addr);
 
         // Serve
         axum::serve(listener, app)
@@ -339,7 +340,8 @@ impl HttpServer {
         // Bind server
         let listener = tokio::net::TcpListener::bind(addr).await?;
 
-        println!("HTTPS server listening on {} (TLS enabled)", addr);
+        #[cfg(feature = "logging")]
+        tracing::info!("HTTPS server listening on {} (TLS enabled)", addr);
 
         let (_shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
         self.serve_tls_on(listener, shutdown_rx).await
@@ -390,15 +392,19 @@ impl HttpServer {
                             .await
                             {
                                 Ok(Ok(tls_stream)) => tls_stream,
-                                Ok(Err(err)) => {
-                                    eprintln!("TLS handshake failed: {}", err);
+                                Ok(Err(_err)) => {
+                                    #[cfg(feature = "logging")]
+                                    tracing::warn!("TLS handshake failed: {}", _err);
                                     return;
                                 }
                                 Err(_) => {
-                                    eprintln!(
-                                        "TLS handshake timed out after {:?}",
-                                        handshake_timeout
-                                    );
+                                    #[cfg(feature = "logging")]
+                                    {
+                                        tracing::warn!(
+                                            "TLS handshake timed out after {:?}",
+                                            handshake_timeout
+                                        );
+                                    }
                                     return;
                                 }
                             };
@@ -420,14 +426,18 @@ impl HttpServer {
                         .await
                         {
                             Ok(Ok(())) => {}
-                            Ok(Err(err)) => {
-                                eprintln!("Error serving connection: {}", err);
+                            Ok(Err(_err)) => {
+                                #[cfg(feature = "logging")]
+                                tracing::warn!("Error serving connection: {}", _err);
                             }
                             Err(_) => {
-                                eprintln!(
-                                    "TLS connection timed out after {:?}",
-                                    connection_timeout
-                                );
+                                #[cfg(feature = "logging")]
+                                {
+                                    tracing::warn!(
+                                        "TLS connection timed out after {:?}",
+                                        connection_timeout
+                                    );
+                                }
                             }
                         }
                     });

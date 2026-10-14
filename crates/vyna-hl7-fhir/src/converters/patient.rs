@@ -449,10 +449,14 @@ impl PatientConverter {
 
     /// Convert PID-13 and PID-14 (Phone Numbers) to FHIR ContactPoint
     ///
-    /// PID-13/14 are XTN: component 1 is the telephone number, component 3
-    /// the equipment type, and component 4 the email address. Every
-    /// repetition converts; email forms map to `system: email` instead of
-    /// being dropped or mislabeled as phone.
+    /// PID-13/14 are XTN: component 1 is the telephone number,
+    /// component 2 the use code (table 0201), component 3 the
+    /// equipment type (table 0202), and component 4 the email
+    /// address. Every repetition converts; email forms map to
+    /// `system: email` instead of being dropped or mislabeled as
+    /// phone. An absent or unmapped XTN-2 falls back to the
+    /// field-derived use (PID-13 home, PID-14 work), and an
+    /// unmapped XTN-3 falls back to value sniffing.
     fn convert_telecom(terser: &Terser) -> ConversionResult<Option<Vec<ContactPoint>>> {
         let mut telecoms = Vec::new();
 
@@ -472,6 +476,11 @@ impl PatientConverter {
                     _ => break,
                 };
                 rep += 1;
+                let use_code = terser
+                    .get(&format!("{base}-2"))
+                    .ok()
+                    .flatten()
+                    .unwrap_or("");
                 let email = terser
                     .get(&format!("{base}-4"))
                     .ok()
@@ -486,23 +495,28 @@ impl PatientConverter {
                     continue;
                 }
 
+                // XTN-2 selects the use (mirroring the reverse
+                // converter's table 0201 codes); anything else keeps
+                // the field-derived use.
+                let resolved_use = match use_code.to_ascii_lowercase().as_str() {
+                    "prn" => "home",
+                    "wpn" => "work",
+                    "orn" => "mobile",
+                    "vhn" => "temp",
+                    _ => use_,
+                };
                 if !number.is_empty() {
-                    let system = if Self::is_email_form(number, equipment) {
-                        "email"
-                    } else {
-                        "phone"
-                    };
                     telecoms.push(ContactPoint {
-                        system: Some(system.to_string()),
+                        system: Some(Self::telecom_system(number, equipment).to_string()),
                         value: Some(number.to_string()),
-                        use_: Some(use_.to_string()),
+                        use_: Some(resolved_use.to_string()),
                     });
                 }
                 if !email.is_empty() {
                     telecoms.push(ContactPoint {
                         system: Some("email".to_string()),
                         value: Some(email.to_string()),
-                        use_: Some(use_.to_string()),
+                        use_: Some(resolved_use.to_string()),
                     });
                 }
             }
@@ -515,15 +529,26 @@ impl PatientConverter {
         })
     }
 
-    /// True when an XTN-1 value is an email address: either it looks like
-    /// one or the XTN-3 equipment type says so (HL7 table 0202 Internet /
-    /// X.400 devices carry email, not phone calls).
-    fn is_email_form(number: &str, equipment: &str) -> bool {
-        number.contains('@')
-            || matches!(
-                equipment.to_ascii_lowercase().as_str(),
-                "internet" | "x.400"
-            )
+    /// FHIR ContactPoint system from an XTN-1 value and its XTN-3
+    /// equipment type (HL7 table 0202, mirroring the reverse
+    /// converter's codes). Internet / X.400 devices carry email, not
+    /// phone calls; an unmapped equipment type falls back to value
+    /// sniffing (an '@' means email, anything else phone).
+    fn telecom_system(number: &str, equipment: &str) -> &'static str {
+        match equipment.to_ascii_lowercase().as_str() {
+            "internet" | "x.400" => "email",
+            "fx" => "fax",
+            "bp" => "pager",
+            "cp" => "sms",
+            "ph" => "phone",
+            _ => {
+                if number.contains('@') {
+                    "email"
+                } else {
+                    "phone"
+                }
+            }
+        }
     }
 
     /// Convert HL7 v2 gender code to FHIR gender code
@@ -1177,6 +1202,38 @@ mod tests {
         assert_eq!(telecoms.len(), 2);
         assert_eq!(telecoms[0].value.as_deref(), Some("111"));
         assert_eq!(telecoms[1].value.as_deref(), Some("222"));
+    }
+
+    #[test]
+    fn test_telecom_reads_xtn_use_and_equipment_codes() {
+        // XTN-2 (table 0201) selects the use, XTN-3 (table 0202)
+        // the system, instead of the old PID-13/14 folding.
+        let hl7 = pid_with_telecom("555-9999^ORN^PH", "555-1111^WPN^FX");
+        let message = parse_message(&hl7).unwrap();
+        let patient = PatientConverter::convert(&message).unwrap();
+        let telecoms = patient.telecom.as_ref().unwrap();
+        assert_eq!(telecoms.len(), 2);
+        assert_eq!(telecoms[0].system.as_deref(), Some("phone"));
+        assert_eq!(telecoms[0].value.as_deref(), Some("555-9999"));
+        assert_eq!(telecoms[0].use_.as_deref(), Some("mobile"));
+        assert_eq!(telecoms[1].system.as_deref(), Some("fax"));
+        assert_eq!(telecoms[1].use_.as_deref(), Some("work"));
+
+        // An Internet device with a use code is email with that use.
+        let hl7 = pid_with_telecom("user^PRN^Internet", "");
+        let message = parse_message(&hl7).unwrap();
+        let patient = PatientConverter::convert(&message).unwrap();
+        let telecoms = patient.telecom.as_ref().unwrap();
+        assert_eq!(telecoms[0].system.as_deref(), Some("email"));
+        assert_eq!(telecoms[0].use_.as_deref(), Some("home"));
+
+        // Unknown codes fall back to the old folding (no regression).
+        let hl7 = pid_with_telecom("555-1234^ASN^MD", "");
+        let message = parse_message(&hl7).unwrap();
+        let patient = PatientConverter::convert(&message).unwrap();
+        let telecoms = patient.telecom.as_ref().unwrap();
+        assert_eq!(telecoms[0].system.as_deref(), Some("phone"));
+        assert_eq!(telecoms[0].use_.as_deref(), Some("home"));
     }
 
     #[test]

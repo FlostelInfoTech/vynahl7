@@ -33,7 +33,25 @@
 //! ```
 
 use crate::{error::{Error, Result}, message::Message, segment::Segment, field::Field};
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, Timelike};
+
+/// Format a creation datetime for a BHS-7/FHS-7 field.
+///
+/// Whole seconds encode bare (`YYYYMMDDHHMMSS`); a non-zero
+/// nanosecond part re-encodes as a trimmed `.S+` fraction so parsed
+/// fractions round-trip instead of being silently dropped.
+fn format_creation_datetime(dt: &NaiveDateTime) -> String {
+    let base = crate::types::format_timestamp(dt);
+    let nanos = dt.nanosecond();
+    if nanos == 0 {
+        return base;
+    }
+    let mut frac = format!("{nanos:09}");
+    while frac.ends_with('0') {
+        frac.pop();
+    }
+    format!("{base}.{frac}")
+}
 
 /// File Header Segment (FHS) - marks the beginning of a file containing batches
 ///
@@ -116,7 +134,7 @@ impl FileHeader {
 
         // FHS-7: Creation date/time
         let datetime_str = self.creation_datetime
-            .map(|dt| crate::types::format_timestamp(&dt))
+            .map(|dt| format_creation_datetime(&dt))
             .unwrap_or_default();
         fhs.add_field(Field::from_value(&datetime_str));
 
@@ -240,7 +258,7 @@ impl BatchHeader {
 
         // BHS-7: Creation date/time
         let datetime_str = self.creation_datetime
-            .map(|dt| crate::types::format_timestamp(&dt))
+            .map(|dt| format_creation_datetime(&dt))
             .unwrap_or_default();
         bhs.add_field(Field::from_value(&datetime_str));
 
@@ -629,6 +647,38 @@ mod tests {
 
         let sending_app = segment.get_field(3).unwrap().value().unwrap();
         assert_eq!(sending_app, "SENDER");
+    }
+
+    #[test]
+    fn test_batch_header_to_segment_emits_fraction() {
+        // BHS-7 documents [.SSSS]: a creation time with nanos must
+        // re-encode its fraction instead of silently dropping it.
+        let mut header = BatchHeader::new();
+        header.creation_datetime = crate::types::parse_timestamp("20240101120000.123");
+        let segment = header.to_segment();
+        assert_eq!(
+            segment.get_field(7).unwrap().value().unwrap(),
+            "20240101120000.123"
+        );
+        // Whole seconds stay bare.
+        let mut header = BatchHeader::new();
+        header.creation_datetime = crate::types::parse_timestamp("20240101120000");
+        let segment = header.to_segment();
+        assert_eq!(
+            segment.get_field(7).unwrap().value().unwrap(),
+            "20240101120000"
+        );
+    }
+
+    #[test]
+    fn test_file_header_to_segment_emits_fraction() {
+        let mut header = FileHeader::new();
+        header.creation_datetime = crate::types::parse_timestamp("20240101120000.5");
+        let segment = header.to_segment();
+        assert_eq!(
+            segment.get_field(7).unwrap().value().unwrap(),
+            "20240101120000.5"
+        );
     }
 
     #[test]

@@ -234,9 +234,14 @@ impl DiagnosticReportConverter {
     }
 
     fn convert_status(code: &str) -> String {
+        // IG ConceptMap table-hl70123-to-diagnostic-report-status:
+        // R -> partial, I/S -> registered; the default covers
+        // the IG-unmapped A/M/N/Y/Z and garbage.
         match code {
             "O" => "registered".to_string(),
             "P" => "preliminary".to_string(),
+            "R" => "partial".to_string(),
+            "I" | "S" => "registered".to_string(),
             "F" => "final".to_string(),
             "C" => "corrected".to_string(),
             "X" => "cancelled".to_string(),
@@ -634,6 +639,45 @@ mod tests {
             let reports = DiagnosticReportConverter::convert_all(&message).unwrap();
             let coding = &reports[0].code.coding.as_ref().unwrap()[0];
             assert_eq!(coding.system.as_deref(), Some(expected), "OBR-4 {obr4}");
+        }
+    }
+
+    #[test]
+    fn test_obr25_maps_ris_per_ig_concept_map() {
+        // IG ConceptMap table-hl70123-to-diagnostic-report-status:
+        // R -> partial, I/S -> registered; A/M/N/Y/Z and
+        // garbage stay final (the IG-unmapped default).
+        let message_for = |status: &str| {
+            let mut obr = vec![String::new(); 25];
+            obr[0] = "1".to_string();
+            obr[3] = "24331-1^Lipid Panel^LN".to_string();
+            obr[24] = status.to_string();
+            parse_message(&format!(
+                "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||ORU^R01|M|P|2.5\r\
+                 PID|1||12345|||DOE^JOHN||19800101|M\rOBR|{}",
+                obr.join("|")
+            ))
+            .unwrap()
+        };
+        for (status, expected) in [
+            ("R", "partial"),
+            ("I", "registered"),
+            ("S", "registered"),
+            ("O", "registered"),
+            ("P", "preliminary"),
+            ("F", "final"),
+            ("C", "corrected"),
+            ("X", "cancelled"),
+            ("A", "final"),
+            ("M", "final"),
+            ("N", "final"),
+            ("Y", "final"),
+            ("Z", "final"),
+            ("garbage", "final"),
+        ] {
+            let message = message_for(status);
+            let reports = DiagnosticReportConverter::convert_all(&message).unwrap();
+            assert_eq!(reports[0].status, expected, "OBR-25 {status}");
         }
     }
 }

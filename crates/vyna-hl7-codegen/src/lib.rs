@@ -426,7 +426,17 @@ pub fn generate_module(schema: &MessageSchema) -> String {
         out.push('\n');
     }
 
-    let struct_name = message_struct_name(&schema.message_type, &schema.trigger_event);
+    // The message struct joins the same collision domain as the
+    // segments: message "PID" sanitizes to `Pid`, which would emit
+    // `pub struct Pid` twice (E0428) next to the PID segment struct.
+    let base_name = message_struct_name(&schema.message_type, &schema.trigger_event);
+    let mut struct_name = base_name.clone();
+    let mut counter = 2;
+    while used_struct_names.contains(&struct_name) {
+        struct_name = format!("{base_name}_{counter}");
+        counter += 1;
+    }
+    used_struct_names.insert(struct_name.clone());
     let mut used = HashSet::new();
     out.push_str(&format!(
         "/// {}^{} (HL7 v{})\n",
@@ -1100,5 +1110,27 @@ mod tests {
         assert_eq!(source.matches("pub struct Pid {").count(), 1, "{source}");
         assert!(source.contains("pub struct Pid_2 {"), "{source}");
         assert!(source.contains("Option<Pid_2>"), "{source}");
+    }
+
+    #[test]
+    fn module_suffixes_message_struct_name_on_segment_collision() {
+        // Message "PID" (no trigger) sanitizes to `Pid`, colliding
+        // with the PID segment struct: the message must take `Pid_2`
+        // instead of emitting `pub struct Pid` twice (E0428).
+        let pid = SegmentDefinition {
+            name: "Patient Identification".to_string(),
+            required: true,
+            repeating: false,
+            fields: HashMap::new(),
+        };
+        let schema = MessageSchema {
+            message_type: "PID".to_string(),
+            trigger_event: String::new(),
+            version: "2.5".to_string(),
+            segments: HashMap::from([("PID".to_string(), pid)]),
+        };
+        let source = generate_module(&schema);
+        assert_eq!(source.matches("pub struct Pid {").count(), 1, "{source}");
+        assert!(source.contains("pub struct Pid_2 {"), "{source}");
     }
 }

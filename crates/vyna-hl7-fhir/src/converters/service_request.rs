@@ -267,42 +267,64 @@ impl ServiceRequestConverter {
         // OBR-31: Reason for Study -> reasonCode. Empty is
         // absent: it must not become a coding with an empty code,
         // but a text-only CWE keeps its text like the allergy
-        // converter.
-        if let Ok(Some(reason_code)) = terser.get(&obr_path("31"))
-            && !reason_code.is_empty()
-        {
-            let mut coding = Coding {
-                system: None,
-                code: Some(reason_code.to_string()),
-                display: None,
-                version: None,
+        // converter. Every repetition converts: terser paths are
+        // 1-based, so the bare base is the first repetition and
+        // (n) is the nth (like the encounter participants).
+        let reason_base = obr_path("31");
+        let mut reasons = Vec::new();
+        let mut rep = 0usize;
+        loop {
+            let base = if rep == 0 {
+                reason_base.clone()
+            } else {
+                format!("{reason_base}({})", rep + 1)
             };
+            // Only absence ends the scan; a present-but-empty
+            // repetition is skipped inside.
+            match terser.get(&base) {
+                Ok(Some(_)) => {}
+                _ => break,
+            }
+            rep += 1;
+            if let Ok(Some(reason_code)) = terser.get(&base)
+                && !reason_code.is_empty()
+            {
+                let mut coding = Coding {
+                    system: None,
+                    code: Some(reason_code.to_string()),
+                    display: None,
+                    version: None,
+                };
 
-            // Component 1: Reason text (empty is absent).
-            if let Ok(Some(reason_text)) = terser.get(&format!("{}-2", obr_path("31")))
+                // Component 1: Reason text (empty is absent).
+                if let Ok(Some(reason_text)) = terser.get(&format!("{base}-2"))
+                    && !reason_text.is_empty()
+                {
+                    coding.display = Some(reason_text.to_string());
+                }
+
+                // OBR-31-3 selects the system URI, like OBR-4-3.
+                if let Ok(Some(system)) = terser.get(&format!("{base}-3"))
+                    && !system.is_empty()
+                {
+                    coding.system = Some(convert_coding_system(system));
+                }
+
+                reasons.push(CodeableConcept {
+                    coding: Some(vec![coding]),
+                    text: None,
+                });
+            } else if let Ok(Some(reason_text)) = terser.get(&format!("{base}-2"))
                 && !reason_text.is_empty()
             {
-                coding.display = Some(reason_text.to_string());
+                reasons.push(CodeableConcept {
+                    coding: None,
+                    text: Some(reason_text.to_string()),
+                });
             }
-
-            // OBR-31-3: Coding system selects the system URI, like OBR-4-3.
-            if let Ok(Some(system)) = terser.get(&format!("{}-3", obr_path("31")))
-                && !system.is_empty()
-            {
-                coding.system = Some(convert_coding_system(system));
-            }
-
-            service_request.reason_code = Some(vec![CodeableConcept {
-                coding: Some(vec![coding]),
-                text: None,
-            }]);
-        } else if let Ok(Some(reason_text)) = terser.get(&format!("{}-2", obr_path("31")))
-            && !reason_text.is_empty()
-        {
-            service_request.reason_code = Some(vec![CodeableConcept {
-                coding: None,
-                text: Some(reason_text.to_string()),
-            }]);
+        }
+        if !reasons.is_empty() {
+            service_request.reason_code = Some(reasons);
         }
 
         Ok(service_request)
@@ -1033,5 +1055,30 @@ mod tests {
             coding.system.as_deref(),
             Some("http://hl7.org/fhir/sid/icd-10")
         );
+    }
+
+    #[test]
+    fn test_obr31_converts_every_repetition() {
+        // OBR-31 repeats: every repetition becomes a
+        // reasonCode, like the encounter participants loop.
+        let mut obr = vec![String::new(); 31];
+        obr[0] = "1".to_string();
+        obr[1] = "O1".to_string();
+        obr[3] = "CBC^Complete Blood Count^LN".to_string();
+        obr[30] = "R1^Reason one^LN~R2^Reason two^LN".to_string();
+        let hl7 = format!(
+            "MSH|^~\\&|CPOE|H|LAB|H|20240315||ORM^O01|M|P|2.5\r\
+             PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rORC|NW|O1|||A\rOBR|{}",
+            obr.join("|")
+        );
+        let message = parse_message(&hl7).unwrap();
+        let requests = ServiceRequestConverter::convert_all(&message).unwrap();
+        let reasons = requests[0].reason_code.as_ref().unwrap();
+        assert_eq!(reasons.len(), 2);
+        let codes: Vec<_> = reasons
+            .iter()
+            .map(|r| r.coding.as_ref().unwrap()[0].code.clone().unwrap())
+            .collect();
+        assert_eq!(codes, vec!["R1", "R2"]);
     }
 }

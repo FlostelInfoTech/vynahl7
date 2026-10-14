@@ -184,6 +184,11 @@ impl Repetition {
     ///
     /// This returns the complete field value including all components.
     /// For example, for MSH-9 with "ADT^A01", this returns "ADT^A01" instead of just "ADT".
+    ///
+    /// Only the FIRST subcomponent of each component is included:
+    /// `A&B^C&D` yields `A^C`, dropping `B` and `D`. This is
+    /// intentional — downstream callers rely on this shape — so use
+    /// [`Repetition::encode`] when the wire-complete value is needed.
     pub fn full_value(&self) -> Option<String> {
         if self.components.is_empty() {
             return None;
@@ -376,6 +381,16 @@ mod tests {
 
         assert_eq!(rep.components.len(), 2);
         assert_eq!(rep.value(), Some("Component1"));
+    }
+
+    #[test]
+    fn test_full_value_keeps_first_subcomponent_only() {
+        // Pinned behavior: full_value joins first subcomponents;
+        // encode() keeps the wire-complete value.
+        let field = Field::from_delimited("A&B^C&D");
+        let rep = &field.repetitions[0];
+        assert_eq!(rep.full_value().as_deref(), Some("A^C"));
+        assert_eq!(rep.encode(&Delimiters::default()), "A&B^C&D");
     }
 
     #[test]

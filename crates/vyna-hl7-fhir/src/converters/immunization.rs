@@ -107,22 +107,35 @@ impl ImmunizationConverter {
         // RXA-9: Information Authority -> primarySource / reportOrigin.
         // Empty is absent: it takes the default, not a false flag with an
         // empty report origin.
-        if let Ok(Some(auth_code)) = terser.get(&path("9"))
+        let auth_path = path("9");
+        if let Ok(Some(auth_code)) = terser.get(&auth_path)
             && !auth_code.is_empty()
         {
             match auth_code {
                 "00" => immunization.primary_source = Some(true),
                 _ => {
                     immunization.primary_source = Some(false);
+                    // RXA-9 is CE/0396: component 3 names the
+                    // coding system (shared table, unset when
+                    // absent) and component 2 is the display.
+                    let mut coding = Coding {
+                        system: terser
+                            .get(&format!("{auth_path}-3"))
+                            .ok()
+                            .flatten()
+                            .filter(|s| !s.is_empty())
+                            .map(convert_coding_system),
+                        code: Some(auth_code.to_string()),
+                        display: None,
+                        version: None,
+                    };
+                    if let Ok(Some(display)) = terser.get(&format!("{auth_path}-2"))
+                        && !display.is_empty()
+                    {
+                        coding.display = Some(display.to_string());
+                    }
                     immunization.report_origin = Some(CodeableConcept {
-                        coding: Some(vec![Coding {
-                            system: Some(
-                                "http://terminology.hl7.org/CodeSystem/v2-0356".to_string(),
-                            ),
-                            code: Some(auth_code.to_string()),
-                            display: None,
-                            version: None,
-                        }]),
+                        coding: Some(vec![coding]),
                         text: None,
                     });
                 }
@@ -171,17 +184,33 @@ impl ImmunizationConverter {
         }
 
         // RXA-18: Substance Refusal Reason (when status is not-done)
+        let refusal_path = path("18");
         if immunization.status == "not-done"
-            && let Ok(Some(refusal_reason)) = terser.get(&path("18"))
+            && let Ok(Some(refusal_reason)) = terser.get(&refusal_path)
             && !refusal_reason.is_empty()
         {
+            // RXA-18 is CE/0396 like RXA-9: component 3 via the
+            // shared table (unset when absent), component 2 is
+            // the display. v2-0443 is the Provider Role table,
+            // correct only for the performer function below.
+            let mut coding = Coding {
+                system: terser
+                    .get(&format!("{refusal_path}-3"))
+                    .ok()
+                    .flatten()
+                    .filter(|s| !s.is_empty())
+                    .map(convert_coding_system),
+                code: Some(refusal_reason.to_string()),
+                display: None,
+                version: None,
+            };
+            if let Ok(Some(display)) = terser.get(&format!("{refusal_path}-2"))
+                && !display.is_empty()
+            {
+                coding.display = Some(display.to_string());
+            }
             immunization.status_reason = Some(CodeableConcept {
-                coding: Some(vec![Coding {
-                    system: Some("http://terminology.hl7.org/CodeSystem/v2-0443".to_string()),
-                    code: Some(refusal_reason.to_string()),
-                    display: None,
-                    version: None,
-                }]),
+                coding: Some(vec![coding]),
                 text: None,
             });
         }
@@ -1062,5 +1091,53 @@ mod tests {
             system_for("LA^Left Arm^XYZ").as_deref(),
             Some("http://terminology.hl7.org/CodeSystem/v2-0163")
         );
+    }
+
+    #[test]
+    fn test_rxa9_rxa18_systems_resolve_via_shared_table() {
+        // RXA-9/RXA-18 are CE/0396: component 3 resolves via the
+        // shared table (unknown NIP001 keeps the urn:oid:
+        // fallback), component 2 is the display, and an absent
+        // component 3 leaves the system unset. v2-0356 is the
+        // Alternate Character Set table and v2-0443 the
+        // Provider Role table: neither belongs here.
+        let message_for = |rxa9: &str, rxa18: &str, status: &str| {
+            let mut fields = vec![String::new(); 20];
+            fields[0] = "0".to_string();
+            fields[1] = "1".to_string();
+            fields[2] = "20240315100000".to_string();
+            fields[4] = "08^HepB adult^CVX".to_string();
+            fields[8] = rxa9.to_string();
+            fields[17] = rxa18.to_string();
+            fields[19] = status.to_string();
+            parse_message(&format!(
+                "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|M|P|2.5\r\
+                 PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rRXA|{}",
+                fields.join("|")
+            ))
+            .unwrap()
+        };
+        // RXA-9 with a coding system: resolved + display kept.
+        let message = message_for("01^Historical information^NIP001", "", "CP");
+        let imm = &ImmunizationConverter::convert_all(&message).unwrap()[0];
+        assert_eq!(imm.primary_source, Some(false));
+        let coding = imm.report_origin.as_ref().unwrap().coding.as_ref().unwrap();
+        assert_eq!(coding[0].code.as_deref(), Some("01"));
+        assert_eq!(coding[0].display.as_deref(), Some("Historical information"));
+        assert_eq!(coding[0].system.as_deref(), Some("urn:oid:NIP001"));
+        // RXA-9 without a coding system: no fabricated system.
+        let message = message_for("01^Historical information", "", "CP");
+        let imm = &ImmunizationConverter::convert_all(&message).unwrap()[0];
+        let coding = imm.report_origin.as_ref().unwrap().coding.as_ref().unwrap();
+        assert_eq!(coding[0].system, None);
+        assert_eq!(coding[0].display.as_deref(), Some("Historical information"));
+        // RXA-18 refusal reason on a refused dose: same rules.
+        let message = message_for("", "01^Refused^NIP002", "RE");
+        let imm = &ImmunizationConverter::convert_all(&message).unwrap()[0];
+        assert_eq!(imm.status, "not-done");
+        let coding = imm.status_reason.as_ref().unwrap().coding.as_ref().unwrap();
+        assert_eq!(coding[0].code.as_deref(), Some("01"));
+        assert_eq!(coding[0].display.as_deref(), Some("Refused"));
+        assert_eq!(coding[0].system.as_deref(), Some("urn:oid:NIP002"));
     }
 }

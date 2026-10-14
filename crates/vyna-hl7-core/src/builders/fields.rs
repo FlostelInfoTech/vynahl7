@@ -3,7 +3,41 @@
 //! This module provides builder patterns for creating complex HL7 fields with multiple components.
 //! These builders help construct properly formatted composite fields following HL7 v2.x standards.
 
-use crate::field::Field;
+use crate::delimiters::Delimiters;
+use crate::encoding::Encoding;
+use crate::field::{Component, Field, Repetition};
+
+/// Join composite parts into wire text, escaping HL7 delimiters in
+/// each input so data can never become structure. Trailing empty
+/// parts are trimmed.
+fn join_escaped_parts(parts: &[String]) -> String {
+    let delims = Delimiters::default();
+    let mut end = parts.len();
+    while end > 0 && parts[end - 1].is_empty() {
+        end -= 1;
+    }
+    parts[..end]
+        .iter()
+        .map(|p| Encoding::encode(p, &delims))
+        .collect::<Vec<_>>()
+        .join("^")
+}
+
+/// Build a single-repetition field with one literal component per
+/// part. Trailing empty parts are trimmed.
+fn field_from_parts(parts: &[String]) -> Field {
+    let mut end = parts.len();
+    while end > 0 && parts[end - 1].is_empty() {
+        end -= 1;
+    }
+    let mut rep = Repetition::new();
+    for part in &parts[..end] {
+        rep.add_component(Component::from_value(part.as_str()));
+    }
+    let mut field = Field::new();
+    field.add_repetition(rep);
+    field
+}
 
 /// Builder for XPN (Extended Person Name) data type
 ///
@@ -102,28 +136,31 @@ impl XpnBuilder {
         self
     }
 
-    /// Build the XPN field
-    pub fn build(self) -> String {
-        let components = [self.family_name.unwrap_or_default(),
+    /// Builder inputs in component order (raw; `build` escapes them).
+    fn parts(self) -> [String; 8] {
+        [
+            self.family_name.unwrap_or_default(),
             self.given_name.unwrap_or_default(),
             self.middle_name.unwrap_or_default(),
             self.suffix.unwrap_or_default(),
             self.prefix.unwrap_or_default(),
             self.degree.unwrap_or_default(),
             self.name_type_code.unwrap_or_default(),
-            self.name_representation_code.unwrap_or_default()];
+            self.name_representation_code.unwrap_or_default(),
+        ]
+    }
 
-        // Trim trailing empty components
-        let mut result = components.join("^");
-        while result.ends_with('^') {
-            result.pop();
-        }
-        result
+    /// Build the XPN field
+    ///
+    /// Each input is one component; HL7 delimiters inside an input
+    /// are escaped, never split into structure.
+    pub fn build(self) -> String {
+        join_escaped_parts(&self.parts())
     }
 
     /// Build as Field
     pub fn build_field(self) -> Field {
-        Field::from_delimited(self.build())
+        field_from_parts(&self.parts())
     }
 }
 
@@ -229,9 +266,9 @@ impl XadBuilder {
         self
     }
 
-    /// Build the XAD field
-    pub fn build(self) -> String {
-        let components = vec![
+    /// Builder inputs in component order (raw; `build` escapes them).
+    fn parts(self) -> [String; 9] {
+        [
             self.street_address.unwrap_or_default(),
             self.other_designation.unwrap_or_default(),
             self.city.unwrap_or_default(),
@@ -241,19 +278,20 @@ impl XadBuilder {
             self.address_type.unwrap_or_default(),
             self.other_geographic_designation.unwrap_or_default(),
             self.county_parish_code.unwrap_or_default(),
-        ];
+        ]
+    }
 
-        // Trim trailing empty components
-        let mut result = components.join("^");
-        while result.ends_with('^') {
-            result.pop();
-        }
-        result
+    /// Build the XAD field
+    ///
+    /// Each input is one component; HL7 delimiters inside an input
+    /// are escaped, never split into structure.
+    pub fn build(self) -> String {
+        join_escaped_parts(&self.parts())
     }
 
     /// Build as Field
     pub fn build_field(self) -> Field {
-        Field::from_delimited(self.build())
+        field_from_parts(&self.parts())
     }
 }
 
@@ -359,9 +397,9 @@ impl XtnBuilder {
         self
     }
 
-    /// Build the XTN field
-    pub fn build(self) -> String {
-        let components = vec![
+    /// Builder inputs in component order (raw; `build` escapes them).
+    fn parts(self) -> [String; 9] {
+        [
             self.phone_number.unwrap_or_default(),
             self.use_code.unwrap_or_default(),
             self.equipment_type.unwrap_or_default(),
@@ -371,19 +409,20 @@ impl XtnBuilder {
             self.local_number.unwrap_or_default(),
             self.extension.unwrap_or_default(),
             self.any_text.unwrap_or_default(),
-        ];
+        ]
+    }
 
-        // Trim trailing empty components
-        let mut result = components.join("^");
-        while result.ends_with('^') {
-            result.pop();
-        }
-        result
+    /// Build the XTN field
+    ///
+    /// Each input is one component; HL7 delimiters inside an input
+    /// are escaped, never split into structure.
+    pub fn build(self) -> String {
+        join_escaped_parts(&self.parts())
     }
 
     /// Build as Field
     pub fn build_field(self) -> Field {
-        Field::from_delimited(self.build())
+        field_from_parts(&self.parts())
     }
 }
 
@@ -479,28 +518,31 @@ impl CxBuilder {
         self
     }
 
-    /// Build the CX field
-    pub fn build(self) -> String {
-        let components = [self.id_number,
+    /// Builder inputs in component order (raw; `build` escapes them).
+    fn parts(self) -> [String; 8] {
+        [
+            self.id_number,
             self.check_digit.unwrap_or_default(),
             self.check_digit_scheme.unwrap_or_default(),
             self.assigning_authority.unwrap_or_default(),
             self.identifier_type_code.unwrap_or_default(),
             self.assigning_facility.unwrap_or_default(),
             self.effective_date.unwrap_or_default(),
-            self.expiration_date.unwrap_or_default()];
+            self.expiration_date.unwrap_or_default(),
+        ]
+    }
 
-        // Trim trailing empty components
-        let mut result = components.join("^");
-        while result.ends_with('^') {
-            result.pop();
-        }
-        result
+    /// Build the CX field
+    ///
+    /// Each input is one component; HL7 delimiters inside an input
+    /// are escaped, never split into structure.
+    pub fn build(self) -> String {
+        join_escaped_parts(&self.parts())
     }
 
     /// Build as Field
     pub fn build_field(self) -> Field {
-        Field::from_delimited(self.build())
+        field_from_parts(&self.parts())
     }
 }
 
@@ -635,9 +677,9 @@ impl XcnBuilder {
         self
     }
 
-    /// Build the XCN field
-    pub fn build(self) -> String {
-        let components = vec![
+    /// Builder inputs in component order (raw; `build` escapes them).
+    fn parts(self) -> [String; 13] {
+        [
             self.id_number.unwrap_or_default(),
             self.family_name.unwrap_or_default(),
             self.given_name.unwrap_or_default(),
@@ -651,19 +693,20 @@ impl XcnBuilder {
             self.check_digit.unwrap_or_default(),
             self.check_digit_scheme.unwrap_or_default(),
             self.identifier_type_code.unwrap_or_default(),
-        ];
+        ]
+    }
 
-        // Trim trailing empty components
-        let mut result = components.join("^");
-        while result.ends_with('^') {
-            result.pop();
-        }
-        result
+    /// Build the XCN field
+    ///
+    /// Each input is one component; HL7 delimiters inside an input
+    /// are escaped, never split into structure.
+    pub fn build(self) -> String {
+        join_escaped_parts(&self.parts())
     }
 
     /// Build as Field
     pub fn build_field(self) -> Field {
-        Field::from_delimited(self.build())
+        field_from_parts(&self.parts())
     }
 }
 
@@ -1057,5 +1100,80 @@ mod tests {
             .identifier_type_code("NPI")
             .build();
         assert_eq!(doctor, "12345^SMITH^JAMES^^^DR^MD^^^^^^NPI");
+    }
+
+    #[test]
+    fn test_xpn_builder_escapes_delimiter_inputs() {
+        // A '^' inside one input is data, not structure: it must be
+        // escaped, not split into an extra component.
+        let name = XpnBuilder::new()
+            .family_name("A^B")
+            .given_name("JOHN")
+            .build();
+        assert_eq!(name, "A\\S\\B^JOHN");
+        let field = XpnBuilder::new()
+            .family_name("A^B")
+            .given_name("JOHN")
+            .build_field();
+        assert_eq!(field.repetitions[0].components.len(), 2);
+        assert_eq!(field.repetitions[0].components[0].value(), Some("A^B"));
+        let wire = field.encode(&crate::delimiters::Delimiters::default());
+        assert_eq!(wire, "A\\S\\B^JOHN");
+    }
+
+    #[test]
+    fn test_xad_builder_escapes_delimiter_inputs() {
+        let addr = XadBuilder::new()
+            .street_address("A^B&C")
+            .city("Springfield")
+            .build();
+        assert_eq!(addr, "A\\S\\B\\T\\C^^Springfield");
+        let field = XadBuilder::new()
+            .street_address("A^B&C")
+            .city("Springfield")
+            .build_field();
+        assert_eq!(field.repetitions[0].components.len(), 3);
+        assert_eq!(field.repetitions[0].components[0].value(), Some("A^B&C"));
+    }
+
+    #[test]
+    fn test_xtn_builder_escapes_delimiter_inputs() {
+        let phone = XtnBuilder::new()
+            .phone_number("555^1234")
+            .use_code("PRN")
+            .build();
+        assert_eq!(phone, "555\\S\\1234^PRN");
+        let field = XtnBuilder::new()
+            .phone_number("555^1234")
+            .use_code("PRN")
+            .build_field();
+        assert_eq!(field.repetitions[0].components.len(), 2);
+    }
+
+    #[test]
+    fn test_cx_builder_escapes_delimiter_inputs() {
+        let id = CxBuilder::new("12^34").identifier_type_code("MR").build();
+        assert_eq!(id, "12\\S\\34^^^^MR");
+        let field = CxBuilder::new("12^34")
+            .identifier_type_code("MR")
+            .build_field();
+        assert_eq!(field.repetitions[0].components.len(), 5);
+        assert_eq!(field.repetitions[0].components[0].value(), Some("12^34"));
+    }
+
+    #[test]
+    fn test_xcn_builder_escapes_delimiter_inputs() {
+        let doctor = XcnBuilder::new()
+            .id_number("12345")
+            .family_name("SMI^TH")
+            .given_name("JAMES")
+            .build();
+        assert_eq!(doctor, "12345^SMI\\S\\TH^JAMES");
+        let field = XcnBuilder::new()
+            .id_number("12345")
+            .family_name("SMI^TH")
+            .given_name("JAMES")
+            .build_field();
+        assert_eq!(field.repetitions[0].components.len(), 3);
     }
 }

@@ -250,7 +250,10 @@ impl PatientReverseConverter {
     /// Set telecoms in PID-13 (home and every other use) and
     /// PID-14 (work), one repetition per telecom (a whole-field write
     /// would overwrite all but the last). Email values go to XTN-4;
-    /// anything else goes to XTN-1.
+    /// anything else goes to XTN-1. XTN-2 carries the use (HL7 table
+    /// 0201) and XTN-3 the equipment type (HL7 table 0202) so the
+    /// forward converter recovers use and system instead of folding
+    /// every PID-13 repetition to home/phone.
     fn set_telecoms(pid: &mut Segment, telecoms: &[ContactPoint]) -> ConversionResult<()> {
         let mut home_rep = 0usize;
         let mut work_rep = 0usize;
@@ -276,8 +279,44 @@ impl PatientReverseConverter {
                 0 // XTN-1: telephone number
             };
             let _ = pid.set_component(field, rep, comp, value);
+            // XTN-2: telecommunication use code. Table 0201 has no
+            // letter for old (or unknown uses), so those omit the
+            // component and re-forward to the field-derived use.
+            if let Some(code) = Self::telecom_use_code(telecom.use_.as_deref()) {
+                let _ = pid.set_component(field, rep, 1, code);
+            }
+            // XTN-3: telecommunication equipment type. url/other have
+            // no table 0202 letter, so those omit the component and
+            // re-forward through value sniffing (phone, or email when
+            // the value contains '@').
+            if let Some(code) = Self::telecom_equipment_code(telecom.system.as_deref()) {
+                let _ = pid.set_component(field, rep, 2, code);
+            }
         }
         Ok(())
+    }
+
+    /// FHIR ContactPoint use to HL7 table 0201 telecommunication use code.
+    fn telecom_use_code(use_: Option<&str>) -> Option<&'static str> {
+        match use_ {
+            Some("home") => Some("PRN"),
+            Some("work") => Some("WPN"),
+            Some("mobile") => Some("ORN"),
+            Some("temp") => Some("VHN"),
+            _ => None,
+        }
+    }
+
+    /// FHIR ContactPoint system to HL7 table 0202 equipment type.
+    fn telecom_equipment_code(system: Option<&str>) -> Option<&'static str> {
+        match system {
+            Some("phone") => Some("PH"),
+            Some("fax") => Some("FX"),
+            Some("pager") => Some("BP"),
+            Some("sms") => Some("CP"),
+            Some("email") => Some("Internet"),
+            _ => None,
+        }
     }
 
     /// Convert FHIR gender to HL7 v2 gender code
@@ -602,6 +641,60 @@ mod tests {
             rep_component(&pid, 13, 2, 3).as_deref(),
             Some("a@example.com")
         );
+    }
+
+    #[test]
+    fn test_telecoms_write_use_and_equipment_codes() {
+        let mut patient = Patient::new();
+        patient.telecom = Some(vec![
+            ContactPoint {
+                system: Some("phone".to_string()),
+                value: Some("555-9999".to_string()),
+                use_: Some("mobile".to_string()),
+            },
+            ContactPoint {
+                system: Some("fax".to_string()),
+                value: Some("555-1111".to_string()),
+                use_: Some("work".to_string()),
+            },
+            ContactPoint {
+                system: Some("email".to_string()),
+                value: Some("a@example.com".to_string()),
+                use_: Some("home".to_string()),
+            },
+        ]);
+        let pid = PatientReverseConverter::convert(&patient).unwrap();
+        // XTN-2 (table 0201 use) and XTN-3 (table 0202 equipment)
+        // so the forward converter can recover use and system.
+        assert_eq!(rep_component(&pid, 13, 0, 0).as_deref(), Some("555-9999"));
+        assert_eq!(rep_component(&pid, 13, 0, 1).as_deref(), Some("ORN"));
+        assert_eq!(rep_component(&pid, 13, 0, 2).as_deref(), Some("PH"));
+        assert_eq!(rep_component(&pid, 14, 0, 0).as_deref(), Some("555-1111"));
+        assert_eq!(rep_component(&pid, 14, 0, 1).as_deref(), Some("WPN"));
+        assert_eq!(rep_component(&pid, 14, 0, 2).as_deref(), Some("FX"));
+        assert_eq!(
+            rep_component(&pid, 13, 1, 3).as_deref(),
+            Some("a@example.com")
+        );
+        assert_eq!(rep_component(&pid, 13, 1, 1).as_deref(), Some("PRN"));
+        assert_eq!(rep_component(&pid, 13, 1, 2).as_deref(), Some("Internet"));
+    }
+
+    #[test]
+    fn test_telecom_use_and_system_round_trip() {
+        let mut patient = Patient::new();
+        patient.telecom = Some(vec![ContactPoint {
+            system: Some("phone".to_string()),
+            value: Some("555-9999".to_string()),
+            use_: Some("mobile".to_string()),
+        }]);
+        let pid = PatientReverseConverter::convert(&patient).unwrap();
+        let back = round_trip_pid(&pid);
+        let telecoms = back.telecom.as_ref().unwrap();
+        assert_eq!(telecoms.len(), 1);
+        assert_eq!(telecoms[0].system.as_deref(), Some("phone"));
+        assert_eq!(telecoms[0].value.as_deref(), Some("555-9999"));
+        assert_eq!(telecoms[0].use_.as_deref(), Some("mobile"));
     }
 
     #[test]

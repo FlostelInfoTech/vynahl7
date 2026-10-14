@@ -861,6 +861,16 @@ struct SendHttpRequest {
     verify_tls: bool,
 }
 
+/// Case-insensitive `http(s)://` prefix check: URI schemes are
+/// case-insensitive (RFC 3986 section 3.1).
+fn has_http_scheme(url: &str) -> bool {
+    url.get(..7)
+        .is_some_and(|s| s.eq_ignore_ascii_case("http://"))
+        || url
+            .get(..8)
+            .is_some_and(|s| s.eq_ignore_ascii_case("https://"))
+}
+
 /// Send an HTTP/HTTPS request with HL7 message using reqwest
 async fn send_http_request(request: SendHttpRequest) -> Result<HttpResponse, String> {
     let SendHttpRequest {
@@ -878,7 +888,7 @@ async fn send_http_request(request: SendHttpRequest) -> Result<HttpResponse, Str
         verify_tls,
     } = request;
     let url = url.trim();
-    if !url.starts_with("http://") && !url.starts_with("https://") {
+    if !has_http_scheme(url) {
         return Err("URL must start with http:// or https://".to_string());
     }
 
@@ -1122,6 +1132,12 @@ where
     })
 }
 
+/// Loopback listen address: the test server must not expose its
+/// PHI-capable port to the LAN by default.
+fn server_listen_addr(port: u16) -> String {
+    format!("127.0.0.1:{port}")
+}
+
 /// Run the HTTP server
 async fn run_http_server(
     port: u16,
@@ -1134,7 +1150,7 @@ async fn run_http_server(
     use tokio::net::TcpListener;
     use tokio::time::{Duration, timeout};
 
-    let addr = format!("0.0.0.0:{}", port);
+    let addr = server_listen_addr(port);
 
     let listener = match TcpListener::bind(&addr).await {
         Ok(l) => l,
@@ -1156,7 +1172,7 @@ async fn run_http_server(
         s.server_messages.push(LogEntry {
             timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
             direction: Direction::Info,
-            message: format!("HTTP Server listening on http://0.0.0.0:{}/", port),
+            message: format!("HTTP Server listening on http://{}/", addr),
         });
     }
     ctx.request_repaint();
@@ -1462,7 +1478,7 @@ async fn run_http_load_test(params: HttpLoadTest) {
         ctx,
     } = params;
     let url_trimmed = url.trim().to_string();
-    if !url_trimmed.starts_with("http://") && !url_trimmed.starts_with("https://") {
+    if !has_http_scheme(&url_trimmed) {
         let mut s = state.lock().unwrap();
         s.load_test_running = false;
         s.load_test_errors = count;
@@ -1736,6 +1752,73 @@ mod tests {
             headers: Vec::new(),
             verify_tls: true,
         }
+    }
+
+    #[tokio::test]
+    async fn uppercase_scheme_is_not_rejected() {
+        // Closed port: must fail connecting, never with a scheme error.
+        let err = send_http_request(client_request("HTTP://127.0.0.1:9/hl7".to_string()))
+            .await
+            .unwrap_err();
+        assert!(
+            !err.contains("must start with"),
+            "uppercase scheme rejected: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn uppercase_scheme_round_trip() {
+        let port = free_port();
+        let (_state, shutdown) = start_test_server(port).await;
+        let resp = send_http_request(client_request(format!("HTTP://127.0.0.1:{}/hl7", port)))
+            .await
+            .unwrap();
+        shutdown.store(true, Ordering::SeqCst);
+        assert_eq!(resp.status_code, 200);
+    }
+
+    #[test]
+    fn http_scheme_match_is_case_insensitive() {
+        assert!(has_http_scheme("http://x/hl7"));
+        assert!(has_http_scheme("HTTP://x/hl7"));
+        assert!(has_http_scheme("Https://x/hl7"));
+        assert!(!has_http_scheme("ftp://x/hl7"));
+        assert!(!has_http_scheme("http:/x"));
+        assert!(!has_http_scheme(""));
+    }
+
+    #[tokio::test]
+    async fn load_test_accepts_uppercase_scheme() {
+        let port = free_port();
+        let (_srv_state, srv_shutdown) = start_test_server(port).await;
+        let state = Arc::new(Mutex::new(HttpState::default()));
+        run_http_load_test(HttpLoadTest {
+            url: format!("HTTP://127.0.0.1:{}/hl7", port),
+            method: HttpMethod::Post,
+            message: "MSH|^~\\&|S\r".to_string(),
+            timeout_secs: 30,
+            auth_type: AuthType::None,
+            username: String::new(),
+            password: String::new(),
+            api_key_header: String::new(),
+            api_key: String::new(),
+            bearer_token: String::new(),
+            headers: Vec::new(),
+            verify_tls: true,
+            count: 2,
+            state: state.clone(),
+            shutdown: Arc::new(AtomicBool::new(false)),
+            ctx: egui::Context::default(),
+        })
+        .await;
+        srv_shutdown.store(true, Ordering::SeqCst);
+        let s = state.lock().unwrap();
+        assert_eq!(s.load_test_received, 2, "errors: {}", s.load_test_errors);
+    }
+
+    #[test]
+    fn server_binds_loopback_by_default() {
+        assert_eq!(server_listen_addr(8080), "127.0.0.1:8080");
     }
 
     #[test]

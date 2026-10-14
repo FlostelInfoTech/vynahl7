@@ -215,14 +215,20 @@ impl VynaHL7TestPanel {
                 ActiveTab::Xml => self.xml_tab.get_message(),
             };
 
-            // Normalize line endings to CR for HL7
-            let content = content.replace("\r\n", "\r").replace('\n', "\r");
-
-            match std::fs::write(&path, &content) {
-                Ok(()) => {
-                    self.current_file = Some(path.clone());
-                    self.status_message = Some(format!("Saved: {}", path.display()));
-                }
+            // Encode in the MSH-18 charset so a reopen decodes
+            // the same bytes; unmappable text fails loudly instead
+            // of saving mojibake.
+            match encode_for_file_save(content) {
+                Ok((bytes, charset)) => match std::fs::write(&path, &bytes) {
+                    Ok(()) => {
+                        self.current_file = Some(path.clone());
+                        self.status_message =
+                            Some(format!("Saved: {} [{}]", path.display(), charset));
+                    }
+                    Err(e) => {
+                        self.status_message = Some(format!("Error saving file: {}", e));
+                    }
+                },
                 Err(e) => {
                     self.status_message = Some(format!("Error saving file: {}", e));
                 }
@@ -586,5 +592,64 @@ impl eframe::App for VynaHL7TestPanel {
                     ui.add_space(5.0);
                 });
         }
+    }
+}
+
+/// Normalize line endings to CR and encode in the MSH-18 charset.
+///
+/// Mirrors the builder tab's `encode_for_save`: raw UTF-8 bytes are
+/// written only when the message carries no usable MSH-18
+/// declaration, and unmappable text is a loud error, never silent
+/// replacement.
+fn encode_for_file_save(content: &str) -> Result<(Vec<u8>, String), String> {
+    let wire = content.replace("\r\n", "\r").replace('\n', "\r");
+    match declared_charset(&wire) {
+        Some(set) => set
+            .encode(&wire)
+            .map(|bytes| (bytes, set.msh18()))
+            .map_err(|e| format!("Cannot encode message in {}: {}", set.msh18(), e)),
+        None => Ok((wire.into_bytes(), CharacterSet::default().msh18())),
+    }
+}
+
+/// MSH-18 charset declared by wire text, when present and usable.
+fn declared_charset(wire: &str) -> Option<CharacterSet> {
+    let msh = wire.split('\r').find(|line| line.starts_with("MSH|"))?;
+    // MSH-1 is the separator itself, so MSH-18 sits at split index 17.
+    let raw = msh.split('|').nth(17)?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    CharacterSet::from_msh18(raw).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_save_round_trips_latin1_charset() {
+        let content = "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5||||||8859/1\r\
+             PID|1||1||Müller\r";
+        let (bytes, charset) = encode_for_file_save(content).unwrap();
+        assert_eq!(charset, "8859/1");
+        assert!(bytes.contains(&0xFC)); // single-byte ü, not UTF-8
+        let reopened = CharacterSet::decode_message(&bytes).unwrap();
+        assert!(reopened.contains("Müller"));
+        assert!(!reopened.contains("Ã¼"));
+    }
+
+    #[test]
+    fn file_save_rejects_unmappable_characters() {
+        let content = "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5||||||ASCII\r\
+             PID|1||1||Müller\r";
+        let err = encode_for_file_save(content).unwrap_err();
+        assert!(err.contains("ASCII"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn file_save_defaults_to_utf8_without_msh18() {
+        let (bytes, _) = encode_for_file_save("MSH|^~\\&|S\rPID|1||1||Müller\r").unwrap();
+        assert_eq!(bytes, "MSH|^~\\&|S\rPID|1||1||Müller\r".as_bytes());
     }
 }

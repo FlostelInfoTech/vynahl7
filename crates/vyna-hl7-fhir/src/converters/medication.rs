@@ -268,12 +268,29 @@ impl MedicationConverter {
         } else {
             format!("RXA({})-5", rxa_index + 1)
         };
-        let code = terser
+        // A text-only CWE keeps its text like convert_single;
+        // only a fully-empty field errors.
+        let Some(code) = terser
             .get(&code_path)
             .ok()
             .flatten()
             .filter(|code| !code.is_empty())
-            .ok_or_else(|| ConversionError::MissingField(code_path.clone(), "RXA".to_string()))?;
+        else {
+            if let Ok(Some(text)) = terser.get(&format!("{code_path}-2"))
+                && !text.is_empty()
+            {
+                let mut medication = Medication::new();
+                medication.code = Some(CodeableConcept {
+                    coding: None,
+                    text: Some(text.to_string()),
+                });
+                return Ok(medication);
+            }
+            return Err(ConversionError::MissingField(
+                code_path.clone(),
+                "RXA".to_string(),
+            ));
+        };
 
         let mut coding = Coding {
             system: None,
@@ -761,5 +778,20 @@ mod tests {
             system_for("IM^Intramuscular^XYZ").as_deref(),
             Some("http://terminology.hl7.org/CodeSystem/v2-0162")
         );
+    }
+
+    #[test]
+    fn test_convert_medication_preserves_text_only_rxa5() {
+        // Text-only RXA-5 keeps its text like convert_single
+        // (Medication.code is optional); only a fully-empty
+        // field errors (see above).
+        let hl7 = "MSH|^~\\&|Pharmacy|Hospital|EMR|Hospital|20240315||RAS^O17|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000||^Aspirin free text|100|MG||||||||||||CP";
+        let message = parse_message(hl7).unwrap();
+        let medication = MedicationConverter::convert_medication(&message, 0).unwrap();
+        let code = medication.code.as_ref().unwrap();
+        assert_eq!(code.coding, None);
+        assert_eq!(code.text.as_deref(), Some("Aspirin free text"));
     }
 }

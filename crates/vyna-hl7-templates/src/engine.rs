@@ -90,6 +90,12 @@ impl TemplateEngine {
     /// yields an empty field, not an error. The components path
     /// additionally rejects a required field whose components all
     /// render empty.
+    ///
+    /// ## Defaults are literal
+    ///
+    /// Only `placeholder` strings are substituted: field and component
+    /// `default` values render verbatim, so a `{{variable}}` written in
+    /// a default is emitted literally and is never a bindable variable.
     pub fn create_message(&self, template: &MessageTemplate) -> Result<Message> {
         // Merge template default variables with instance variables
         let mut all_vars = template.variables.clone().unwrap_or_default();
@@ -1082,5 +1088,33 @@ mod tests {
         engine.set_variable("name", "X");
         let err = engine.create_message(&template).unwrap_err().to_string();
         assert!(err.contains("Unclosed"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn test_defaults_with_placeholder_syntax_render_literally() {
+        // Defaults are literal: `{{...}}` in a field or component
+        // default renders verbatim even when the name is bound, and is
+        // never a bindable variable (see testpanel
+        // `collect_template_variables`, which scans placeholders only).
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut pid = SegmentTemplate::new("PID");
+        pid.add_field(5, FieldTemplate::new().with_default("{{who}}"));
+        pid.add_field(
+            6,
+            FieldTemplate::new()
+                .with_components(vec![ComponentTemplate::new(1).with_default("{{them}}")]),
+        );
+        template.add_segment(pid);
+
+        let mut engine = TemplateEngine::new();
+        engine.set_variable("who", "DOE");
+        engine.set_variable("them", "X");
+        let message = engine.create_message(&template).unwrap();
+        let pid = message.get_segment_by_id("PID").unwrap();
+        assert_eq!(pid.get_field_value(5), Some("{{who}}"));
+        assert_eq!(
+            pid.get_field(6).unwrap().repetitions[0].components[0].value(),
+            Some("{{them}}")
+        );
     }
 }

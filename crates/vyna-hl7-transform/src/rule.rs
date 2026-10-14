@@ -115,6 +115,10 @@ impl TransformationRule {
     }
 
     /// Set a default value to use if the source field is empty
+    ///
+    /// The default applies regardless of [`skip_if_empty`](Self::skip_if_empty):
+    /// with the default skip setting [`apply`](Self::apply) returns it for
+    /// empty values without calling the transform function.
     pub fn with_default<S: Into<String>>(mut self, default_value: S) -> Self {
         self.default_value = Some(default_value.into());
         self
@@ -123,12 +127,19 @@ impl TransformationRule {
     /// Set whether to skip the rule if the source field is empty
     ///
     /// Default is true. If false, the transformation will be applied even to empty values.
+    /// Keep the default and use [`with_default`](Self::with_default) for plain defaults;
+    /// set false only when the transform function itself must see empty input (e.g.
+    /// [`default_if_empty`](crate::transforms::default_if_empty)).
     pub fn skip_if_empty(mut self, skip: bool) -> Self {
         self.skip_if_empty = skip;
         self
     }
 
     /// Apply the transformation to a value
+    ///
+    /// An empty value never reaches the transform function when `skip_if_empty`
+    /// is true (the default): the rule's default value is returned instead
+    /// (`None` when unset, so the target is left untouched).
     ///
     /// # Arguments
     ///
@@ -284,6 +295,24 @@ mod tests {
 
         let result = rule.apply("", &context).unwrap();
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_apply_skips_transform_fn_for_empty_values_by_default() {
+        fn fail_on_call(_value: &str, _ctx: &TransformContext) -> Result<String> {
+            panic!("transform function must not run for empty values when skipping");
+        }
+
+        // Default skip: the transform never runs, so no panic and None.
+        let rule = TransformationRule::new("PID-5-1", "PID-5-1").with_transform(fail_on_call);
+        let context = TransformContext::new();
+        assert_eq!(rule.apply("", &context).unwrap(), None);
+
+        // Opted out of skip: the transform runs on the empty value.
+        let rule = TransformationRule::new("PID-5-1", "PID-5-1")
+            .with_transform(|value, _ctx| Ok(format!("got:{value}")))
+            .skip_if_empty(false);
+        assert_eq!(rule.apply("", &context).unwrap(), Some("got:".to_string()));
     }
 
     #[test]

@@ -1493,6 +1493,41 @@ async fn sftp_connect_and_list(
     .map_err(|e| format!("Task error: {}", e))?
 }
 
+/// Resolve an SFTP host (DNS name or IP literal) to socket addresses.
+///
+/// `SocketAddr::from_str` only accepts IP literals, so hostnames must
+/// go through the resolver instead.
+fn resolve_sftp_addrs(host: &str, port: u16) -> Result<Vec<std::net::SocketAddr>, String> {
+    use std::net::ToSocketAddrs;
+
+    let addrs: Vec<_> = format!("{host}:{port}")
+        .to_socket_addrs()
+        .map_err(|e| format!("Invalid address: {e}"))?
+        .collect();
+    if addrs.is_empty() {
+        return Err(format!(
+            "Invalid address: '{host}:{port}' resolved to nothing"
+        ));
+    }
+    Ok(addrs)
+}
+
+/// Open a TCP connection to an SFTP host, trying every resolved
+/// address in turn with a per-address timeout.
+fn sftp_tcp_connect(host: &str, port: u16) -> Result<std::net::TcpStream, String> {
+    use std::net::TcpStream;
+    use std::time::Duration;
+
+    let mut last_err = String::from("no addresses attempted");
+    for addr in resolve_sftp_addrs(host, port)? {
+        match TcpStream::connect_timeout(&addr, Duration::from_secs(10)) {
+            Ok(tcp) => return Ok(tcp),
+            Err(e) => last_err = e.to_string(),
+        }
+    }
+    Err(format!("Connection failed: {last_err}"))
+}
+
 fn sftp_connect_and_list_sync(
     host: &str,
     port: u16,
@@ -1501,19 +1536,10 @@ fn sftp_connect_and_list_sync(
     path: &str,
     verify_host_key: bool,
 ) -> Result<Vec<FileEntry>, String> {
-    use std::net::TcpStream;
     use std::time::Duration;
 
-    let addr = format!("{}:{}", host, port);
-
-    // Connect with timeout
-    let tcp = TcpStream::connect_timeout(
-        &addr
-            .parse()
-            .map_err(|e| format!("Invalid address: {}", e))?,
-        Duration::from_secs(10),
-    )
-    .map_err(|e| format!("Connection failed: {}", e))?;
+    // Connect with timeout (host may be a DNS name or IP literal)
+    let tcp = sftp_tcp_connect(host, port)?;
 
     tcp.set_read_timeout(Some(Duration::from_secs(30))).ok();
     tcp.set_write_timeout(Some(Duration::from_secs(30))).ok();
@@ -1627,18 +1653,8 @@ fn sftp_upload_sync(
     verify_host_key: bool,
 ) -> Result<(), String> {
     use std::io::Write;
-    use std::net::TcpStream;
-    use std::time::Duration;
 
-    let addr = format!("{}:{}", host, port);
-
-    let tcp = TcpStream::connect_timeout(
-        &addr
-            .parse()
-            .map_err(|e| format!("Invalid address: {}", e))?,
-        Duration::from_secs(10),
-    )
-    .map_err(|e| format!("Connection failed: {}", e))?;
+    let tcp = sftp_tcp_connect(host, port)?;
 
     let mut session =
         ssh2::Session::new().map_err(|e| format!("Failed to create SSH session: {}", e))?;
@@ -1711,18 +1727,8 @@ fn sftp_download_sync(
     verify_host_key: bool,
 ) -> Result<String, String> {
     use std::io::Read;
-    use std::net::TcpStream;
-    use std::time::Duration;
 
-    let addr = format!("{}:{}", host, port);
-
-    let tcp = TcpStream::connect_timeout(
-        &addr
-            .parse()
-            .map_err(|e| format!("Invalid address: {}", e))?,
-        Duration::from_secs(10),
-    )
-    .map_err(|e| format!("Connection failed: {}", e))?;
+    let tcp = sftp_tcp_connect(host, port)?;
 
     let mut session =
         ssh2::Session::new().map_err(|e| format!("Failed to create SSH session: {}", e))?;
@@ -2122,6 +2128,19 @@ mod tests {
             }
         });
         port
+    }
+
+    #[test]
+    fn sftp_resolver_accepts_hostnames() {
+        let addrs = resolve_sftp_addrs("localhost", 22).unwrap();
+        assert!(!addrs.is_empty());
+        assert!(addrs.iter().all(|a| a.port() == 22));
+    }
+
+    #[test]
+    fn sftp_resolver_rejects_unresolvable_names() {
+        let err = resolve_sftp_addrs("nonexistent.invalid", 22).unwrap_err();
+        assert!(err.contains("Invalid address"), "unexpected error: {err}");
     }
 
     #[test]

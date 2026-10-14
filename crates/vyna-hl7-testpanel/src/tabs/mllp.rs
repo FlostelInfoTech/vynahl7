@@ -497,6 +497,12 @@ async fn send_mllp_message(addr: &str, message: &str, timeout_secs: u32) -> Resu
     CharacterSet::decode_message(&response_buf[start..end]).map_err(|e| e.to_string())
 }
 
+/// Loopback listen address: the test server must not expose its
+/// PHI-capable port to the LAN by default.
+fn server_listen_addr(port: u16) -> String {
+    format!("127.0.0.1:{port}")
+}
+
 /// Run the MLLP server
 async fn run_mllp_server(
     port: u16,
@@ -514,7 +520,7 @@ async fn run_mllp_server(
     const FS: u8 = 0x1C;
     const CR: u8 = 0x0D;
 
-    let addr = format!("0.0.0.0:{}", port);
+    let addr = server_listen_addr(port);
 
     let listener = match TcpListener::bind(&addr).await {
         Ok(l) => l,
@@ -631,7 +637,10 @@ async fn run_mllp_server(
                                     let start = if message_buf.first() == Some(&VT) { 1 } else { 0 };
                                     let end = message_buf.len() - 2;
 
-                                    if let Ok(hl7_message) = CharacterSet::decode_message(&message_buf[start..end]) {
+                                    let decoded =
+                                        CharacterSet::decode_message(&message_buf[start..end]);
+                                    let decode_err = decoded.as_ref().err().map(|e| e.to_string());
+                                    if let Ok(hl7_message) = decoded {
                                         // Log received message
                                         {
                                             let mut s = state_clone.lock().unwrap();
@@ -669,6 +678,19 @@ async fn run_mllp_server(
                                             }
                                             ctx_clone.request_repaint();
                                         }
+                                    } else {
+                                        let mut s = state_clone.lock().unwrap();
+                                        s.server_messages.push(LogEntry {
+                                            timestamp: chrono::Local::now()
+                                                .format("%H:%M:%S")
+                                                .to_string(),
+                                            direction: Direction::Error,
+                                            message: format!(
+                                                "Failed to decode frame from {peer_addr}: {}",
+                                                decode_err.unwrap_or_default()
+                                            ),
+                                        });
+                                        ctx_clone.request_repaint();
                                     }
 
                                     // Clear buffer for next message
@@ -921,5 +943,45 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.contains("maximum"), "unexpected error: {err}");
+    }
+
+    #[tokio::test]
+    async fn undecodable_frame_is_logged_as_error() {
+        let port = free_port();
+        let state = Arc::new(Mutex::new(MllpState::default()));
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let (state_c, shutdown_c) = (state.clone(), shutdown.clone());
+        tokio::spawn(async move {
+            run_mllp_server(port, true, state_c, shutdown_c, egui::Context::default()).await;
+        });
+        assert!(wait_for_log(&state, |e| e.message.contains("listening")).await);
+
+        // ASCII-declared frame carrying a non-ASCII byte: decoding
+        // must fail, and the failure must be logged, not swallowed.
+        let mut stream = TcpStream::connect(format!("127.0.0.1:{}", port))
+            .await
+            .unwrap();
+        let mut frame = vec![0x0Bu8];
+        frame.extend_from_slice(
+            b"MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5||||||ASCII\rPID|1||1||M",
+        );
+        frame.push(0xFC);
+        frame.extend_from_slice(b"ller\r");
+        frame.extend_from_slice(&[0x1Cu8, 0x0Du8]);
+        stream.write_all(&frame).await.unwrap();
+        stream.flush().await.unwrap();
+
+        let logged = wait_for_log(&state, |e| {
+            e.direction == Direction::Error && e.message.contains("decode")
+        })
+        .await;
+
+        shutdown.store(true, Ordering::SeqCst);
+        assert!(logged, "undecodable frame drew no decode error entry");
+    }
+
+    #[test]
+    fn server_binds_loopback_by_default() {
+        assert_eq!(server_listen_addr(2575), "127.0.0.1:2575");
     }
 }

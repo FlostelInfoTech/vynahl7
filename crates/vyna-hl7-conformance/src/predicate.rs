@@ -358,22 +358,27 @@ impl PredicateParser {
             )));
         }
         let (field, _) = Self::split_indexed(parts[1], path)?;
-        if field.parse::<usize>().is_err() {
-            return Err(ConformanceError::InvalidPredicate(format!(
-                "Invalid field index in path: {}",
-                path
-            )));
-        }
+        Self::check_nonzero_index(field, path, "field")?;
         for part in &parts[2..] {
-            if part.parse::<usize>().is_err() {
-                return Err(ConformanceError::InvalidPredicate(format!(
-                    "Invalid component index in path: {}",
-                    path
-                )));
-            }
+            Self::check_nonzero_index(part, path, "component")?;
         }
 
         Ok(())
+    }
+
+    /// Check that a field/component number parses and is not zero.
+    ///
+    /// Terser indexing is 1-based throughout: 0 (or `00`) can never
+    /// resolve, so it is rejected here just like a zero repetition
+    /// index in [`Self::split_indexed`], instead of parsing into a
+    /// condition that silently mis-evaluates on every message.
+    fn check_nonzero_index(part: &str, path: &str, what: &str) -> Result<()> {
+        match part.parse::<usize>() {
+            Ok(n) if n > 0 => Ok(()),
+            _ => Err(ConformanceError::InvalidPredicate(format!(
+                "Invalid {what} index in path: {path}"
+            ))),
+        }
     }
 
     /// Split `BASE` or `BASE(n)` into its base and optional 1-based index.
@@ -693,6 +698,28 @@ mod tests {
         assert!(PredicateParser::parse("OBX(2)-5 IS VALUED").is_ok());
         assert!(PredicateParser::parse("PID-11(2)-1 IS VALUED").is_ok());
         assert!(PredicateParser::parse("PID-5-1-2 IS VALUED").is_ok());
+    }
+
+    #[test]
+    fn test_field_and_component_zero_are_rejected() {
+        // Terser indexing is 1-based: 0 can never resolve, so
+        // accepting it (e.g. `PID-0 IS NOT VALUED` vacuously true
+        // on every message) silently mis-evaluates.
+        for bad in ["PID-0", "PID-00", "PID-5-0", "PID-1-0", "PID-5-1-0"] {
+            assert!(
+                PredicateParser::parse(&format!("{bad} IS NOT VALUED")).is_err(),
+                "{bad}"
+            );
+            assert!(
+                PredicateParser::parse(&format!("{bad} IS VALUED")).is_err(),
+                "{bad}"
+            );
+            assert!(
+                PredicateParser::parse(&format!("{bad} = 'M'")).is_err(),
+                "{bad}"
+            );
+        }
+        assert!(PredicateParser::parse("PID-5 IS VALUED").is_ok());
     }
 
     #[test]

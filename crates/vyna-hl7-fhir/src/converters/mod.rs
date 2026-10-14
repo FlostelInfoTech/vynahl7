@@ -47,11 +47,12 @@ use vyna_hl7_core::Message;
 /// Stable Observation id for the Nth OBX segment (`obx_ordinal` is the
 /// 0-based ordinal among OBX segments in message order).
 ///
-/// `obs-{OBX-1}` while the set id is unique in the message; when OBX-1
-/// restarts per OBR group the 1-based global ordinal disambiguates:
-/// `obs-{set-id}-{ordinal}`. `None` when the OBX has no valued set id.
-/// Both the Observation converter and the DiagnosticReport linking use
-/// this so references resolve.
+/// `obs-{OBX-1}` while every set id is unique in the message; when any
+/// set id repeats, every valued id carries its 1-based global ordinal
+/// (`obs-{set-id}-{ordinal}`) so a literal set id like `1-2` cannot
+/// collide with a disambiguated one. `None` when the OBX has no valued
+/// set id. Both the Observation converter and the DiagnosticReport
+/// linking use this so references resolve.
 pub(crate) fn observation_id(message: &Message, obx_ordinal: usize) -> Option<String> {
     let set_ids: Vec<Option<&str>> = message
         .segments
@@ -60,10 +61,16 @@ pub(crate) fn observation_id(message: &Message, obx_ordinal: usize) -> Option<St
         .map(|s| s.get_field_value(1).filter(|v| !v.is_empty()))
         .collect();
     let set_id = set_ids.get(obx_ordinal).copied().flatten()?;
-    let unique = set_ids.iter().filter(|s| **s == Some(set_id)).count() == 1;
-    if unique {
-        Some(format!("obs-{set_id}"))
-    } else {
+    let any_repeat = set_ids.iter().filter_map(|set| *set).any(|candidate| {
+        set_ids
+            .iter()
+            .filter(|set| **set == Some(candidate))
+            .count()
+            > 1
+    });
+    if any_repeat {
         Some(format!("obs-{set_id}-{}", obx_ordinal + 1))
+    } else {
+        Some(format!("obs-{set_id}"))
     }
 }

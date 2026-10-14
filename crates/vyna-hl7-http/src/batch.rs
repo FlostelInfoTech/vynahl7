@@ -148,6 +148,9 @@ impl MessageBatch {
 ///
 /// Automatically batches messages and invokes a flush callback when the batch
 /// is full or expired.
+///
+/// Pending messages are NOT flushed on drop: call [`flush`](Self::flush)
+/// before dropping, or buffered messages are silently discarded.
 #[cfg(feature = "batch")]
 pub struct BatchProcessor<F>
 where
@@ -338,6 +341,26 @@ mod tests {
         assert_eq!(batch.len(), 0);
         assert!(!batch.is_full());
         assert!(!batch.is_expired());
+    }
+
+    #[test]
+    fn test_drop_without_flush_discards_pending() {
+        // Contract: drop never flushes; the caller must flush first.
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        let calls = Rc::new(Cell::new(0usize));
+        {
+            let mut processor = BatchProcessor::new(100, Duration::from_secs(30), {
+                let calls = calls.clone();
+                move |_messages| {
+                    calls.set(calls.get() + 1);
+                }
+            });
+            processor.add(Message::default());
+            assert_eq!(processor.batch_size(), 1);
+        }
+        assert_eq!(calls.get(), 0);
     }
 
     #[test]

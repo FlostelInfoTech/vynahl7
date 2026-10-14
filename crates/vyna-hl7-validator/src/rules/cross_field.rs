@@ -28,10 +28,39 @@
 //! ```
 
 use super::{RuleSeverity, ValidationRule};
+use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
 
 /// Cross-field validation pattern builder
 pub struct CrossFieldValidator;
+
+/// Read the addressed value from every occurrence of an unindexed
+/// segment path (`SEG-...`), one entry per occurrence in message
+/// order. Returns `None` for indexed paths (`SEG(n)-...`) and paths
+/// without a field part, so callers fall back to a single `get`.
+///
+/// Iteration is bounded by the occurrence count: it cannot stop on
+/// an out-of-range error because `get` returns `Ok(None)` — not an
+/// error — when the segment id is absent entirely.
+fn occurrence_values<'a>(
+    msg: &Message,
+    terser: &'a Terser<'a>,
+    field: &str,
+) -> Option<Vec<Option<&'a str>>> {
+    let (seg, rest) = field.split_once('-')?;
+    if seg.is_empty() || rest.is_empty() || seg.contains('(') {
+        return None;
+    }
+    let count = msg.get_segments_by_id(seg).len();
+    let mut values = Vec::with_capacity(count);
+    for index in 1..=count {
+        match terser.get(&format!("{seg}({index})-{rest}")) {
+            Ok(value) => values.push(value),
+            Err(_) => break,
+        }
+    }
+    Some(values)
+}
 
 impl CrossFieldValidator {
     /// Create an if-then rule: if field A equals value, then field B must be valued
@@ -208,6 +237,11 @@ impl CrossFieldValidator {
 
     /// Create a "field equals value" rule: check if a field equals a specific value
     ///
+    /// Occurrence semantics: an unindexed segment path (`OBX-5`)
+    /// requires every occurrence to be valued, and at least one
+    /// occurrence to exist; an indexed path (`OBX(2)-5`) checks that
+    /// occurrence only.
+    ///
     /// # Examples
     ///
     /// ```
@@ -232,6 +266,12 @@ impl CrossFieldValidator {
 
         ValidationRule::new(name, description, severity).with_condition(move |msg| {
             let terser = Terser::new(msg);
+            if let Some(values) = occurrence_values(msg, &terser, &field) {
+                return !values.is_empty()
+                    && values
+                        .iter()
+                        .all(|v| matches!(v, Some(s) if !s.trim().is_empty()));
+            }
             if let Ok(Some(value)) = terser.get(&field) {
                 !value.trim().is_empty()
             } else {
@@ -241,6 +281,11 @@ impl CrossFieldValidator {
     }
 
     /// Create a "field matches pattern" rule using simple pattern matching
+    ///
+    /// Occurrence semantics: an unindexed segment path (`OBX-2`)
+    /// requires every valued occurrence to be in the set; absent or
+    /// empty occurrences are OK. An indexed path (`OBX(2)-2`) checks
+    /// that occurrence only.
     ///
     /// # Examples
     ///
@@ -269,6 +314,13 @@ impl CrossFieldValidator {
 
         ValidationRule::new(name, description, severity).with_condition(move |msg| {
             let terser = Terser::new(msg);
+            if let Some(values) = occurrence_values(msg, &terser, &field) {
+                return values.iter().all(|v| match v {
+                    None => true,
+                    Some(s) if s.trim().is_empty() => true,
+                    Some(s) => valid_values.iter().any(|x| x.as_str() == s.trim()),
+                });
+            }
             if let Ok(Some(value)) = terser.get(&field) {
                 let trimmed = value.trim();
                 if trimmed.is_empty() {
@@ -486,5 +538,86 @@ mod tests {
 
         let msg = create_test_message();
         assert!(rule.evaluate(&msg).is_some());
+    }
+
+    fn create_obx_message(rows: &[(&str, &str, &str)]) -> Message {
+        // Each row is (OBX-1 set ID, OBX-2 value type, OBX-5 value).
+        let mut msg = Message::default();
+        let mut msh = Segment::new("MSH");
+        msh.fields.push(Field::from_value("|"));
+        msg.segments.push(msh);
+        for (set_id, value_type, value) in rows {
+            let mut obx = Segment::new("OBX");
+            obx.fields.push(Field::from_value(*set_id)); // OBX-1
+            obx.fields.push(Field::from_value(*value_type)); // OBX-2
+            obx.fields.push(Field::from_value("GLU")); // OBX-3
+            obx.fields.push(Field::new()); // OBX-4
+            obx.fields.push(Field::from_value(*value)); // OBX-5
+            msg.segments.push(obx);
+        }
+        msg
+    }
+
+    #[test]
+    fn test_field_in_set_checks_every_occurrence() {
+        let rule = CrossFieldValidator::field_in_set(
+            "obx_value_type_valid",
+            "Value Type must be NM",
+            RuleSeverity::Error,
+            "OBX-2",
+            vec!["NM"],
+        );
+        // First OBX is valid but the second is BOGUS: must fail.
+        let msg = create_obx_message(&[("1", "NM", "98"), ("2", "BOGUS", "140")]);
+        assert!(rule.evaluate(&msg).is_some());
+        // All valid: must pass.
+        let msg = create_obx_message(&[("1", "NM", "98"), ("2", "NM", "140")]);
+        assert!(rule.evaluate(&msg).is_none());
+    }
+
+    #[test]
+    fn test_field_valued_requires_every_occurrence() {
+        let rule = CrossFieldValidator::field_valued(
+            "obx_value_required",
+            "Observation Value must be provided",
+            RuleSeverity::Error,
+            "OBX-5",
+        );
+        // Second OBX-5 is empty: must fail.
+        let msg = create_obx_message(&[("1", "NM", "98"), ("2", "NM", "")]);
+        assert!(rule.evaluate(&msg).is_some());
+        // All valued: must pass.
+        let msg = create_obx_message(&[("1", "NM", "98"), ("2", "NM", "140")]);
+        assert!(rule.evaluate(&msg).is_none());
+        // No OBX at all: must fail (at least one occurrence required).
+        assert!(rule.evaluate(&create_test_message()).is_some());
+    }
+
+    #[test]
+    fn test_indexed_paths_still_check_one_occurrence() {
+        let msg = create_obx_message(&[("1", "NM", "98"), ("2", "BOGUS", "140")]);
+        let first = CrossFieldValidator::field_in_set(
+            "t",
+            "t",
+            RuleSeverity::Error,
+            "OBX(1)-2",
+            vec!["NM"],
+        );
+        assert!(first.evaluate(&msg).is_none());
+        let second = CrossFieldValidator::field_in_set(
+            "t",
+            "t",
+            RuleSeverity::Error,
+            "OBX(2)-2",
+            vec!["NM"],
+        );
+        assert!(second.evaluate(&msg).is_some());
+    }
+
+    #[test]
+    fn test_field_in_set_absent_segment_still_passes() {
+        let rule =
+            CrossFieldValidator::field_in_set("t", "t", RuleSeverity::Error, "OBX-2", vec!["NM"]);
+        assert!(rule.evaluate(&create_test_message()).is_none());
     }
 }
