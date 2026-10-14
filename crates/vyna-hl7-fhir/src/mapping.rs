@@ -113,7 +113,8 @@ pub struct FieldRule {
     /// Translate the value through this table.
     #[serde(default)]
     pub map: Option<HashMap<String, String>>,
-    /// Fallback when `map` has no entry (otherwise the value passes through).
+    /// Fallback when `map` has no entry (requires `map`;
+    /// otherwise the value passes through).
     #[serde(default)]
     pub default: Option<String>,
     /// Reformat the value (`date` or `datetime`).
@@ -191,6 +192,12 @@ impl Mapping {
                     )));
                 }
                 _ => {}
+            }
+            if rule.default.is_some() && rule.map.is_none() {
+                return Err(ConversionError::Mapping(format!(
+                    "field {i} ('{}'): default requires map",
+                    rule.target
+                )));
             }
             for (name, path) in [
                 ("source", &rule.source),
@@ -1232,5 +1239,18 @@ fields:
             format_datetime("20240315100000.123"),
             Some("2024-03-15T10:00:00.123".to_string())
         );
+    }
+
+    #[test]
+    fn engine_rejects_default_without_map_at_load() {
+        // A default only applies to unmapped `map` values; without a
+        // map it would sit silently ignored, so loading fails.
+        let err = Mapping::from_yaml(concat!(
+            "resourceType: X\nfields:\n",
+            "  - target: a\n    source: PID-8\n",
+            "    default: unknown\n",
+        ))
+        .unwrap_err();
+        assert!(err.to_string().contains("default"), "{err}");
     }
 }

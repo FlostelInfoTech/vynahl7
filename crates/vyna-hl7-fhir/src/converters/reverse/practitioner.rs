@@ -50,7 +50,9 @@ impl PractitionerReverseConverter {
 
             // Component 9: Assigning Authority
             if let Some(ref system) = first_id.system {
-                // Extract authority from system URL
+                // Extract authority from system URL. Only urn:oid:
+                // systems round-trip cleanly: anything else is kept
+                // verbatim and gains the prefix on re-forward.
                 let authority = system
                     .strip_prefix("urn:oid:")
                     .unwrap_or(system.split('/').next_back().unwrap_or(""));
@@ -104,17 +106,17 @@ impl PractitionerReverseConverter {
                 components[5] = prefix.join(" ");
             }
 
-            // Component 10: Name Type Code. usual/unknown map to
-            // "U" (HL7 table 0200 Unspecified): "L" would re-forward
-            // as official and corrupt the round-trip.
+            // Component 10: Name Type Code. Every use without a
+            // table 0200 letter maps to "U" (Unspecified): it
+            // re-forwards to "usual", while "L" would corrupt the
+            // round-trip to "official".
             if let Some(ref use_) = first_name.use_ {
                 components[9] = match use_.as_str() {
                     "official" => "L".to_string(),
                     "maiden" => "M".to_string(),
                     "nickname" => "N".to_string(),
                     "temp" => "T".to_string(),
-                    "usual" | "unknown" => "U".to_string(),
-                    _ => "L".to_string(),
+                    _ => "U".to_string(),
                 };
             }
         }
@@ -154,7 +156,9 @@ impl PractitionerReverseConverter {
                 components.push((0, value.clone()));
             }
 
-            // Component 9: Assigning Authority (0-indexed: 8)
+            // Component 9: Assigning Authority (0-indexed: 8).
+            // Only urn:oid: systems round-trip cleanly: anything
+            // else is kept verbatim and gains the prefix back.
             if let Some(ref system) = first_id.system {
                 let authority = system
                     .strip_prefix("urn:oid:")
@@ -212,16 +216,16 @@ impl PractitionerReverseConverter {
             }
 
             // Component 10: Name Type Code (0-indexed: 9).
-            // usual/unknown map to "U" (HL7 table 0200
-            // Unspecified): "L" would re-forward as official.
+            // Every use without a table 0200 letter maps to "U"
+            // (Unspecified): it re-forwards to "usual", while "L"
+            // would corrupt the round-trip to "official".
             if let Some(ref use_) = first_name.use_ {
                 let type_code = match use_.as_str() {
                     "official" => "L",
                     "maiden" => "M",
                     "nickname" => "N",
                     "temp" => "T",
-                    "usual" | "unknown" => "U",
-                    _ => "L",
+                    _ => "U",
                 };
                 components.push((9, type_code.to_string()));
             }
@@ -435,5 +439,46 @@ mod tests {
 
         let xcn = PractitionerReverseConverter::convert_to_xcn(&practitioner).unwrap();
         assert!(xcn.contains("Doe"));
+    }
+
+    #[test]
+    fn test_unmapped_name_use_round_trips_to_usual() {
+        use crate::converters::practitioner::PractitionerConverter;
+        use vyna_hl7_parser::parse_message;
+
+        // anonymous/old have no HL7 table 0200 letter: "U"
+        // (Unspecified) re-forwards to "usual", while "L" would
+        // corrupt the round-trip to "official".
+        for use_ in ["anonymous", "old"] {
+            let mut practitioner = Practitioner::new();
+            practitioner.name = Some(vec![HumanName {
+                use_: Some(use_.to_string()),
+                text: None,
+                family: Some("Smith".to_string()),
+                given: Some(vec!["John".to_string()]),
+                prefix: None,
+                suffix: None,
+            }]);
+            let xcn = PractitionerReverseConverter::convert_to_xcn(&practitioner).unwrap();
+            assert_eq!(xcn.split('^').nth(9), Some("U"), "xcn {use_}");
+            let components =
+                PractitionerReverseConverter::convert_to_components(&practitioner).unwrap();
+            assert!(
+                components.contains(&(9, "U".to_string())),
+                "components {use_}"
+            );
+            let hl7 = format!(
+                "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                 PID|1||MRN123|||DOE^JOHN||19800101|M\r\
+                 PV1|1|I|ER^101^1||||{xcn}"
+            );
+            let message = parse_message(&hl7).unwrap();
+            let back = PractitionerConverter::convert_attending_doctor(&message).unwrap();
+            assert_eq!(
+                back.name.as_ref().unwrap()[0].use_.as_deref(),
+                Some("usual"),
+                "round-trip {use_}"
+            );
+        }
     }
 }

@@ -33,6 +33,11 @@ fields:
       ICD9: http://hl7.org/fhir/sid/icd-9-cm
       ICD10: http://hl7.org/fhir/sid/icd-10
       CPT: http://www.ama-assn.org/go/cpt
+      I9: http://hl7.org/fhir/sid/icd-9-cm
+      I9C: http://hl7.org/fhir/sid/icd-9-cm
+      I10: http://hl7.org/fhir/sid/icd-10
+      I10P: http://hl7.org/fhir/sid/icd-10-pcs
+      C4: http://www.ama-assn.org/go/cpt
     default: "urn:oid:{value}"
   - target: code.text
     source: AL1-3-2

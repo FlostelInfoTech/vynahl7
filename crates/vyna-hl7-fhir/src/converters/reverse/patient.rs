@@ -100,7 +100,9 @@ impl PatientReverseConverter {
                 let _ = pid.set_component(3, rep, 0, value);
             }
 
-            // Assigning authority as component 4 (0-indexed: 3)
+            // Assigning authority as component 4 (0-indexed: 3).
+            // Only urn:oid: systems round-trip cleanly: anything
+            // else is kept verbatim and gains the prefix back.
             if let Some(ref system) = identifier.system {
                 // Strip urn:oid: prefix if present
                 let authority = system.strip_prefix("urn:oid:").unwrap_or(system);
@@ -225,15 +227,21 @@ impl PatientReverseConverter {
                 let _ = pid.set_component(11, rep, 5, country);
             }
 
-            // Address type - component 7 (0-indexed: 6)
+            // Address type - component 7 (0-indexed: 6). Only
+            // mapped uses write a code: anything else (temp, old,
+            // ...) leaves the component unset, and the forward
+            // converter leaves `use_` unset in turn, instead of
+            // fabricating "home" (H).
             if let Some(ref use_) = address.use_ {
                 let type_code = match use_.as_str() {
-                    "home" => "H",
-                    "work" => "O",
-                    "billing" => "B",
-                    _ => "H",
+                    "home" => Some("H"),
+                    "work" => Some("O"),
+                    "billing" => Some("B"),
+                    _ => None,
                 };
-                let _ = pid.set_component(11, rep, 6, type_code);
+                if let Some(type_code) = type_code {
+                    let _ = pid.set_component(11, rep, 6, type_code);
+                }
             }
         }
         Ok(())
@@ -756,5 +764,61 @@ mod tests {
         assert_eq!(rep_component(&pid, 5, 0, 6), None);
         assert_eq!(rep_component(&pid, 5, 1, 6), None);
         assert_eq!(rep_component(&pid, 5, 2, 6).as_deref(), Some("L"));
+    }
+
+    #[test]
+    fn test_unmapped_address_use_omits_type_code() {
+        let addressed = |use_: &str| Address {
+            use_: Some(use_.to_string()),
+            type_: None,
+            text: None,
+            line: Some(vec!["1 Main St".to_string()]),
+            city: Some("Springfield".to_string()),
+            state: None,
+            postal_code: None,
+            country: None,
+        };
+        let mut patient = Patient::new();
+        patient.address = Some(vec![
+            addressed("temp"),
+            addressed("old"),
+            addressed("home"),
+        ]);
+        let pid = PatientReverseConverter::convert(&patient).unwrap();
+        // temp/old have no XAD-7 letter: omitting the component
+        // leaves use_ unset on re-forward instead of fabricating
+        // "home" (H).
+        assert_eq!(rep_component(&pid, 11, 0, 6), None);
+        assert_eq!(rep_component(&pid, 11, 1, 6), None);
+        assert_eq!(rep_component(&pid, 11, 2, 6).as_deref(), Some("H"));
+        let back = round_trip_pid(&pid);
+        let addresses = back.address.as_ref().unwrap();
+        assert_eq!(addresses[0].use_, None);
+        assert_eq!(addresses[1].use_, None);
+        assert_eq!(addresses[2].use_.as_deref(), Some("home"));
+    }
+
+    #[test]
+    fn test_non_oid_identifier_system_gains_prefix_on_reforward() {
+        // Only urn:oid: systems round-trip cleanly: a verbatim
+        // non-OID authority gains the forward converter's prefix.
+        let mut patient = Patient::new();
+        patient.identifier = Some(vec![Identifier {
+            use_: None,
+            type_: None,
+            system: Some("http://hospital.org/mrn".to_string()),
+            value: Some("12345".to_string()),
+            assigner: None,
+        }]);
+        let pid = PatientReverseConverter::convert(&patient).unwrap();
+        assert_eq!(
+            rep_component(&pid, 3, 0, 3).as_deref(),
+            Some("http://hospital.org/mrn")
+        );
+        let back = round_trip_pid(&pid);
+        assert_eq!(
+            back.identifier.as_ref().unwrap()[0].system.as_deref(),
+            Some("urn:oid:http://hospital.org/mrn")
+        );
     }
 }

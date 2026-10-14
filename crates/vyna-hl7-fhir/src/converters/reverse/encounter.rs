@@ -27,16 +27,21 @@ impl EncounterReverseConverter {
         // PV1-1: Set ID
         let _ = pv1.set_field_value(1, "1");
 
-        // PV1-2: Patient Class
-        if let Some(ref class) = encounter.class {
-            let patient_class = Self::convert_class_to_hl7(class);
+        // PV1-2: Patient Class. A codeless class writes
+        // nothing: the class-absent path, not a fabricated "O".
+        if let Some(ref class) = encounter.class
+            && let Some(patient_class) = Self::convert_class_to_hl7(class)
+        {
             let _ = pv1.set_field_value(2, &patient_class);
         }
 
         // PV1-3: Assigned Patient Location (PL: point of care ^
-        // room ^ bed ^ facility). The forward converter joins the
-        // PL parts into the display ("ER, 101, 1") with the point of
-        // care as `Location/{id}`; splitting the display back into
+        // room ^ bed ^ facility). Only the first location is
+        // written: PV1-3 is a non-repeating field, so further
+        // locations cannot be represented (format-inherent, not a
+        // shortcut). The forward converter joins the PL parts into
+        // the display ("ER, 101, 1") with the point of care as
+        // `Location/{id}`; splitting the display back into
         // components (with component 1 from the reference id) keeps
         // the reference stable across a re-forward. Writing the
         // display as a single PL component would corrupt the
@@ -176,12 +181,30 @@ impl EncounterReverseConverter {
             }
         }
 
-        // PV1-19: Visit Number
+        // PV1-19: Visit Number (CX). Only the first identifier
+        // is written: PV1-19 is a non-repeating field, so further
+        // identifiers cannot be represented (format-inherent, not a
+        // shortcut). The forward converter reads the value only.
         if let Some(ref identifiers) = encounter.identifier
             && let Some(first_id) = identifiers.first()
-            && let Some(ref value) = first_id.value
         {
-            let _ = pv1.set_field_value(19, value);
+            // Component 1: visit number (0-indexed: 0)
+            if let Some(ref value) = first_id.value {
+                let _ = pv1.set_component(19, 0, 0, value);
+            }
+            // Component 4: assigning authority (0-indexed: 3)
+            if let Some(ref system) = first_id.system {
+                let authority = system.strip_prefix("urn:oid:").unwrap_or(system);
+                let _ = pv1.set_component(19, 0, 3, authority);
+            }
+            // Component 5: identifier type code (0-indexed: 4)
+            if let Some(ref type_) = first_id.type_
+                && let Some(ref coding) = type_.coding
+                && let Some(first_coding) = coding.first()
+                && let Some(ref code) = first_coding.code
+            {
+                let _ = pv1.set_component(19, 0, 4, code);
+            }
         }
 
         // PV1-44: Admit Date/Time
@@ -203,13 +226,19 @@ impl EncounterReverseConverter {
 
     /// Convert FHIR encounter class to HL7 v2 patient class.
     ///
+    /// Returns `None` when the class carries no code: writing a
+    /// default `O` would fabricate an outpatient class (re-forwarding
+    /// to `AMB`/in-progress) from zero information, so PV1-2 stays
+    /// unset instead.
+    ///
     /// Observation (`OBSENC`) and short-stay (`SS`) have no distinct
     /// HL7 Table 0004 letter: `B` is obstetrics and re-forwards to
     /// `IMP`, so both fold to the outpatient default `O` (which
     /// re-forwards to `AMB` and stays stable).
-    fn convert_class_to_hl7(class: &Coding) -> String {
-        if let Some(ref code) = class.code {
-            match code.as_str() {
+    fn convert_class_to_hl7(class: &Coding) -> Option<String> {
+        let code = class.code.as_deref().filter(|s| !s.is_empty())?;
+        Some(
+            match code {
                 "IMP" | "ACUTE" | "inpatient" => "I",       // Inpatient
                 "AMB" | "ambulatory" | "outpatient" => "O", // Outpatient
                 "EMER" | "emergency" => "E",                // Emergency
@@ -218,10 +247,8 @@ impl EncounterReverseConverter {
                 "OBSENC" | "observation" | "SS" | "short-stay" => "O",
                 _ => "O", // Default to outpatient
             }
-            .to_string()
-        } else {
-            "O".to_string()
-        }
+            .to_string(),
+        )
     }
 
     /// Convert FHIR datetime to HL7 v2 datetime.
@@ -318,7 +345,7 @@ mod tests {
         };
         assert_eq!(
             EncounterReverseConverter::convert_class_to_hl7(&coding),
-            "I"
+            Some("I".to_string())
         );
 
         let coding2 = Coding {
@@ -329,7 +356,7 @@ mod tests {
         };
         assert_eq!(
             EncounterReverseConverter::convert_class_to_hl7(&coding2),
-            "O"
+            Some("O".to_string())
         );
 
         let coding3 = Coding {
@@ -340,7 +367,7 @@ mod tests {
         };
         assert_eq!(
             EncounterReverseConverter::convert_class_to_hl7(&coding3),
-            "E"
+            Some("E".to_string())
         );
     }
 
@@ -405,7 +432,7 @@ mod tests {
             // Never B: B is obstetrics and re-forwards to IMP.
             assert_eq!(
                 EncounterReverseConverter::convert_class_to_hl7(&coding),
-                "O",
+                Some("O".to_string()),
                 "class {code}"
             );
         }
@@ -574,5 +601,109 @@ mod tests {
         // Dates should be converted to HL7 format (without separators)
         assert!(pv1.get_field_value(44).is_some());
         assert!(pv1.get_field_value(45).is_some());
+    }
+
+    #[test]
+    fn test_visit_number_writes_first_identifier_with_authority_and_type() {
+        use crate::converters::encounter::EncounterConverter;
+        use vyna_hl7_core::delimiters::Delimiters;
+        use vyna_hl7_parser::parse_message;
+
+        let mut encounter = Encounter::new("finished".to_string());
+        encounter.identifier = Some(vec![
+            Identifier {
+                use_: None,
+                type_: Some(CodeableConcept {
+                    coding: Some(vec![Coding {
+                        system: None,
+                        version: None,
+                        code: Some("VN".to_string()),
+                        display: None,
+                    }]),
+                    text: None,
+                }),
+                system: Some("urn:oid:1.2.3.4".to_string()),
+                value: Some("V111".to_string()),
+                assigner: None,
+            },
+            Identifier {
+                use_: None,
+                type_: None,
+                system: None,
+                value: Some("V222".to_string()),
+                assigner: None,
+            },
+        ]);
+        let pv1 = EncounterReverseConverter::convert(&encounter).unwrap();
+        // PV1-19 is CX: component 1 = value, 4 = authority, 5 =
+        // type. Only the first identifier fits (non-repeating).
+        let field = pv1.get_field(19).unwrap();
+        let comp = |i: usize| field.repetitions[0].components.get(i).and_then(|c| c.value());
+        assert_eq!(comp(0), Some("V111"));
+        assert_eq!(comp(3), Some("1.2.3.4"));
+        assert_eq!(comp(4), Some("VN"));
+        // The forward converter reads the value only, so the extra
+        // components change nothing on re-forward.
+        let hl7 = format!(
+            "MSH|^~\\&|A|B|C|D|20240315||ADT^A01|1|P|2.5\r\
+             PID|1||1||A^B||19800101|M\r{}",
+            pv1.encode(&Delimiters::default())
+        );
+        let back = EncounterConverter::convert(&parse_message(&hl7).unwrap()).unwrap();
+        let ids = back.identifier.as_ref().unwrap();
+        assert_eq!(ids.len(), 1);
+        assert_eq!(ids[0].value.as_deref(), Some("V111"));
+    }
+
+    #[test]
+    fn test_codeless_class_omits_pv1_2() {
+        use crate::converters::encounter::EncounterConverter;
+        use vyna_hl7_core::delimiters::Delimiters;
+        use vyna_hl7_parser::parse_message;
+
+        let mut encounter = Encounter::new("finished".to_string());
+        encounter.class = Some(Coding {
+            system: None,
+            version: None,
+            code: None,
+            display: Some("weird".to_string()),
+        });
+        let pv1 = EncounterReverseConverter::convert(&encounter).unwrap();
+        // No code, no PV1-2: fabricating "O" would re-forward to
+        // AMB/in-progress from zero information.
+        assert_eq!(pv1.get_field_value(2), None);
+        let hl7 = format!(
+            "MSH|^~\\&|A|B|C|D|20240315||ADT^A01|1|P|2.5\r\
+             PID|1||1||A^B||19800101|M\r{}",
+            pv1.encode(&Delimiters::default())
+        );
+        let back = EncounterConverter::convert(&parse_message(&hl7).unwrap()).unwrap();
+        assert_eq!(back.class, None);
+        assert_eq!(back.status, "unknown");
+
+        // Unit level: codeless (None or empty) maps to None, while
+        // an unmapped valued code keeps the outpatient default.
+        for code in [None, Some(String::new())] {
+            let coding = Coding {
+                system: None,
+                version: None,
+                code,
+                display: Some("weird".to_string()),
+            };
+            assert_eq!(
+                EncounterReverseConverter::convert_class_to_hl7(&coding),
+                None
+            );
+        }
+        let coding = Coding {
+            system: None,
+            version: None,
+            code: Some("ZZZ".to_string()),
+            display: None,
+        };
+        assert_eq!(
+            EncounterReverseConverter::convert_class_to_hl7(&coding),
+            Some("O".to_string())
+        );
     }
 }

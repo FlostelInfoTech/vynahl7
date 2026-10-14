@@ -165,10 +165,12 @@ impl<'a> QueryResultParser<'a> {
             return Err(Error::InvalidSegment("QAK segment not found".to_string()));
         }
 
-        // QAK-1: Query Tag
+        // QAK-1: Query Tag (required, correlates QPD-2). An empty
+        // tag must not pass: it cannot correlate anything.
         let query_tag = self
             .terser
             .get("QAK-1")?
+            .filter(|s| !s.is_empty())
             .ok_or_else(|| Error::MissingRequiredField("QAK-1".to_string()))?
             .to_string();
 
@@ -500,6 +502,23 @@ mod tests {
 
         assert!(!parser.is_successful());
         assert!(parser.parse_acknowledgment().is_err());
+    }
+
+    #[test]
+    fn test_empty_qak1_is_missing_required_field() {
+        // An empty query tag cannot correlate QPD-2: it must fail
+        // like an empty QAK-2, not parse as tag "".
+        let hl7 = "MSH|^~\\&|HOSPMPI|HOSP|CLIN|CLIN|20250115||RSP^K22|RSP-001|P|2.5\r\
+                   MSA|AA|Q-1\r\
+                   QAK||OK|Q22|1|1|0\r";
+        let message = parse_message(hl7).unwrap();
+        let parser = QueryResultParser::new(&message);
+
+        assert!(!parser.is_successful());
+        match parser.parse_acknowledgment().unwrap_err() {
+            Error::MissingRequiredField(f) => assert_eq!(f, "QAK-1"),
+            other => panic!("expected MissingRequiredField, got {other:?}"),
+        }
     }
 
     #[test]

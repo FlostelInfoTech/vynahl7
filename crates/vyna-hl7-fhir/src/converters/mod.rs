@@ -41,3 +41,29 @@ pub use reverse::EncounterReverseConverter;
 pub use reverse::ObservationReverseConverter;
 pub use reverse::PatientReverseConverter;
 pub use reverse::PractitionerReverseConverter;
+
+use vyna_hl7_core::Message;
+
+/// Stable Observation id for the Nth OBX segment (`obx_ordinal` is the
+/// 0-based ordinal among OBX segments in message order).
+///
+/// `obs-{OBX-1}` while the set id is unique in the message; when OBX-1
+/// restarts per OBR group the 1-based global ordinal disambiguates:
+/// `obs-{set-id}-{ordinal}`. `None` when the OBX has no valued set id.
+/// Both the Observation converter and the DiagnosticReport linking use
+/// this so references resolve.
+pub(crate) fn observation_id(message: &Message, obx_ordinal: usize) -> Option<String> {
+    let set_ids: Vec<Option<&str>> = message
+        .segments
+        .iter()
+        .filter(|s| s.id == "OBX")
+        .map(|s| s.get_field_value(1).filter(|v| !v.is_empty()))
+        .collect();
+    let set_id = set_ids.get(obx_ordinal).copied().flatten()?;
+    let unique = set_ids.iter().filter(|s| **s == Some(set_id)).count() == 1;
+    if unique {
+        Some(format!("obs-{set_id}"))
+    } else {
+        Some(format!("obs-{set_id}-{}", obx_ordinal + 1))
+    }
+}

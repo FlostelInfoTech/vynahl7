@@ -20,6 +20,16 @@ use std::path::Path;
 pub struct ProfileParser;
 
 impl ProfileParser {
+    /// Attribute value with XML entities resolved (`&amp;` -> `&`, ...).
+    ///
+    /// `Attribute::value` is raw text; without this, entities leak
+    /// literally into the profile model and validation messages.
+    fn attr_value(attr: &quick_xml::events::attributes::Attribute) -> Result<String> {
+        Ok(attr
+            .normalized_value(quick_xml::XmlVersion::Implicit1_0)?
+            .into_owned())
+    }
+
     /// Parse a conformance profile from an XML file
     pub fn parse_file<P: AsRef<Path>>(path: P) -> Result<ConformanceProfile> {
         let content = std::fs::read_to_string(path)?;
@@ -64,7 +74,7 @@ impl ProfileParser {
                                     ConformanceError::ParseError(format!("Invalid attribute: {}", e))
                                 })?;
                                 if attr.key.as_ref() == "HL7Version" {
-                                    let version_str = attr.value;
+                                    let version_str = Self::attr_value(&attr)?;
                                     hl7_version = Some(Self::parse_version(&version_str)?);
                                 }
                             }
@@ -77,10 +87,10 @@ impl ProfileParser {
                                 })?;
                                 match attr.key.as_ref() {
                                     "MsgType" => {
-                                        msg_type = Some(attr.value.to_string());
+                                        msg_type = Some(Self::attr_value(&attr)?);
                                     }
                                     "EventType" => {
-                                        event_type = Some(attr.value.to_string());
+                                        event_type = Some(Self::attr_value(&attr)?);
                                     }
                                     _ => {}
                                 }
@@ -159,9 +169,9 @@ impl ProfileParser {
                 ConformanceError::ParseError(format!("Invalid attribute: {}", e))
             })?;
             match attr.key.as_ref() {
-                "Name" => name = Some(attr.value.to_string()),
-                "OrgName" => org_name = Some(attr.value.to_string()),
-                "Version" => version = Some(attr.value.to_string()),
+                "Name" => name = Some(Self::attr_value(&attr)?),
+                "OrgName" => org_name = Some(Self::attr_value(&attr)?),
+                "Version" => version = Some(Self::attr_value(&attr)?),
                 _ => {}
             }
         }
@@ -198,11 +208,11 @@ impl ProfileParser {
                 ConformanceError::ParseError(format!("Invalid attribute: {}", e))
             })?;
             match attr.key.as_ref() {
-                "Name" => name = Some(attr.value.to_string()),
-                "LongName" => long_name = Some(attr.value.to_string()),
-                "Usage" => usage = Some(attr.value.to_string()),
-                "Min" => min = Some(attr.value.to_string()),
-                "Max" => max = Some(attr.value.to_string()),
+                "Name" => name = Some(Self::attr_value(&attr)?),
+                "LongName" => long_name = Some(Self::attr_value(&attr)?),
+                "Usage" => usage = Some(Self::attr_value(&attr)?),
+                "Min" => min = Some(Self::attr_value(&attr)?),
+                "Max" => max = Some(Self::attr_value(&attr)?),
                 _ => {}
             }
         }
@@ -299,13 +309,13 @@ impl ProfileParser {
                 ConformanceError::ParseError(format!("Invalid attribute: {}", e))
             })?;
             match attr.key.as_ref() {
-                "Name" => name = Some(attr.value.to_string()),
-                "Usage" => usage = Some(attr.value.to_string()),
-                "Min" => min = Some(attr.value.to_string()),
-                "Max" => max = Some(attr.value.to_string()),
-                "Datatype" => datatype = Some(attr.value.to_string()),
-                "Length" => length = Some(attr.value.to_string()),
-                "ItemNo" => item_no = Some(attr.value.to_string()),
+                "Name" => name = Some(Self::attr_value(&attr)?),
+                "Usage" => usage = Some(Self::attr_value(&attr)?),
+                "Min" => min = Some(Self::attr_value(&attr)?),
+                "Max" => max = Some(Self::attr_value(&attr)?),
+                "Datatype" => datatype = Some(Self::attr_value(&attr)?),
+                "Length" => length = Some(Self::attr_value(&attr)?),
+                "ItemNo" => item_no = Some(Self::attr_value(&attr)?),
                 _ => {}
             }
         }
@@ -454,6 +464,29 @@ mod tests {
         assert_eq!(pid.fields[0].item_no, Some("00003".to_string()));
         assert_eq!(msh.fields[1].position, 2);
         assert_eq!(msh.fields[1].item_no, Some("00002".to_string()));
+    }
+
+    #[test]
+    fn test_attribute_entities_are_unescaped() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<HL7v2xConformanceProfile HL7Version="2.5" ProfileType="HL7">
+  <HL7v2xStaticDef MsgType="ADT" EventType="A01" MsgStructID="ADT_A01">
+    <MetaData Name="Test &amp; Profile" OrgName="R&amp;D &lt;Labs&gt;"
+      Version="1.0.0" Status="ACTIVE"/>
+    <Segment Name="MSH" LongName="Message &quot;Header&quot;" Usage="R" Min="1" Max="1"/>
+  </HL7v2xStaticDef>
+</HL7v2xConformanceProfile>"#;
+
+        let profile = ProfileParser::parse_xml(xml).unwrap();
+        assert_eq!(profile.metadata.name, "Test & Profile");
+        assert_eq!(
+            profile.metadata.organization,
+            Some("R&D <Labs>".to_string())
+        );
+        assert_eq!(
+            profile.message.segments[0].long_name,
+            Some("Message \"Header\"".to_string())
+        );
     }
 
     #[test]

@@ -1,5 +1,6 @@
 //! Specimen converter - SPM segment to FHIR Specimen resource
 
+use super::coding_systems::convert_coding_system_opt;
 use super::patient::{
     hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time,
     valid_hl7_year_month,
@@ -157,8 +158,13 @@ impl SpecimenConverter {
         if let Ok(Some(method_code)) = terser.get(&spm_path("7"))
             && !method_code.is_empty()
         {
+            let system = Self::bound_table_system(
+                &terser,
+                &format!("{}-3", spm_path("7")),
+                "http://terminology.hl7.org/CodeSystem/v2-0488",
+            );
             let mut coding = Coding {
-                system: Some("http://terminology.hl7.org/CodeSystem/v2-0488".to_string()),
+                system: Some(system),
                 code: Some(method_code.to_string()),
                 display: None,
                 version: None,
@@ -182,8 +188,13 @@ impl SpecimenConverter {
         if let Ok(Some(site_code)) = terser.get(&spm_path("8"))
             && !site_code.is_empty()
         {
+            let system = Self::bound_table_system(
+                &terser,
+                &format!("{}-3", spm_path("8")),
+                "http://terminology.hl7.org/CodeSystem/v2-0163",
+            );
             let mut coding = Coding {
-                system: Some("http://terminology.hl7.org/CodeSystem/v2-0163".to_string()),
+                system: Some(system),
                 code: Some(site_code.to_string()),
                 display: None,
                 version: None,
@@ -244,8 +255,13 @@ impl SpecimenConverter {
         if let Ok(Some(condition_code)) = terser.get(&spm_path("24"))
             && !condition_code.is_empty()
         {
+            let system = Self::bound_table_system(
+                &terser,
+                &format!("{}-3", spm_path("24")),
+                "http://terminology.hl7.org/CodeSystem/v2-0493",
+            );
             let mut coding = Coding {
-                system: Some("http://terminology.hl7.org/CodeSystem/v2-0493".to_string()),
+                system: Some(system),
                 code: Some(condition_code.to_string()),
                 display: None,
                 version: None,
@@ -280,8 +296,13 @@ impl SpecimenConverter {
         if let Ok(Some(container_type)) = terser.get(&spm_path("15"))
             && !container_type.is_empty()
         {
+            let system = Self::bound_table_system(
+                &terser,
+                &format!("{}-3", spm_path("15")),
+                "http://terminology.hl7.org/CodeSystem/v2-0376",
+            );
             let mut coding = Coding {
-                system: Some("http://terminology.hl7.org/CodeSystem/v2-0376".to_string()),
+                system: Some(system),
                 code: Some(container_type.to_string()),
                 display: None,
                 version: None,
@@ -422,6 +443,18 @@ impl SpecimenConverter {
         )
     }
 
+    /// System for a table-bound CWE field: the shared mapping when
+    /// component 3 is present and known, else the bound-table default.
+    fn bound_table_system(terser: &Terser, component3_path: &str, default: &str) -> String {
+        terser
+            .get(component3_path)
+            .ok()
+            .flatten()
+            .filter(|s| !s.is_empty())
+            .and_then(convert_coding_system_opt)
+            .unwrap_or_else(|| default.to_string())
+    }
+
     /// Extract specimen type from SPM-4 field
     fn extract_specimen_type(
         terser: &Terser,
@@ -450,8 +483,15 @@ impl SpecimenConverter {
             ));
         };
 
+        // SPM-4-3 selects the system when known; otherwise the
+        // v2-0487 bound-table default stands.
+        let system = Self::bound_table_system(
+            terser,
+            &format!("{base_path}-3"),
+            "http://terminology.hl7.org/CodeSystem/v2-0487",
+        );
         let mut coding = Coding {
-            system: Some("http://terminology.hl7.org/CodeSystem/v2-0487".to_string()),
+            system: Some(system),
             code: Some(code.to_string()),
             display: None,
             version: None,
@@ -933,6 +973,120 @@ mod tests {
         assert_eq!(
             collection.collected_date_time.as_deref(),
             Some("2024-03-15T12:00:00")
+        );
+    }
+
+    #[test]
+    fn test_type_honors_explicit_coding_system() {
+        // An explicitly different SPM-4-3 wins over the v2-0487
+        // bound-table default; absent or unknown keeps the default.
+        let message_for = |spm4: &str| {
+            let hl7 = format!(
+                "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||OML^O21|M|P|2.5\r\
+                 PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+                 SPM|1|S||{spm4}"
+            );
+            parse_message(&hl7).unwrap()
+        };
+        let system_for = |spm4: &str| {
+            let message = message_for(spm4);
+            let spec = &SpecimenConverter::convert_all(&message).unwrap()[0];
+            spec.type_.coding.as_ref().unwrap()[0].system.clone()
+        };
+        assert_eq!(
+            system_for("1234^Thing^SCT").as_deref(),
+            Some("http://snomed.info/sct")
+        );
+        assert_eq!(
+            system_for("BLD^Blood").as_deref(),
+            Some("http://terminology.hl7.org/CodeSystem/v2-0487")
+        );
+        assert_eq!(
+            system_for("BLD^Blood^HL70487").as_deref(),
+            Some("http://terminology.hl7.org/CodeSystem/v2-0487")
+        );
+    }
+
+    #[test]
+    fn test_bound_table_fields_honor_explicit_coding_system() {
+        // SPM-7/8/15/24 likewise honor an explicit known
+        // component 3, else keep their bound-table defaults.
+        let message_for = |method: &str, site: &str, handling: &str, condition: &str| {
+            let mut fields = vec![String::new(); 30];
+            fields[0] = "1".to_string();
+            fields[1] = "SPEC123".to_string();
+            fields[3] = "BLD^Blood^HL70487".to_string();
+            fields[6] = method.to_string();
+            fields[7] = site.to_string();
+            fields[14] = handling.to_string();
+            fields[23] = condition.to_string();
+            let hl7 = format!(
+                "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||OML^O21|MSG123|P|2.5\r\
+                 PID|1||12345^^^MRN||DOE^JOHN||19800101|M\rSPM|{}",
+                fields.join("|")
+            );
+            parse_message(&hl7).unwrap()
+        };
+        let systems_for = |method: &str, site: &str, handling: &str, condition: &str| {
+            let message = message_for(method, site, handling, condition);
+            let spec = &SpecimenConverter::convert_all(&message).unwrap()[0];
+            let collection = spec.collection.as_ref().unwrap();
+            let method = collection.method.as_ref().unwrap().coding.as_ref().unwrap()[0]
+                .system
+                .clone();
+            let site = collection
+                .body_site
+                .as_ref()
+                .unwrap()
+                .coding
+                .as_ref()
+                .unwrap()[0]
+                .system
+                .clone();
+            let handling = spec.container.as_ref().unwrap()[0]
+                .type_
+                .as_ref()
+                .unwrap()
+                .coding
+                .as_ref()
+                .unwrap()[0]
+                .system
+                .clone();
+            let condition = spec.condition.as_ref().unwrap()[0].coding.as_ref().unwrap()[0]
+                .system
+                .clone();
+            (method, site, handling, condition)
+        };
+        let (method, site, handling, condition) = systems_for(
+            "ANP^Venipuncture^SCT",
+            "LA^Left Arm^SCT",
+            "AMB^Ambient^SCT",
+            "HEM^Hemolyzed^SCT",
+        );
+        for system in [&method, &site, &handling, &condition] {
+            assert_eq!(system.as_deref(), Some("http://snomed.info/sct"));
+        }
+        let (method, site, handling, condition) = systems_for(
+            "ANP^Venipuncture",
+            "LA^Left Arm^HL70163",
+            "AMB^Ambient",
+            "HEM^Hemolyzed",
+        );
+        assert_eq!(
+            method.as_deref(),
+            Some("http://terminology.hl7.org/CodeSystem/v2-0488")
+        );
+        assert_eq!(
+            site.as_deref(),
+            Some("http://terminology.hl7.org/CodeSystem/v2-0163")
+        );
+        assert_eq!(
+            handling.as_deref(),
+            Some("http://terminology.hl7.org/CodeSystem/v2-0376")
+        );
+        assert_eq!(
+            condition.as_deref(),
+            Some("http://terminology.hl7.org/CodeSystem/v2-0493")
         );
     }
 }

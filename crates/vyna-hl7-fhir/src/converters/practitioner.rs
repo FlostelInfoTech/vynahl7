@@ -164,7 +164,8 @@ impl PractitionerConverter {
             .flatten()
             .filter(|s| !s.is_empty());
         // XCN-10: Name Type Code (HL7 table 0200) mapped to
-        // FHIR HumanName.use; absent keeps the official default.
+        // FHIR HumanName.use; absent leaves `use_` unset, like the
+        // patient converter, instead of fabricating official.
         let name_type = terser
             .get(&format!("{}-10", base_path))
             .ok()
@@ -177,20 +178,23 @@ impl PractitionerConverter {
             || prefix.is_some()
         {
             let mut name = HumanName {
-                use_: Some(match name_type {
-                    Some("L") => "official".to_string(),
-                    Some("M") => "maiden".to_string(),
-                    Some("N") => "nickname".to_string(),
-                    Some("T") => "temp".to_string(),
-                    Some(_) => "usual".to_string(),
-                    None => "official".to_string(),
-                }),
+                use_: None,
                 text: None,
                 family: family.map(|s| s.to_string()),
                 given: None,
                 prefix: None,
                 suffix: None,
             };
+
+            if let Some(name_type) = name_type {
+                name.use_ = Some(match name_type {
+                    "L" => "official".to_string(),
+                    "M" => "maiden".to_string(),
+                    "N" => "nickname".to_string(),
+                    "T" => "temp".to_string(),
+                    _ => "usual".to_string(),
+                });
+            }
 
             match (given, middle) {
                 (Some(given), middle) => {
@@ -458,5 +462,26 @@ mod tests {
         let practitioner = PractitionerConverter::convert_attending_doctor(&message).unwrap();
         let name = &practitioner.name.as_ref().unwrap()[0];
         assert_eq!(name.use_.as_deref(), Some("maiden"));
+    }
+
+    #[test]
+    fn test_absent_name_type_leaves_use_unset() {
+        // Absent or present-but-empty XCN-10 leaves use unset, like
+        // the patient converter; a valued type still maps.
+        for (pv1_7, expected) in [
+            ("123^SMITH^JAMES", None),
+            ("123^SMITH^JAMES^^^^^^^", None),
+            ("123^SMITH^JAMES^^^^^^^L", Some("official")),
+        ] {
+            let hl7 = format!(
+                "MSH|^~\\&|SendApp|SendFac|RecApp|RecFac|20240315||ADT^A01|12345|P|2.5\r\
+                 PID|1||MRN123|||DOE^JOHN||19800101|M\r\
+                 PV1|1|I|||||{pv1_7}"
+            );
+            let message = parse_message(&hl7).unwrap();
+            let practitioner = PractitionerConverter::convert_attending_doctor(&message).unwrap();
+            let name = &practitioner.name.as_ref().unwrap()[0];
+            assert_eq!(name.use_.as_deref(), expected, "PV1-7 {pv1_7}");
+        }
     }
 }

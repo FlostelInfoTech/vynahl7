@@ -44,7 +44,8 @@ use vyna_hl7_core::{Field, Repetition, Segment};
 pub trait CustomSegment: Send + Sync {
     /// Get the segment ID (e.g., "ZPV", "ZCU")
     ///
-    /// This must start with 'Z' as per HL7 convention for custom segments.
+    /// This must be 'Z' followed by 2 ASCII alphanumerics, per the
+    /// registry predicate for custom segments.
     fn segment_id() -> &'static str
     where
         Self: Sized;
@@ -1296,6 +1297,11 @@ fn parse_hl7_datetime(s: &str) -> Option<NaiveDateTime> {
     if fraction.is_some() && base.len() != 14 {
         return None;
     }
+    // Bare digits only: a sign is never part of a datetime, and the
+    // component parses below would otherwise accept it (core round-11).
+    if !base.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
     // (.get: non-ASCII input yields None, never panics)
     let year = base.get(0..4)?.parse::<i32>().ok()?;
     let month = base.get(4..6)?.parse::<u32>().ok()?;
@@ -1322,6 +1328,11 @@ fn parse_hl7_datetime(s: &str) -> Option<NaiveDateTime> {
 
 /// Parse HL7 date format: YYYYMMDD, YYYYMM, or YYYY
 fn parse_hl7_date(s: &str) -> Option<NaiveDate> {
+    // Bare digits only: a sign is never part of a date ("+024" must
+    // not parse as year 24), mirroring core parse_date.
+    if !s.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
     match s.len() {
         8 => {
             // YYYYMMDD (.get: non-ASCII yields None, never panics)
@@ -1353,6 +1364,10 @@ fn parse_hl7_date(s: &str) -> Option<NaiveDate> {
 fn parse_hl7_time(s: &str) -> Option<NaiveTime> {
     let (base, fraction) = split_hl7_fraction(s)?;
     if fraction.is_some() && base.len() != 6 {
+        return None;
+    }
+    // Bare digits only: a sign is never part of a time (core round-11).
+    if !base.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
     // (.get: non-ASCII yields None, never panics)
@@ -3445,6 +3460,23 @@ mod tests {
         assert!(parse_hl7_time("143000.").is_none());
         // A fraction requires seconds precision.
         assert!(parse_hl7_time("1430.5").is_none());
+    }
+
+    #[test]
+    fn test_date_time_parsers_reject_signs() {
+        // A sign is never part of a bare date/time/datetime: the
+        // component parses accept only ASCII digits (core round-11).
+        assert!(parse_hl7_date("+024").is_none());
+        assert!(parse_hl7_date("-024").is_none());
+        assert!(parse_hl7_date("2024+1").is_none());
+        assert!(parse_hl7_datetime("+024011200").is_none());
+        assert!(parse_hl7_datetime("2024010112+100").is_none());
+        assert!(parse_hl7_time("12+456").is_none());
+        assert!(parse_hl7_time("+2").is_none());
+        // Controls still parse.
+        assert!(parse_hl7_date("2024").is_some());
+        assert!(parse_hl7_datetime("202401011200").is_some());
+        assert!(parse_hl7_time("12").is_some());
     }
 
     #[test]

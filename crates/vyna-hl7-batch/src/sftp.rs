@@ -129,9 +129,11 @@ impl SftpConfig {
         self
     }
 
-    /// Resolve transport paths under this remote directory.
+    /// Resolve transport paths under this remote directory. A leading
+    /// `/` is preserved (absolute remote path); trailing slashes are
+    /// stripped.
     pub fn with_root(mut self, root: &str) -> Self {
-        self.root = root.trim_matches('/').to_string();
+        self.root = root.trim_end_matches('/').to_string();
         self
     }
 
@@ -313,9 +315,15 @@ impl SftpTransport {
     /// Create parent directories one level at a time, ignoring "already
     /// exists" failures.
     async fn mkdir_p(&mut self, remote_dir: &str) -> Result<(), BatchError> {
-        let mut prefix = String::new();
+        // Absolute-aware: keep the leading `/` so absolute roots create
+        // absolute parents instead of resolving under the login dir.
+        let mut prefix = if remote_dir.starts_with('/') {
+            "/".to_string()
+        } else {
+            String::new()
+        };
         for part in remote_dir.split('/').filter(|p| !p.is_empty()) {
-            if !prefix.is_empty() {
+            if !prefix.is_empty() && !prefix.ends_with('/') {
                 prefix.push('/');
             }
             prefix.push_str(part);
@@ -493,10 +501,13 @@ impl FileTransport for SftpTransport {
     }
 
     async fn put(&mut self, path: &str, data: &[u8]) -> Result<(), BatchError> {
-        let remote = self.remote(path)?;
-        if remote.is_empty() || remote == "." {
+        // Reject before any I/O, mirroring ftp.rs: with a configured root,
+        // `remote("")` is the root dir itself and would otherwise pass a
+        // post-resolution check and stage a stray file on the root name.
+        if crate::transport::clean_relative_parts(path)?.is_empty() {
             return Err(BatchError::Invalid("empty path".to_string()));
         }
+        let remote = self.remote(path)?;
         if let Some((parent, _)) = remote.rsplit_once('/') {
             self.mkdir_p(parent).await?;
         }
@@ -719,6 +730,35 @@ mod tests {
             transport.put("", b"x").await,
             Err(BatchError::Invalid(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn put_with_root_rejects_empty_path_before_io() {
+        // With a configured root, `remote("")` resolves to the root dir
+        // itself, which used to pass the post-resolution empty check and
+        // stage a stray file squatting on the root dir name. Like
+        // MemTransport/FTP/filesystem, put("") must fail as Invalid before
+        // any I/O (unconnected: no NotConnected allowed).
+        let config =
+            SftpConfig::new("host:22", "u", SftpAuth::Password("p".into())).with_root("base");
+        let mut transport = unconnected(config);
+        match transport.put("", b"X-STRAY").await {
+            Err(BatchError::Invalid(msg)) => assert_eq!(msg, "empty path"),
+            other => panic!("with-root put(\"\") gave {other:?}"),
+        }
+    }
+
+    #[test]
+    fn with_root_preserves_leading_slash() {
+        // An absolute root must stay absolute; only trailing slashes go.
+        let config = SftpConfig::new("host:22", "u", SftpAuth::Password("p".into()))
+            .with_root("/data/drop");
+        assert_eq!(config.root, "/data/drop");
+        let config = SftpConfig::new("host:22", "u", SftpAuth::Password("p".into()))
+            .with_root("/data/drop///");
+        assert_eq!(config.root, "/data/drop");
+        let transport = unconnected(config);
+        assert_eq!(transport.remote("inbox").unwrap(), "/data/drop/inbox");
     }
 
     #[tokio::test]

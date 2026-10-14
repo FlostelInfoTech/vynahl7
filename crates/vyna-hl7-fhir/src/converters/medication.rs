@@ -1,6 +1,6 @@
 //! Medication converter - RXA segment to FHIR MedicationAdministration resource
 
-use super::coding_systems::convert_coding_system;
+use super::coding_systems::{convert_coding_system, convert_coding_system_opt};
 use super::patient::{
     hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time,
     valid_hl7_year_month,
@@ -140,7 +140,7 @@ impl MedicationConverter {
             let mut dose = Quantity {
                 value: Some(value),
                 unit: None,
-                system: None,
+                system: Some("http://unitsofmeasure.org".to_string()),
                 code: None,
             };
 
@@ -154,6 +154,7 @@ impl MedicationConverter {
                 && !units.is_empty()
             {
                 dose.unit = Some(units.to_string());
+                dose.code = Some(units.to_string());
             }
 
             admin.dosage = Some(MedicationAdministrationDosage {
@@ -168,8 +169,17 @@ impl MedicationConverter {
             && let Ok(Some(route_code)) = terser.get(&route_path)
             && !route_code.is_empty()
         {
+            // RXR-1-3 selects the system when known; otherwise the
+            // v2-0162 bound-table default stands.
+            let route_system = terser
+                .get(&format!("{route_path}-3"))
+                .ok()
+                .flatten()
+                .filter(|s| !s.is_empty())
+                .and_then(convert_coding_system_opt)
+                .unwrap_or_else(|| "http://terminology.hl7.org/CodeSystem/v2-0162".to_string());
             let mut coding = Coding {
-                system: Some("http://terminology.hl7.org/CodeSystem/v2-0162".to_string()),
+                system: Some(route_system),
                 code: Some(route_code.to_string()),
                 display: None,
                 version: None,
@@ -298,7 +308,7 @@ impl MedicationConverter {
         match code {
             "CP" => "completed".to_string(),
             "PA" => "stopped".to_string(),
-            "NA" => "entered-in-error".to_string(),
+            "NA" => "not-done".to_string(),
             "RE" => "not-done".to_string(),
             _ => "completed".to_string(),
         }
@@ -676,5 +686,80 @@ mod tests {
         let coding = route.coding.as_ref().unwrap();
         assert_eq!(coding[0].code.as_deref(), Some("IM"));
         assert_eq!(coding[0].display.as_deref(), Some("Intramuscular"));
+    }
+
+    #[test]
+    fn test_not_administered_status_maps_to_not_done() {
+        // RXA-20 "NA" (not administered) matches ImmunizationConverter:
+        // not-done, not entered-in-error (a nullified record).
+        let hl7 = "MSH|^~\\&|Pharmacy|Hospital|EMR|Hospital|20240315||RAS^O17|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000||1191^ASPIRIN^NDC|100|MG|||||||||||||NA";
+
+        let message = parse_message(hl7).unwrap();
+        let administrations = MedicationConverter::convert_all(&message).unwrap();
+
+        assert_eq!(administrations.len(), 1);
+        assert_eq!(administrations[0].status, "not-done");
+    }
+
+    #[test]
+    fn test_dose_carries_ucum_system_and_code() {
+        // RXA-6/RXA-7 carry the UCUM system and code, like the
+        // immunization dose quantity.
+        let hl7 = "MSH|^~\\&|Pharmacy|Hospital|EMR|Hospital|20240315||RAS^O17|MSG123|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   RXA|0|1|20240315100000||1191^ASPIRIN^NDC|100|MG||||||||||||CP";
+
+        let message = parse_message(hl7).unwrap();
+        let admin = &MedicationConverter::convert_all(&message).unwrap()[0];
+        let dose = admin.dosage.as_ref().unwrap().dose.as_ref().unwrap();
+        assert_eq!(dose.value, Some(100.0));
+        assert_eq!(dose.unit.as_deref(), Some("MG"));
+        assert_eq!(dose.system.as_deref(), Some("http://unitsofmeasure.org"));
+        assert_eq!(dose.code.as_deref(), Some("MG"));
+    }
+
+    #[test]
+    fn test_route_honors_explicit_coding_system() {
+        // An explicitly different RXR-1-3 wins over the v2-0162
+        // bound-table default; absent or unknown keeps the default.
+        let message_for = |rxr1: &str| {
+            let hl7 = format!(
+                "MSH|^~\\&|Pharmacy|Hospital|EMR|Hospital|20240315||RAS^O17|MSG123|P|2.5\r\
+                 PID|1||12345|||DOE^JOHN||19800101|M\r\
+                 RXA|0|1|20240315100000||1191^ASPIRIN^NDC|100|MG||||||||||||CP\r\
+                 RXR|{rxr1}"
+            );
+            parse_message(&hl7).unwrap()
+        };
+        let system_for = |rxr1: &str| {
+            let message = message_for(rxr1);
+            let admin = &MedicationConverter::convert_all(&message).unwrap()[0];
+            admin
+                .dosage
+                .as_ref()
+                .unwrap()
+                .route
+                .as_ref()
+                .unwrap()
+                .coding
+                .as_ref()
+                .unwrap()[0]
+                .system
+                .clone()
+        };
+        assert_eq!(
+            system_for("IM^Intramuscular^SCT").as_deref(),
+            Some("http://snomed.info/sct")
+        );
+        assert_eq!(
+            system_for("IM^Intramuscular").as_deref(),
+            Some("http://terminology.hl7.org/CodeSystem/v2-0162")
+        );
+        assert_eq!(
+            system_for("IM^Intramuscular^XYZ").as_deref(),
+            Some("http://terminology.hl7.org/CodeSystem/v2-0162")
+        );
     }
 }

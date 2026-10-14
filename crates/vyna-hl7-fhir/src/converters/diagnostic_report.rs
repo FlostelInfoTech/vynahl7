@@ -110,23 +110,45 @@ impl DiagnosticReportConverter {
 
         let mut report = DiagnosticReport::new(status, code);
 
-        // OBR-2: Placer Order Number -> DiagnosticReport.identifier
+        // OBR-2: Placer Order Number + OBR-3: Filler Order Number ->
+        // DiagnosticReport.identifier, tagged PLAC/FILL from HL7 table
+        // 0203 like the ServiceRequest ORC-2/ORC-3 pair.
         let placer_path = if obr_index == 0 {
             "OBR-2".to_string()
         } else {
             format!("OBR({})-2", obr_index + 1)
         };
+        let filler_path = if obr_index == 0 {
+            "OBR-3".to_string()
+        } else {
+            format!("OBR({})-3", obr_index + 1)
+        };
+        let mut identifiers = Vec::new();
         if let Ok(Some(placer)) = terser.get(&placer_path)
             && !placer.is_empty()
         {
-            report.identifier = Some(vec![Identifier {
+            identifiers.push(Identifier {
                 use_: Some("official".to_string()),
-                type_: None,
+                type_: Some(Self::order_number_type("PLAC")),
                 system: None,
                 value: Some(placer.to_string()),
                 assigner: None,
-            }]);
+            });
             report.id = Some(placer.to_string());
+        }
+        if let Ok(Some(filler)) = terser.get(&filler_path)
+            && !filler.is_empty()
+        {
+            identifiers.push(Identifier {
+                use_: None,
+                type_: Some(Self::order_number_type("FILL")),
+                system: None,
+                value: Some(filler.to_string()),
+                assigner: None,
+            });
+        }
+        if !identifiers.is_empty() {
+            report.identifier = Some(identifiers);
         }
 
         // OBR-7: Observation Date/Time -> DiagnosticReport.effectiveDateTime
@@ -167,8 +189,8 @@ impl DiagnosticReportConverter {
 
         // Link this report's own observations: the OBX segments
         // following its OBR in message order, up to the next OBR. IDs use
-        // the same `obs-{OBX-1}` scheme as ObservationConverter so the
-        // references resolve.
+        // the shared `observation_id` scheme so the references resolve
+        // even when OBX-1 restarts per OBR group.
         let obr_positions: Vec<usize> = message
             .segments
             .iter()
@@ -183,20 +205,25 @@ impl DiagnosticReportConverter {
                 .map(|p| obr_pos + 1 + p)
                 .unwrap_or(message.segments.len());
             let mut result_refs = Vec::new();
+            // Global OBX ordinal at the slice start: every OBX at or
+            // before this OBR precedes it.
+            let mut ordinal = message.segments[..=obr_pos]
+                .iter()
+                .filter(|s| s.id == "OBX")
+                .count();
             for segment in &message.segments[obr_pos + 1..end] {
                 if segment.id != "OBX" {
                     continue;
                 }
-                if let Some(set_id) = segment.get_field_value(1)
-                    && !set_id.is_empty()
-                {
+                if let Some(id) = super::observation_id(message, ordinal) {
                     result_refs.push(Reference {
-                        reference: Some(format!("Observation/obs-{}", set_id)),
+                        reference: Some(format!("Observation/{id}")),
                         type_: Some("Observation".to_string()),
                         identifier: None,
                         display: None,
                     });
                 }
+                ordinal += 1;
             }
             if !result_refs.is_empty() {
                 report.result = Some(result_refs);
@@ -214,6 +241,19 @@ impl DiagnosticReportConverter {
             "C" => "corrected".to_string(),
             "X" => "cancelled".to_string(),
             _ => "final".to_string(),
+        }
+    }
+
+    /// HL7 table 0203 identifier type (`PLAC`/`FILL`) for order numbers.
+    fn order_number_type(code: &str) -> CodeableConcept {
+        CodeableConcept {
+            coding: Some(vec![Coding {
+                system: Some("http://terminology.hl7.org/CodeSystem/v2-0203".to_string()),
+                version: None,
+                code: Some(code.to_string()),
+                display: None,
+            }]),
+            text: None,
         }
     }
 
@@ -520,5 +560,80 @@ mod tests {
         let code = &reports[0].code;
         assert_eq!(code.coding, None);
         assert_eq!(code.text.as_deref(), Some("Lipid panel free text"));
+    }
+
+    #[test]
+    fn test_restarted_obx1_links_each_report_to_its_own() {
+        // OBX-1 restarts per OBR group: ids stay unique and each
+        // report references its own observation.
+        use crate::converters::observation::ObservationConverter;
+        let hl7 = "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||ORU^R01|M|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   OBR|1|||24331-1^Lipid Panel^LN\r\
+                   OBX|1|NM|2093-3^Cholesterol^LN||195|mg/dL||||F\r\
+                   OBR|2|||24342-8^Metabolic Panel^LN\r\
+                   OBX|1|NM|2085-9^HDL^LN||55|mg/dL||||F";
+        let message = parse_message(hl7).unwrap();
+        let observations = ObservationConverter::convert_all(&message).unwrap();
+        let ids: Vec<_> = observations
+            .iter()
+            .map(|o| format!("Observation/{}", o.id.clone().unwrap()))
+            .collect();
+        assert_eq!(ids, vec!["Observation/obs-1-1", "Observation/obs-1-2"]);
+        let reports = DiagnosticReportConverter::convert_all(&message).unwrap();
+        let refs = |report: &DiagnosticReport| {
+            report
+                .result
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|r| r.reference.clone().unwrap())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(refs(&reports[0]), vec!["Observation/obs-1-1"]);
+        assert_eq!(refs(&reports[1]), vec!["Observation/obs-1-2"]);
+    }
+
+    #[test]
+    fn test_obr2_obr3_become_typed_placer_filler_identifiers() {
+        // OBR-3 (filler order number) is kept beside OBR-2, tagged
+        // FILL/PLAC from HL7 table 0203; the report id stays placer.
+        let hl7 = "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||ORU^R01|M|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   OBR|1|PLACER1|FILLER1|24331-1^Lipid Panel^LN";
+        let message = parse_message(hl7).unwrap();
+        let reports = DiagnosticReportConverter::convert_all(&message).unwrap();
+        let identifiers = reports[0].identifier.as_ref().unwrap();
+        assert_eq!(identifiers.len(), 2);
+        assert_eq!(identifiers[0].value.as_deref(), Some("PLACER1"));
+        assert_eq!(identifiers[1].value.as_deref(), Some("FILLER1"));
+        for (identifier, expected) in [(&identifiers[0], "PLAC"), (&identifiers[1], "FILL")] {
+            let coding = &identifier.type_.as_ref().unwrap().coding.as_ref().unwrap()[0];
+            assert_eq!(
+                coding.system.as_deref(),
+                Some("http://terminology.hl7.org/CodeSystem/v2-0203")
+            );
+            assert_eq!(coding.code.as_deref(), Some(expected));
+        }
+        assert_eq!(reports[0].id.as_deref(), Some("PLACER1"));
+    }
+
+    #[test]
+    fn test_coding_system_short_forms_use_shared_table() {
+        // OBR-4-3 short forms resolve, not `urn:oid:` fallbacks.
+        for (obr4, expected) in [
+            ("I10^HTN^I10", "http://hl7.org/fhir/sid/icd-10"),
+            ("99213^Visit^C4", "http://www.ama-assn.org/go/cpt"),
+        ] {
+            let hl7 = format!(
+                "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||ORU^R01|M|P|2.5\r\
+                 PID|1||12345|||DOE^JOHN||19800101|M\r\
+                 OBR|1|LAB123|LAB123-01|{obr4}"
+            );
+            let message = parse_message(&hl7).unwrap();
+            let reports = DiagnosticReportConverter::convert_all(&message).unwrap();
+            let coding = &reports[0].code.coding.as_ref().unwrap()[0];
+            assert_eq!(coding.system.as_deref(), Some(expected), "OBR-4 {obr4}");
+        }
     }
 }

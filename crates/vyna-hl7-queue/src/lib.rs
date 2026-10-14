@@ -788,7 +788,7 @@ impl MessageQueue for FileQueue {
                     last_error: Some(
                         meta.as_ref()
                             .and_then(|m| m.last_error.clone())
-                            .unwrap_or_else(|| "corrupt metadata quarantined at open".to_string()),
+                            .unwrap_or_else(|| "corrupt metadata quarantined".to_string()),
                     ),
                 }),
             }
@@ -1466,7 +1466,29 @@ mod tests {
         assert_eq!(dead[0].body, b"MSH-quarantined");
         assert_eq!(
             dead[0].last_error.as_deref(),
-            Some("corrupt metadata quarantined at open")
+            Some("corrupt metadata quarantined")
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn file_dequeue_path_quarantine_label_claims_no_reopen() {
+        let dir = scratch_dir();
+        let (mut queue, _) = FileQueue::open(&dir).unwrap();
+        let id = queue.enqueue(b"MSH-dequeue-path", HashMap::new()).unwrap();
+        // Corrupt the pending metadata in place, then dequeue on the SAME
+        // handle: the quarantine happens on the dequeue path with no
+        // reopen, so the label must not claim "at open".
+        let meta = dir.join("pending").join(format!("{id}.meta.json"));
+        std::fs::write(&meta, b"{not valid json").unwrap();
+        assert!(queue.dequeue().unwrap().is_none());
+
+        let dead = queue.dead_letters().unwrap();
+        assert_eq!(dead.len(), 1);
+        assert_eq!(dead[0].id, id);
+        assert_eq!(
+            dead[0].last_error.as_deref(),
+            Some("corrupt metadata quarantined")
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }

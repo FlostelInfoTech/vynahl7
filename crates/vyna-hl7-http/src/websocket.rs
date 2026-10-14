@@ -468,7 +468,8 @@ impl BroadcastChannel {
     /// # }
     /// ```
     pub fn new(capacity: usize) -> Self {
-        let (sender, _) = broadcast::channel(capacity);
+        // `broadcast::channel(0)` panics; clamp so any caller input is safe.
+        let (sender, _) = broadcast::channel(capacity.max(1));
         Self { sender }
     }
 
@@ -657,26 +658,37 @@ impl WebSocketClient {
             .await
             .map_err(|e| Error::Io(std::io::Error::other(e)))?;
 
-        // Wait for response, bounded so a silent peer cannot hang us forever.
-        let reply = tokio::time::timeout(self.response_timeout, read.next())
-            .await
-            .map_err(|_| {
-                Error::Http(format!(
-                    "WebSocket response timed out after {:?}",
-                    self.response_timeout
-                ))
-            })?;
-        if let Some(msg) = reply {
-            match msg {
-                Ok(TungsteniteMessage::Text(text)) => {
-                    let response = parse_message(&text)?;
-                    Ok(response)
+        // Wait for the Text reply, bounded by one deadline so a silent
+        // peer cannot hang us forever. Control frames may legally
+        // interleave before the reply (RFC 6455): answer Pings, ignore
+        // Pongs, and keep waiting; anything else still fails.
+        let deadline = tokio::time::Instant::now() + self.response_timeout;
+        loop {
+            let reply = tokio::time::timeout_at(deadline, read.next())
+                .await
+                .map_err(|_| {
+                    Error::Http(format!(
+                        "WebSocket response timed out after {:?}",
+                        self.response_timeout
+                    ))
+                })?;
+            match reply {
+                Some(Ok(TungsteniteMessage::Text(text))) => {
+                    return Ok(parse_message(&text)?);
                 }
-                Ok(_) => Err(Error::Http("Unexpected WebSocket message type".to_string())),
-                Err(e) => Err(Error::Io(std::io::Error::other(e))),
+                Some(Ok(TungsteniteMessage::Ping(payload))) => {
+                    write
+                        .send(TungsteniteMessage::Pong(payload))
+                        .await
+                        .map_err(|e| Error::Io(std::io::Error::other(e)))?;
+                }
+                Some(Ok(TungsteniteMessage::Pong(_))) => {}
+                Some(Ok(_)) => {
+                    return Err(Error::Http("Unexpected WebSocket message type".to_string()));
+                }
+                Some(Err(e)) => return Err(Error::Io(std::io::Error::other(e))),
+                None => return Err(Error::Http("No response received".to_string())),
             }
-        } else {
-            Err(Error::Http("No response received".to_string()))
         }
     }
 }
@@ -723,6 +735,49 @@ mod tests {
             .expect("own subscriber got nothing")
             .unwrap();
         assert!(got.contains("P1"), "unexpected payload: {got}");
+    }
+
+    #[test]
+    fn broadcast_channel_zero_capacity_does_not_panic() {
+        // `broadcast::channel(0)` panics; the constructor clamps to 1.
+        let channel = BroadcastChannel::new(0);
+        assert_eq!(channel.subscriber_count(), 0);
+        let mut rx = channel.subscribe();
+        let msg = parse_message("MSH|^~\\&|S|A|R|F|20240101||ADT^A01|Z1|P|2.5\r").unwrap();
+        channel.broadcast(&msg);
+        let got = rx.try_recv().expect("subscriber got nothing");
+        assert!(got.contains("Z1"), "unexpected payload: {got}");
+    }
+
+    /// A server may legally interleave control frames before the reply
+    /// (RFC 6455): Ping must be answered/ignored, Pong ignored, and the
+    /// following Text frame parsed as the response.
+    #[tokio::test]
+    async fn test_client_ignores_interleaved_control_frames() {
+        use axum::extract::ws::{Message as AMessage, WebSocket, WebSocketUpgrade};
+        use axum::response::Response;
+        use axum::{Router, routing::get};
+
+        async fn ping_then_reply(ws: WebSocketUpgrade) -> Response {
+            ws.on_upgrade(|mut socket: WebSocket| async move {
+                if !matches!(socket.recv().await, Some(Ok(AMessage::Text(_)))) {
+                    return;
+                }
+                let _ = socket.send(AMessage::Ping(vec![1, 2, 3].into())).await;
+                let ack = "MSH|^~\\&|S|A|R|F|20240101||ACK^A01|P1|P|2.5\rMSA|AA|P1\r";
+                let _ = socket.send(AMessage::Text(ack.into())).await;
+            })
+        }
+        let app = Router::new().route("/ws", get(ping_then_reply));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let client = WebSocketClient::new(format!("ws://{addr}/ws"));
+        let msg = parse_message("MSH|^~\\&|S|A|R|F|20240101||ADT^A01|P1|P|2.5\r").unwrap();
+        let reply = client.send_message(&msg).await.unwrap();
+        assert!(reply.encode().contains("P1"), "unexpected reply");
+        assert!(reply.encode().contains("MSA|AA"), "not an ACK");
     }
 
     #[test]

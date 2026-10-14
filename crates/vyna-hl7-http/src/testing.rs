@@ -229,6 +229,10 @@ impl MockHttpServer {
     }
 
     /// Get the local address the server is bound to
+    ///
+    /// # Panics
+    ///
+    /// Panics if the server has not been started.
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr.expect("Server not started")
     }

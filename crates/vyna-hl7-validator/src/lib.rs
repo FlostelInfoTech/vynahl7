@@ -546,8 +546,13 @@ impl Validator {
             }
         }
 
-        // Check for required segments and non-repeating cardinality
-        for (seg_id, seg_def) in &schema.segments {
+        // Check for required segments and non-repeating cardinality.
+        // Sorted key order: HashMap iteration is per-process random,
+        // which shuffled multi-error output across runs.
+        let mut seg_defs: Vec<(&String, &SegmentDefinition)> =
+            schema.segments.iter().collect();
+        seg_defs.sort_by(|a, b| a.0.cmp(b.0));
+        for (seg_id, seg_def) in seg_defs {
             let count = message.segments.iter().filter(|s| &s.id == seg_id).count();
             if seg_def.required && count == 0 {
                 self.emit(
@@ -582,8 +587,12 @@ impl Validator {
     ) {
         let location_prefix = format!("{}[{}]", segment.id, index);
 
-        // Validate each field
-        for (field_idx, field_def) in &definition.fields {
+        // Validate each field in field-number order (deterministic
+        // across processes; HashMap iteration is not).
+        let mut field_defs: Vec<(&usize, &FieldDefinition)> =
+            definition.fields.iter().collect();
+        field_defs.sort_by(|a, b| a.0.cmp(b.0));
+        for (field_idx, field_def) in field_defs {
             let field = segment.get_field(*field_idx);
 
             if field_def.required && (field.is_none() || field.unwrap().is_empty()) {
@@ -716,7 +725,15 @@ impl Validator {
             if repetition.is_empty() {
                 continue;
             }
-            for (comp_key, comp_def) in components {
+            // Component-number order (deterministic; unparsable keys
+            // sort last and are skipped below as before).
+            let mut comp_defs: Vec<(&String, &ComponentDefinition)> =
+                components.iter().collect();
+            comp_defs.sort_by(|a, b| {
+                let num = |k: &String| k.parse::<usize>().unwrap_or(usize::MAX);
+                num(a.0).cmp(&num(b.0)).then_with(|| a.0.cmp(b.0))
+            });
+            for (comp_key, comp_def) in comp_defs {
                 let comp_idx: usize = match comp_key.parse() {
                     Ok(idx) => idx,
                     Err(_) => continue,
@@ -1088,6 +1105,97 @@ mod tests {
 
         assert!(result.is_valid());
         assert_eq!(result.errors.len(), 0);
+    }
+
+    #[test]
+    fn test_multi_error_output_is_deterministically_ordered() {
+        fn req_field(num: usize, with_components: bool) -> FieldDefinition {
+            let components = if with_components {
+                let mut c = HashMap::new();
+                // Inserted out of order on purpose.
+                for key in ["3", "2"] {
+                    c.insert(
+                        key.to_string(),
+                        ComponentDefinition {
+                            name: format!("comp {key}"),
+                            data_type: "ST".to_string(),
+                            required: true,
+                            max_length: None,
+                            table_id: None,
+                        },
+                    );
+                }
+                Some(c)
+            } else {
+                None
+            };
+            FieldDefinition {
+                name: format!("PID-{num}"),
+                data_type: "ST".to_string(),
+                required: true,
+                repeating: false,
+                max_length: None,
+                table_id: None,
+                components,
+            }
+        }
+        fn seg_def(name: &str, fields: HashMap<usize, FieldDefinition>) -> SegmentDefinition {
+            SegmentDefinition {
+                name: name.to_string(),
+                required: true,
+                repeating: false,
+                fields,
+            }
+        }
+
+        // HashMap iteration is per-process random and freshly seeded
+        // per map, so 50 fresh rounds catch any unsorted iteration.
+        for _ in 0..50 {
+            let mut pid_fields = HashMap::new();
+            for num in [5, 3, 7] {
+                pid_fields.insert(num, req_field(num, num == 5));
+            }
+            let mut segments = HashMap::new();
+            for (id, fields) in [
+                ("PV1", HashMap::new()),
+                ("MSH", HashMap::new()),
+                ("PID", pid_fields),
+                ("EVN", HashMap::new()),
+            ] {
+                segments.insert(id.to_string(), seg_def(id, fields));
+            }
+            let schema = MessageSchema {
+                message_type: "ADT".to_string(),
+                trigger_event: "A01".to_string(),
+                version: "2.5".to_string(),
+                segments,
+            };
+
+            let mut msg = Message::new();
+            let mut msh = Segment::new("MSH");
+            msh.add_field(Field::from_value("^~\\&"));
+            msh.add_field(Field::from_value(""));
+            msh.add_field(Field::from_value("SendApp"));
+            msg.add_segment(msh);
+            let mut pid = Segment::new("PID");
+            for v in ["1", "", "", "", "A"] {
+                pid.add_field(Field::from_value(v));
+            }
+            msg.add_segment(pid);
+
+            let validator = Validator::with_schema(Version::V2_5, schema);
+            let result = validator.validate(&msg);
+            let locs: Vec<&str> =
+                result.errors.iter().map(|e| e.location.as_str()).collect();
+            assert_eq!(
+                locs,
+                vec!["PID[1]-3", "PID[1]-5-2", "PID[1]-5-3", "PID[1]-7", "Message", "Message"],
+                "round failed: {:?}",
+                result.errors
+            );
+            assert!(result.errors[4].message.contains("EVN"), "{}", result.errors[4].message);
+            assert!(result.errors[5].message.contains("PV1"), "{}", result.errors[5].message);
+        }
     }
 
     #[test]

@@ -55,7 +55,9 @@ impl ObservationReverseConverter {
             }
         }
 
-        // OBX-8: Abnormal Flags
+        // OBX-8: Abnormal Flags. The display rides component 2,
+        // where the forward converter reads it; without it the
+        // text falls back to the code.
         if let Some(ref interpretation) = observation.interpretation
             && let Some(first_interp) = interpretation.first()
             && let Some(ref coding) = first_interp.coding
@@ -63,6 +65,9 @@ impl ObservationReverseConverter {
             && let Some(ref code) = first_coding.code
         {
             let _ = obx.set_field_value(8, code);
+            if let Some(display) = first_coding.display.as_deref().filter(|s| !s.is_empty()) {
+                let _ = obx.set_component(8, 0, 1, display);
+            }
         }
 
         // OBX-11: Observation Result Status
@@ -658,5 +663,38 @@ mod tests {
         let back = round_trip(&obx);
         let ranges = back.reference_range.as_ref().unwrap();
         assert_eq!(ranges[0].text.as_deref(), Some("normal range"));
+    }
+
+    #[test]
+    fn test_interpretation_display_round_trips() {
+        use vyna_hl7_core::delimiters::Delimiters;
+
+        let mut observation = Observation::new("final".to_string(), create_code());
+        observation.value_string = Some("x".to_string());
+        observation.interpretation = Some(vec![CodeableConcept {
+            coding: Some(vec![Coding {
+                system: Some(
+                    "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation"
+                        .to_string(),
+                ),
+                version: None,
+                code: Some("H".to_string()),
+                display: Some("High".to_string()),
+            }]),
+            text: Some("High".to_string()),
+        }]);
+        let obx = ObservationReverseConverter::convert(&observation, 1).unwrap();
+        // The display rides OBX-8-2, where the forward converter
+        // reads it; without it the text falls back to the code.
+        assert_eq!(
+            obx.get_field(8).unwrap().encode(&Delimiters::default()),
+            "H^High"
+        );
+        let back = round_trip(&obx);
+        let interp = &back.interpretation.as_ref().unwrap()[0];
+        let coding = interp.coding.as_ref().unwrap();
+        assert_eq!(coding[0].code.as_deref(), Some("H"));
+        assert_eq!(coding[0].display.as_deref(), Some("High"));
+        assert_eq!(interp.text.as_deref(), Some("High"));
     }
 }

@@ -1,6 +1,6 @@
 //! Immunization converter - RXA segment to FHIR Immunization resource
 
-use super::coding_systems::convert_coding_system;
+use super::coding_systems::{convert_coding_system, convert_coding_system_opt};
 use super::patient::{
     hl7_fraction_suffix, split_hl7_offset, valid_hl7_date, valid_hl7_hour_min, valid_hl7_time,
     valid_hl7_year_month,
@@ -264,8 +264,17 @@ impl ImmunizationConverter {
             && let Ok(Some(site_code)) = terser.get(&site_path)
             && !site_code.is_empty()
         {
+            // RXR-2-3 selects the system when known; otherwise the
+            // v2-0163 bound-table default stands.
+            let site_system = terser
+                .get(&format!("{site_path}-3"))
+                .ok()
+                .flatten()
+                .filter(|s| !s.is_empty())
+                .and_then(convert_coding_system_opt)
+                .unwrap_or_else(|| "http://terminology.hl7.org/CodeSystem/v2-0163".to_string());
             let mut coding = Coding {
-                system: Some("http://terminology.hl7.org/CodeSystem/v2-0163".to_string()),
+                system: Some(site_system),
                 code: Some(site_code.to_string()),
                 display: None,
                 version: None,
@@ -1019,5 +1028,39 @@ mod tests {
         let message = parse_message(&hl7).unwrap();
         let imm = &ImmunizationConverter::convert_all(&message).unwrap()[0];
         assert!(imm.note.is_none());
+    }
+
+    #[test]
+    fn test_site_honors_explicit_coding_system() {
+        // An explicitly different RXR-2-3 wins over the v2-0163
+        // bound-table default; absent or unknown keeps the default.
+        let message_for = |rxr2: &str| {
+            let hl7 = format!(
+                "MSH|^~\\&|Clinic|Hospital|EMR|Hospital|20240315||VXU^V04|MSG123|P|2.5\r\
+                 PID|1||12345^^^MRN||DOE^JOHN||19800101|M\r\
+                 RXA|0|1|20240315100000||08^HepB adult^CVX|1.0|mL||||||||||||CP\r\
+                 RXR|IM^Intramuscular|{rxr2}"
+            );
+            parse_message(&hl7).unwrap()
+        };
+        let system_for = |rxr2: &str| {
+            let message = message_for(rxr2);
+            let imm = &ImmunizationConverter::convert_all(&message).unwrap()[0];
+            imm.site.as_ref().unwrap().coding.as_ref().unwrap()[0]
+                .system
+                .clone()
+        };
+        assert_eq!(
+            system_for("LA^Left Arm^SCT").as_deref(),
+            Some("http://snomed.info/sct")
+        );
+        assert_eq!(
+            system_for("LA^Left Arm").as_deref(),
+            Some("http://terminology.hl7.org/CodeSystem/v2-0163")
+        );
+        assert_eq!(
+            system_for("LA^Left Arm^XYZ").as_deref(),
+            Some("http://terminology.hl7.org/CodeSystem/v2-0163")
+        );
     }
 }

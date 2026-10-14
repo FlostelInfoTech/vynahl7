@@ -6,6 +6,7 @@ use vyna_hl7_core::builders::adt::AdtA01Builder;
 use vyna_hl7_core::{CharacterSet, Field, Message, Version};
 use vyna_hl7_parser::parse_message;
 use vyna_hl7_templates::{MessageTemplate, TemplateEngine, TemplateLibrary};
+use vyna_hl7_terser::TerserMut;
 use std::collections::{HashMap, HashSet};
 
 pub struct BuilderTab {
@@ -290,20 +291,31 @@ fn parse_template_file(path: &std::path::Path) -> Result<MessageTemplate, String
 }
 
 /// Extract `{{name}}` placeholders from a template string.
+///
+/// Only bindable names are listed: unclosed (`{{name}`), empty
+/// (`{{}}`, `{{ }}`), and nested-outer (`{{a {{b}}`) openers yield no
+/// variable here — the template engine reports them as errors when
+/// the message is built.
 fn extract_placeholders(text: &str) -> Vec<String> {
     let mut names = Vec::new();
     let mut rest = text;
     while let Some(start) = rest.find("{{") {
         rest = &rest[start + 2..];
-        if let Some(end) = rest.find("}}") {
-            let name = rest[..end].trim();
-            if !name.is_empty() && !names.iter().any(|n| n == name) {
-                names.push(name.to_string());
-            }
-            rest = &rest[end + 2..];
-        } else {
+        let Some(end) = rest.find("}}") else {
             break;
+        };
+        let candidate = &rest[..end];
+        if let Some(nested) = candidate.find("{{") {
+            // Nested opener: the outer "{{" never closes, so rescan
+            // from the inner one instead of swallowing it.
+            rest = &rest[nested..];
+            continue;
         }
+        let name = candidate.trim();
+        if !name.is_empty() && !names.iter().any(|n| n == name) {
+            names.push(name.to_string());
+        }
+        rest = &rest[end + 2..];
     }
     names
 }
@@ -1025,28 +1037,76 @@ impl BuilderTab {
         // Build assigned location
         let assigned_location = format!("{}^{}", self.room, self.bed);
 
-        // Build the message based on type
-        let mut message = match self.message_type {
-            MessageType::AdtA01 | MessageType::AdtA04 | MessageType::AdtA08 => {
-                AdtA01Builder::new(self.hl7_version.unwrap_or(Version::V2_5_1))
-                    .sending_application(&self.sending_app)
-                    .sending_facility(&self.sending_facility)
-                    .receiving_application(&self.receiving_app)
-                    .receiving_facility(&self.receiving_facility)
-                    .patient_id(&self.patient_id)
-                    .patient_name(&self.family_name, &self.given_name)
-                    .date_of_birth(&birth_date_hl7)
-                    .sex(self.gender.code())
-                    .patient_class(self.patient_class.code())
-                    .assigned_location(&assigned_location)
-                    .attending_doctor(&attending_doctor)
-                    .build()
-                    .map_err(|e| format!("Build error: {}", e))?
-            }
+        // One trigger per picker choice. Every arm builds through the
+        // A01 builder shape (it alone carries the
+        // assigned-location/attending-doctor delegates); A04/A08 are
+        // restamped to their own trigger below so MSH-9/EVN-1 match.
+        let trigger = match self.message_type {
+            MessageType::AdtA01 => "A01",
+            MessageType::AdtA04 => "A04",
+            MessageType::AdtA08 => "A08",
         };
+        let mut message = AdtA01Builder::new(self.hl7_version.unwrap_or(Version::V2_5_1))
+            .sending_application(&self.sending_app)
+            .sending_facility(&self.sending_facility)
+            .receiving_application(&self.receiving_app)
+            .receiving_facility(&self.receiving_facility)
+            .patient_id(&self.patient_id)
+            .patient_name(&self.family_name, &self.given_name)
+            .date_of_birth(&birth_date_hl7)
+            .sex(self.gender.code())
+            .patient_class(self.patient_class.code())
+            .assigned_location(&assigned_location)
+            .attending_doctor(&attending_doctor)
+            .build()
+            .map_err(|e| format!("Build error: {}", e))?;
 
+        self.restamp_trigger(&mut message, trigger)?;
+        self.stamp_extra_fields(&mut message)?;
         self.apply_message_options(&mut message)?;
         Ok(message.encode_with_separator("\n"))
+    }
+
+    /// Restamp MSH-9/EVN-1 to the picker's trigger event.
+    ///
+    /// The shared A01 builder shape always emits `ADT^A01`/`A01`, so
+    /// A04/A08 overwrite the trigger component and event code in place.
+    fn restamp_trigger(&self, message: &mut Message, trigger: &str) -> Result<(), String> {
+        if trigger == "A01" {
+            return Ok(());
+        }
+        let mut terser = TerserMut::new(message);
+        terser
+            .set("MSH-9-2", trigger)
+            .map_err(|e| format!("Trigger error: {}", e))?;
+        terser
+            .set("EVN-1", trigger)
+            .map_err(|e| format!("Trigger error: {}", e))?;
+        Ok(())
+    }
+
+    /// Stamp form fields the ADT builder has no delegates for.
+    ///
+    /// Each value lands only when non-empty, so clearing a form field
+    /// leaves the built default instead of writing blank structure.
+    fn stamp_extra_fields(&self, message: &mut Message) -> Result<(), String> {
+        let mut terser = TerserMut::new(message);
+        let mut stamp = |path: &str, value: &str| -> Result<(), String> {
+            if value.is_empty() {
+                return Ok(());
+            }
+            terser.set(path, value).map_err(|e| format!("Field error: {}", e))
+        };
+        stamp("PID-3-4", &self.patient_id_system)?;
+        stamp("PID-5-3", &self.middle_name)?;
+        stamp("PID-11-1", &self.street_address)?;
+        stamp("PID-11-3", &self.city)?;
+        stamp("PID-11-4", &self.state)?;
+        stamp("PID-11-5", &self.zip_code)?;
+        stamp("PID-11-6", &self.country)?;
+        stamp("PID-13", &self.phone_home)?;
+        stamp("PID-14", &self.phone_work)?;
+        Ok(())
     }
 
     /// Stamp the selected HL7 version (MSH-12) and character set (MSH-18).
@@ -1110,6 +1170,92 @@ mod tests {
         assert!(extract_placeholders("no placeholders").is_empty());
         assert!(extract_placeholders("{{unclosed").is_empty());
         assert!(extract_placeholders("{{}}").is_empty());
+    }
+
+    #[test]
+    fn placeholder_extraction_skips_unclosed_empty_and_nested() {
+        assert!(extract_placeholders("{{ }}").is_empty());
+        assert!(extract_placeholders("Patient {{name}").is_empty());
+        // Nested: the outer opener never closes, the inner still lists.
+        assert_eq!(extract_placeholders("{{a {{b}}"), vec!["b".to_string()]);
+        // A later unclosed opener does not hide earlier valid ones.
+        assert_eq!(
+            extract_placeholders("{{ok}} then {{oops"),
+            vec!["ok".to_string()]
+        );
+    }
+
+    #[test]
+    fn form_build_restamps_trigger_for_a04_and_a08() {
+        for (message_type, trigger) in [
+            (MessageType::AdtA01, "A01"),
+            (MessageType::AdtA04, "A04"),
+            (MessageType::AdtA08, "A08"),
+        ] {
+            let tab = BuilderTab {
+                message_type,
+                ..BuilderTab::default()
+            };
+            let text = tab.try_build_message().unwrap();
+            let msh_fields: Vec<&str> = text.lines().next().unwrap().split('|').collect();
+            assert_eq!(msh_fields[8], format!("ADT^{trigger}"));
+            let evn = text.lines().nth(1).unwrap();
+            assert!(evn.starts_with(&format!("EVN|{trigger}|")), "unexpected EVN: {evn}");
+            // Location/doctor delegates still apply to every trigger.
+            let pv1_fields: Vec<&str> = text
+                .lines()
+                .find(|l| l.starts_with("PV1|"))
+                .unwrap()
+                .split('|')
+                .collect();
+            assert_eq!(pv1_fields[3], "ICU^101-A");
+            assert_eq!(pv1_fields[7], "1234567890^SMITH, JOHN D MD");
+        }
+    }
+
+    #[test]
+    fn form_build_stamps_dropped_pid_fields() {
+        let tab = BuilderTab::default();
+        let text = tab.try_build_message().unwrap();
+        let fields: Vec<&str> = text
+            .lines()
+            .find(|l| l.starts_with("PID|"))
+            .unwrap()
+            .split('|')
+            .collect();
+        assert_eq!(fields[3], "12345678^^^HOSPITAL");
+        assert_eq!(fields[5], "DOE^JOHN^A");
+        assert_eq!(fields[11], "123 MAIN STREET^^SPRINGFIELD^IL^62701^USA");
+        assert_eq!(fields[13], "555-123-4567");
+        assert_eq!(fields[14], "555-987-6543");
+    }
+
+    #[test]
+    fn form_build_skips_empty_extra_fields() {
+        let tab = BuilderTab {
+            patient_id_system: String::new(),
+            middle_name: String::new(),
+            street_address: String::new(),
+            city: String::new(),
+            state: String::new(),
+            zip_code: String::new(),
+            country: String::new(),
+            phone_home: String::new(),
+            phone_work: String::new(),
+            ..BuilderTab::default()
+        };
+        let text = tab.try_build_message().unwrap();
+        let fields: Vec<&str> = text
+            .lines()
+            .find(|l| l.starts_with("PID|"))
+            .unwrap()
+            .split('|')
+            .collect();
+        assert_eq!(fields[3], "12345678");
+        assert_eq!(fields[5], "DOE^JOHN");
+        assert!(fields.get(11).is_none_or(|f| f.is_empty()));
+        assert!(fields.get(13).is_none_or(|f| f.is_empty()));
+        assert!(fields.get(14).is_none_or(|f| f.is_empty()));
     }
 
     #[test]

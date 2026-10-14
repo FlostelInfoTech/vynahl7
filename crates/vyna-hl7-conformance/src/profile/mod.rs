@@ -62,9 +62,19 @@ impl ConformanceProfile {
                     "Segment name must not be empty".to_string(),
                 ));
             }
-            if segment.name.len() != 3 || !segment.name.chars().all(|c| c.is_ascii_alphanumeric()) {
+            // Uppercase only: segment matching is case-sensitive, so a
+            // lowercase ID could never match a real message.
+            if segment.name.len() != 3
+                || !segment
+                    .name
+                    .chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+            {
                 return Err(crate::error::ConformanceError::InvalidProfile(
-                    format!("Invalid segment ID '{}': must be exactly 3 alphanumeric characters", segment.name),
+                    format!(
+                        "Invalid segment ID '{}': must be exactly 3 uppercase alphanumeric chars",
+                        segment.name
+                    ),
                 ));
             }
 
@@ -782,6 +792,17 @@ mod tests {
         let mut profile = make_valid_profile();
         profile.message.segments[0].name = "AB".to_string(); // Too short
         assert!(profile.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_lowercase_segment_id() {
+        // Segment matching is case-sensitive, so a lowercase ID can
+        // never match a message: reject it at profile validation.
+        let mut profile = make_valid_profile();
+        profile.message.segments[0].name = "pid".to_string();
+        assert!(profile.validate().is_err());
+        profile.message.segments[0].name = "MSH".to_string();
+        assert!(profile.validate().is_ok());
     }
 
     #[test]

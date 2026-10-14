@@ -316,7 +316,7 @@ fn parse_command(
                                 // Add component names for composite values
                                 if let Some(components) = &fd.components {
                                     let comp_parts =
-                                        split_field_components(&encoded, &message.delimiters);
+                                        split_field_components(field, &message.delimiters);
                                     let comp_details: Vec<_> = comp_parts.iter().enumerate().filter_map(|(i, val)| {
                                         if val.is_empty() { return None; }
                                         let comp_num = format!("{}", i + 1);
@@ -401,7 +401,7 @@ fn parse_command(
                                 // Show component breakdown for composite types
                                 if let Some(components) = &fd.components {
                                     let comp_parts =
-                                        split_field_components(&encoded, &message.delimiters);
+                                        split_field_components(field, &message.delimiters);
                                     if comp_parts.len() > 1 {
                                         for (i, val) in comp_parts.iter().enumerate() {
                                             if val.is_empty() {
@@ -719,9 +719,19 @@ fn display_field_value(
     }
 }
 
-/// Split an encoded field value into components for schema display.
-fn split_field_components<'a>(encoded: &'a str, delimiters: &Delimiters) -> Vec<&'a str> {
-    encoded.split(delimiters.component_separator).collect()
+/// Split a field's first repetition into components for schema display.
+///
+/// Only the first repetition is broken down; further repetitions stay
+/// visible in the full field value but are not merged into components.
+fn split_field_components(field: &Field, delimiters: &Delimiters) -> Vec<String> {
+    match field.repetitions.first() {
+        None => Vec::new(),
+        Some(first) => first
+            .encode(delimiters)
+            .split(delimiters.component_separator)
+            .map(str::to_string)
+            .collect(),
+    }
 }
 
 fn convert_command(
@@ -864,6 +874,32 @@ fn info_command(input: &str, charset: Option<CharacterSet>) -> Result<()> {
     Ok(())
 }
 
+/// A `--to` endpoint split into its transport scheme and address.
+///
+/// The scheme matches case-insensitively (RFC 3986 §3.1) while the
+/// remainder keeps its original spelling for the transport client.
+enum SendTarget<'a> {
+    Mllp(&'a str),
+    Http,
+}
+
+/// Split a `--to` endpoint into its transport and address.
+///
+/// Returns `None` when the scheme is not `mllp://`, `http://`, or
+/// `https://` (compared case-insensitively).
+fn parse_send_target(to: &str) -> Option<SendTarget<'_>> {
+    if to.get(..7).is_some_and(|s| s.eq_ignore_ascii_case("mllp://")) {
+        // Byte 7 is a char boundary: the matched prefix is all ASCII.
+        Some(SendTarget::Mllp(&to[7..]))
+    } else if to.get(..7).is_some_and(|s| s.eq_ignore_ascii_case("http://"))
+        || to.get(..8).is_some_and(|s| s.eq_ignore_ascii_case("https://"))
+    {
+        Some(SendTarget::Http)
+    } else {
+        None
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn send_command(
     input: &str,
@@ -882,39 +918,43 @@ async fn send_command(
     let message = parse_message(&content).context("Failed to parse HL7 message")?;
     let timeout = Duration::from_secs(timeout_secs.max(1));
 
-    let ack = if let Some(addr) = to.strip_prefix("mllp://") {
-        if user.is_some() || password.is_some() {
-            bail!("--user/--password are HTTP-only; MLLP has no authentication");
+    let ack = match parse_send_target(to) {
+        Some(SendTarget::Mllp(addr)) => {
+            if user.is_some() || password.is_some() {
+                bail!("--user/--password are HTTP-only; MLLP has no authentication");
+            }
+            send_mllp(
+                &message,
+                addr,
+                timeout,
+                tls,
+                ca_cert,
+                client_cert,
+                client_key,
+                server_name,
+            )
+            .await?
         }
-        send_mllp(
-            &message,
-            addr,
-            timeout,
-            tls,
-            ca_cert,
-            client_cert,
-            client_key,
-            server_name,
-        )
-        .await?
-    } else if to.starts_with("http://") || to.starts_with("https://") {
-        if server_name.is_some() {
-            bail!("--server-name is MLLP-only");
+        Some(SendTarget::Http) => {
+            if server_name.is_some() {
+                bail!("--server-name is MLLP-only");
+            }
+            send_http(
+                &message,
+                to,
+                user,
+                password,
+                timeout,
+                tls,
+                ca_cert,
+                client_cert,
+                client_key,
+            )
+            .await?
         }
-        send_http(
-            &message,
-            to,
-            user,
-            password,
-            timeout,
-            tls,
-            ca_cert,
-            client_cert,
-            client_key,
-        )
-        .await?
-    } else {
-        bail!("--to must start with mllp://, http://, or https:// (got '{to}')");
+        None => {
+            bail!("--to must start with mllp://, http://, or https:// (got '{to}')");
+        }
     };
 
     println!("{}", ack.encode().replace('\r', "\n").trim_end());
@@ -1037,7 +1077,10 @@ async fn send_http(
     client = client.with_timeout(timeout).context("invalid timeout")?;
 
     if tls {
-        if !endpoint.starts_with("https://") {
+        if !endpoint
+            .get(..8)
+            .is_some_and(|s| s.eq_ignore_ascii_case("https://"))
+        {
             bail!("--tls requires an https:// endpoint (got '{endpoint}')");
         }
         #[cfg(not(feature = "tls"))]
@@ -1200,17 +1243,63 @@ mod tests {
 
     #[test]
     fn component_split_uses_message_delimiters() {
+        use vyna_hl7_core::{Component, Repetition};
+
         let custom = Delimiters {
             component_separator: '$',
             ..Default::default()
         };
+        let mut field = Field::new();
+        let mut repetition = Repetition::new();
+        repetition.add_component(Component::from_value("ADT"));
+        repetition.add_component(Component::from_value("A01"));
+        field.add_repetition(repetition);
         assert_eq!(
-            split_field_components("ADT$A01", &custom),
-            vec!["ADT", "A01"]
+            split_field_components(&field, &custom),
+            vec!["ADT".to_string(), "A01".to_string()]
         );
         assert_eq!(
-            split_field_components("ADT^A01", &Delimiters::default()),
-            vec!["ADT", "A01"]
+            split_field_components(&field, &Delimiters::default()),
+            vec!["ADT".to_string(), "A01".to_string()]
         );
+    }
+
+    #[test]
+    fn component_split_shows_first_repetition_only() {
+        // Repetitions must not merge into components: "A1^^C1~A2^^C2"
+        // breaks down to the first address only, with no "~" leakage.
+        let field = Field::from_delimited("A1^^C1~A2^^C2");
+        assert_eq!(
+            split_field_components(&field, &Delimiters::default()),
+            vec!["A1".to_string(), String::new(), "C1".to_string()]
+        );
+        assert!(Field::new().repetitions.is_empty());
+        assert!(split_field_components(&Field::new(), &Delimiters::default()).is_empty());
+    }
+
+    #[test]
+    fn send_target_accepts_uppercase_schemes() {
+        // Uppercase schemes dispatch; the remainder keeps its spelling.
+        match parse_send_target("MLLP://127.0.0.1:2575").unwrap() {
+            SendTarget::Mllp(addr) => assert_eq!(addr, "127.0.0.1:2575"),
+            SendTarget::Http => panic!("expected MLLP target"),
+        }
+        assert!(matches!(
+            parse_send_target("HTTP://127.0.0.1:9/hl7"),
+            Some(SendTarget::Http)
+        ));
+        assert!(matches!(
+            parse_send_target("Https://example.com/hl7"),
+            Some(SendTarget::Http)
+        ));
+        // Lowercase still dispatches; unknown schemes do not.
+        assert!(matches!(
+            parse_send_target("mllp://host:2575"),
+            Some(SendTarget::Mllp("host:2575"))
+        ));
+        assert!(parse_send_target("ftp://host/hl7").is_none());
+        // Short and empty inputs never panic the prefix check.
+        assert!(parse_send_target("mllp:/").is_none());
+        assert!(parse_send_target("").is_none());
     }
 }

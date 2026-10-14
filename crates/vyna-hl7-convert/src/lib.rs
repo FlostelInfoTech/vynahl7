@@ -12,6 +12,8 @@
 //!   appends as extra repetitions so both values survive.
 //! - Segments unknown to the *source* schema (Z-segments and local
 //!   extensions) pass through verbatim in both directions.
+//! - Fields unknown to the *source* schema pass through verbatim too;
+//!   only source-known-but-unmappable fields are dropped and reported.
 //! - Segments known to the source but absent in the target are dropped and
 //!   reported.
 //! - MSH-12 is stamped with the target version.
@@ -185,9 +187,15 @@ pub fn convert_with_schemas(
             }
             field_number += 1;
         }
-        // Pass 2: move by name, or drop with a report.
+        // Pass 2: keep source-unknown fields verbatim (local
+        // extensions, mirroring the segment rule), move by name, or
+        // drop with a report.
         for (number, field) in pending {
-            if !field_has_data(field) {
+            if from_def.is_some_and(|def| !def.fields.contains_key(&number)) {
+                // Unknown to the source schema: keep it verbatim, even
+                // when empty, so positions never shift.
+                let _ = converted.set_field(number, field.clone());
+            } else if !field_has_data(field) {
                 // No data to lose: skip silently.
             } else if let Some(moved_to) = find_same_name(from_def, to_def, number)
                 && moved_to != 0
@@ -612,6 +620,48 @@ mod tests {
         let empty = parse_message("MSH|^~\\&|A|B|C|D|20240101||TST^T01|1|P|2.5\rPID|1\r").unwrap();
         let (_converted, report) = convert_with_schemas(&empty, &from, &to, Version::V2_5);
         assert_eq!(report.missing_required, vec!["PID[0]-5"]);
+    }
+
+    #[test]
+    fn same_version_conversion_keeps_schema_unknown_fields() {
+        // PID-50 is outside the v2.5 schema (1..=39): a local
+        // extension, so identity conversion must keep it verbatim.
+        let mut message = parse_message(
+            "MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1||7\r",
+        )
+        .unwrap();
+        let pid = message.segments.iter_mut().find(|s| s.id == "PID").unwrap();
+        let _ = pid.set_field_value(50, "LOCALDATA");
+
+        let (converted, report) = convert(&message, Version::V2_5, Version::V2_5).unwrap();
+
+        // The minimal message legitimately reports missing required
+        // items, but nothing may be dropped or moved.
+        assert!(report.dropped_fields.is_empty(), "unexpected: {report:?}");
+        assert!(report.dropped_segments.is_empty(), "unexpected: {report:?}");
+        assert!(report.moved_fields.is_empty(), "unexpected: {report:?}");
+        assert_eq!(
+            converted
+                .get_segment_by_id("PID")
+                .unwrap()
+                .get_field_value(50),
+            Some("LOCALDATA")
+        );
+        assert_eq!(message.encode(), converted.encode());
+
+        // Cross-version conversion keeps source-unknown fields too.
+        let (down, down_report) = convert(&message, Version::V2_5, Version::V2_3).unwrap();
+        assert_eq!(
+            down.get_segment_by_id("PID").unwrap().get_field_value(50),
+            Some("LOCALDATA")
+        );
+        assert!(
+            !down_report
+                .dropped_fields
+                .iter()
+                .any(|d| d == "PID[0]-50"),
+            "unexpected report: {down_report:?}"
+        );
     }
 
     #[test]

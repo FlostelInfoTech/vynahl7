@@ -100,6 +100,15 @@ impl ObservationConverter {
                 coding: Some(vec![coding]),
                 text: None,
             }
+        } else if let Ok(Some(text)) = terser.get(&format!("{}-2", code_path))
+            && !text.is_empty()
+        {
+            // Text-only: empty code with valued text keeps the
+            // observation, like OBR-4 and the OBX-5 coded arms.
+            CodeableConcept {
+                coding: None,
+                text: Some(text.to_string()),
+            }
         } else {
             return Err(ConversionError::MissingField(
                 "OBX-3".to_string(),
@@ -121,16 +130,10 @@ impl ObservationConverter {
 
         let mut observation = Observation::new(status, code);
 
-        // OBX-1: Set ID
-        let set_id_path = if obx_index == 0 {
-            "OBX-1".to_string()
-        } else {
-            format!("OBX({})-1", obx_index + 1)
-        };
-        if let Ok(Some(set_id)) = terser.get(&set_id_path)
-            && !set_id.is_empty()
-        {
-            observation.id = Some(format!("obs-{}", set_id));
+        // OBX-1: Set ID -> Observation.id via the shared scheme,
+        // which disambiguates restarted set ids with the ordinal.
+        if let Some(id) = super::observation_id(message, obx_index) {
+            observation.id = Some(id);
         }
 
         // OBX-2: Value Type -> determines which value[x] field to populate
@@ -181,6 +184,7 @@ impl ObservationConverter {
             && let Some(ref mut quantity) = observation.value_quantity
         {
             quantity.unit = Some(units.to_string());
+            quantity.code = Some(units.to_string());
         }
 
         // OBX-7: Reference Range -> Observation.referenceRange
@@ -302,7 +306,7 @@ impl ObservationConverter {
                 observation.value_quantity = Some(Quantity {
                     value: Some(numeric_value),
                     unit: None,
-                    system: None,
+                    system: Some("http://unitsofmeasure.org".to_string()),
                     code: None,
                 });
             }
@@ -838,5 +842,53 @@ mod tests {
                 .unwrap();
             assert_eq!(value[0].system.as_deref(), Some(expected), "value {system}");
         }
+    }
+
+    #[test]
+    fn test_restarted_obx_set_ids_stay_unique() {
+        // OBX-1 restarts per OBR group: the second OBX|1 must not
+        // collide with the first (each report links its own in the
+        // diagnostic-report tests).
+        let hl7 = "MSH|^~\\&|LAB|Hospital|EMR|Hospital|20240315||ORU^R01|M|P|2.5\r\
+                   PID|1||12345|||DOE^JOHN||19800101|M\r\
+                   OBR|1|||24331-1^Lipid Panel^LN\r\
+                   OBX|1|NM|2093-3^Cholesterol^LN||195|mg/dL||||F\r\
+                   OBR|2|||24342-8^Metabolic Panel^LN\r\
+                   OBX|1|NM|2085-9^HDL^LN||55|mg/dL||||F";
+        let message = parse_message(hl7).unwrap();
+        let observations = ObservationConverter::convert_all(&message).unwrap();
+        let ids: Vec<_> = observations.iter().map(|o| o.id.clone().unwrap()).collect();
+        assert_eq!(ids, vec!["obs-1-1", "obs-1-2"]);
+    }
+
+    #[test]
+    fn test_text_only_obx3_preserved_as_text() {
+        // Empty code with valued text keeps the observation, like
+        // OBR-4 and the OBX-5 coded arms (fully-empty still errors).
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||ORU^R01|1|P|2.5\r\
+                   OBX|1|ST|^Free text code||some value||||||F";
+        let message = parse_message(hl7).unwrap();
+        let obs = &ObservationConverter::convert_all(&message).unwrap()[0];
+        assert_eq!(obs.code.coding, None);
+        assert_eq!(obs.code.text.as_deref(), Some("Free text code"));
+        assert_eq!(obs.value_string.as_deref(), Some("some value"));
+    }
+
+    #[test]
+    fn test_value_quantity_carries_ucum_system_and_code() {
+        // Units carry the UCUM system and code, like the
+        // immunization dose quantity and the specimen quantity.
+        let hl7 = "MSH|^~\\&|A|B|C|D|20240315||ORU^R01|1|P|2.5\r\
+                   OBX|1|NM|WBC^W^LN||7.5|mg/dL|||||F";
+        let message = parse_message(hl7).unwrap();
+        let obs = &ObservationConverter::convert_all(&message).unwrap()[0];
+        let quantity = obs.value_quantity.as_ref().unwrap();
+        assert_eq!(quantity.value, Some(7.5));
+        assert_eq!(quantity.unit.as_deref(), Some("mg/dL"));
+        assert_eq!(
+            quantity.system.as_deref(),
+            Some("http://unitsofmeasure.org")
+        );
+        assert_eq!(quantity.code.as_deref(), Some("mg/dL"));
     }
 }

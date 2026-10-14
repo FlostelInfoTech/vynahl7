@@ -2,19 +2,9 @@
 
 use crate::{Error, MessageTemplate, Result};
 use std::collections::HashMap;
-use std::sync::OnceLock;
 use vyna_hl7_core::{
     Component, Delimiters, Encoding, Field, Message, Repetition, Segment, SubComponent,
 };
-
-/// Matches `{{variable}}` placeholders; compiled once and shared by all
-/// substitutions instead of rebuilt on every call.
-static PLACEHOLDER_RE: OnceLock<regex::Regex> = OnceLock::new();
-
-fn placeholder_regex() -> &'static regex::Regex {
-    PLACEHOLDER_RE
-        .get_or_init(|| regex::Regex::new(r"\{\{([^}]+)\}\}").expect("static regex is valid"))
-}
 
 /// Maximum field or component position accepted from a template.
 ///
@@ -336,6 +326,8 @@ impl TemplateEngine {
     /// Expansion is a single pass: substituted values are copied
     /// verbatim and never rescanned, so a value containing
     /// `{{another}}` cannot double-expand.
+    /// A `{{` opener with no later `}}`, a nested opener, or an empty
+    /// variable name (`{{}}`, `{{ }}`) is an error, never literal text.
     fn substitute_variables(
         &self,
         placeholder: &str,
@@ -343,25 +335,40 @@ impl TemplateEngine {
         escape_values: bool,
     ) -> Result<String> {
         let mut result = String::with_capacity(placeholder.len());
-        let mut last_end = 0;
-
-        for cap in placeholder_regex().captures_iter(placeholder) {
-            let matched = cap.get(0).expect("capture holds the full match");
-            result.push_str(&placeholder[last_end..matched.start()]);
-
-            let var_name = cap[1].trim();
+        let mut rest = placeholder;
+        while let Some(start) = rest.find("{{") {
+            result.push_str(&rest[..start]);
+            let after = &rest[start + 2..];
+            let Some(end) = after.find("}}") else {
+                return Err(Error::substitution(format!(
+                    "Unclosed placeholder '{{{{...}}' in template: {placeholder}"
+                )));
+            };
+            let candidate = &after[..end];
+            if candidate.contains("{{") {
+                // A nested opener leaves the outer one unclosed.
+                return Err(Error::substitution(format!(
+                    "Unclosed placeholder '{{{{...}}' in template: {placeholder}"
+                )));
+            }
+            let var_name = candidate.trim();
+            if var_name.is_empty() {
+                return Err(Error::substitution(
+                    "Placeholder '{{}}' has an empty variable name",
+                ));
+            }
             let var_value = variables
                 .get(var_name)
-                .ok_or_else(|| Error::substitution(format!("Variable '{}' not found", var_name)))?;
+                .ok_or_else(|| Error::substitution(format!("Variable '{var_name}' not found")))?;
 
             if escape_values {
                 result.push_str(&Self::escape_literal(var_value));
             } else {
                 result.push_str(var_value);
             }
-            last_end = matched.end();
+            rest = &after[end + 2..];
         }
-        result.push_str(&placeholder[last_end..]);
+        result.push_str(rest);
 
         Ok(result)
     }
@@ -1024,5 +1031,59 @@ mod tests {
         engine.set_variable("name", "");
         let message = engine.create_message(&template).unwrap();
         assert!(message.segments[0].get_field(5).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_substitution_rejects_unclosed_placeholder() {
+        let engine = TemplateEngine::new();
+        let mut vars = HashMap::new();
+        vars.insert("name".to_string(), "X".to_string());
+
+        // An unclosed opener must error, never ship literally.
+        for bad in ["Patient {{name}", "{{name", "A {{name}} C {{oops"] {
+            let err = engine
+                .substitute_variables(bad, &vars, false)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("Unclosed"), "unexpected: {err}");
+        }
+        // A nested opener leaves the outer one unclosed too.
+        let err = engine
+            .substitute_variables("{{a {{b}}", &vars, false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Unclosed"), "unexpected: {err}");
+    }
+
+    #[test]
+    fn test_substitution_rejects_empty_variable_name() {
+        let engine = TemplateEngine::new();
+        let vars = HashMap::new();
+
+        // "{{}}" and "{{ }}" are the same mistake: both error.
+        for bad in ["{{}}", "{{ }}", "X {{  }} Y"] {
+            let err = engine
+                .substitute_variables(bad, &vars, false)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("empty"), "unexpected: {err}");
+        }
+    }
+
+    #[test]
+    fn test_create_message_rejects_unclosed_placeholder() {
+        // End to end: the broken opener never lands in PID-5.
+        let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
+        let mut pid = SegmentTemplate::new("PID");
+        pid.add_field(
+            5,
+            FieldTemplate::new().with_placeholder("Patient {{name}"),
+        );
+        template.add_segment(pid);
+
+        let mut engine = TemplateEngine::new();
+        engine.set_variable("name", "X");
+        let err = engine.create_message(&template).unwrap_err().to_string();
+        assert!(err.contains("Unclosed"), "unexpected: {err}");
     }
 }

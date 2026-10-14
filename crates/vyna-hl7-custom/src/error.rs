@@ -8,8 +8,8 @@ pub type Result<T> = std::result::Result<T, CustomSegmentError>;
 /// Errors that can occur when working with custom Z-segments
 #[derive(Error, Debug)]
 pub enum CustomSegmentError {
-    /// Segment ID is invalid (must start with 'Z')
-    #[error("Invalid segment ID '{0}': must start with 'Z'")]
+    /// Segment ID is invalid (must be 'Z' plus 2 ASCII alphanumerics)
+    #[error("Invalid segment ID '{0}': must be 'Z' followed by 2 ASCII alphanumerics")]
     InvalidSegmentId(String),
 
     /// Required field is missing
@@ -143,5 +143,17 @@ mod tests {
     fn test_validation_failed_error() {
         let err = CustomSegmentError::validation_failed("ZPV", "Balance cannot be negative");
         assert!(err.to_string().contains("Validation failed"));
+    }
+
+    #[test]
+    fn test_invalid_segment_id_message_states_rule() {
+        // "Z!" starts with 'Z' yet is invalid: the message must state
+        // the real rule (Z + 2 ASCII alphanumerics).
+        let err = CustomSegmentError::InvalidSegmentId("Z!".to_string());
+        assert!(
+            err.to_string()
+                .contains("must be 'Z' followed by 2 ASCII alphanumerics"),
+            "{err}"
+        );
     }
 }

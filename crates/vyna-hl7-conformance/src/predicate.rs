@@ -315,19 +315,16 @@ impl PredicateParser {
     }
 
     /// Validate that a path follows Terser notation
+    ///
+    /// Mirrors the terser path grammar (`SEGMENT[(n)]-FIELD[(n)]` with
+    /// optional `-COMPONENT` and `-SUBCOMPONENT`), plus an uppercase
+    /// segment ID: terser matching is case-sensitive, so a lowercase
+    /// path would parse yet silently mis-evaluate.
     fn validate_path(path: &str) -> Result<()> {
         if path.is_empty() {
             return Err(ConformanceError::InvalidPredicate(
                 "Empty field path".to_string(),
             ));
-        }
-
-        // Basic validation: should contain at least one dash
-        if !path.contains('-') {
-            return Err(ConformanceError::InvalidPredicate(format!(
-                "Invalid field path: {}",
-                path
-            )));
         }
 
         // Terser paths never contain whitespace, operators, or quotes;
@@ -342,7 +339,86 @@ impl PredicateParser {
             )));
         }
 
+        let parts: Vec<&str> = path.split('-').collect();
+        if parts.len() < 2 || parts.len() > 4 {
+            return Err(ConformanceError::InvalidPredicate(format!(
+                "Invalid field path: {}",
+                path
+            )));
+        }
+        let (segment_id, _) = Self::split_indexed(parts[0], path)?;
+        if segment_id.is_empty()
+            || !segment_id
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+        {
+            return Err(ConformanceError::InvalidPredicate(format!(
+                "Invalid segment ID in path: {}",
+                path
+            )));
+        }
+        let (field, _) = Self::split_indexed(parts[1], path)?;
+        if field.parse::<usize>().is_err() {
+            return Err(ConformanceError::InvalidPredicate(format!(
+                "Invalid field index in path: {}",
+                path
+            )));
+        }
+        for part in &parts[2..] {
+            if part.parse::<usize>().is_err() {
+                return Err(ConformanceError::InvalidPredicate(format!(
+                    "Invalid component index in path: {}",
+                    path
+                )));
+            }
+        }
+
         Ok(())
+    }
+
+    /// Split `BASE` or `BASE(n)` into its base and optional 1-based index.
+    ///
+    /// Mirrors the terser parser: the index must be numeric and >= 1,
+    /// and nothing may trail the closing parenthesis.
+    fn split_indexed<'a>(part: &'a str, path: &str) -> Result<(&'a str, Option<usize>)> {
+        let Some(open) = part.find('(') else {
+            if part.contains(')') {
+                return Err(ConformanceError::InvalidPredicate(format!(
+                    "Invalid field path: {}",
+                    path
+                )));
+            }
+            return Ok((part, None));
+        };
+        // `(` and `)` are ASCII, so these slices are char boundaries.
+        let base = &part[..open];
+        let rest = &part[open + 1..];
+        let Some(close) = rest.find(')') else {
+            return Err(ConformanceError::InvalidPredicate(format!(
+                "Invalid field path: {}",
+                path
+            )));
+        };
+        if !rest[close + 1..].is_empty() {
+            return Err(ConformanceError::InvalidPredicate(format!(
+                "Invalid field path: {}",
+                path
+            )));
+        }
+        let index =
+            rest[..close]
+                .parse::<usize>()
+                .map_err(|_| ConformanceError::InvalidPredicate(format!(
+                    "Invalid field path: {}",
+                    path
+                )))?;
+        if index == 0 {
+            return Err(ConformanceError::InvalidPredicate(format!(
+                "Invalid field path (index 0 is 1-based): {}",
+                path
+            )));
+        }
+        Ok((base, Some(index)))
     }
 
     /// Parse a string as a number
@@ -598,6 +674,29 @@ mod tests {
     fn test_invalid_path() {
         let result = PredicateParser::parse("INVALID IS VALUED");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_lowercase_segment_id_is_rejected() {
+        // Terser matching is case-sensitive: a lowercase path parses
+        // but silently mis-evaluates, so reject it at parse time.
+        assert!(PredicateParser::parse("pid-8 IS VALUED").is_err());
+        assert!(PredicateParser::parse("pid-8 IS NOT VALUED").is_err());
+        assert!(PredicateParser::parse("pid-8 = 'M'").is_err());
+        assert!(PredicateParser::parse("PID-8 IS VALUED").is_ok());
+    }
+
+    #[test]
+    fn test_malformed_terser_paths_are_rejected() {
+        // Full terser shape: SEGMENT[(n)]-FIELD[(n)][-COMP][-SUB].
+        assert!(PredicateParser::parse("PID-5-1-2-3 IS VALUED").is_err());
+        assert!(PredicateParser::parse("OBX(0)-5 IS VALUED").is_err());
+        assert!(PredicateParser::parse("PID-11(0)-1 IS VALUED").is_err());
+        assert!(PredicateParser::parse("PID-X IS VALUED").is_err());
+        assert!(PredicateParser::parse("PID-5-x IS VALUED").is_err());
+        assert!(PredicateParser::parse("OBX(2)-5 IS VALUED").is_ok());
+        assert!(PredicateParser::parse("PID-11(2)-1 IS VALUED").is_ok());
+        assert!(PredicateParser::parse("PID-5-1-2 IS VALUED").is_ok());
     }
 
     #[test]

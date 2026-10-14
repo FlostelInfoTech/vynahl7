@@ -94,10 +94,12 @@ pub fn remove_whitespace(value: &str, _ctx: &TransformContext) -> Result<String>
 /// assert_eq!(result, "SMI");
 /// ```
 pub fn substring(value: &str, ctx: &TransformContext) -> Result<String> {
-    let start = ctx
+    let raw_start = ctx
         .get_data("start")
-        .and_then(|s| s.parse::<usize>().ok())
         .ok_or_else(|| Error::transform_fn("substring requires 'start' in context"))?;
+    let start = raw_start.parse::<usize>().map_err(|_| {
+        Error::transform_fn("substring requires 'start' to be a number")
+    })?;
 
     let length = match ctx.get_data("length") {
         None => None,
@@ -125,6 +127,10 @@ pub fn substring(value: &str, ctx: &TransformContext) -> Result<String> {
 ///
 /// Note: This function expects the context to contain a "format" key.
 /// Supported formats: "YYYY-MM-DD", "MM/DD/YYYY", "DD/MM/YYYY", "YYYYMMDD"
+///
+/// Documented time tails (HH, HHMM, HHMMSS) are accepted but must hold
+/// valid clock readings; out-of-range tails are rejected like
+/// [`format_datetime`] rejects them.
 ///
 /// # Examples
 ///
@@ -162,6 +168,22 @@ pub fn format_date(value: &str, ctx: &TransformContext) -> Result<String> {
     let tail = &value[8..];
     if !tail.bytes().all(|b| b.is_ascii_digit()) || !matches!(tail.len(), 0 | 2 | 4 | 6) {
         return Err(Error::transform_fn(format!("Invalid date format: {value}")));
+    }
+    // Time tails must hold valid clock readings like `format_datetime`:
+    // an out-of-range tail (hour 99, minute 60) is rejected instead of
+    // silently dropped with the date part returned. Slicing is safe:
+    // the tail is all ASCII digits, so every byte is a char boundary.
+    if !tail.is_empty() {
+        // Byte math is total here: every byte is an ASCII digit and the
+        // length is 2, 4, or 6, so no index or subtraction can fail.
+        let bytes = tail.as_bytes();
+        let two = |i: usize| (bytes[i] - b'0') as u32 * 10 + (bytes[i + 1] - b'0') as u32;
+        let hour = two(0);
+        let minute = if tail.len() >= 4 { two(2) } else { 0 };
+        let second = if tail.len() == 6 { two(4) } else { 0 };
+        if chrono::NaiveTime::from_hms_opt(hour, minute, second).is_none() {
+            return Err(Error::transform_fn(format!("Invalid date format: {value}")));
+        }
     }
     let date = chrono::NaiveDate::parse_from_str(head, "%Y%m%d")
         .map_err(|e| Error::transform_fn(format!("Invalid date format: {}", e)))?;
@@ -311,6 +333,13 @@ pub fn replace(value: &str, ctx: &TransformContext) -> Result<String> {
 ///
 /// Note: This function expects the context to contain "regex" and "replacement" keys.
 ///
+/// The replacement string follows the `regex` crate's expansion syntax:
+/// `$1` inserts the first capture group, `$name` a named group, and `$$`
+/// a literal dollar sign. An unescaped `$N` with no such group expands
+/// to empty, so spell a literal dollar before digits as `$$` (`"$$5"`
+/// writes "$5", while `"$5"` writes nothing). For a fully literal
+/// replacement with no expansion, use [`replace`] instead.
+///
 /// # Examples
 ///
 /// ```rust
@@ -322,6 +351,21 @@ pub fn replace(value: &str, ctx: &TransformContext) -> Result<String> {
 ///
 /// let result = transforms::regex_replace("ID-12345", &ctx).unwrap();
 /// assert_eq!(result, "ID-XXX");
+/// ```
+///
+/// ```rust
+/// use vyna_hl7_transform::{transforms, rule::TransformContext};
+///
+/// // Capture groups reorder; $$ escapes a literal dollar.
+/// let ctx = TransformContext::new()
+///     .add_data("regex".to_string(), r"(\w+)-(\d+)".to_string())
+///     .add_data("replacement".to_string(), "$2-$1".to_string());
+/// assert_eq!(transforms::regex_replace("ID-12345", &ctx).unwrap(), "12345-ID");
+///
+/// let ctx = TransformContext::new()
+///     .add_data("regex".to_string(), r"\d+".to_string())
+///     .add_data("replacement".to_string(), "$$5".to_string());
+/// assert_eq!(transforms::regex_replace("ID-12345", &ctx).unwrap(), "ID-$5");
 /// ```
 pub fn regex_replace(value: &str, ctx: &TransformContext) -> Result<String> {
     let pattern = ctx
@@ -392,8 +436,8 @@ pub const MAX_PAD_LENGTH: usize = 1_000_000;
 
 /// Pad the value to a specified length with a character
 ///
-/// Note: This function expects the context to contain "length", "pad_char", and "side" keys.
-/// Side can be "left" or "right".
+/// Note: This function expects the context to contain "length" and "pad_char" keys, and
+/// optionally "side" ("left" or "right"). When "side" is absent it defaults to "left".
 ///
 /// # Examples
 ///
@@ -409,10 +453,12 @@ pub const MAX_PAD_LENGTH: usize = 1_000_000;
 /// assert_eq!(result, "00123");
 /// ```
 pub fn pad(value: &str, ctx: &TransformContext) -> Result<String> {
-    let length = ctx
+    let raw_length = ctx
         .get_data("length")
-        .and_then(|s| s.parse::<usize>().ok())
         .ok_or_else(|| Error::transform_fn("pad requires 'length' in context"))?;
+    let length = raw_length.parse::<usize>().map_err(|_| {
+        Error::transform_fn("pad requires 'length' to be a number")
+    })?;
     if length > MAX_PAD_LENGTH {
         return Err(Error::transform_fn(format!(
             "pad length {length} exceeds maximum {MAX_PAD_LENGTH}"
@@ -769,6 +815,93 @@ mod tests {
         assert_eq!(
             format_datetime("20240315123045", &ctx).unwrap(),
             "2024-03-15 12:30:45"
+        );
+    }
+
+    #[test]
+    fn test_regex_replace_expands_captures_and_escapes_dollar() {
+        // $2/$1 reorder capture groups in the replacement.
+        let ctx = TransformContext::new()
+            .add_data("regex".to_string(), r"(\w+)-(\d+)".to_string())
+            .add_data("replacement".to_string(), "$2-$1".to_string());
+        assert_eq!(regex_replace("ID-12345", &ctx).unwrap(), "12345-ID");
+
+        // $$ writes a literal dollar sign.
+        let ctx = TransformContext::new()
+            .add_data("regex".to_string(), r"\d+".to_string())
+            .add_data("replacement".to_string(), "$$5".to_string());
+        assert_eq!(regex_replace("ID-12345", &ctx).unwrap(), "ID-$5");
+
+        // An unescaped $N with no such group expands to empty (regex
+        // crate semantics), not to a literal "$5".
+        let ctx = TransformContext::new()
+            .add_data("regex".to_string(), r"\d+".to_string())
+            .add_data("replacement".to_string(), "$5".to_string());
+        assert_eq!(regex_replace("ID-12345", &ctx).unwrap(), "ID-");
+    }
+
+    #[test]
+    fn test_format_date_rejects_out_of_range_time_tails() {
+        let ctx = TransformContext::new().add_data("format".to_string(), "YYYY-MM-DD".to_string());
+
+        // Out-of-range tails are rejected like format_datetime rejects
+        // them, instead of silently dropped with the date returned.
+        for bad in ["2024031599", "20240315259999", "20240315126061"] {
+            assert!(format_date(bad, &ctx).is_err(), "{bad} must be rejected");
+        }
+        // Valid tails still parse to the date part.
+        for good in ["2024031523", "202403151259", "20240315125959"] {
+            assert_eq!(format_date(good, &ctx).unwrap(), "2024-03-15");
+        }
+    }
+
+    #[test]
+    fn test_pad_side_defaults_to_left_when_absent() {
+        let ctx = TransformContext::new()
+            .add_data("length".to_string(), "5".to_string())
+            .add_data("pad_char".to_string(), "0".to_string());
+
+        assert_eq!(pad("123", &ctx).unwrap(), "00123");
+    }
+
+    #[test]
+    fn test_substring_error_names_present_but_invalid_start() {
+        // A missing key keeps the "in context" error...
+        let err = substring("SMITH", &TransformContext::new())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("requires 'start' in context"),
+            "unexpected: {err}"
+        );
+
+        // ...while a present-but-invalid value names the real problem.
+        let ctx = TransformContext::new().add_data("start".to_string(), "-1".to_string());
+        let err = substring("SMITH", &ctx).unwrap_err().to_string();
+        assert!(
+            err.contains("requires 'start' to be a number"),
+            "unexpected: {err}"
+        );
+    }
+
+    #[test]
+    fn test_pad_error_names_present_but_invalid_length() {
+        // A missing key keeps the "in context" error...
+        let ctx = TransformContext::new().add_data("pad_char".to_string(), "0".to_string());
+        let err = pad("123", &ctx).unwrap_err().to_string();
+        assert!(
+            err.contains("requires 'length' in context"),
+            "unexpected: {err}"
+        );
+
+        // ...while a present-but-invalid value names the real problem.
+        let ctx = TransformContext::new()
+            .add_data("length".to_string(), "abc".to_string())
+            .add_data("pad_char".to_string(), "0".to_string());
+        let err = pad("123", &ctx).unwrap_err().to_string();
+        assert!(
+            err.contains("requires 'length' to be a number"),
+            "unexpected: {err}"
         );
     }
 }

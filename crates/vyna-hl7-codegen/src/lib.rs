@@ -142,8 +142,9 @@ pub fn message_struct_name(message_type: &str, trigger_event: &str) -> String {
 /// Turn a raw HL7 element name into a unique, compilable struct field name.
 ///
 /// Falls back to `fallback` when the name carries no usable characters,
-/// prefixes digit-leading names, escapes Rust keywords with `r#`, and appends
-/// `_2`, `_3`, ... on collision within the same struct.
+/// prefixes digit-leading names, escapes Rust keywords with `r#` (except
+/// `self`/`super`/`crate`, which take a `_` suffix rustc accepts), and
+/// appends `_2`, `_3`, ... on collision within the same struct.
 pub fn sanitize_ident(base: &str, fallback: &str, used: &mut HashSet<String>) -> String {
     let mut name = to_snake_case(base);
     if name.is_empty() {
@@ -157,7 +158,11 @@ pub fn sanitize_ident(base: &str, fallback: &str, used: &mut HashSet<String>) ->
     if name.starts_with(|c: char| c.is_ascii_digit()) {
         name = format!("field_{name}");
     }
-    if RUST_KEYWORDS.contains(&name.as_str()) {
+    if matches!(name.as_str(), "self" | "super" | "crate") {
+        // rustc rejects r#self, r#super and r#crate outright, so these
+        // take a trailing underscore instead of a raw-identifier escape.
+        name = format!("{name}_");
+    } else if RUST_KEYWORDS.contains(&name.as_str()) {
         name = format!("r#{name}");
     }
     let mut candidate = name.clone();
@@ -238,7 +243,12 @@ fn generate_segment_with_name(
             && let Some(components) = field.components.as_ref()
         {
             let mut keys: Vec<(&String, &ComponentDefinition)> = components.iter().collect();
-            keys.sort_by_key(|(key, _)| key.parse::<usize>().unwrap_or(usize::MAX));
+            // Total order: duplicate numeric keys ("1" vs "01") must not
+            // resolve by HashMap iteration order.
+            keys.sort_by(|(a, _), (b, _)| {
+                (a.parse::<usize>().unwrap_or(usize::MAX), a)
+                    .cmp(&(b.parse::<usize>().unwrap_or(usize::MAX), b))
+            });
             if !keys.is_empty() {
                 let mut parsed = 0;
                 // Distinct keys can parse to the same component
@@ -507,6 +517,74 @@ mod tests {
         assert_eq!(sanitize_ident("!!!", "field_3", &mut used), "field_3");
         assert_eq!(sanitize_ident("Name", "field_4", &mut used), "name");
         assert_eq!(sanitize_ident("Name", "field_5", &mut used), "name_2");
+    }
+
+    #[test]
+    fn sanitize_ident_maps_self_super_crate_to_suffixed() {
+        // rustc rejects r#self, r#super and r#crate, so they take a
+        // trailing underscore instead of a raw-identifier escape.
+        let mut used = HashSet::new();
+        assert_eq!(sanitize_ident("Self", "field_1", &mut used), "self_");
+        assert_eq!(sanitize_ident("Super", "field_2", &mut used), "super_");
+        assert_eq!(sanitize_ident("Crate", "field_3", &mut used), "crate_");
+        // Ordinary keywords still use raw identifiers.
+        assert_eq!(sanitize_ident("Type", "field_4", &mut used), "r#type");
+        assert_eq!(sanitize_ident("Extern", "field_5", &mut used), "r#extern");
+    }
+
+    #[test]
+    fn duplicate_numeric_component_keys_resolve_deterministically() {
+        // "1" and "01" both parse to component 1: the winner must not
+        // depend on HashMap iteration order. Each iteration rebuilds
+        // the map (fresh RandomState seed) to sample fresh orders.
+        let build = || {
+            let mut composite = field("Patient Name", false, false);
+            composite.data_type = "XPN".to_string();
+            composite.components = Some(HashMap::from([
+                (
+                    "1".to_string(),
+                    ComponentDefinition {
+                        name: "Family Name".to_string(),
+                        data_type: "FN".to_string(),
+                        required: false,
+                        max_length: None,
+                        table_id: None,
+                    },
+                ),
+                (
+                    "01".to_string(),
+                    ComponentDefinition {
+                        name: "Family Name Alias".to_string(),
+                        data_type: "FN".to_string(),
+                        required: false,
+                        max_length: None,
+                        table_id: None,
+                    },
+                ),
+            ]));
+            SegmentDefinition {
+                name: "Patient Identification".to_string(),
+                required: true,
+                repeating: false,
+                fields: HashMap::from([(5, composite)]),
+            }
+        };
+        let mut outputs = HashSet::new();
+        for _ in 0..50 {
+            outputs.insert(generate_segment("PID", &build()));
+        }
+        assert_eq!(outputs.len(), 1, "nondeterministic output: {outputs:?}");
+        let source = outputs.into_iter().next().unwrap();
+        // "01" sorts before "1" ('0' < '1'), so the alias wins
+        // the tie — deterministically on every build.
+        assert!(
+            source.contains("pub patient_name_family_name_alias: Option<String>,"),
+            "{source}"
+        );
+        assert!(
+            !source.contains("pub patient_name_family_name: Option<String>,"),
+            "{source}"
+        );
     }
 
     #[test]

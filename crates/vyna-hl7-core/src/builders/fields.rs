@@ -822,11 +822,15 @@ impl RcpBuilder {
         // RCP-1: Query Priority
         rcp.add_field(Field::from_value(self.query_priority.as_deref().unwrap_or("")));
 
-        // RCP-2: Quantity Limited Request
-        rcp.add_field(Field::from_value(self.quantity_limit.as_deref().unwrap_or("")));
+        // RCP-2: Quantity Limited Request (CQ composite: "100^RD")
+        rcp.add_field(Field::from_delimited(
+            self.quantity_limit.as_deref().unwrap_or(""),
+        ));
 
-        // RCP-3: Response Modality
-        rcp.add_field(Field::from_value(self.response_modality.as_deref().unwrap_or("")));
+        // RCP-3: Response Modality (CE composite)
+        rcp.add_field(Field::from_delimited(
+            self.response_modality.as_deref().unwrap_or(""),
+        ));
 
         // RCP-4: Execution and Delivery Time
         rcp.add_field(Field::from_value(self.execution_time.as_deref().unwrap_or("")));
@@ -834,8 +838,10 @@ impl RcpBuilder {
         // RCP-5: Modify Indicator
         rcp.add_field(Field::from_value(self.modify_indicator.as_deref().unwrap_or("")));
 
-        // RCP-6: Sort-by Field
-        rcp.add_field(Field::from_value(self.sort_by_field.as_deref().unwrap_or("")));
+        // RCP-6: Sort-by Field (SRT composite)
+        rcp.add_field(Field::from_delimited(
+            self.sort_by_field.as_deref().unwrap_or(""),
+        ));
 
         // RCP-7: Segment Group Inclusion
         rcp.add_field(Field::from_value(self.segment_group_inclusion.as_deref().unwrap_or("")));
@@ -954,6 +960,23 @@ impl QakBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_rcp_composite_fields_keep_structure() {
+        // RCP-2 is CQ: "100^RD" must stay two components, not one
+        // escaped literal (likewise CE RCP-3 and SRT RCP-6).
+        let rcp = RcpBuilder::new()
+            .query_priority("I")
+            .quantity_limit("100^RD")
+            .response_modality("R^Real-time")
+            .sort_by_field("PID-5^ASC")
+            .build();
+        assert_eq!(rcp.get_field(2).unwrap().repetitions[0].components.len(), 2);
+        assert_eq!(rcp.get_field(3).unwrap().repetitions[0].components.len(), 2);
+        assert_eq!(rcp.get_field(6).unwrap().repetitions[0].components.len(), 2);
+        let wire = rcp.encode(&crate::delimiters::Delimiters::default());
+        assert!(wire.starts_with("RCP|I|100^RD|R^Real-time|||PID-5^ASC|"), "{wire}");
+    }
 
     #[test]
     fn test_xpn_builder_basic() {

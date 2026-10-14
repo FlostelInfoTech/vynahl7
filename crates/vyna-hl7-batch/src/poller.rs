@@ -352,7 +352,10 @@ impl<T: FileTransport> Poller<T> {
             if report.files.len() >= self.max_files_per_poll {
                 break;
             }
-            if bytes_used >= self.max_bytes_per_poll {
+            // The lone-file guarantee: the first file is always attempted
+            // (a zero budget must not stall the inbox); once bytes were
+            // consumed the budget binds as before.
+            if bytes_used > 0 && bytes_used >= self.max_bytes_per_poll {
                 break;
             }
             if self.settled.contains(&SettledKey::of(&entry)) {
@@ -723,6 +726,33 @@ mod tests {
         }
         let report = poller.poll_once().await.unwrap();
         assert!(report.files.is_empty());
+    }
+
+    #[tokio::test]
+    async fn zero_byte_budget_still_consumes_a_lone_file() {
+        // `with_max_bytes_per_poll(0)` must keep the documented lone-file
+        // guarantee: the first file is consumed even when the budget is
+        // already exhausted, so one file can never stall the inbox.
+        let size = MSH.len() as u64;
+        let transport = ScriptedTransport {
+            listings: vec![vec![FileEntry {
+                path: "inbox/a.hl7".to_string(),
+                size: Some(size),
+                modified_ms: Some(1),
+            }]],
+            polls: 0,
+            body: MSH.as_bytes().to_vec(),
+        };
+        let mut poller = Poller::new(transport)
+            .with_inbox("inbox")
+            .with_require_stable(false)
+            .with_delete_after(false)
+            .with_max_bytes_per_poll(0);
+        let report = poller.poll_once().await.unwrap();
+        assert_eq!(report.files.len(), 1);
+        assert_eq!(report.files[0].name, "inbox/a.hl7");
+        assert!(report.skipped.is_empty());
+        assert!(report.errors.is_empty());
     }
 
     #[tokio::test]

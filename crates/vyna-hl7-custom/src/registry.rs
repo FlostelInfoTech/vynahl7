@@ -298,10 +298,15 @@ impl CustomSegmentRegistry {
     /// }
     /// ```
     pub fn registered_ids(&self) -> Vec<String> {
-        self.factories
-            .read()
-            .map(|f| f.keys().cloned().collect())
-            .unwrap_or_default()
+        // Sorted: HashMap iteration is per-process random.
+        self.factories.read().map_or_else(
+            |_| Vec::new(),
+            |f| {
+                let mut ids: Vec<String> = f.keys().cloned().collect();
+                ids.sort();
+                ids
+            },
+        )
     }
 
     /// Parse a segment using its registered factory
@@ -463,6 +468,37 @@ mod tests {
         let ids = registry.registered_ids();
         assert_eq!(ids.len(), 1);
         assert!(ids.contains(&"ZPV".to_string()));
+    }
+
+    #[test]
+    fn test_registered_ids_are_sorted() {
+        // Registered out of order, reported sorted: HashMap
+        // iteration order varies per process.
+        macro_rules! z_segment {
+            ($name:ident, $id:literal) => {
+                struct $name;
+                impl CustomSegment for $name {
+                    fn segment_id() -> &'static str {
+                        $id
+                    }
+                    fn from_segment(_: &Segment) -> Result<Self> {
+                        Ok($name)
+                    }
+                    fn to_segment(&self) -> Segment {
+                        Segment::new($id)
+                    }
+                }
+            };
+        }
+        z_segment!(SegFF, "ZFF");
+        z_segment!(SegAA, "ZAA");
+        z_segment!(SegMM, "ZMM");
+        let registry = CustomSegmentRegistry::new();
+        registry.register::<SegFF>().unwrap();
+        registry.register::<SegAA>().unwrap();
+        registry.register::<SegMM>().unwrap();
+        let ids = registry.registered_ids();
+        assert_eq!(ids, vec!["ZAA".to_string(), "ZFF".to_string(), "ZMM".to_string()]);
     }
 
     #[test]

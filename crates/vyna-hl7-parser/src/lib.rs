@@ -1103,34 +1103,68 @@ fn parse_datetime_field(label: &str, value: Option<&str>) -> Result<Option<Naive
         return Ok(None);
     }
 
-    // Remove timezone offset if present (we use NaiveDateTime)
-    let datetime_str = s
-        .split('+')
-        .next()
-        .and_then(|s| s.split('-').next())
-        .unwrap_or(s);
+    // Strip only a validated trailing [+/-]ZZZZ offset (we keep a
+    // NaiveDateTime); any other '+'/'-' or a malformed offset is an
+    // error, never silent truncation.
+    let head = strip_validated_offset(label, s)?;
 
-    // Try various datetime formats
-    // Full: YYYYMMDDHHMMSS
-    if datetime_str.len() >= 14
-        && let Some(prefix) = datetime_str.get(..14)
-        && let Ok(dt) = NaiveDateTime::parse_from_str(prefix, "%Y%m%d%H%M%S")
-    {
-        return Ok(Some(dt));
+    // Exact-length digit heads: 14/12/10 keep their time, 8 is
+    // date-only at midnight. Anything else (trailing garbage, short
+    // heads, non-digits) is an error.
+    if !head.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(invalid_datetime(label, s));
     }
-
-    // Date only: YYYYMMDD
-    if datetime_str.len() >= 8
-        && let Some(prefix) = datetime_str.get(..8)
-        && let Ok(date) = chrono::NaiveDate::parse_from_str(prefix, "%Y%m%d")
-    {
-        return Ok(date.and_hms_opt(0, 0, 0));
+    // The head is ASCII digits (checked above), so these slices
+    // are char boundaries and the parses cannot fail; out-of-range
+    // values fall out through from_ymd_opt/from_hms_opt.
+    let num = |at: usize| head[at..at + 2].parse::<u32>().unwrap_or(u32::MAX);
+    let (hour, minute, second) = match head.len() {
+        14 => (num(8), num(10), num(12)),
+        12 => (num(8), num(10), 0),
+        10 => (num(8), 0, 0),
+        8 => (0, 0, 0),
+        _ => return Err(invalid_datetime(label, s)),
+    };
+    let year = head[0..4].parse::<i32>().unwrap_or(-1);
+    let date = chrono::NaiveDate::from_ymd_opt(year, num(4), num(6));
+    let time = chrono::NaiveTime::from_hms_opt(hour, minute, second);
+    match (date, time) {
+        (Some(d), Some(t)) => Ok(Some(NaiveDateTime::new(d, t))),
+        _ => Err(invalid_datetime(label, s)),
     }
+}
 
-    Err(Error::parse(format!(
+/// Split a trailing `[+/-ZZZZ]` offset, returning the head. A present
+/// offset must be exactly a sign plus 4 in-range digits; any other
+/// `+`/`-` is an error (mirrors core `split_offset`).
+fn strip_validated_offset<'a>(label: &str, s: &'a str) -> Result<&'a str> {
+    let Some(at) = s.find(['+', '-']) else {
+        return Ok(s);
+    };
+    let (head, offset) = s.split_at(at);
+    if head.is_empty() {
+        return Err(invalid_datetime(label, s));
+    }
+    // (u32 parse accepts ASCII digits only, so a second sign or
+    // non-digit fails here; offset[1..] is a char boundary: the sign
+    // is one ASCII byte.)
+    let digits = &offset[1..];
+    let valid = match digits.parse::<u32>() {
+        Ok(n) => digits.len() == 4 && n / 100 <= 23 && n % 100 <= 59,
+        Err(_) => false,
+    };
+    if !valid {
+        return Err(invalid_datetime(label, s));
+    }
+    Ok(head)
+}
+
+/// Shared "bad header datetime" error naming the field and value.
+fn invalid_datetime(label: &str, s: &str) -> Error {
+    Error::parse(format!(
         "Invalid {label} creation date/time: '{}' is not a valid date/time",
         truncate_id(s)
-    )))
+    ))
 }
 
 #[cfg(test)]
@@ -1583,6 +1617,29 @@ FTS|5";
             .to_string();
         assert!(err.contains("BHS-7"), "{err}");
         assert!(err.contains("garbage-datetime"), "{err}");
+    }
+
+    #[test]
+    fn test_parse_datetime_field_validates_offsets_and_time() {
+        // Malformed offsets are errors, never silent truncation.
+        assert!(parse_datetime_field("BHS-7", Some("2024010112+100")).is_err());
+        assert!(parse_datetime_field("BHS-7", Some("20240101-99")).is_err());
+        // Hour/minute precisions keep their time, not midnight.
+        let dt = parse_datetime_field("BHS-7", Some("2024010112"))
+            .unwrap()
+            .unwrap();
+        assert_eq!((dt.hour(), dt.minute()), (12, 0));
+        let dt = parse_datetime_field("BHS-7", Some("202401011230"))
+            .unwrap()
+            .unwrap();
+        assert_eq!((dt.hour(), dt.minute()), (12, 30));
+        // Trailing garbage is an error at every precision.
+        assert!(parse_datetime_field("BHS-7", Some("20240101120000XYZ")).is_err());
+        assert!(parse_datetime_field("BHS-7", Some("20240101XYZ")).is_err());
+        // Controls: validated offsets parse, garbage is rejected.
+        assert!(parse_datetime_field("BHS-7", Some("20240101120000+0800")).is_ok());
+        assert!(parse_datetime_field("BHS-7", Some("20240101120000-0500")).is_ok());
+        assert!(parse_datetime_field("BHS-7", Some("garbage-datetime")).is_err());
     }
 
     #[test]
