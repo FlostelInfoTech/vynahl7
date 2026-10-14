@@ -85,7 +85,7 @@ resolver = "2"
 [workspace.package]
 version = "0.9.0"
 edition = "2024"
-rust-version = "1.91"
+rust-version = "1.99"
 authors = ["Alex SHAO Fan"]
 license = "MIT"
 repository = "https://github.com/FlostelInfoTech/vynahl7"

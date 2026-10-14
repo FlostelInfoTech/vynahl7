@@ -163,7 +163,7 @@ pointer to the suite that proves it. Roadmap items are marked
   tracked in [performance guide](performance.md); performance-sensitive
   changes require before/after benches (`cargo bench`). Verify: benches.
 - REQ-NFR-020 (compatibility): The workspace uses Rust edition 2024 and
-  declares MSRV Rust 1.91 (`rust-version` in every manifest); behavior
+  declares MSRV Rust 1.99 (`rust-version` in every manifest); behavior
   changes follow semantic versioning with CHANGELOG entries. Verify:
   release review.
 - REQ-NFR-030 (supply chain): Dependencies are declared in

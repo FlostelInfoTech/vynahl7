@@ -17,7 +17,7 @@ vyna-hl7-mllp = "0.9"   # intra-organization, Tokio-based
 vyna-hl7-http = "0.9"   # inter-organization, HL7-over-HTTP
 ```
 
-Edition 2024, Rust 1.91 or later (`rust-version` 1.91 in every
+Edition 2024, Rust 1.99 or later (`rust-version` 1.99 in every
 manifest). Transports need Tokio at your binary (`tokio = { version =
 "1", features = ["full"] }` covers the examples here). Feature flags:
 `tls` (TLS/mTLS), `testing` (mock servers for your own integration

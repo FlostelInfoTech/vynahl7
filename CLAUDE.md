@@ -265,4 +265,4 @@ This project uses Rust edition 2024. Ensure your toolchain is up to date:
 rustup update
 ```
 
-Required: Rust 1.91.0 or later
+Required: Rust 1.99.0 or later

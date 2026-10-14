@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Breaking**: `Bundle::add_resource`/`BundleBuilder::add_resource` return `ConversionResult`; `ConvertError` gains a `Schema` variant (loses `PartialEq`/`Eq`); unparseable FHIR numeric/datetime values now error instead of being silently dropped
 - MSRV is now Rust 1.91 (`rust-version` in every manifest)
+- MSRV raised to Rust 1.99 (`rust-version` in every manifest)
 
 ## [0.8.0] - 2026-10-13
 
