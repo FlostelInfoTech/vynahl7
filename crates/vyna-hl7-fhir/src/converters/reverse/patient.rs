@@ -779,11 +779,7 @@ mod tests {
             country: None,
         };
         let mut patient = Patient::new();
-        patient.address = Some(vec![
-            addressed("temp"),
-            addressed("old"),
-            addressed("home"),
-        ]);
+        patient.address = Some(vec![addressed("temp"), addressed("old"), addressed("home")]);
         let pid = PatientReverseConverter::convert(&patient).unwrap();
         // temp/old have no XAD-7 letter: omitting the component
         // leaves use_ unset on re-forward instead of fabricating

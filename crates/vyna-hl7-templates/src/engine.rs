@@ -1075,10 +1075,7 @@ mod tests {
         // End to end: the broken opener never lands in PID-5.
         let mut template = MessageTemplate::new("Test", "2.5", "ADT", "A01");
         let mut pid = SegmentTemplate::new("PID");
-        pid.add_field(
-            5,
-            FieldTemplate::new().with_placeholder("Patient {{name}"),
-        );
+        pid.add_field(5, FieldTemplate::new().with_placeholder("Patient {{name}"));
         template.add_segment(pid);
 
         let mut engine = TemplateEngine::new();

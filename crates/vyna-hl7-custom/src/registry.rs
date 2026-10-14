@@ -498,7 +498,10 @@ mod tests {
         registry.register::<SegAA>().unwrap();
         registry.register::<SegMM>().unwrap();
         let ids = registry.registered_ids();
-        assert_eq!(ids, vec!["ZAA".to_string(), "ZFF".to_string(), "ZMM".to_string()]);
+        assert_eq!(
+            ids,
+            vec!["ZAA".to_string(), "ZFF".to_string(), "ZMM".to_string()]
+        );
     }
 
     #[test]

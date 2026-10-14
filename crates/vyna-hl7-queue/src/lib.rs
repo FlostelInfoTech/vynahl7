@@ -1643,17 +1643,28 @@ mod tests {
         // an atomic claim both routinely win the next_visible/move_entry
         // race and lease the same id (the window spans dozens of syscalls,
         // so even a few rounds collide without the lock).
+        //
+        // Infinite lease on the racing handles: with the default 30s
+        // real-clock lease, a loaded machine can stall the loser's claim
+        // past the winner's deadline, and recovery then legitimately
+        // re-leases the same id to the loser. The race under test is the
+        // atomic claim, not the clock, so expiry is out of scope here
+        // (see expired_lease_is_released_to_the_next_dequeue).
+        let policy = RetryPolicy {
+            lease: Duration::MAX,
+            ..RetryPolicy::default()
+        };
         for _ in 0..25 {
             let id = seeder.enqueue(b"MSH", HashMap::new()).unwrap();
             let barrier = Barrier::new(2);
             let (a, b) = std::thread::scope(|s| {
                 let first = s.spawn(|| {
-                    let (mut queue, _) = FileQueue::open(&dir).unwrap();
+                    let (mut queue, _) = FileQueue::open_with_policy(&dir, policy.clone()).unwrap();
                     barrier.wait();
                     queue.dequeue().unwrap().map(|leased| leased.id)
                 });
                 let second = s.spawn(|| {
-                    let (mut queue, _) = FileQueue::open(&dir).unwrap();
+                    let (mut queue, _) = FileQueue::open_with_policy(&dir, policy.clone()).unwrap();
                     barrier.wait();
                     queue.dequeue().unwrap().map(|leased| leased.id)
                 });
@@ -1672,6 +1683,33 @@ mod tests {
             }
         }
         drop(seeder);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn expired_lease_is_released_to_the_next_dequeue() {
+        // Pins the intended expiry path behind the race above: a lease
+        // past its deadline returns to pending and is leased again with
+        // attempts incremented, instead of being lost. No redelivery
+        // while the lease is held.
+        let clock = Arc::new(ManualClock::new(1_000));
+        let policy = RetryPolicy {
+            lease: Duration::from_secs(30),
+            ..RetryPolicy::default()
+        };
+        let dir = scratch_dir();
+        let (mut queue, _) =
+            FileQueue::open_with_policy_and_clock(&dir, policy, clock.clone()).unwrap();
+        let id = queue.enqueue(b"MSH", HashMap::new()).unwrap();
+        let first = queue.dequeue().unwrap().unwrap();
+        assert_eq!(first.id, id);
+        assert_eq!(first.attempts, 1);
+        clock.advance(Duration::from_secs(29));
+        assert!(queue.dequeue().unwrap().is_none());
+        clock.advance(Duration::from_secs(2));
+        let second = queue.dequeue().unwrap().unwrap();
+        assert_eq!(second.id, id);
+        assert_eq!(second.attempts, 2);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

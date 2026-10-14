@@ -638,7 +638,12 @@ mod tests {
         // PV1-19 is CX: component 1 = value, 4 = authority, 5 =
         // type. Only the first identifier fits (non-repeating).
         let field = pv1.get_field(19).unwrap();
-        let comp = |i: usize| field.repetitions[0].components.get(i).and_then(|c| c.value());
+        let comp = |i: usize| {
+            field.repetitions[0]
+                .components
+                .get(i)
+                .and_then(|c| c.value())
+        };
         assert_eq!(comp(0), Some("V111"));
         assert_eq!(comp(3), Some("1.2.3.4"));
         assert_eq!(comp(4), Some("VN"));

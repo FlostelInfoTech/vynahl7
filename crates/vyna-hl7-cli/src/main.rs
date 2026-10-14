@@ -888,11 +888,18 @@ enum SendTarget<'a> {
 /// Returns `None` when the scheme is not `mllp://`, `http://`, or
 /// `https://` (compared case-insensitively).
 fn parse_send_target(to: &str) -> Option<SendTarget<'_>> {
-    if to.get(..7).is_some_and(|s| s.eq_ignore_ascii_case("mllp://")) {
+    if to
+        .get(..7)
+        .is_some_and(|s| s.eq_ignore_ascii_case("mllp://"))
+    {
         // Byte 7 is a char boundary: the matched prefix is all ASCII.
         Some(SendTarget::Mllp(&to[7..]))
-    } else if to.get(..7).is_some_and(|s| s.eq_ignore_ascii_case("http://"))
-        || to.get(..8).is_some_and(|s| s.eq_ignore_ascii_case("https://"))
+    } else if to
+        .get(..7)
+        .is_some_and(|s| s.eq_ignore_ascii_case("http://"))
+        || to
+            .get(..8)
+            .is_some_and(|s| s.eq_ignore_ascii_case("https://"))
     {
         Some(SendTarget::Http)
     } else {

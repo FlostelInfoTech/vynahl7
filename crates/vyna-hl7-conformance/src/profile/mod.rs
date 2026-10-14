@@ -70,12 +70,10 @@ impl ConformanceProfile {
                     .chars()
                     .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
             {
-                return Err(crate::error::ConformanceError::InvalidProfile(
-                    format!(
-                        "Invalid segment ID '{}': must be exactly 3 uppercase alphanumeric chars",
-                        segment.name
-                    ),
-                ));
+                return Err(crate::error::ConformanceError::InvalidProfile(format!(
+                    "Invalid segment ID '{}': must be exactly 3 uppercase alphanumeric chars",
+                    segment.name
+                )));
             }
 
             // Validate field profiles

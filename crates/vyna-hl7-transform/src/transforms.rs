@@ -97,9 +97,9 @@ pub fn substring(value: &str, ctx: &TransformContext) -> Result<String> {
     let raw_start = ctx
         .get_data("start")
         .ok_or_else(|| Error::transform_fn("substring requires 'start' in context"))?;
-    let start = raw_start.parse::<usize>().map_err(|_| {
-        Error::transform_fn("substring requires 'start' to be a number")
-    })?;
+    let start = raw_start
+        .parse::<usize>()
+        .map_err(|_| Error::transform_fn("substring requires 'start' to be a number"))?;
 
     let length = match ctx.get_data("length") {
         None => None,
@@ -456,9 +456,9 @@ pub fn pad(value: &str, ctx: &TransformContext) -> Result<String> {
     let raw_length = ctx
         .get_data("length")
         .ok_or_else(|| Error::transform_fn("pad requires 'length' in context"))?;
-    let length = raw_length.parse::<usize>().map_err(|_| {
-        Error::transform_fn("pad requires 'length' to be a number")
-    })?;
+    let length = raw_length
+        .parse::<usize>()
+        .map_err(|_| Error::transform_fn("pad requires 'length' to be a number"))?;
     if length > MAX_PAD_LENGTH {
         return Err(Error::transform_fn(format!(
             "pad length {length} exceeds maximum {MAX_PAD_LENGTH}"

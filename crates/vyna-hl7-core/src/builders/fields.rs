@@ -975,7 +975,10 @@ mod tests {
         assert_eq!(rcp.get_field(3).unwrap().repetitions[0].components.len(), 2);
         assert_eq!(rcp.get_field(6).unwrap().repetitions[0].components.len(), 2);
         let wire = rcp.encode(&crate::delimiters::Delimiters::default());
-        assert!(wire.starts_with("RCP|I|100^RD|R^Real-time|||PID-5^ASC|"), "{wire}");
+        assert!(
+            wire.starts_with("RCP|I|100^RD|R^Real-time|||PID-5^ASC|"),
+            "{wire}"
+        );
     }
 
     #[test]

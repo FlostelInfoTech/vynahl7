@@ -626,10 +626,8 @@ mod tests {
     fn same_version_conversion_keeps_schema_unknown_fields() {
         // PID-50 is outside the v2.5 schema (1..=39): a local
         // extension, so identity conversion must keep it verbatim.
-        let mut message = parse_message(
-            "MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1||7\r",
-        )
-        .unwrap();
+        let mut message =
+            parse_message("MSH|^~\\&|A|B|C|D|20240101||ADT^A01|1|P|2.5\rPID|1||7\r").unwrap();
         let pid = message.segments.iter_mut().find(|s| s.id == "PID").unwrap();
         let _ = pid.set_field_value(50, "LOCALDATA");
 
@@ -656,10 +654,7 @@ mod tests {
             Some("LOCALDATA")
         );
         assert!(
-            !down_report
-                .dropped_fields
-                .iter()
-                .any(|d| d == "PID[0]-50"),
+            !down_report.dropped_fields.iter().any(|d| d == "PID[0]-50"),
             "unexpected report: {down_report:?}"
         );
     }

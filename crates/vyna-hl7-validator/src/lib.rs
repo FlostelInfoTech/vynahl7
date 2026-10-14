@@ -549,8 +549,7 @@ impl Validator {
         // Check for required segments and non-repeating cardinality.
         // Sorted key order: HashMap iteration is per-process random,
         // which shuffled multi-error output across runs.
-        let mut seg_defs: Vec<(&String, &SegmentDefinition)> =
-            schema.segments.iter().collect();
+        let mut seg_defs: Vec<(&String, &SegmentDefinition)> = schema.segments.iter().collect();
         seg_defs.sort_by(|a, b| a.0.cmp(b.0));
         for (seg_id, seg_def) in seg_defs {
             let count = message.segments.iter().filter(|s| &s.id == seg_id).count();
@@ -589,8 +588,7 @@ impl Validator {
 
         // Validate each field in field-number order (deterministic
         // across processes; HashMap iteration is not).
-        let mut field_defs: Vec<(&usize, &FieldDefinition)> =
-            definition.fields.iter().collect();
+        let mut field_defs: Vec<(&usize, &FieldDefinition)> = definition.fields.iter().collect();
         field_defs.sort_by(|a, b| a.0.cmp(b.0));
         for (field_idx, field_def) in field_defs {
             let field = segment.get_field(*field_idx);
@@ -727,8 +725,7 @@ impl Validator {
             }
             // Component-number order (deterministic; unparsable keys
             // sort last and are skipped below as before).
-            let mut comp_defs: Vec<(&String, &ComponentDefinition)> =
-                components.iter().collect();
+            let mut comp_defs: Vec<(&String, &ComponentDefinition)> = components.iter().collect();
             comp_defs.sort_by(|a, b| {
                 let num = |k: &String| k.parse::<usize>().unwrap_or(usize::MAX);
                 num(a.0).cmp(&num(b.0)).then_with(|| a.0.cmp(b.0))
@@ -1185,16 +1182,30 @@ mod tests {
 
             let validator = Validator::with_schema(Version::V2_5, schema);
             let result = validator.validate(&msg);
-            let locs: Vec<&str> =
-                result.errors.iter().map(|e| e.location.as_str()).collect();
+            let locs: Vec<&str> = result.errors.iter().map(|e| e.location.as_str()).collect();
             assert_eq!(
                 locs,
-                vec!["PID[1]-3", "PID[1]-5-2", "PID[1]-5-3", "PID[1]-7", "Message", "Message"],
+                vec![
+                    "PID[1]-3",
+                    "PID[1]-5-2",
+                    "PID[1]-5-3",
+                    "PID[1]-7",
+                    "Message",
+                    "Message"
+                ],
                 "round failed: {:?}",
                 result.errors
             );
-            assert!(result.errors[4].message.contains("EVN"), "{}", result.errors[4].message);
-            assert!(result.errors[5].message.contains("PV1"), "{}", result.errors[5].message);
+            assert!(
+                result.errors[4].message.contains("EVN"),
+                "{}",
+                result.errors[4].message
+            );
+            assert!(
+                result.errors[5].message.contains("PV1"),
+                "{}",
+                result.errors[5].message
+            );
         }
     }
 

@@ -751,8 +751,8 @@ mod tests {
     #[test]
     fn with_root_preserves_leading_slash() {
         // An absolute root must stay absolute; only trailing slashes go.
-        let config = SftpConfig::new("host:22", "u", SftpAuth::Password("p".into()))
-            .with_root("/data/drop");
+        let config =
+            SftpConfig::new("host:22", "u", SftpAuth::Password("p".into())).with_root("/data/drop");
         assert_eq!(config.root, "/data/drop");
         let config = SftpConfig::new("host:22", "u", SftpAuth::Password("p".into()))
             .with_root("/data/drop///");

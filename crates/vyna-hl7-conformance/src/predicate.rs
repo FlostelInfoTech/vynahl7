@@ -405,13 +405,9 @@ impl PredicateParser {
                 path
             )));
         }
-        let index =
-            rest[..close]
-                .parse::<usize>()
-                .map_err(|_| ConformanceError::InvalidPredicate(format!(
-                    "Invalid field path: {}",
-                    path
-                )))?;
+        let index = rest[..close].parse::<usize>().map_err(|_| {
+            ConformanceError::InvalidPredicate(format!("Invalid field path: {}", path))
+        })?;
         if index == 0 {
             return Err(ConformanceError::InvalidPredicate(format!(
                 "Invalid field path (index 0 is 1-based): {}",

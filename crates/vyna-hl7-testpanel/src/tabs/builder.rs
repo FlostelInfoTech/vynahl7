@@ -1095,7 +1095,9 @@ impl BuilderTab {
             if value.is_empty() {
                 return Ok(());
             }
-            terser.set(path, value).map_err(|e| format!("Field error: {}", e))
+            terser
+                .set(path, value)
+                .map_err(|e| format!("Field error: {}", e))
         };
         stamp("PID-3-4", &self.patient_id_system)?;
         stamp("PID-5-3", &self.middle_name)?;
@@ -1200,7 +1202,10 @@ mod tests {
             let msh_fields: Vec<&str> = text.lines().next().unwrap().split('|').collect();
             assert_eq!(msh_fields[8], format!("ADT^{trigger}"));
             let evn = text.lines().nth(1).unwrap();
-            assert!(evn.starts_with(&format!("EVN|{trigger}|")), "unexpected EVN: {evn}");
+            assert!(
+                evn.starts_with(&format!("EVN|{trigger}|")),
+                "unexpected EVN: {evn}"
+            );
             // Location/doctor delegates still apply to every trigger.
             let pv1_fields: Vec<&str> = text
                 .lines()
