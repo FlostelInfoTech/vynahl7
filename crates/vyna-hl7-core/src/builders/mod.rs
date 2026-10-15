@@ -55,19 +55,30 @@ impl MessageBuilder {
             version,
             message_type: message_type.to_string(),
             trigger_event: trigger_event.to_string(),
-            charset: None,
+            charset: Some(CharacterSet::Utf8),
             message_structure: None,
-            utc_timestamps: false,
+            utc_timestamps: true,
         }
     }
 
-    /// Declare the wire character set in MSH-18 (HL7 table 0211)
+    /// Declare the wire character set in MSH-18 (HL7 table 0211).
     ///
-    /// When set, [`create_msh`](Self::create_msh) emits MSH-13 through
-    /// MSH-18 with the canonical declaration. When unset (default), MSH
-    /// ends at MSH-12 and the message encodes as UTF-8.
+    /// UTF-8 is declared by default, matching what the encoder emits;
+    /// use this to declare a different set, or
+    /// [`without_character_set`](Self::without_character_set) to end
+    /// MSH at MSH-12.
     pub fn with_character_set(mut self, charset: CharacterSet) -> Self {
         self.charset = Some(charset);
+        self
+    }
+
+    /// Omit the MSH-18 character set declaration (MSH ends at MSH-12).
+    ///
+    /// The encoder still writes UTF-8 bytes; a receiver then applies
+    /// its own default per HL7 v2.5 §2.16.9. Prefer the default
+    /// declaration unless a partner requires the shorter header.
+    pub fn without_character_set(mut self) -> Self {
+        self.charset = None;
         self
     }
 
@@ -76,15 +87,14 @@ impl MessageBuilder {
         &self.trigger_event
     }
 
-    /// Mint MSH-7 and default EVN-2 from UTC instead of local time.
+    /// Mint MSH-7 and default EVN-2 from local time instead of UTC.
     ///
-    /// Opt-in because the per-trigger builders' wire output is frozen:
-    /// flipping the default would move every MSH-7 they emit. The
-    /// [`rich`](crate::builders::rich) layer enables this, since an HL7
-    /// timestamp carries no zone and every other timestamp in a rich
-    /// message is rendered from UTC.
-    pub fn with_utc_timestamps(mut self) -> Self {
-        self.utc_timestamps = true;
+    /// UTC is the default: an HL7 timestamp carries no zone, and local
+    /// minting disagrees with every UTC-rendered timestamp in the
+    /// message by the host's offset. Use this only when the receiving
+    /// ecosystem reads naive timestamps as local time.
+    pub fn with_local_timestamps(mut self) -> Self {
+        self.utc_timestamps = false;
         self
     }
 
@@ -137,10 +147,8 @@ impl MessageBuilder {
         // MSH-6: Receiving Facility
         msh.add_field(Field::from_value(receiving_facility));
 
-        // MSH-7: Date/Time of Message. Local by default (wire-frozen for
-        // the per-trigger builders); UTC when opted in via
-        // `with_utc_timestamps`, matching every other timestamp in the
-        // message.
+        // MSH-7: Date/Time of Message. UTC, matching every other
+        // timestamp in the message; local only via `with_local_timestamps`.
         let timestamp = if self.utc_timestamps {
             format_timestamp(&Utc::now().naive_utc())
         } else {
@@ -273,8 +281,15 @@ mod tests {
     }
 
     #[test]
-    fn test_create_msh_without_character_set_ends_at_msh12() {
+    fn test_create_msh_declares_utf8_by_default() {
         let builder = MessageBuilder::new(Version::V2_5, "ADT", "A01");
+        let msh = builder.create_msh("S", "F", "R", "RF", "1", "P").unwrap();
+        assert_eq!(msh.get_field_value(18), Some("UNICODE UTF-8"));
+    }
+
+    #[test]
+    fn test_create_msh_without_character_set_ends_at_msh12() {
+        let builder = MessageBuilder::new(Version::V2_5, "ADT", "A01").without_character_set();
         let msh = builder.create_msh("S", "F", "R", "RF", "1", "P").unwrap();
         assert_eq!(msh.get_field_value(12), Some("2.5"));
         assert_eq!(msh.get_field_value(18), None);

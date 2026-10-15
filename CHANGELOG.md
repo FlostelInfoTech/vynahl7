@@ -5,6 +5,10 @@
 - `builders::rich` completeness layer in vyna-hl7-core: rich clinical builders ported from the retired rs7 workspace (ADT, SIU, DFT, ORU, MDM, pharmacy, laboratory, billing, referral) with full demographics/visit/allergy/NK1 payloads, so existing senders keep byte-identical wire output; per-trigger builders stay the recommended entry point for simple needs
 - `Terser::message` accessor and `Terser::get_composite` (full `^`-joined composite for component-less paths)
 
+### Changed
+
+- **Wire behavior:** all message builders now mint MSH-7/EVN-2 from UTC (was local time) and declare `UNICODE UTF-8` in MSH-18 by default (was MSH-12 unless opted in); `with_local_timestamps` / `without_character_set` restore the old shapes. Rich ADT emits AL1 after PV1 per the ADT_A01 structure.
+
 ### Fixed
 
 - Strict validation no longer rejects table-defined values that fall outside the generic datatype pattern: table membership governs, so the canonical MSH-18 declaration `UNICODE UTF-8` (table 0211) validates instead of raising an ID-format error

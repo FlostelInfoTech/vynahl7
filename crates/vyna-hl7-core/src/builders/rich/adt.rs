@@ -520,13 +520,10 @@ impl RichAdtA01Builder {
             .message
             .add_segment(self.demographics.to_pid_segment());
 
-        // NK1 then AL1, both after PID. Set IDs are 1-based and increment
-        // per segment, which is what lets a receiver tell repeats apart.
+        // NK1 after PID. Set IDs are 1-based and increment per segment,
+        // which is what lets a receiver tell repeats apart.
         for (i, nk) in self.next_of_kin.iter().enumerate() {
             self.base.message.add_segment(nk.to_nk1_segment(i + 1));
-        }
-        for (i, allergy) in self.allergies.iter().enumerate() {
-            self.base.message.add_segment(allergy.to_al1_segment(i + 1));
         }
 
         // PV1 — built by the SHARED `VisitInfo`, as PID is. This segment had
@@ -535,6 +532,12 @@ impl RichAdtA01Builder {
         // itself differently depending on which message type carried it.
         if let Some(pv1) = self.visit.to_pv1_segment() {
             self.base.message.add_segment(pv1);
+        }
+
+        // AL1 after PV1, where HL7 v2.5 puts it (ADT_A01 carries the
+        // allergy group after the visit, not between PID and PV1).
+        for (i, allergy) in self.allergies.iter().enumerate() {
+            self.base.message.add_segment(allergy.to_al1_segment(i + 1));
         }
 
         // MRG segment — emitted for merge / link events when the

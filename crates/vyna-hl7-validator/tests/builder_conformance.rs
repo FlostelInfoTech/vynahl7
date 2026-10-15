@@ -1369,6 +1369,11 @@ fn rich_adt_a01_conforms() {
     assert_component(&message, "AL1", 3, 0, "Penicillin");
     assert_component(&message, "NK1", 2, 0, "Jane Smith");
     assert_component(&message, "PV1", 44, 0, "20240115120000");
+    // AL1 rides after PV1, per the ADT_A01 structure.
+    let wire = message.encode();
+    let pv1_at = wire.find("\rPV1|").unwrap();
+    let al1_at = wire.find("\rAL1|").unwrap();
+    assert!(pv1_at < al1_at, "AL1 follows PV1: {wire}");
 }
 
 #[test]

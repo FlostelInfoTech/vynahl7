@@ -23,7 +23,6 @@ pub mod siu;
 
 use crate::{
     Version,
-    charset::CharacterSet,
     field::{Component, Field, Repetition},
     segment::Segment,
 };
@@ -769,20 +768,18 @@ impl PatientDemographics {
 // generation and MSH/EVN construction (and their fixes) exist exactly once.
 pub(crate) use super::{MessageBuilder, generate_control_id};
 
-/// Base for every rich builder: the shared [`MessageBuilder`] declaring
-/// UTF-8 in MSH-18 and minting MSH-7/EVN-2 from UTC.
+/// Base for every rich builder: the shared [`MessageBuilder`].
 ///
-/// Used at every construction site — including variant builders that
-/// rebuild the base for another trigger — so the configuration cannot be
-/// dropped by rebuilding.
+/// UTC timestamps and the UTF-8 declaration are library-wide base
+/// defaults now, so there is nothing to configure per layer; this stays
+/// a single construction point so a future rich-wide setting has one
+/// place to live.
 pub(crate) fn rich_base(
     version: Version,
     message_type: &str,
     trigger_event: &str,
 ) -> MessageBuilder {
     MessageBuilder::new(version, message_type, trigger_event)
-        .with_character_set(CharacterSet::Utf8)
-        .with_utc_timestamps()
 }
 
 #[cfg(test)]

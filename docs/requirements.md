@@ -58,6 +58,10 @@ pointer to the suite that proves it. Roadmap items are marked
   base with the per-trigger builders and declaring UTF-8 in MSH-18
   with UTC-minted MSH-7/EVN-2. Verify: `builder_conformance.rs`
   rich tests, `rich_smoke.rs`.
+- REQ-CORE-090: All message builders shall mint MSH-7 and default
+  EVN-2 from UTC and declare UTF-8 in MSH-18, with
+  `with_local_timestamps` / `without_character_set` opt-outs.
+  Verify: base unit tests, `builder_conformance.rs` MSH assertions.
 
 ## 3. Validation (vyna-hl7-validator)
 

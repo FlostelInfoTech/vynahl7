@@ -112,10 +112,12 @@ validator crate to avoid a core→validator dependency cycle.
 A rich clinical layer (`builders::rich`, `Rich*` builders) carries full
 payloads — demographics, visits, allergies, contacts — for the ADT, SIU,
 DFT, ORU, MDM, pharmacy, laboratory, billing, and referral families. It
-configures the one shared `MessageBuilder` base (UTF-8 charset, UTC
-timestamps, MSH-9 structure) rather than forking it, so wire-affecting
-fixes exist exactly once. Per-trigger output stays frozen: local
-timestamps and no MSH-18 unless `with_character_set` opts in.
+uses the one shared `MessageBuilder` base rather than forking it, so
+wire-affecting fixes exist exactly once. All builders mint MSH-7/EVN-2
+from UTC and declare UTF-8 in MSH-18; `with_local_timestamps` /
+`without_character_set` opt out for partners that need local time or
+the shorter header. MSH-9 structure stays per-builder opt-in via
+`message_structure`.
 
 ## 6. Transports
 
