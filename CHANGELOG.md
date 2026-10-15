@@ -1,11 +1,12 @@
-# Changelog
-
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
 ## [Unreleased]
+
+## [0.9.1] - 2026-10-15
+
+### Added
+
+- mllp/http TLS PEM-bytes constructors (`with_ca_cert_pem`, `with_mtls_pem`, `new_pem`) for TLS material sourced from in-memory PEM (port of the rs7 API dropped in the move)
+
+## [0.9.0] - 2026-10-15
 
 ### Added
 
@@ -20,27 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- ORU FHIR bundles now include the Patient resource when PID is present
-- Terser field-0 paths (`PID-0`) are malformed (`Err`) on reads and writes instead of a silent `None` on reads
-- `Delimiters::validate` rejects non-ASCII separators, which corrupt byte-offset MSH-1/MSH-2 framing
-- Streaming parser no longer hard-errors on invalid escapes when `preserve_invalid_escapes` is set (warns like the batch parser)
-- `query_response` example builds composite fields with `from_delimited` (was emitting `\S\` escapes)
-- CLI strips trailing paths from `mllp://` send targets; `info` average guards empty messages; `convert` failures use `bail!`
-- FHIR `convert_oru` example now converts OBR DiagnosticReports; `convert_adt` shows bundle conversion and dropped segments
-- Docs: `integration.md` CLI section lists all 7 commands with `diff` flags and the `fhir` feature gate; schemas README catalog regenerated (47 keys, 310 files with per-version availability); CONVERTERS.md discloses lossy status/gender/class/type defaults; `performance.md` lists all 13 bench targets; SBOM README clarifies 22 crates + facade; WASM README/d.ts cover the new validation API and Firefox/geckodriver test prereq
-- Supply chain: replaced unmaintained `serde_yaml`/`unsafe-libyaml` with `serde-saphyr` (RUSTSEC-2024-0449); updated `rustls` 0.23.45 → 0.23.46 (RUSTSEC-2026-0346–0349)
-- `generate_control_id` no longer panics on pre-1970 system clocks (falls back to zero; uniqueness still holds via counter+PID)
-
-### Changed
-
-- **Breaking**: `Terser::get("PID-0")` returns `Err` (was `Ok(None)`); component/subcomponent 0 still reads `None`
-- **Breaking**: `Delimiters::from_encoding_characters`/`validate` reject non-ASCII separators (previously accepted when unique)
-- ORU `--to fhir` CLI output now includes the Patient resource when PID is present
-- templates/transform `Error` gains a `YamlSer` variant (serde-saphyr splits serialize/deserialize errors); template structs gain `PartialEq`
-
-## [0.9.0] - 2026-10-13
-
-### Fixed
 
 - Packaging blockers for crates.io: testpanel/macros path-only deps now use workspace deps, root facade made publishable, per-crate LICENSE copies, READMEs for batch/codegen/convert/queue/redact/testpanel/xml, `rust-version` 1.91 everywhere
 - Panic elimination: parser lenient short-input OOB, streaming byte-slicing, delimiters/datetime slicing, batch intake non-ASCII slicing, FHIR date/datetime guards (all converters + mapping engine), conformance predicate non-ASCII/quote panics, terser bulk wildcard panics — all return `Err` now
@@ -71,12 +51,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tenth review round (first blocker-free: 10 majors, 22 minors): MSH-9-3/CX-5 optional in all 129 schemas with a documented installed-base deviation; shared observation coding table; ServiceRequest order-group pairing and OBR-31-3 reason systems; lenient invalid-PID-29 drops with field-attributed datetime errors; Encounter participant displays include given names; XCN-10 name-type mapping; RXR-1 dosage routes; per-bound SPM-17 leniency; DG1-backed Condition mapping with a narrowed single-coded-PRB doc claim; JWT `exp` pinned required; MLLP stale-buffered-frame sends refused; HTTP/1-only TLS docs; FHS/BHS delimiter guards across derive/templates with built-header placeholders; `TerserMut` creation-path segment-ID validation; HAPI-verified PRD Safe Harbor audit; strict substring lengths; empty XML field elements; FHS/BHS-13 slot preservation; MSH/FHS/BHS post-header separator errors; bad header datetimes error; NM-grammar BTS totals; ASCII-only delimiters on both parse paths; long-value truncation in segment/version/charset/trailer echoes; Table 0104 gains 2.8.2; CI runs the wasm-pack browser suite
 - Twelfth review round (1 blocker, 19 majors, 24 minors): SFTP empty-path rejection before I/O; unique restarted-OBX observation ids; OBR-3 filler identifiers; RXA-20 `NA` maps to `not-done`; shared 0396 short-form coding arms; unset practitioner `name.use`; explicit component-3 systems honored over bound-table defaults; text-only OBX-3 preserved; reverse U-name/omitted-address round-trips; interpretation display round-trips; lossless same-version conversion of local fields; interleaved WebSocket control frames; testpanel trigger restamp and dropped-field stamping; first-repetition CLI display; unsigned custom date/time parses; composite RCP fields; deterministic validator ordering; validated header datetimes; UCUM quantity systems; compilable codegen idents; deterministic codegen keys; uppercase conformance ids/paths; unescaped profile entities; documented reverse first-only writes; absolute SFTP roots; lone-file poller guarantee; honest quarantine labels; clamped broadcast capacity; documented mock panics; case-insensitive CLI schemes; documented transform expansions/defaults/errors; strict template placeholders; accurate segment-id errors; sorted registry ids; required QAK-1
 - Thirteenth review round (blocker-free: 16 majors, 22 minors): procedure I10 falls through to shared icd-10 table; IG ConceptMap OBR-25/OBX-11 status arms (partial/registered/amended/entered-in-error); shared-table RXA-9/RXA-18 systems with displays; verbatim reverse practitioner authorities; XTN-2/XTN-3 telecom round-trips; bounded WebSocket connects; filesystem-root SFTP root; custom-delimiter XML round-trips; DNS-resolving SFTP dials; MSH-18-aware File>Save; fractional header datetimes with emission; double-sign offset rejection (parser + custom); escaping composite builders; every-occurrence builtin rules; OBR-31/OBX-8 repetition loops; collision-proof observation ids; text-only medication codes; sorted convert reports; lowest-number duplicate targets; collision-suffixed message structs; nonzero predicate indexes; verbatim non-Location refs; saturating capped retry waits; cleared default handlers; documented no-flush-on-drop; tracing for library logs; documented default/skip wiring; literal template defaults; empty MSH-9/10/12 errors; loopback test servers; logged undecodable frames; case-insensitive testpanel schemes; live tree-path branch; documented first-subcomponent reads; qualified derive wrappers
+- ORU FHIR bundles now include the Patient resource when PID is present
+- Terser field-0 paths (`PID-0`) are malformed (`Err`) on reads and writes instead of a silent `None` on reads
+- `Delimiters::validate` rejects non-ASCII separators, which corrupt byte-offset MSH-1/MSH-2 framing
+- Streaming parser no longer hard-errors on invalid escapes when `preserve_invalid_escapes` is set (warns like the batch parser)
+- `query_response` example builds composite fields with `from_delimited` (was emitting `\S\` escapes)
+- CLI strips trailing paths from `mllp://` send targets; `info` average guards empty messages; `convert` failures use `bail!`
+- FHIR `convert_oru` example now converts OBR DiagnosticReports; `convert_adt` shows bundle conversion and dropped segments
+- Docs: `integration.md` CLI section lists all 7 commands with `diff` flags and the `fhir` feature gate; schemas README catalog regenerated (47 keys, 310 files with per-version availability); CONVERTERS.md discloses lossy status/gender/class/type defaults; `performance.md` lists all 13 bench targets; SBOM README clarifies 22 crates + facade; WASM README/d.ts cover the new validation API and Firefox/geckodriver test prereq
+- Supply chain: replaced unmaintained `serde_yaml`/`unsafe-libyaml` with `serde-saphyr` (RUSTSEC-2024-0449); updated `rustls` 0.23.45 → 0.23.46 (RUSTSEC-2026-0346–0349)
+- `generate_control_id` no longer panics on pre-1970 system clocks (falls back to zero; uniqueness still holds via counter+PID)
+- testpanel `build.rs` renders the ICO to `OUT_DIR` instead of the source tree (source writes fail `cargo publish` verification)
 
 ### Changed
 
 - **Breaking**: `Bundle::add_resource`/`BundleBuilder::add_resource` return `ConversionResult`; `ConvertError` gains a `Schema` variant (loses `PartialEq`/`Eq`); unparseable FHIR numeric/datetime values now error instead of being silently dropped
 - MSRV is now Rust 1.91 (`rust-version` in every manifest)
 - MSRV raised to Rust 1.99 (`rust-version` in every manifest)
+- **Breaking**: `Terser::get("PID-0")` returns `Err` (was `Ok(None)`); component/subcomponent 0 still reads `None`
+- **Breaking**: `Delimiters::from_encoding_characters`/`validate` reject non-ASCII separators (previously accepted when unique)
+- ORU `--to fhir` CLI output now includes the Patient resource when PID is present
+- templates/transform `Error` gains a `YamlSer` variant (serde-saphyr splits serialize/deserialize errors); template structs gain `PartialEq`
 
 ## [0.8.0] - 2026-10-13
 
@@ -219,7 +214,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial VynaHL7 release (Vyna Healthcare product family library), forked from rs7 1.6.1 with versioning restarted at 0.1.0
 - Renamed project from rs7 to VynaHL7: all crates renamed from `rs7-*` to `vyna-hl7-*`, Rust paths from `rs7_*` to `vyna_hl7_*`, CLI binary to `vynahl7`, and documentation updated accordingly
 
-[Unreleased]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.6.0...v0.7.0
