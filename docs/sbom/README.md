@@ -1,10 +1,13 @@
 # SBOM — Software Bill of Materials
 
-`vynahl7-0.9.1.cdx.json`: CycloneDX 1.5 SBOM for the 0.9.1 workspace —
+`vynahl7-0.10.0.cdx.json`: CycloneDX 1.5 SBOM for the 0.10.0 workspace —
 all 23 members (the `vyna-hl7` facade crate plus the 22 crates under
 `crates/`) plus their dependency closures, all features, all targets
 (845 components, including the optional TLS stack). It is the
 supply-chain record for the release; do not hand-edit it.
+
+`vynahl7-0.9.1.cdx.json`: the same record for the 0.9.1 release,
+kept for audit history.
 
 `vynahl7-0.9.0.cdx.json`: the same record for the 0.9.0 release,
 kept for audit history.

@@ -1,8 +1,10 @@
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-15
+
 ### Added
 
-- `builders::rich` completeness layer in vyna-hl7-core: rich clinical builders ported from the retired rs7 workspace (ADT, SIU, DFT, ORU, MDM, pharmacy, laboratory, billing, referral) with full demographics/visit/allergy/NK1 payloads, so existing senders keep byte-identical wire output; per-trigger builders stay the recommended entry point for simple needs
+- `builders::rich` completeness layer in vyna-hl7-core: rich clinical builders ported from the retired rs7 workspace (ADT, SIU, DFT, ORU, MDM, pharmacy, laboratory, billing, referral) with full demographics/visit/allergy/NK1 payloads, carrying forward rs7 sender payloads (see Changed for deliberate wire differences); per-trigger builders stay the recommended entry point for simple needs
 - `Terser::message` accessor and `Terser::get_composite` (full `^`-joined composite for component-less paths)
 
 ### Changed
@@ -227,7 +229,8 @@
 - Initial VynaHL7 release (Vyna Healthcare product family library), forked from rs7 1.6.1 with versioning restarted at 0.1.0
 - Renamed project from rs7 to VynaHL7: all crates renamed from `rs7-*` to `vyna-hl7-*`, Rust paths from `rs7_*` to `vyna_hl7_*`, CLI binary to `vynahl7`, and documentation updated accordingly
 
-[Unreleased]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.7.0...v0.8.0

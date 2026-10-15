@@ -21,8 +21,8 @@ Add the dependency to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-vyna-hl7-custom = "0.9.1"
-vyna-hl7-parser = "0.9.1"
+vyna-hl7-custom = "0.10.0"
+vyna-hl7-parser = "0.10.0"
 ```
 
 Define a custom Z-segment:
