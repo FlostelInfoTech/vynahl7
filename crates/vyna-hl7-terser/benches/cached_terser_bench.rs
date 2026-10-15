@@ -1,10 +1,10 @@
 //! CachedTerser benchmarks: comparison with Terser, clinical workflow extraction,
 //! and scaling behavior with increasing path counts.
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use vyna_hl7_parser::parse_message;
 use vyna_hl7_terser::{CachedTerser, Terser};
-use std::hint::black_box;
 
 // ORU with multiple OBX for realistic extraction
 const ORU_MESSAGE: &str = "\
@@ -23,16 +23,7 @@ OBX|7|NM|MCH^Mean Corpuscular Hemoglobin^LN||30.2|pg|27.0-33.0|N|||F|||202403151
 OBX|8|NM|MCHC^Mean Corpuscular Hemoglobin Concentration^LN||34.5|g/dL|32.0-36.0|N|||F|||20240315115500";
 
 const PATHS_10: &[&str] = &[
-    "PID-3",
-    "PID-5-1",
-    "PID-5-2",
-    "PID-7",
-    "PID-8",
-    "OBX-3",
-    "OBX-5",
-    "OBX-7",
-    "OBX(2)-5",
-    "OBR-4",
+    "PID-3", "PID-5-1", "PID-5-2", "PID-7", "PID-8", "OBX-3", "OBX-5", "OBX-7", "OBX(2)-5", "OBR-4",
 ];
 
 // ============================================================================
@@ -92,9 +83,7 @@ fn bench_clinical_workflows(c: &mut Criterion) {
     let message = parse_message(ORU_MESSAGE).unwrap();
 
     // Patient demographics extraction
-    let demographics_paths: &[&str] = &[
-        "PID-3", "PID-5-1", "PID-5-2", "PID-7", "PID-8", "PID-11",
-    ];
+    let demographics_paths: &[&str] = &["PID-3", "PID-5-1", "PID-5-2", "PID-7", "PID-8", "PID-11"];
     group.bench_function("demographics", |b| {
         b.iter(|| {
             let mut cached = CachedTerser::new(&message);

@@ -37,6 +37,8 @@ struct JsonMessage {
     message_type: Option<String>,
     sending_application: Option<String>,
     sending_facility: Option<String>,
+    receiving_application: Option<String>,
+    receiving_facility: Option<String>,
     control_id: Option<String>,
     segments: Vec<JsonSegment>,
 }
@@ -128,6 +130,8 @@ impl WasmMessage {
             message_type: self.message_type(),
             sending_application: self.sending_application(),
             sending_facility: self.sending_facility(),
+            receiving_application: self.receiving_application(),
+            receiving_facility: self.receiving_facility(),
             control_id: self.control_id(),
             segments: self
                 .inner
@@ -203,5 +207,15 @@ mod tests {
         assert_eq!(data.segments[0].id, "MSH");
         assert_eq!(data.segments[0].fields[0], "|");
         assert_eq!(data.segments[0].fields[1], "^~\\&");
+    }
+
+    #[test]
+    fn json_carries_receiving_app_and_facility() {
+        let msg = parse_wasm(ADT).unwrap();
+        let data = msg.json_data();
+        assert_eq!(data.sending_application.as_deref(), Some("SendApp"));
+        assert_eq!(data.sending_facility.as_deref(), Some("SendFac"));
+        assert_eq!(data.receiving_application.as_deref(), Some("RecApp"));
+        assert_eq!(data.receiving_facility.as_deref(), Some("RecFac"));
     }
 }

@@ -25,7 +25,7 @@ use vyna_hl7_core::Version;
 use vyna_hl7_core::builders::generate_control_id;
 use vyna_hl7_parser::parse_message as vyna_hl7_parse;
 use vyna_hl7_terser::Terser;
-use vyna_hl7_validator::Validator;
+use vyna_hl7_validator::{ValidationContext, Validator};
 use wasm_bindgen::prelude::*;
 
 mod definitions;
@@ -219,7 +219,7 @@ pub fn set_terser_value(message: &mut WasmMessage, path: &str, value: &str) -> R
         .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
-/// Validate a message against HL7 standards
+/// Validate a message against HL7 standards (strict posture)
 ///
 /// # Arguments
 ///
@@ -227,9 +227,41 @@ pub fn set_terser_value(message: &mut WasmMessage, path: &str, value: &str) -> R
 ///
 /// # Returns
 ///
-/// A validation result object
+/// A validation result object. For the `standard`/`lenient` postures
+/// see [`validate_message_with_mode`].
 #[wasm_bindgen(js_name = validateMessage)]
 pub fn validate_message(message: &WasmMessage) -> Result<WasmValidationResult, JsValue> {
+    validate_message_with_mode(message, "strict")
+}
+
+/// Validate a message with an explicit posture
+///
+/// # Arguments
+///
+/// * `message` - The message to validate
+/// * `mode` - One of `"strict"` (default spec compliance), `"standard"`
+///   (strict except version drift warns), or `"lenient"` (only
+///   structural problems fail), matching the CLI `validate` flags.
+///
+/// # Returns
+///
+/// A validation result object carrying the effective `mode` and whether
+/// a message schema was applied (`schemaApplied`).
+#[wasm_bindgen(js_name = validateMessageWithMode)]
+pub fn validate_message_with_mode(
+    message: &WasmMessage,
+    mode: &str,
+) -> Result<WasmValidationResult, JsValue> {
+    let context = match mode {
+        "strict" => ValidationContext::strict(),
+        "standard" => ValidationContext::standard(),
+        "lenient" => ValidationContext::lenient(),
+        other => {
+            return Err(JsValue::from_str(&format!(
+                "invalid validation mode {other:?}: expected strict, standard, or lenient"
+            )));
+        }
+    };
     // get_version returns Option<Version>
     let version = message.inner().get_version().unwrap_or(Version::V2_5);
     // Select the message schema from MSH-9 so validation checks
@@ -244,14 +276,21 @@ pub fn validate_message(message: &WasmMessage) -> Result<WasmValidationResult, J
         }
     });
     let mut validator = Validator::new(version);
+    let mut schema_applied = false;
     if let Some((msg_type, trigger)) = &schema_key
         && let Ok(schema_validator) = Validator::for_message_type(version, msg_type, trigger)
     {
         validator = schema_validator;
+        schema_applied = true;
     }
+    let validator = validator.with_context(context);
     let result = validator.validate(message.inner());
 
-    Ok(WasmValidationResult::from(result))
+    Ok(WasmValidationResult::from_result(
+        result,
+        mode,
+        schema_applied,
+    ))
 }
 
 /// Create a new HL7 message with MSH segment

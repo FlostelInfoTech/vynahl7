@@ -5,7 +5,9 @@
 //!
 //! Run with: cargo run --example convert_oru
 
-use vyna_hl7_fhir::converters::{PatientConverter, ObservationConverter, PractitionerConverter};
+use vyna_hl7_fhir::converters::{
+    DiagnosticReportConverter, ObservationConverter, PatientConverter, PractitionerConverter,
+};
 use vyna_hl7_parser::parse_message;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -48,6 +50,18 @@ OBX|5|ST|NOTE^Clinical Note^LN||Patient is advised to continue current diet and 
     for (i, observation) in observations.iter().enumerate() {
         println!("--- Observation {} ---", i + 1);
         println!("{}\n", serde_json::to_string_pretty(observation)?);
+    }
+
+    // Convert to FHIR DiagnosticReports
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!("📋 Converting DiagnosticReports (OBR segments)...");
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    let reports = DiagnosticReportConverter::convert_all(&message)?;
+    println!("Found {} diagnostic reports:\n", reports.len());
+
+    for (i, report) in reports.iter().enumerate() {
+        println!("--- DiagnosticReport {} ---", i + 1);
+        println!("{}\n", serde_json::to_string_pretty(report)?);
     }
 
     // Convert to FHIR Practitioners

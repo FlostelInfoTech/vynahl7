@@ -6,7 +6,7 @@
 //! - Replace existing custom segments
 //! - Remove custom segments
 
-use vyna_hl7_custom::{z_segment, CustomSegment, MessageExt};
+use vyna_hl7_custom::{CustomSegment, MessageExt, z_segment};
 use vyna_hl7_parser::parse_message;
 
 // Define ZLO - Location Extension segment
@@ -104,7 +104,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Check current state
     println!("Before removal:");
     println!("  Has ZLO: {}", message.has_custom_segment::<ZLO>());
-    println!("  ZNO count: {}", message.get_custom_segments::<ZNO>()?.len());
+    println!(
+        "  ZNO count: {}",
+        message.get_custom_segments::<ZNO>()?.len()
+    );
 
     // Remove all notes
     let removed = message.remove_custom_segments::<ZNO>();

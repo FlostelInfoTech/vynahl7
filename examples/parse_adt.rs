@@ -27,8 +27,14 @@ PV1|1|I|WARD^ROOM^BED|||ATTEND^DOCTOR^A|||MED||||1|||ATTEND^DOCTOR^A||VN12345|||
     // Display basic message info
     println!("--- Message Information ---");
     println!("Number of segments: {}", message.segment_count());
-    println!("Sending Application: {:?}", message.get_sending_application());
-    println!("Receiving Application: {:?}", message.get_receiving_application());
+    println!(
+        "Sending Application: {:?}",
+        message.get_sending_application()
+    );
+    println!(
+        "Receiving Application: {:?}",
+        message.get_receiving_application()
+    );
     println!("Message Control ID: {:?}", message.get_control_id());
     println!("HL7 Version: {:?}", message.get_version());
 
@@ -47,12 +53,22 @@ PV1|1|I|WARD^ROOM^BED|||ATTEND^DOCTOR^A|||MED||||1|||ATTEND^DOCTOR^A||VN12345|||
 
         // Access patient name components
         if let Some(name_field) = pid.get_field(5)
-            && let Some(rep) = name_field.get_repetition(0) {
-                println!("  Patient Name:");
-                println!("    Family: {:?}", rep.get_component(0).and_then(|c| c.value()));
-                println!("    Given: {:?}", rep.get_component(1).and_then(|c| c.value()));
-                println!("    Middle: {:?}", rep.get_component(2).and_then(|c| c.value()));
-            }
+            && let Some(rep) = name_field.get_repetition(0)
+        {
+            println!("  Patient Name:");
+            println!(
+                "    Family: {:?}",
+                rep.get_component(0).and_then(|c| c.value())
+            );
+            println!(
+                "    Given: {:?}",
+                rep.get_component(1).and_then(|c| c.value())
+            );
+            println!(
+                "    Middle: {:?}",
+                rep.get_component(2).and_then(|c| c.value())
+            );
+        }
     }
     println!();
 

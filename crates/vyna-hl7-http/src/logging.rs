@@ -4,12 +4,7 @@
 //! structured tracing spans, and detailed HL7 message metadata logging.
 
 #[cfg(feature = "logging")]
-use axum::{
-    extract::Request,
-    http::StatusCode,
-    middleware::Next,
-    response::Response,
-};
+use axum::{extract::Request, http::StatusCode, middleware::Next, response::Response};
 #[cfg(feature = "logging")]
 use std::time::Instant;
 #[cfg(feature = "logging")]
@@ -152,14 +147,11 @@ pub fn init_logging() {
 /// ```
 #[cfg(feature = "logging")]
 pub fn try_init_logging() -> Result<(), tracing_subscriber::util::TryInitError> {
-    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+    use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
     tracing_subscriber::registry()
         .with(fmt::layer().json())
-        .with(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info")),
-        )
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .try_init()
 }
 
@@ -207,14 +199,11 @@ pub fn init_logging_pretty() {
 /// ```
 #[cfg(feature = "logging")]
 pub fn try_init_logging_pretty() -> Result<(), tracing_subscriber::util::TryInitError> {
-    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+    use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
     tracing_subscriber::registry()
         .with(fmt::layer().pretty())
-        .with(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info")),
-        )
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .try_init()
 }
 
@@ -262,14 +251,11 @@ pub fn init_logging_compact() {
 /// ```
 #[cfg(feature = "logging")]
 pub fn try_init_logging_compact() -> Result<(), tracing_subscriber::util::TryInitError> {
-    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+    use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
     tracing_subscriber::registry()
         .with(fmt::layer().compact())
-        .with(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info")),
-        )
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .try_init()
 }
 
@@ -305,53 +291,21 @@ pub fn log_hl7_message(message: &vyna_hl7_core::Message, direction: &str) {
 
     let terser = Terser::new(message);
 
-    let message_type = terser
-        .get("MSH-9-1")
-        .ok()
-        .flatten()
-        .unwrap_or("UNKNOWN");
+    let message_type = terser.get("MSH-9-1").ok().flatten().unwrap_or("UNKNOWN");
 
-    let trigger_event = terser
-        .get("MSH-9-2")
-        .ok()
-        .flatten()
-        .unwrap_or("UNKNOWN");
+    let trigger_event = terser.get("MSH-9-2").ok().flatten().unwrap_or("UNKNOWN");
 
-    let message_control_id = terser
-        .get("MSH-10")
-        .ok()
-        .flatten()
-        .unwrap_or("UNKNOWN");
+    let message_control_id = terser.get("MSH-10").ok().flatten().unwrap_or("UNKNOWN");
 
-    let sending_application = terser
-        .get("MSH-3")
-        .ok()
-        .flatten()
-        .unwrap_or("UNKNOWN");
+    let sending_application = terser.get("MSH-3").ok().flatten().unwrap_or("UNKNOWN");
 
-    let sending_facility = terser
-        .get("MSH-4")
-        .ok()
-        .flatten()
-        .unwrap_or("UNKNOWN");
+    let sending_facility = terser.get("MSH-4").ok().flatten().unwrap_or("UNKNOWN");
 
-    let receiving_application = terser
-        .get("MSH-5")
-        .ok()
-        .flatten()
-        .unwrap_or("UNKNOWN");
+    let receiving_application = terser.get("MSH-5").ok().flatten().unwrap_or("UNKNOWN");
 
-    let receiving_facility = terser
-        .get("MSH-6")
-        .ok()
-        .flatten()
-        .unwrap_or("UNKNOWN");
+    let receiving_facility = terser.get("MSH-6").ok().flatten().unwrap_or("UNKNOWN");
 
-    let processing_id = terser
-        .get("MSH-11")
-        .ok()
-        .flatten()
-        .unwrap_or("UNKNOWN");
+    let processing_id = terser.get("MSH-11").ok().flatten().unwrap_or("UNKNOWN");
 
     info!(
         direction = direction,

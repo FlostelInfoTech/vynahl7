@@ -1,7 +1,7 @@
 //! MDM (Medical Document Management) message builders
 
-use super::{generate_control_id, MessageBuilder};
-use crate::{error::Result, field::Field, message::Message, segment::Segment, Version};
+use super::{MessageBuilder, generate_control_id};
+use crate::{Version, error::Result, field::Field, message::Message, segment::Segment};
 
 /// Builder for MDM^T01 - Original Document Notification
 pub struct MdmT01Builder {
@@ -154,7 +154,9 @@ impl MdmT01Builder {
         // TXA segment
         let mut txa = Segment::new("TXA");
         txa.add_field(Field::from_value("1")); // Set ID
-        txa.add_field(Field::from_delimited(self.document_type.as_deref().unwrap_or(""))); // Document Type
+        txa.add_field(Field::from_delimited(
+            self.document_type.as_deref().unwrap_or(""),
+        )); // Document Type
         for _ in 3..12 {
             txa.add_field(Field::from_value(""));
         }

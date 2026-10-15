@@ -4,14 +4,14 @@
 //! RSP messages include MSA (acknowledgment), QAK (query acknowledgment), QPD (echoed query),
 //! and application-specific data segments.
 
-use super::{generate_control_id, MessageBuilder};
+use super::{MessageBuilder, generate_control_id};
 use crate::{
+    Version,
     builders::fields::{QakBuilder, QpdBuilder},
     error::Result,
     field::Field,
     message::Message,
     segment::Segment,
-    Version,
 };
 
 /// Builder for RSP^K11 - Response to QBP^Q11 (e.g., Immunization History Response)

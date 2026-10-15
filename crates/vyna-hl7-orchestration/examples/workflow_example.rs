@@ -3,16 +3,16 @@
 //! This example demonstrates a complete message processing workflow combining
 //! filtering, orchestration steps with retry logic, and content-based routing.
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use vyna_hl7_core::{Field, Message, Segment};
 use vyna_hl7_orchestration::{
+    OrchestrationError,
     filtering::MessageFilter,
     orchestration::{MessageOrchestrator, RetryConfig},
     routing::ContentRouter,
-    OrchestrationError,
 };
 use vyna_hl7_terser::Terser;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
@@ -58,7 +58,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
                 // Simulate intermittent failure (fail first 2 attempts)
                 if attempt < 2 {
-                    println!("   ⚠ Enrichment failed (attempt {}/3), retrying...", attempt + 1);
+                    println!(
+                        "   ⚠ Enrichment failed (attempt {}/3), retrying...",
+                        attempt + 1
+                    );
                     return Err(OrchestrationError::custom("Temporary enrichment failure"));
                 }
 

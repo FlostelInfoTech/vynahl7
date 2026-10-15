@@ -19,7 +19,7 @@ use config::is_known_segment_id;
 pub use config::{ParseResult, ParseWarning, ParserConfig, WarningCode};
 pub use streaming::{
     SegmentEvent, SegmentHandler, StreamingMessageBuilder, StreamingParser, parse_streaming,
-    process_with_handler,
+    parse_streaming_with_config, process_with_handler, process_with_handler_with_config,
 };
 
 use chrono::NaiveDateTime;
@@ -979,8 +979,7 @@ fn parse_bts_segment(input: &str, delimiters: &Delimiters) -> Result<BatchTraile
         return Err(Error::parse("Expected BTS segment"));
     }
 
-    let message_count =
-        parse_trailer_count("BTS-1 message count", segment.get_field_value(1))?;
+    let message_count = parse_trailer_count("BTS-1 message count", segment.get_field_value(1))?;
 
     let comment = segment.get_field_value(2).map(String::from);
 
@@ -1192,6 +1191,55 @@ fn invalid_datetime(label: &str, s: &str) -> Error {
 mod tests {
     use super::*;
     use chrono::{Datelike, Timelike};
+    use proptest::prelude::*;
+
+    /// Field text without wire-structural characters.
+    fn field_text() -> impl Strategy<Value = String> {
+        prop::collection::vec(
+            prop::sample::select(vec![
+                'A', 'B', 'a', 'z', '0', '9', ' ', '.', '-', '%', '(', ')',
+            ]),
+            0..12,
+        )
+        .prop_map(|chars| chars.into_iter().collect())
+    }
+
+    proptest! {
+        #[test]
+        fn built_message_survives_encode_parse(
+            pid_fields in prop::collection::vec(field_text(), 1..6).prop_filter(
+                "final field must not end in whitespace (the default \
+                 config strips trailing segment whitespace)",
+                |fields| !fields.last().is_some_and(|f| f.ends_with(' ')),
+            ),
+        ) {
+            // Build MSH + PID programmatically, then require the
+            // encode -> parse -> encode fixed point.
+            let mut msh = Segment::new_header("MSH");
+            msh.add_field(Field::from_value("SEND"));
+            msh.add_field(Field::from_value("SFAC"));
+            msh.add_field(Field::from_value("RECV"));
+            msh.add_field(Field::from_value("RFAC"));
+            msh.add_field(Field::from_value("20240101120000"));
+            msh.add_field(Field::from_value(""));
+            msh.add_field(Field::from_delimited("ADT^A01"));
+            msh.add_field(Field::from_value("MSG1"));
+            msh.add_field(Field::from_value("P"));
+            msh.add_field(Field::from_value("2.5"));
+            let mut pid = Segment::new("PID");
+            for value in &pid_fields {
+                pid.add_field(Field::from_value(value));
+            }
+            let mut message = Message::new();
+            message.add_segment(msh);
+            message.add_segment(pid);
+
+            let wire = message.encode();
+            let parsed = parse_message(&wire).unwrap();
+            prop_assert_eq!(parsed.encode(), wire);
+            prop_assert_eq!(parsed, message);
+        }
+    }
 
     #[test]
     fn test_extract_delimiters() {

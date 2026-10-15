@@ -6,13 +6,13 @@
 #[cfg(feature = "routing")]
 use crate::{Error, Result};
 #[cfg(feature = "routing")]
-use vyna_hl7_core::Message;
-#[cfg(feature = "routing")]
-use vyna_hl7_terser::Terser;
-#[cfg(feature = "routing")]
 use std::collections::HashMap;
 #[cfg(feature = "routing")]
 use std::sync::Arc;
+#[cfg(feature = "routing")]
+use vyna_hl7_core::Message;
+#[cfg(feature = "routing")]
+use vyna_hl7_terser::Terser;
 
 /// Message handler function type for routing
 #[cfg(feature = "routing")]
@@ -161,17 +161,9 @@ impl MessageRouter {
     pub fn route(&self, message: Message) -> Result<Message> {
         let terser = Terser::new(&message);
 
-        let message_type = terser
-            .get("MSH-9-1")
-            .ok()
-            .flatten()
-            .unwrap_or("UNKNOWN");
+        let message_type = terser.get("MSH-9-1").ok().flatten().unwrap_or("UNKNOWN");
 
-        let trigger_event = terser
-            .get("MSH-9-2")
-            .ok()
-            .flatten()
-            .unwrap_or("UNKNOWN");
+        let trigger_event = terser.get("MSH-9-2").ok().flatten().unwrap_or("UNKNOWN");
 
         let message_type = message_type.to_uppercase();
         let trigger_event = trigger_event.to_uppercase();

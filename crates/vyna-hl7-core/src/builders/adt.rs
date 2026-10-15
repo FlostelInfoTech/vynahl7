@@ -1,12 +1,12 @@
 //! ADT (Admit/Discharge/Transfer) message builders
 
-use super::{generate_control_id, MessageBuilder};
+use super::{MessageBuilder, generate_control_id};
 use crate::{
+    Version,
     error::Result,
     field::{Component, Field, Repetition},
     message::Message,
     segment::Segment,
-    Version,
 };
 
 /// Builder for ADT messages

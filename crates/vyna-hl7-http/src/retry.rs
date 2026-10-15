@@ -151,8 +151,8 @@ impl RetryPolicy {
     /// # }
     /// ```
     pub fn backoff_duration(&self, attempt: u32) -> Duration {
-        let base_duration = self.initial_backoff.as_millis() as f64
-            * self.backoff_multiplier.powi(attempt as i32);
+        let base_duration =
+            self.initial_backoff.as_millis() as f64 * self.backoff_multiplier.powi(attempt as i32);
 
         let duration_ms = base_duration.min(self.max_backoff.as_millis() as f64);
 
@@ -429,15 +429,17 @@ mod tests {
             .unwrap();
 
         // A reqwest timeout: the documented primary retry case.
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             let (_socket, _peer) = listener.accept().await.unwrap();
             tokio::time::sleep(Duration::from_secs(30)).await;
         });
-        let err = client.get(format!("http://{addr}/")).send().await.unwrap_err();
+        let err = client
+            .get(format!("http://{addr}/"))
+            .send()
+            .await
+            .unwrap_err();
         assert!(err.is_timeout(), "expected a timeout, got: {err}");
         assert!(
             policy.is_retryable(&Error::Network(err)),
@@ -446,9 +448,7 @@ mod tests {
 
         // A refused connection is retryable too.
         let port = {
-            let probe = tokio::net::TcpListener::bind("127.0.0.1:0")
-                .await
-                .unwrap();
+            let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             probe.local_addr().unwrap().port()
         }; // dropped: nothing listens here now
         let err = client

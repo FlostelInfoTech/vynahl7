@@ -90,8 +90,14 @@ fn main() {
             .unwrap_or(false)
     });
 
-    println!("   Production ADT matches: {}", simple_filter.matches(&prod_adt));
-    println!("   Production ORU matches: {}", simple_filter.matches(&prod_oru));
+    println!(
+        "   Production ADT matches: {}",
+        simple_filter.matches(&prod_adt)
+    );
+    println!(
+        "   Production ORU matches: {}",
+        simple_filter.matches(&prod_oru)
+    );
     println!();
 
     println!("✅ Filtering examples completed!");

@@ -402,10 +402,7 @@ mod tests {
 
     #[test]
     fn test_error_location_display() {
-        let loc = ErrorLocation::new()
-            .segment("PID")
-            .field(5)
-            .component(1);
+        let loc = ErrorLocation::new().segment("PID").field(5).component(1);
 
         assert_eq!(loc.to_path(), "PID-5-1");
         assert_eq!(format!("{}", loc), "PID-5-1");
@@ -477,11 +474,8 @@ mod tests {
     #[test]
     fn test_error_with_location() {
         let original = Error::parse("Something failed");
-        let enhanced = original.with_location(
-            ErrorLocation::new().segment("MSH").field(9),
-        );
+        let enhanced = original.with_location(ErrorLocation::new().segment("MSH").field(9));
 
         assert!(enhanced.location().is_some());
     }
 }
-

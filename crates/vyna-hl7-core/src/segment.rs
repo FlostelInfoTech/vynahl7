@@ -31,6 +31,37 @@ impl Segment {
         }
     }
 
+    /// Create a header segment (`MSH`, `FHS`, or `BHS`) with the two
+    /// delimiter placeholders already pushed
+    ///
+    /// The placeholders use the default HL7 separators; for custom
+    /// delimiters use [`Segment::new_header_with`]. Content pushed after
+    /// this lands in field 3+, so [`Segment::encode`] cannot drop it.
+    pub fn new_header<S: Into<String>>(id: S) -> Self {
+        Self::new_header_with(id, &Delimiters::default())
+    }
+
+    /// Create a header segment with delimiter placeholders for `delimiters`
+    ///
+    /// Same as [`Segment::new_header`], but stores `delimiters`' field
+    /// separator and encoding characters as fields 1-2 so accessors like
+    /// [`Segment::get_field`] read the effective separators back.
+    pub fn new_header_with<S: Into<String>>(id: S, delimiters: &Delimiters) -> Self {
+        let mut segment = Self::new(id);
+        segment.add_field(Field::from_value(delimiters.field_separator.to_string()));
+        segment.add_field(Field::from_value(delimiters.encoding_characters()));
+        segment
+    }
+
+    /// Whether this segment uses header encoding (`MSH`, `FHS`, `BHS`)
+    ///
+    /// Header segments store two delimiter placeholders as fields 1-2
+    /// that [`Segment::encode`] skips in favor of the separators from
+    /// its [`Delimiters`] argument.
+    pub fn is_header(&self) -> bool {
+        self.id == "MSH" || self.id == "FHS" || self.id == "BHS"
+    }
+
     /// Add a field to the segment
     ///
     /// For `MSH`, `FHS`, and `BHS` the first two pushed fields must be
@@ -45,7 +76,12 @@ impl Segment {
 
     /// Get a field by index (1-based, as per HL7 convention)
     ///
-    /// Note: Field 0 is the segment ID itself
+    /// Note: Field 0 is the segment ID itself.
+    ///
+    /// For header segments (`MSH`, `FHS`, `BHS`) fields 1-2 hold the
+    /// delimiter values literally: `get_field(1)` is the field separator
+    /// (typically `"|"`) and `get_field(2)` the encoding characters.
+    /// Field iteration that is not header-aware must special-case them.
     pub fn get_field(&self, index: usize) -> Option<&Field> {
         if index == 0 {
             None // Field 0 is the segment ID, not a regular field
@@ -155,12 +191,40 @@ impl Segment {
     /// delimiter placeholders (see [`Segment::add_field`]) and are skipped:
     /// the separators are written from `delimiters` instead, and content
     /// encoding starts at the third stored field.
+    ///
+    /// A header segment with fewer than two stored fields loses content
+    /// silently here; prefer [`Segment::new_header`] when building and
+    /// [`Segment::try_encode`] when the segment may be hand-assembled.
     pub fn encode(&self, delimiters: &Delimiters) -> String {
+        // Header segments with missing placeholders keep the legacy skip
+        // behavior here; try_encode() is the checked variant.
+        self.encode_inner(delimiters)
+    }
+
+    /// Encode the segment, rejecting malformed header segments
+    ///
+    /// Same output as [`Segment::encode`], but returns
+    /// [`Error::InvalidSegment`] when a header segment (`MSH`, `FHS`,
+    /// `BHS`) has fewer than the two delimiter placeholder fields, since
+    /// encoding it would silently drop content fields.
+    pub fn try_encode(&self, delimiters: &Delimiters) -> Result<String> {
+        if self.is_header() && self.fields.len() < 2 {
+            return Err(Error::InvalidSegment(format!(
+                "{} segment has {} stored field(s); header segments require \
+                 the two delimiter placeholders (see Segment::new_header)",
+                self.id,
+                self.fields.len()
+            )));
+        }
+        Ok(self.encode_inner(delimiters))
+    }
+
+    fn encode_inner(&self, delimiters: &Delimiters) -> String {
         let mut result = self.id.clone();
 
         // Special handling for MSH, FHS, and BHS segments
         // These segments have the same structure: field 1 is field separator, field 2 is encoding characters
-        if self.id == "MSH" || self.id == "FHS" || self.id == "BHS" {
+        if self.is_header() {
             result.push(delimiters.field_separator);
             result.push_str(&delimiters.encoding_characters());
 
@@ -313,13 +377,46 @@ mod tests {
     #[test]
     fn test_encode_msh_segment() {
         let delims = Delimiters::default();
-        let mut segment = Segment::new("MSH");
-        segment.add_field(Field::from_value("^~\\&")); // encoding characters
+        let mut segment = Segment::new_header("MSH");
         segment.add_field(Field::from_value("SendingApp"));
+        segment.add_field(Field::from_value("SendingFac"));
         segment.add_field(Field::from_value("ReceivingApp"));
 
-        let encoded = segment.encode(&delims);
-        assert!(encoded.starts_with("MSH|^~\\&|"));
+        assert_eq!(
+            segment.encode(&delims),
+            "MSH|^~\\&|SendingApp|SendingFac|ReceivingApp"
+        );
+    }
+
+    #[test]
+    fn test_new_header_pushes_placeholders() {
+        let segment = Segment::new_header("MSH");
+        assert!(segment.is_header());
+        assert_eq!(segment.get_field_value(1), Some("|"));
+        assert_eq!(segment.get_field_value(2), Some("^~\\&"));
+
+        let custom = Delimiters::from_encoding_characters('!', ":;\\?").unwrap();
+        let segment = Segment::new_header_with("FHS", &custom);
+        assert!(segment.is_header());
+        assert_eq!(segment.get_field_value(1), Some("!"));
+        assert_eq!(segment.get_field_value(2), Some(":;\\?"));
+        assert!(!Segment::new("PID").is_header());
+    }
+
+    #[test]
+    fn test_try_encode_rejects_header_without_placeholders() {
+        let delims = Delimiters::default();
+        let mut segment = Segment::new("MSH");
+        segment.add_field(Field::from_value("SendingApp"));
+
+        let err = segment.try_encode(&delims).unwrap_err().to_string();
+        assert!(err.contains("MSH"), "{err}");
+        assert!(err.contains("new_header"), "{err}");
+
+        // Regular segments are unaffected.
+        let mut pid = Segment::new("PID");
+        pid.add_field(Field::from_value("1"));
+        assert_eq!(pid.try_encode(&delims).unwrap(), "PID|1");
     }
 
     #[test]

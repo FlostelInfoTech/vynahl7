@@ -9,10 +9,10 @@
 //! 4. **Sustained Throughput**: Continuous processing simulation
 //! 5. **Message Size Scaling**: Performance across different message sizes
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use vyna_hl7_parser::parse_message;
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 use std::time::{Duration, Instant};
+use vyna_hl7_parser::parse_message;
 
 // ============================================================================
 // Test Messages - Industry Representative Samples
@@ -56,7 +56,8 @@ fn generate_large_batch() -> String {
         ));
         msg.push_str(&format!(
             "ORC|RE|ORD{:06}|LAB{:06}||CM||||20240315120000|||1234567^DOCTOR^TEST^M^MD\r",
-            patient * 1000, patient * 1000
+            patient * 1000,
+            patient * 1000
         ));
         msg.push_str(&format!(
             "OBR|1|ORD{:06}|LAB{:06}|PANEL^Test Panel^LN|||20240315110000|||||||||1234567^DOCTOR^TEST^M^MD||||||20240315120000|||F\r",
@@ -84,7 +85,8 @@ fn generate_stress_test_message() -> String {
     for order in 1..=20 {
         msg.push_str(&format!(
             "ORC|RE|ORD{:06}|LAB{:06}||CM||||20240315120000\r",
-            order * 100, order * 100
+            order * 100,
+            order * 100
         ));
         msg.push_str(&format!(
             "OBR|{}|ORD{:06}|LAB{:06}|PANEL{}^Panel {}^LN|||20240315110000|||||||||1234567^DOCTOR^STRESS^M^MD||||||20240315120000|||F\r",
@@ -413,8 +415,6 @@ criterion_main!(industry_benches);
 
 #[cfg(test)]
 mod tests {
-    
-    
 
     #[test]
     fn test_messages_parse() {

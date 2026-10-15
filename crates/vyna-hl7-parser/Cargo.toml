@@ -11,6 +11,10 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 description = "Parser for HL7 v2.x messages"
+# Helper modules (alloc_counter, bench_env, corpus) are `mod`-included by
+# the declared benches below; without this they would also build as
+# broken standalone bench targets.
+autobenches = false
 
 [dependencies]
 vyna-hl7-core.workspace = true
@@ -19,7 +23,7 @@ chrono.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
-criterion = "0.8"
+criterion.workspace = true
 
 [[bench]]
 name = "parser_bench"
@@ -44,3 +48,6 @@ harness = false
 [[bench]]
 name = "env_report_bench"
 harness = false
+
+[lints]
+workspace = true

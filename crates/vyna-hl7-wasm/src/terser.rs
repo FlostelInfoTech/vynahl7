@@ -1,9 +1,9 @@
 //! Terser utilities for WebAssembly
 
-use wasm_bindgen::prelude::*;
+use crate::WasmMessage;
 use vyna_hl7_core::Message;
 use vyna_hl7_terser::Terser;
-use crate::WasmMessage;
+use wasm_bindgen::prelude::*;
 
 /// Read one field's full encoded value (all components).
 ///
@@ -43,7 +43,8 @@ pub fn get_terser_values(message: &WasmMessage, paths: Vec<String>) -> Result<Js
     let mut results = serde_json::Map::new();
 
     for path in paths {
-        let value = terser.get(&path)
+        let value = terser
+            .get(&path)
             .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
         if let Some(v) = value {
@@ -93,8 +94,7 @@ pub fn extract_patient_demographics(message: &WasmMessage) -> Result<JsValue, Js
         phone: full_field_value(message.inner(), "PID", 0, 13),
     };
 
-    serde_wasm_bindgen::to_value(&demographics)
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+    serde_wasm_bindgen::to_value(&demographics).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 /// Extract observations from an ORU message
@@ -125,7 +125,10 @@ pub fn extract_observations(message: &WasmMessage) -> Result<JsValue, JsValue> {
     }
 
     // Count OBX segments
-    let obx_count = message.inner().segments.iter()
+    let obx_count = message
+        .inner()
+        .segments
+        .iter()
         .filter(|s| s.id == "OBX")
         .count();
 
@@ -140,23 +143,58 @@ pub fn extract_observations(message: &WasmMessage) -> Result<JsValue, JsValue> {
         };
 
         let obs = Observation {
-            set_id: terser.get(&format!("{}-1", prefix)).ok().flatten().map(|s| s.to_string()),
-            value_type: terser.get(&format!("{}-2", prefix)).ok().flatten().map(|s| s.to_string()),
-            identifier: terser.get(&format!("{}-3", prefix)).ok().flatten().map(|s| s.to_string()),
-            test_name: terser.get(&format!("{}-3-2", prefix)).ok().flatten().map(|s| s.to_string()),
+            set_id: terser
+                .get(&format!("{}-1", prefix))
+                .ok()
+                .flatten()
+                .map(|s| s.to_string()),
+            value_type: terser
+                .get(&format!("{}-2", prefix))
+                .ok()
+                .flatten()
+                .map(|s| s.to_string()),
+            identifier: terser
+                .get(&format!("{}-3", prefix))
+                .ok()
+                .flatten()
+                .map(|s| s.to_string()),
+            test_name: terser
+                .get(&format!("{}-3-2", prefix))
+                .ok()
+                .flatten()
+                .map(|s| s.to_string()),
             value: full_field_value(message.inner(), "OBX", i, 5),
-            units: terser.get(&format!("{}-6", prefix)).ok().flatten().map(|s| s.to_string()),
-            reference_range: terser.get(&format!("{}-7", prefix)).ok().flatten().map(|s| s.to_string()),
-            abnormal_flags: terser.get(&format!("{}-8", prefix)).ok().flatten().map(|s| s.to_string()),
-            status: terser.get(&format!("{}-11", prefix)).ok().flatten().map(|s| s.to_string()),
-            observation_datetime: terser.get(&format!("{}-14", prefix)).ok().flatten().map(|s| s.to_string()),
+            units: terser
+                .get(&format!("{}-6", prefix))
+                .ok()
+                .flatten()
+                .map(|s| s.to_string()),
+            reference_range: terser
+                .get(&format!("{}-7", prefix))
+                .ok()
+                .flatten()
+                .map(|s| s.to_string()),
+            abnormal_flags: terser
+                .get(&format!("{}-8", prefix))
+                .ok()
+                .flatten()
+                .map(|s| s.to_string()),
+            status: terser
+                .get(&format!("{}-11", prefix))
+                .ok()
+                .flatten()
+                .map(|s| s.to_string()),
+            observation_datetime: terser
+                .get(&format!("{}-14", prefix))
+                .ok()
+                .flatten()
+                .map(|s| s.to_string()),
         };
 
         observations.push(obs);
     }
 
-    serde_wasm_bindgen::to_value(&observations)
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+    serde_wasm_bindgen::to_value(&observations).map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 #[cfg(test)]

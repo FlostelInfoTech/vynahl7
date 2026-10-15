@@ -1,6 +1,6 @@
 //! Example demonstrating HL7 vocabulary/code set validation
 
-use vyna_hl7_validator::{TableRegistry, Hl7Table};
+use vyna_hl7_validator::{Hl7Table, TableRegistry};
 
 fn main() {
     println!("=== HL7 Vocabulary/Code Set Validation Example ===\n");

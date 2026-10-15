@@ -15,7 +15,7 @@
 //! Run with: cargo run --example repeating_components
 
 use vyna_hl7_core::Delimiters;
-use vyna_hl7_custom::{z_segment, CustomSegment, MessageExt};
+use vyna_hl7_custom::{CustomSegment, MessageExt, z_segment};
 use vyna_hl7_parser::parse_message;
 
 // Define a Z-segment with multiple phone numbers (each with number and type)
@@ -114,7 +114,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   Patient ID: {}", zad.patient_id);
     println!("   Addresses:");
     for (i, (street, city, state, zip, country)) in zad.addresses.iter().enumerate() {
-        println!("     {}. {} {}, {} {} {}", i + 1, street, city, state, zip, country);
+        println!(
+            "     {}. {} {}, {} {} {}",
+            i + 1,
+            street,
+            city,
+            state,
+            zip,
+            country
+        );
     }
 
     let zad_encoded = zad.to_segment().encode(&delimiters);
@@ -151,8 +159,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   Patient ID: {}", zid.patient_id);
     println!("   Identifiers:");
     for (i, (id, id_type, authority, facility)) in zid.identifiers.iter().enumerate() {
-        println!("     {}. ID: {}, Type: {}, Authority: {}, Facility: {}",
-            i + 1, id, id_type, authority, facility);
+        println!(
+            "     {}. ID: {}, Type: {}, Authority: {}, Facility: {}",
+            i + 1,
+            id,
+            id_type,
+            authority,
+            facility
+        );
     }
 
     let zid_encoded = zid.to_segment().encode(&delimiters);
@@ -186,7 +200,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let minimal_zph = ZPH::builder()
         .patient_id("PAT-00001")
-        .phone_numbers(vec![])  // No phone numbers
+        .phone_numbers(vec![]) // No phone numbers
         .build()?;
 
     println!("   Created segment with empty repeating components:");
@@ -203,9 +217,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let single_phone = ZPH::builder()
         .patient_id("PAT-00002")
-        .phone_numbers(vec![
-            ("555-1111".to_string(), "Home".to_string()),
-        ])
+        .phone_numbers(vec![("555-1111".to_string(), "Home".to_string())])
         .build()?;
 
     println!("   Single phone number:");
@@ -234,7 +246,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut msg = parse_message(
         "MSH|^~\\&|App|Fac|App|Fac|20250119120000||ADT^A01|MSG|P|2.5\r\
          PID|1||PAT-55555||Doe^Jane\r\
-         ZPH|PAT-55555|555-0001^Home\r"
+         ZPH|PAT-55555|555-0001^Home\r",
     )?;
 
     println!("   Original phone numbers:");
@@ -246,8 +258,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Add more phone numbers
     let mut updated_zph = msg.get_custom_segment::<ZPH>()?.unwrap();
-    updated_zph.phone_numbers.push(("555-0002".to_string(), "Work".to_string()));
-    updated_zph.phone_numbers.push(("555-0003".to_string(), "Mobile".to_string()));
+    updated_zph
+        .phone_numbers
+        .push(("555-0002".to_string(), "Work".to_string()));
+    updated_zph
+        .phone_numbers
+        .push(("555-0003".to_string(), "Mobile".to_string()));
 
     msg.set_custom_segment(updated_zph)?;
 
@@ -327,7 +343,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     println!("   Patient ID: {}", mixed.patient_id);
-    println!("   Primary Phone: {} ({})", mixed.primary_phone.0, mixed.primary_phone.1);
+    println!(
+        "   Primary Phone: {} ({})",
+        mixed.primary_phone.0, mixed.primary_phone.1
+    );
     println!("   Alternate Phones:");
     for phone in &mixed.alternate_phones {
         println!("     - {}: {}", phone.0, phone.1);
@@ -344,14 +363,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let varied_msg = parse_message(
         "MSH|^~\\&|App|Fac|App|Fac|20250119120000||ADT^A01|MSG|P|2.5\r\
          ZPH|PAT-44444|555-1111^Type1~555-2222^Type2\r\
-         ZPH|PAT-55555|555-3333^Type3~555-4444^Type4~555-5555^Type5~555-6666^Type6\r"
+         ZPH|PAT-55555|555-3333^Type3~555-4444^Type4~555-5555^Type5~555-6666^Type6\r",
     )?;
 
     let all_zphs = varied_msg.get_custom_segments::<ZPH>()?;
     println!("    Found {} ZPH segments:", all_zphs.len());
     for (i, zph) in all_zphs.iter().enumerate() {
-        println!("    {}. Patient {}: {} phone numbers",
-            i + 1, zph.patient_id, zph.phone_numbers.len());
+        println!(
+            "    {}. Patient {}: {} phone numbers",
+            i + 1,
+            zph.patient_id,
+            zph.phone_numbers.len()
+        );
         for phone in &zph.phone_numbers {
             println!("       - {}: {}", phone.0, phone.1);
         }

@@ -45,7 +45,8 @@ impl TestCertsWithClient {
 /// Generate test certificates (CA + server cert)
 pub async fn generate_test_certs() -> TestCerts {
     // Create temporary directory
-    let temp_dir = std::env::temp_dir().join(format!("vyna_hl7_test_certs_{}", uuid::Uuid::new_v4()));
+    let temp_dir =
+        std::env::temp_dir().join(format!("vyna_hl7_test_certs_{}", uuid::Uuid::new_v4()));
     fs::create_dir_all(&temp_dir).expect("Failed to create temp dir");
 
     let ca_key_path = temp_dir.join("ca-key.pem");
@@ -56,12 +57,7 @@ pub async fn generate_test_certs() -> TestCerts {
     let server_ext_path = temp_dir.join("server-ext.cnf");
 
     // Generate CA key
-    run_openssl(&[
-        "genrsa",
-        "-out",
-        ca_key_path.to_str().unwrap(),
-        "2048",
-    ]);
+    run_openssl(&["genrsa", "-out", ca_key_path.to_str().unwrap(), "2048"]);
 
     // Generate CA certificate (X.509 v3 with extensions)
     run_openssl(&[
@@ -81,12 +77,7 @@ pub async fn generate_test_certs() -> TestCerts {
     ]);
 
     // Generate server key
-    run_openssl(&[
-        "genrsa",
-        "-out",
-        server_key_path.to_str().unwrap(),
-        "2048",
-    ]);
+    run_openssl(&["genrsa", "-out", server_key_path.to_str().unwrap(), "2048"]);
 
     // Generate server CSR
     run_openssl(&[
@@ -154,12 +145,7 @@ pub async fn generate_test_certs_with_client() -> TestCertsWithClient {
     let client_ext_path = base_certs.temp_dir.join("client-ext.cnf");
 
     // Generate client key
-    run_openssl(&[
-        "genrsa",
-        "-out",
-        client_key_path.to_str().unwrap(),
-        "2048",
-    ]);
+    run_openssl(&["genrsa", "-out", client_key_path.to_str().unwrap(), "2048"]);
 
     // Generate client CSR
     run_openssl(&[

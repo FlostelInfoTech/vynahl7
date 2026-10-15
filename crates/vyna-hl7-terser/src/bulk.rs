@@ -96,6 +96,12 @@ impl<'a> BulkTerser<'a> {
     ///
     /// Returns a vector of tuples (resolved_path, value) for all matching fields.
     ///
+    /// Collection semantics differ deliberately from [`Terser::get`](crate::Terser::get):
+    /// an absent segment id or an out-of-range segment index yields `Ok(vec![])`
+    /// (no matches) instead of `None`/`Err`, since there is nothing to collect.
+    /// Malformed patterns (empty segment id, 0 indices, missing wildcard)
+    /// still return `Err`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -233,6 +239,13 @@ impl<'a> BulkTerser<'a> {
         let field_idx: usize = field_part
             .parse()
             .map_err(|_| vyna_hl7_core::Error::terser_path("Invalid field index".to_string()))?;
+        // Field 0 is the segment id, never an addressable field,
+        // mirroring TerserPath::parse.
+        if field_idx == 0 {
+            return Err(vyna_hl7_core::Error::terser_path(
+                "Invalid field index 0: HL7 uses 1-based indexing".to_string(),
+            ));
+        }
 
         let mut results = Vec::new();
 
@@ -612,5 +625,28 @@ OBX|1|NM|GLU||98";
         let bulk = BulkTerser::new(&message);
         assert!(bulk.get_pattern("(*)-5").is_err());
         assert!(bulk.get_pattern("(1)-5(*)-1").is_err());
+    }
+
+    #[test]
+    fn test_get_pattern_rejects_field_zero() {
+        // Field 0 is the segment id: malformed in patterns, mirroring
+        // TerserPath::parse — not an empty collection.
+        let hl7 = r"MSH|^~\&|APP|FAC|||20250115||ORU^R01|123|P|2.5
+OBX|1|NM|GLU||98";
+        let message = parse_message(hl7).unwrap();
+        let bulk = BulkTerser::new(&message);
+        assert!(bulk.get_pattern("OBX(*)-0").is_err());
+        assert!(bulk.get_pattern("PID-0(*)-1").is_err());
+    }
+
+    #[test]
+    fn test_get_pattern_out_of_range_index_is_empty() {
+        // Collection semantics: an out-of-range segment index yields
+        // Ok([]) here, unlike Terser::get which returns Err.
+        let hl7 = r"MSH|^~\&|APP|FAC|||20250115||ORU^R01|123|P|2.5
+OBX|1|NM|GLU||98";
+        let message = parse_message(hl7).unwrap();
+        let bulk = BulkTerser::new(&message);
+        assert_eq!(bulk.get_pattern("OBX(9)-5(*)-1").unwrap(), vec![]);
     }
 }

@@ -5,9 +5,9 @@
 //! throughput when dealing with high message volumes.
 
 #[cfg(feature = "batch")]
-use vyna_hl7_core::Message;
-#[cfg(feature = "batch")]
 use std::time::{Duration, Instant};
+#[cfg(feature = "batch")]
+use vyna_hl7_core::Message;
 
 /// Batch of HL7 messages
 ///
@@ -251,11 +251,8 @@ where
             let max_size = self.batch.max_size;
             let max_age = self.batch.max_age;
 
-            let messages = std::mem::replace(
-                &mut self.batch,
-                MessageBatch::new(max_size, max_age),
-            )
-            .into_messages();
+            let messages = std::mem::replace(&mut self.batch, MessageBatch::new(max_size, max_age))
+                .into_messages();
 
             (self.flush_callback)(messages);
         }

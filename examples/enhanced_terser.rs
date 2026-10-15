@@ -77,10 +77,22 @@ fn bulk_extraction_example(message: &vyna_hl7_core::message::Message) {
     match bulk.get_multiple(&paths) {
         Ok(results) => {
             println!("Patient Demographics:");
-            println!("  Last Name: {}", results.get("PID-5-1").and_then(|v| *v).unwrap_or("N/A"));
-            println!("  First Name: {}", results.get("PID-5-2").and_then(|v| *v).unwrap_or("N/A"));
-            println!("  DOB: {}", results.get("PID-7").and_then(|v| *v).unwrap_or("N/A"));
-            println!("  Gender: {}", results.get("PID-8").and_then(|v| *v).unwrap_or("N/A"));
+            println!(
+                "  Last Name: {}",
+                results.get("PID-5-1").and_then(|v| *v).unwrap_or("N/A")
+            );
+            println!(
+                "  First Name: {}",
+                results.get("PID-5-2").and_then(|v| *v).unwrap_or("N/A")
+            );
+            println!(
+                "  DOB: {}",
+                results.get("PID-7").and_then(|v| *v).unwrap_or("N/A")
+            );
+            println!(
+                "  Gender: {}",
+                results.get("PID-8").and_then(|v| *v).unwrap_or("N/A")
+            );
         }
         Err(e) => println!("Error: {}", e),
     }
@@ -124,13 +136,15 @@ fn field_iteration_example(message: &vyna_hl7_core::message::Message) {
     }
 
     // Count numeric values
-    let count = terser.iter_field("OBX", 5)
+    let count = terser
+        .iter_field("OBX", 5)
         .filter(|v| v.parse::<f64>().is_ok())
         .count();
     println!("\nNumeric values count: {}", count);
 
     // Get all values above a threshold
-    let high_values: Vec<_> = terser.iter_field("OBX", 5)
+    let high_values: Vec<_> = terser
+        .iter_field("OBX", 5)
         .filter_map(|v| v.parse::<f64>().ok())
         .filter(|&v| v > 100.0)
         .collect();
@@ -239,9 +253,10 @@ fn complex_queries_example(message: &vyna_hl7_core::message::Message) {
         let segments = query.filter_by_component("OBX", 3, 1, test);
         for seg in segments {
             if let Some(value) = seg.get_field(5).and_then(|f| f.value())
-                && let Some(units) = seg.get_field(6).and_then(|f| f.value()) {
-                    println!("  {}: {} {}", test, value, units);
-                }
+                && let Some(units) = seg.get_field(6).and_then(|f| f.value())
+            {
+                println!("  {}: {} {}", test, value, units);
+            }
         }
     }
 

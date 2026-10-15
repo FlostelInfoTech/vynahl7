@@ -8,13 +8,13 @@
 //! - Parsing RSP messages to extract query results
 
 use vyna_hl7_core::{
+    Version,
     builders::{
         qbp::{QbpQ11Builder, QbpQ22Builder},
         rsp::{RspK11Builder, RspK22Builder},
     },
     field::Field,
     segment::Segment,
-    Version,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -89,10 +89,10 @@ fn example_2_immunization_response() -> Result<(), Box<dyn std::error::Error>> {
     let mut pid = Segment::new("PID");
     pid.add_field(Field::from_value("1")); // PID-1: Set ID
     pid.add_field(Field::from_value("")); // PID-2: External ID (deprecated)
-    pid.add_field(Field::from_value("234567^^^MYEHR^MR~987654^^^CAIR2^SR")); // PID-3: Patient ID
+    pid.add_field(Field::from_delimited("234567^^^MYEHR^MR~987654^^^CAIR2^SR")); // PID-3: Patient ID
     pid.add_field(Field::from_value("")); // PID-4: Alternate Patient ID (deprecated)
-    pid.add_field(Field::from_value("DOE^JANE^MARIE^^^^L")); // PID-5: Patient Name
-    pid.add_field(Field::from_value("SMITH^MARY^^^^^M")); // PID-6: Mother's Maiden Name
+    pid.add_field(Field::from_delimited("DOE^JANE^MARIE^^^^L")); // PID-5: Patient Name
+    pid.add_field(Field::from_delimited("SMITH^MARY^^^^^M")); // PID-6: Mother's Maiden Name
     pid.add_field(Field::from_value("20180315")); // PID-7: Date of Birth
     pid.add_field(Field::from_value("F")); // PID-8: Sex
 
@@ -100,7 +100,7 @@ fn example_2_immunization_response() -> Result<(), Box<dyn std::error::Error>> {
     let mut orc = Segment::new("ORC");
     orc.add_field(Field::from_value("RE")); // ORC-1: Order Control (RE = Observations to follow)
     orc.add_field(Field::from_value("")); // ORC-2: Placer Order Number
-    orc.add_field(Field::from_value("65432^CAIR2")); // ORC-3: Filler Order Number
+    orc.add_field(Field::from_delimited("65432^CAIR2")); // ORC-3: Filler Order Number
 
     // Build RXA segment (pharmacy/treatment administration)
     let mut rxa = Segment::new("RXA");
@@ -108,7 +108,7 @@ fn example_2_immunization_response() -> Result<(), Box<dyn std::error::Error>> {
     rxa.add_field(Field::from_value("1")); // RXA-2: Administration Sub-ID Counter
     rxa.add_field(Field::from_value("20180515")); // RXA-3: Date/Time Start of Administration
     rxa.add_field(Field::from_value("")); // RXA-4: Date/Time End of Administration
-    rxa.add_field(Field::from_value("83^Hep A, ped/adol, 2 dose^CVX")); // RXA-5: Administered Code
+    rxa.add_field(Field::from_delimited("83^Hep A, ped/adol, 2 dose^CVX")); // RXA-5: Administered Code
 
     // Build the RSP message
     let response = RspK11Builder::new(Version::V2_5_1)
@@ -185,9 +185,9 @@ fn example_4_patient_search_response() -> Result<(), Box<dyn std::error::Error>>
     let mut pid1 = Segment::new("PID");
     pid1.add_field(Field::from_value("1")); // Set ID
     pid1.add_field(Field::from_value("")); // External ID
-    pid1.add_field(Field::from_value("1001^^^MPI^MR")); // Patient ID
+    pid1.add_field(Field::from_delimited("1001^^^MPI^MR")); // Patient ID
     pid1.add_field(Field::from_value("")); // Alternate ID
-    pid1.add_field(Field::from_value("SMITH^JOHN^A")); // Name
+    pid1.add_field(Field::from_delimited("SMITH^JOHN^A")); // Name
     pid1.add_field(Field::from_value("")); // Mother's Maiden
     pid1.add_field(Field::from_value("19850610")); // DOB
     pid1.add_field(Field::from_value("M")); // Sex
@@ -196,9 +196,9 @@ fn example_4_patient_search_response() -> Result<(), Box<dyn std::error::Error>>
     let mut pid2 = Segment::new("PID");
     pid2.add_field(Field::from_value("2"));
     pid2.add_field(Field::from_value(""));
-    pid2.add_field(Field::from_value("1002^^^MPI^MR"));
+    pid2.add_field(Field::from_delimited("1002^^^MPI^MR"));
     pid2.add_field(Field::from_value(""));
-    pid2.add_field(Field::from_value("SMITH^JOHN^B"));
+    pid2.add_field(Field::from_delimited("SMITH^JOHN^B"));
     pid2.add_field(Field::from_value(""));
     pid2.add_field(Field::from_value("19850610"));
     pid2.add_field(Field::from_value("M"));

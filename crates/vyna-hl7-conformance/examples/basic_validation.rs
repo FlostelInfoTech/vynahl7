@@ -21,10 +21,7 @@ fn main() {
     println!("  Name: {}", profile.metadata.name);
     println!("  Version: {}", profile.metadata.version);
     println!("  HL7 Version: {:?}", profile.metadata.hl7_version);
-    println!(
-        "  Segments: {}",
-        profile.message.segments.len()
-    );
+    println!("  Segments: {}", profile.message.segments.len());
     println!();
 
     // Create validator
@@ -71,11 +68,7 @@ fn create_adt_a01_profile() -> ConformanceProfile {
 
     // MSH segment - Required [1..1]
     let mut msh = SegmentProfile::new("MSH".to_string(), Usage::Required, Cardinality::one());
-    msh.add_field(FieldProfile::new(
-        9,
-        Usage::Required,
-        Cardinality::one(),
-    ));
+    msh.add_field(FieldProfile::new(9, Usage::Required, Cardinality::one()));
     message.add_segment(msh);
 
     // EVN segment - Required [1..1]
@@ -85,17 +78,9 @@ fn create_adt_a01_profile() -> ConformanceProfile {
     // PID segment - Required [1..1]
     let mut pid = SegmentProfile::new("PID".to_string(), Usage::Required, Cardinality::one());
     // Patient ID is required
-    pid.add_field(FieldProfile::new(
-        3,
-        Usage::Required,
-        Cardinality::one(),
-    ));
+    pid.add_field(FieldProfile::new(3, Usage::Required, Cardinality::one()));
     // Patient Name is required
-    pid.add_field(FieldProfile::new(
-        5,
-        Usage::Required,
-        Cardinality::one(),
-    ));
+    pid.add_field(FieldProfile::new(5, Usage::Required, Cardinality::one()));
     message.add_segment(pid);
 
     // NK1 segment - Optional [0..*] (Next of Kin)
@@ -236,10 +221,9 @@ fn print_validation_result(result: &vyna_hl7_conformance::ConformanceValidationR
     if !result.errors.is_empty() {
         println!("\n  Errors:");
         for error in &result.errors {
-            println!("    - [{}] {}: {}",
-                error.severity,
-                error.location,
-                error.message
+            println!(
+                "    - [{}] {}: {}",
+                error.severity, error.location, error.message
             );
             if let Some(rule) = &error.rule {
                 println!("      Rule: {}", rule);

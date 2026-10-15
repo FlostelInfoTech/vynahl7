@@ -18,11 +18,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Available templates:");
     for name in &templates {
         if let Some(template) = library.get(name) {
-            println!("  {} - {}^{} ({})",
+            println!(
+                "  {} - {}^{} ({})",
                 name,
                 template.message_type,
                 template.trigger_event,
-                template.description.as_ref().unwrap_or(&"No description".to_string())
+                template
+                    .description
+                    .as_ref()
+                    .unwrap_or(&"No description".to_string())
             );
         }
     }
@@ -105,8 +109,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Validate ORU message
     let oru_validation = TemplateValidator::validate(&oru_message, oru_template);
-    println!("ORU validation result: {}",
-        if oru_validation.valid { "✓ Valid" } else { "✗ Invalid" }
+    println!(
+        "ORU validation result: {}",
+        if oru_validation.valid {
+            "✓ Valid"
+        } else {
+            "✗ Invalid"
+        }
     );
 
     Ok(())

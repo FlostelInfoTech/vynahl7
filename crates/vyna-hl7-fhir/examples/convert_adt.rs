@@ -5,6 +5,7 @@
 //!
 //! Run with: cargo run --example convert_adt
 
+use vyna_hl7_fhir::bundle::{convert_message_to_bundle, skipped_segment_ids};
 use vyna_hl7_fhir::converters::PatientConverter;
 use vyna_hl7_parser::parse_message;
 
@@ -44,22 +45,23 @@ PV1|1|I|4N^401^01^Hospital^^^N||||5678901^JONES^MICHAEL^^^DR^MD^^^^^^NPI
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     if let Some(ref names) = patient.name
-        && let Some(name) = names.first() {
-            print!("Name: ");
-            if let Some(ref prefix) = name.prefix {
-                print!("{} ", prefix.join(" "));
-            }
-            if let Some(ref given) = name.given {
-                print!("{} ", given.join(" "));
-            }
-            if let Some(ref family) = name.family {
-                print!("{}", family);
-            }
-            if let Some(ref suffix) = name.suffix {
-                print!(" {}", suffix.join(" "));
-            }
-            println!();
+        && let Some(name) = names.first()
+    {
+        print!("Name: ");
+        if let Some(ref prefix) = name.prefix {
+            print!("{} ", prefix.join(" "));
         }
+        if let Some(ref given) = name.given {
+            print!("{} ", given.join(" "));
+        }
+        if let Some(ref family) = name.family {
+            print!("{}", family);
+        }
+        if let Some(ref suffix) = name.suffix {
+            print!(" {}", suffix.join(" "));
+        }
+        println!();
+    }
 
     if let Some(ref gender) = patient.gender {
         println!("Gender: {}", gender);
@@ -75,9 +77,10 @@ PV1|1|I|4N^401^01^Hospital^^^N||||5678901^JONES^MICHAEL^^^DR^MD^^^^^^NPI
             if let Some(ref value) = id.value {
                 print!("  - {}", value);
                 if let Some(ref type_) = id.type_
-                    && let Some(ref text) = type_.text {
-                        print!(" ({})", text);
-                    }
+                    && let Some(ref text) = type_.text
+                {
+                    print!(" ({})", text);
+                }
                 println!();
             }
         }
@@ -120,6 +123,28 @@ PV1|1|I|4N^401^01^Hospital^^^N||||5678901^JONES^MICHAEL^^^DR^MD^^^^^^NPI
                 println!();
             }
         }
+    }
+
+    // Convert the whole message to a bundle (Patient + Encounter from PV1)
+    println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!("📦 Converting full message to a FHIR Bundle...");
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+
+    let bundle = convert_message_to_bundle(&message)?;
+    println!(
+        "Bundle holds {} resource(s): PV1 becomes an Encounter alongside the Patient.\n",
+        bundle.len()
+    );
+
+    // Segments the bundle conversion does not consume are dropped; report them.
+    let skipped = skipped_segment_ids(&message)?;
+    if skipped.is_empty() {
+        println!("No segments dropped by the bundle conversion.");
+    } else {
+        println!(
+            "Note: the bundle conversion drops these segments: {}.",
+            skipped.join(", ")
+        );
     }
 
     println!("\n╔══════════════════════════════════════════════════════════════════════╗");

@@ -19,10 +19,10 @@
 //!   -d "MSH|^~\&|SendingApp|SendingFac|ReceivingApp|ReceivingFac|20250126120000||ADT^A01|MSG00001|P|2.5"
 //! ```
 
+use chrono::Utc;
+use std::sync::Arc;
 use vyna_hl7_core::{delimiters::Delimiters, field::Field, message::Message, segment::Segment};
 use vyna_hl7_http::{HttpServer, MessageHandler};
-use std::sync::Arc;
-use chrono::Utc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -41,7 +41,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Message Type: {:?}", message.get_message_type());
         println!("Control ID: {:?}", message.get_control_id());
         println!("Version: {:?}", message.get_version());
-        println!("Sending Application: {:?}", message.get_sending_application());
+        println!(
+            "Sending Application: {:?}",
+            message.get_sending_application()
+        );
         println!("Sending Facility: {:?}", message.get_sending_facility());
         println!("===========================\n");
 
@@ -53,10 +56,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Create and configure the HTTP server
-    let server = HttpServer::new()
-        .with_handler(handler);
-        // Optionally enable authentication:
-        // .with_auth("username".into(), "password".into());
+    let server = HttpServer::new().with_handler(handler);
+    // Optionally enable authentication:
+    // .with_auth("username".into(), "password".into());
 
     // Start the server
     server.serve("127.0.0.1:8080").await?;

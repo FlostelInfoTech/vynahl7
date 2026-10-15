@@ -21,3 +21,6 @@ sha2.workspace = true
 
 [dev-dependencies]
 vyna-hl7-parser.workspace = true
+
+[lints]
+workspace = true

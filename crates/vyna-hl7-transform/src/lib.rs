@@ -47,5 +47,5 @@ pub mod prelude {
     pub use crate::transforms;
 
     #[cfg(feature = "serde")]
-    pub use crate::config::{TransformConfig, RuleConfig};
+    pub use crate::config::{RuleConfig, TransformConfig};
 }

@@ -174,7 +174,6 @@ impl ValidationLocation {
             component: Some(component),
         }
     }
-
 }
 
 impl std::fmt::Display for ValidationLocation {

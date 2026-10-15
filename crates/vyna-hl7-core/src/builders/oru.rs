@@ -1,13 +1,7 @@
 //! ORU (Observation Result) message builders
 
-use super::{generate_control_id, MessageBuilder};
-use crate::{
-    error::Result,
-    field::Field,
-    message::Message,
-    segment::Segment,
-    Version,
-};
+use super::{MessageBuilder, generate_control_id};
+use crate::{Version, error::Result, field::Field, message::Message, segment::Segment};
 
 /// Builder for ORU^R01 - Unsolicited Observation Message
 pub struct OruR01Builder {
@@ -196,9 +190,15 @@ impl OruR01Builder {
         // Create OBR segment
         let mut obr = Segment::new("OBR");
         obr.add_field(Field::from_value("1")); // OBR-1: Set ID
-        obr.add_field(Field::from_delimited(self.placer_order_number.as_deref().unwrap_or(""))); // OBR-2: Placer Order Number
-        obr.add_field(Field::from_delimited(self.filler_order_number.as_deref().unwrap_or(""))); // OBR-3: Filler Order Number
-        obr.add_field(Field::from_delimited(self.universal_service_id.as_deref().unwrap_or(""))); // OBR-4: Universal Service ID
+        obr.add_field(Field::from_delimited(
+            self.placer_order_number.as_deref().unwrap_or(""),
+        )); // OBR-2: Placer Order Number
+        obr.add_field(Field::from_delimited(
+            self.filler_order_number.as_deref().unwrap_or(""),
+        )); // OBR-3: Filler Order Number
+        obr.add_field(Field::from_delimited(
+            self.universal_service_id.as_deref().unwrap_or(""),
+        )); // OBR-4: Universal Service ID
         if let Some(status) = self.result_status.as_deref() {
             for _ in 5..25 {
                 obr.add_field(Field::from_value(""));

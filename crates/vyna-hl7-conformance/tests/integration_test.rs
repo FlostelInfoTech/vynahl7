@@ -35,30 +35,19 @@ fn create_test_message() -> Message {
 
 /// Helper to create a simple conformance profile for ADT^A01
 fn create_adt_a01_profile() -> ConformanceProfile {
-    let metadata = ProfileMetadata::new(
-        "ADT_A01_Test".to_string(),
-        "1.0".to_string(),
-        Version::V2_5,
-    );
+    let metadata =
+        ProfileMetadata::new("ADT_A01_Test".to_string(), "1.0".to_string(), Version::V2_5);
 
     let mut message = MessageProfile::new("ADT".to_string(), "A01".to_string());
 
     // MSH segment - Required [1..1]
     let mut msh = SegmentProfile::new("MSH".to_string(), Usage::Required, Cardinality::one());
-    msh.add_field(FieldProfile::new(
-        9,
-        Usage::Required,
-        Cardinality::one(),
-    ));
+    msh.add_field(FieldProfile::new(9, Usage::Required, Cardinality::one()));
     message.add_segment(msh);
 
     // PID segment - Required [1..1]
     let mut pid = SegmentProfile::new("PID".to_string(), Usage::Required, Cardinality::one());
-    pid.add_field(FieldProfile::new(
-        3,
-        Usage::Required,
-        Cardinality::one(),
-    ));
+    pid.add_field(FieldProfile::new(3, Usage::Required, Cardinality::one()));
     message.add_segment(pid);
 
     // NK1 segment - Optional [0..*]
@@ -142,9 +131,7 @@ fn test_missing_required_field() {
 
     // Check that error is about missing PID-3
     let has_field_error = result.errors.iter().any(|e| {
-        e.location.segment == "PID"
-            && e.location.field == Some(3)
-            && e.message.contains("missing")
+        e.location.segment == "PID" && e.location.field == Some(3) && e.message.contains("missing")
     });
     assert!(has_field_error, "Should have error about missing PID-3");
 }
@@ -168,7 +155,11 @@ fn test_not_used_segment_present() {
     message_profile.add_segment(pid);
 
     // NK1 - Not Used (X)
-    let nk1 = SegmentProfile::new("NK1".to_string(), Usage::NotUsed, Cardinality::zero_or_one());
+    let nk1 = SegmentProfile::new(
+        "NK1".to_string(),
+        Usage::NotUsed,
+        Cardinality::zero_or_one(),
+    );
     message_profile.add_segment(nk1);
 
     let profile = ConformanceProfile::new(metadata, message_profile);
@@ -196,11 +187,8 @@ fn test_not_used_segment_present() {
 
 #[test]
 fn test_cardinality_validation() {
-    let metadata = ProfileMetadata::new(
-        "ADT_A01_Card".to_string(),
-        "1.0".to_string(),
-        Version::V2_5,
-    );
+    let metadata =
+        ProfileMetadata::new("ADT_A01_Card".to_string(), "1.0".to_string(), Version::V2_5);
 
     let mut message_profile = MessageProfile::new("ADT".to_string(), "A01".to_string());
 
@@ -275,9 +263,7 @@ fn test_field_length_validation() {
 
     // Check for length error
     let has_length_error = result.errors.iter().any(|e| {
-        e.location.segment == "PID"
-            && e.location.field == Some(3)
-            && e.message.contains("length")
+        e.location.segment == "PID" && e.location.field == Some(3) && e.message.contains("length")
     });
     assert!(has_length_error, "Should have error about PID-3 length");
 }

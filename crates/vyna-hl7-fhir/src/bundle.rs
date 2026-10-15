@@ -7,10 +7,15 @@
 //! | Message | Bundle contents |
 //! |---------|-----------------|
 //! | ADT | Patient, plus Encounter when PV1 is present |
-//! | ORU | Observations, plus DiagnosticReports when OBR is present |
+//! | ORU | Patient when PID is present, Observations, plus DiagnosticReports when OBR is present |
 //! | VXU | Immunizations |
 //! | PPR | Conditions |
 //! | OMP | Patient plus ServiceRequests |
+//!
+//! Only the segments each converter reads are consumed; the rest (e.g.
+//! NK1, EVN, NTE) are silently dropped. [`converted_segment_ids`] lists
+//! the consumed segments per message type and [`skipped_segment_ids`]
+//! reports what a given message loses.
 //!
 //! ```rust
 //! use vyna_hl7_fhir::bundle::convert_message_to_bundle;
@@ -81,11 +86,50 @@ impl BundleBuilder {
     }
 }
 
+/// Segment IDs consumed by [`convert_message_to_bundle`] for `msg_type`
+/// (the MSH-9 message code, e.g. `"ADT"`), or `None` for unsupported types.
+///
+/// Segments in the message outside this set are silently dropped by the
+/// conversion; use [`skipped_segment_ids`] to list them for a message.
+pub fn converted_segment_ids(msg_type: &str) -> Option<&'static [&'static str]> {
+    match msg_type {
+        "ADT" => Some(&["MSH", "PID", "PV1"]),
+        "ORU" => Some(&["MSH", "PID", "OBR", "OBX"]),
+        "VXU" => Some(&["MSH", "PID", "PV1", "RXA", "RXR"]),
+        "PPR" => Some(&["MSH", "PID", "PRB", "DG1"]),
+        "OMP" => Some(&["MSH", "PID", "PV1", "ORC", "OBR", "TQ1"]),
+        _ => None,
+    }
+}
+
+/// IDs of segments in `message` that [`convert_message_to_bundle`]
+/// drops without converting (e.g. NK1, EVN on an ORU), deduplicated.
+///
+/// Mirrors the bundle conversion's own errors for messages without a
+/// usable MSH-9 or with an unsupported message type.
+pub fn skipped_segment_ids(message: &Message) -> ConversionResult<Vec<String>> {
+    let (msg_type, trigger) = message
+        .get_message_type()
+        .ok_or_else(|| ConversionError::MissingSegment("MSH-9 message type".to_string()))?;
+    let consumed = converted_segment_ids(&msg_type).ok_or_else(|| {
+        ConversionError::UnsupportedMessageType(msg_type.clone(), trigger.clone())
+    })?;
+    let mut skipped = Vec::new();
+    for segment in &message.segments {
+        if !consumed.contains(&segment.id.as_str()) && !skipped.contains(&segment.id) {
+            skipped.push(segment.id.clone());
+        }
+    }
+    Ok(skipped)
+}
+
 /// Convert a whole message into a [`Bundle`], dispatching on MSH-9.
 ///
 /// Secondary resources are only attempted when their trigger segment is
-/// present (PV1 for Encounter, OBR for DiagnosticReport); a missing primary
-/// resource or an unsupported message type is an error.
+/// present (PV1 for Encounter, PID for the ORU Patient, OBR for
+/// DiagnosticReport); a missing primary resource or an unsupported
+/// message type is an error. Segments outside [`converted_segment_ids`]
+/// are silently dropped; call [`skipped_segment_ids`] to audit the loss.
 pub fn convert_message_to_bundle(message: &Message) -> ConversionResult<Bundle> {
     let (msg_type, trigger) = message
         .get_message_type()
@@ -100,6 +144,9 @@ pub fn convert_message_to_bundle(message: &Message) -> ConversionResult<Bundle> 
             }
         }
         "ORU" => {
+            if message.get_segment_by_id("PID").is_some() {
+                builder = builder.add_resource(&PatientConverter::convert(message)?)?;
+            }
             for observation in ObservationConverter::convert_all(message)? {
                 builder = builder.add_resource(&observation)?;
             }
@@ -177,10 +224,53 @@ mod tests {
     }
 
     #[test]
-    fn oru_bundle_holds_observation_and_report() {
+    fn oru_bundle_holds_patient_observation_and_report() {
         let message = parse_message(ORU).unwrap();
         let bundle = convert_message_to_bundle(&message).unwrap();
+        assert_eq!(
+            kinds(&bundle),
+            vec!["Patient", "Observation", "DiagnosticReport"]
+        );
+    }
+
+    #[test]
+    fn oru_without_pid_holds_observation_and_report() {
+        let message = parse_message(
+            "MSH|^~\\&|A|B|C|D|20240101||ORU^R01|1|P|2.5\rOBR|1|||CBC^Blood Count\rOBX|1|NM|WBC||8.5||||||F\r",
+        )
+        .unwrap();
+        let bundle = convert_message_to_bundle(&message).unwrap();
         assert_eq!(kinds(&bundle), vec!["Observation", "DiagnosticReport"]);
+    }
+
+    #[test]
+    fn converted_segment_ids_cover_bundle_inputs() {
+        assert_eq!(
+            converted_segment_ids("ORU"),
+            Some(&["MSH", "PID", "OBR", "OBX"][..])
+        );
+        assert_eq!(
+            converted_segment_ids("ADT"),
+            Some(&["MSH", "PID", "PV1"][..])
+        );
+        assert_eq!(converted_segment_ids("SIU"), None);
+    }
+
+    #[test]
+    fn skipped_segment_ids_reports_dropped_segments() {
+        let message = parse_message(
+            "MSH|^~\\&|A|B|C|D|20240101||ORU^R01|1|P|2.5\rEVN|R01|20240101\rPID|1||7\rNK1|1|DOE^J\rOBX|1|NM|WBC||8.5||||||F\rNK1|2|SMITH^J\r",
+        )
+        .unwrap();
+        // Deduplicated, in first-seen order.
+        assert_eq!(skipped_segment_ids(&message).unwrap(), vec!["EVN", "NK1"]);
+
+        let clean = parse_message(ORU).unwrap();
+        assert!(skipped_segment_ids(&clean).unwrap().is_empty());
+
+        let unsupported =
+            parse_message("MSH|^~\\&|A|B|C|D|20240101||SIU^S12|1|P|2.5\rPID|1||7\r").unwrap();
+        assert!(skipped_segment_ids(&unsupported).is_err());
     }
 
     #[test]

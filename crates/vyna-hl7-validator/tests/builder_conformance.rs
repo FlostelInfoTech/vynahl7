@@ -242,8 +242,9 @@ fn adt_a40_conforms() {
 fn orm_o01_conforms() {
     use vyna_hl7_core::builders::orm::OrmO01Builder;
 
-    // Short service id: the builder stores it as one unsplit component, so
-    // the whole string counts against the 20-char component limit.
+    // Composite service id: the builder splits it into components, so
+    // each part counts against its own limit ("CHEM" vs the 20-char
+    // component-1 cap, "L" against table 0396).
     let message = OrmO01Builder::new(Version::V2_5)
         .sending_application("SEND")
         .sending_facility("SFAC")

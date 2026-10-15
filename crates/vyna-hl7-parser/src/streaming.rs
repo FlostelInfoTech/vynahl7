@@ -47,6 +47,7 @@ use vyna_hl7_core::field::{Component, Field, Repetition, SubComponent};
 use vyna_hl7_core::message::Message;
 use vyna_hl7_core::segment::Segment;
 
+use crate::config::{ParseResult, ParseWarning, ParserConfig, WarningCode};
 use crate::truncate_id;
 
 /// Events emitted by the streaming parser
@@ -596,16 +597,34 @@ pub struct StreamingMessageBuilder {
     message: Message,
     current_segment: Option<Segment>,
     delimiters: Option<Delimiters>,
+    config: ParserConfig,
+    warnings: Vec<ParseWarning>,
 }
 
 impl StreamingMessageBuilder {
-    /// Create a new builder
+    /// Create a new builder with strict parsing configuration
     pub fn new() -> Self {
+        Self::with_config(ParserConfig::strict())
+    }
+
+    /// Create a new builder with the given parsing configuration
+    ///
+    /// With `preserve_invalid_escapes`, undecodable escape sequences are
+    /// kept as literal text and reported via [`StreamingMessageBuilder::warnings`],
+    /// matching the batch parser; otherwise they are hard errors.
+    pub fn with_config(config: ParserConfig) -> Self {
         Self {
             message: Message::new(),
             current_segment: None,
             delimiters: None,
+            config,
+            warnings: Vec::new(),
         }
+    }
+
+    /// Warnings collected while processing events
+    pub fn warnings(&self) -> &[ParseWarning] {
+        &self.warnings
     }
 
     /// Process an event from the streaming parser
@@ -631,7 +650,7 @@ impl StreamingMessageBuilder {
                     let field = if seg.id == "MSH" && index <= 2 {
                         Field::from_value(value)
                     } else {
-                        Self::parse_field_static(value, delims)?
+                        Self::parse_field_static(value, delims, &self.config, &mut self.warnings)?
                     };
                     seg.add_field(field);
                 }
@@ -651,7 +670,12 @@ impl StreamingMessageBuilder {
     /// Parse a field value into a Field structure (static version for borrow checker)
     ///
     /// Escape sequences are decoded, matching the regular parser.
-    fn parse_field_static(value: &str, delims: &Delimiters) -> Result<Field> {
+    fn parse_field_static(
+        value: &str,
+        delims: &Delimiters,
+        config: &ParserConfig,
+        warnings: &mut Vec<ParseWarning>,
+    ) -> Result<Field> {
         let mut field = Field::new();
 
         // Split by repetition separator
@@ -671,8 +695,9 @@ impl StreamingMessageBuilder {
                     comp_value.split(delims.subcomponent_separator).collect();
 
                 for sub_value in subcomponents {
-                    let decoded = Encoding::decode(sub_value, delims)?;
-                    component.add_subcomponent(SubComponent::new(decoded));
+                    component.add_subcomponent(decode_subcomponent(
+                        sub_value, delims, config, warnings,
+                    )?);
                 }
 
                 repetition.add_component(component);
@@ -685,11 +710,39 @@ impl StreamingMessageBuilder {
     }
 
     /// Finish building and return the message
-    pub fn finish(mut self) -> Message {
+    pub fn finish(self) -> Message {
+        self.finish_with_warnings().value
+    }
+
+    /// Finish building and return the message with collected warnings
+    pub fn finish_with_warnings(mut self) -> ParseResult<Message> {
         if let Some(seg) = self.current_segment.take() {
             self.message.add_segment(seg);
         }
-        self.message
+        ParseResult::new(self.message).with_warnings(self.warnings)
+    }
+}
+
+/// Decode one subcomponent, preserving undecodable escapes as literal
+/// text when `config.preserve_invalid_escapes` is set (mirroring the
+/// batch parser); otherwise undecodable escapes are hard errors.
+fn decode_subcomponent(
+    value: &str,
+    delims: &Delimiters,
+    config: &ParserConfig,
+    warnings: &mut Vec<ParseWarning>,
+) -> Result<SubComponent> {
+    match Encoding::decode(value, delims) {
+        Ok(decoded) => Ok(SubComponent::new(decoded)),
+        Err(e) if config.preserve_invalid_escapes => {
+            warnings.push(ParseWarning {
+                location: 0,
+                message: format!("Invalid escape sequence preserved as literal text: {e}"),
+                code: WarningCode::InvalidEscape,
+            });
+            Ok(SubComponent::new(value))
+        }
+        Err(e) => Err(e),
     }
 }
 
@@ -702,21 +755,34 @@ impl Default for StreamingMessageBuilder {
 /// Parse an HL7 message using streaming parser
 ///
 /// This is a convenience function that uses the streaming parser internally
-/// but returns a complete Message object.
+/// but returns a complete Message object. Uses strict configuration; for
+/// lenient escape handling see [`parse_streaming_with_config`].
 pub fn parse_streaming(input: &str) -> Result<Message> {
+    parse_streaming_with_config(input, &ParserConfig::strict()).map(|r| r.value)
+}
+
+/// Parse an HL7 message using the streaming parser with configuration
+///
+/// Mirrors [`crate::parse_message_with_config`]: with
+/// `preserve_invalid_escapes`, undecodable escapes are kept as literal
+/// text and reported as warnings instead of failing the parse.
+pub fn parse_streaming_with_config(
+    input: &str,
+    config: &ParserConfig,
+) -> Result<ParseResult<Message>> {
     let mut parser = StreamingParser::new(input);
-    let mut builder = StreamingMessageBuilder::new();
+    let mut builder = StreamingMessageBuilder::with_config(config.clone());
 
     while let Some(event_result) = parser.next_event() {
         let event = event_result?;
         builder.process_event(event)?;
     }
 
-    let message = builder.finish();
-    if message.segments.is_empty() {
+    let result = builder.finish_with_warnings();
+    if result.value.segments.is_empty() {
         return Err(Error::parse("Message must start with MSH segment"));
     }
-    Ok(message)
+    Ok(result)
 }
 
 /// Segment callback for streaming processing
@@ -731,10 +797,28 @@ pub trait SegmentHandler {
 }
 
 /// Process a message with a segment handler (callback-based streaming)
+///
+/// Uses strict configuration; for lenient escape handling see
+/// [`process_with_handler_with_config`].
 pub fn process_with_handler<H: SegmentHandler>(input: &str, handler: &mut H) -> Result<()> {
+    process_with_handler_with_config(input, handler, &ParserConfig::strict())?;
+    Ok(())
+}
+
+/// Process a message with a segment handler and configuration
+///
+/// With `preserve_invalid_escapes`, undecodable escapes are kept as
+/// literal text and reported in the returned warnings instead of
+/// failing the parse, matching the batch parser.
+pub fn process_with_handler_with_config<H: SegmentHandler>(
+    input: &str,
+    handler: &mut H,
+    config: &ParserConfig,
+) -> Result<ParseResult<()>> {
     let mut parser = StreamingParser::new(input);
     let mut current_segment: Option<Segment> = None;
     let mut delimiters: Option<Delimiters> = None;
+    let mut warnings = Vec::new();
 
     while let Some(event_result) = parser.next_event() {
         let event = event_result?;
@@ -757,7 +841,7 @@ pub fn process_with_handler<H: SegmentHandler>(input: &str, handler: &mut H) -> 
                     let field = if seg.id == "MSH" && index <= 2 {
                         Field::from_value(value)
                     } else {
-                        parse_field_with_delimiters(value, delims)?
+                        parse_field_with_delimiters(value, delims, config, &mut warnings)?
                     };
                     seg.add_field(field);
                 }
@@ -774,13 +858,18 @@ pub fn process_with_handler<H: SegmentHandler>(input: &str, handler: &mut H) -> 
         }
     }
 
-    Ok(())
+    Ok(ParseResult::new(()).with_warnings(warnings))
 }
 
 /// Parse a field value with given delimiters
 ///
 /// Escape sequences are decoded, matching the regular parser.
-fn parse_field_with_delimiters(value: &str, delims: &Delimiters) -> Result<Field> {
+fn parse_field_with_delimiters(
+    value: &str,
+    delims: &Delimiters,
+    config: &ParserConfig,
+    warnings: &mut Vec<ParseWarning>,
+) -> Result<Field> {
     let mut field = Field::new();
 
     let repetitions: Vec<&str> = value.split(delims.repetition_separator).collect();
@@ -795,8 +884,8 @@ fn parse_field_with_delimiters(value: &str, delims: &Delimiters) -> Result<Field
                 comp_value.split(delims.subcomponent_separator).collect();
 
             for sub_value in subcomponents {
-                let decoded = Encoding::decode(sub_value, delims)?;
-                component.add_subcomponent(SubComponent::new(decoded));
+                component
+                    .add_subcomponent(decode_subcomponent(sub_value, delims, config, warnings)?);
             }
 
             repetition.add_component(component);
@@ -811,6 +900,58 @@ fn parse_field_with_delimiters(value: &str, delims: &Delimiters) -> Result<Field
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parse_message_with_config;
+
+    fn invalid_escape_message() -> &'static str {
+        "MSH|^~\\&|S|F|R|RF|20240315||ADT^A01|1|P|2.5\rPID|1||X\\Q\\Y"
+    }
+
+    #[test]
+    fn test_streaming_strict_errors_on_invalid_escape() {
+        assert!(parse_streaming(invalid_escape_message()).is_err());
+    }
+
+    #[test]
+    fn test_streaming_preserve_invalid_escapes_matches_batch() {
+        let config = ParserConfig::new().preserve_invalid_escapes(true);
+        let streamed = parse_streaming_with_config(invalid_escape_message(), &config).unwrap();
+        let pid = streamed.value.get_segment_by_id("PID").unwrap();
+        assert_eq!(pid.get_field_value(3), Some("X\\Q\\Y"));
+        assert_eq!(streamed.warning_count(), 1);
+        assert_eq!(streamed.warnings[0].code, WarningCode::InvalidEscape);
+
+        // Batch parser agrees on value and warning.
+        let batch = parse_message_with_config(invalid_escape_message(), &config).unwrap();
+        let batch_pid = batch.value.get_segment_by_id("PID").unwrap();
+        assert_eq!(batch_pid.get_field_value(3), Some("X\\Q\\Y"));
+        assert_eq!(batch.warning_count(), streamed.warning_count());
+    }
+
+    #[test]
+    fn test_handler_with_config_reports_escape_warnings() {
+        struct CountHandler {
+            segments: usize,
+        }
+        impl SegmentHandler for CountHandler {
+            fn handle_segment(&mut self, _segment: &Segment) -> Result<()> {
+                self.segments += 1;
+                Ok(())
+            }
+        }
+
+        // Strict handler path still hard-errors.
+        let mut handler = CountHandler { segments: 0 };
+        assert!(process_with_handler(invalid_escape_message(), &mut handler).is_err());
+
+        let config = ParserConfig::new().preserve_invalid_escapes(true);
+        let mut handler = CountHandler { segments: 0 };
+        let result =
+            process_with_handler_with_config(invalid_escape_message(), &mut handler, &config)
+                .unwrap();
+        assert_eq!(handler.segments, 2);
+        assert_eq!(result.warning_count(), 1);
+        assert_eq!(result.warnings[0].code, WarningCode::InvalidEscape);
+    }
 
     #[test]
     fn test_streaming_parser_basic() {

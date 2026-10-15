@@ -30,6 +30,9 @@ russh-sftp = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio.workspace = true
-libunftp = "0.23"
-unftp-sbe-fs = "0.4"
-rand = "0.10"
+libunftp.workspace = true
+unftp-sbe-fs.workspace = true
+rand.workspace = true
+
+[lints]
+workspace = true

@@ -8,11 +8,11 @@
 //! - Work with nested batch/file hierarchies
 
 use vyna_hl7_core::{
+    Version,
     builders::{
         adt::AdtBuilder,
         batch::{BatchBuilder, FileBuilder},
     },
-    Version,
 };
 use vyna_hl7_parser::parse_file;
 
@@ -103,14 +103,30 @@ fn create_file_example() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✓ Created file with {} batches", file.batches.len());
     println!("  File ID: {}", file.header.control_id.as_ref().unwrap());
-    println!("  File name: {}", file.header.file_name_id.as_ref().unwrap());
+    println!(
+        "  File name: {}",
+        file.header.file_name_id.as_ref().unwrap()
+    );
     println!("  Total messages: {}", file.total_message_count());
-    println!("  Batch count in trailer: {}", file.trailer.batch_count.unwrap());
+    println!(
+        "  Batch count in trailer: {}",
+        file.trailer.batch_count.unwrap()
+    );
 
     for (i, batch) in file.batches.iter().enumerate() {
         println!("\n  Batch {}:", i + 1);
-        println!("    Control ID: {}", batch.header.control_id.as_ref().unwrap());
-        println!("    Name: {}", batch.header.batch_name_id_type.as_ref().unwrap_or(&"N/A".to_string()));
+        println!(
+            "    Control ID: {}",
+            batch.header.control_id.as_ref().unwrap()
+        );
+        println!(
+            "    Name: {}",
+            batch
+                .header
+                .batch_name_id_type
+                .as_ref()
+                .unwrap_or(&"N/A".to_string())
+        );
         println!("    Messages: {}", batch.messages.len());
     }
 
@@ -139,15 +155,27 @@ FTS|2|File transmission complete";
     let file = parse_file(file_text)?;
 
     println!("✓ Parsed file successfully");
-    println!("  File control ID: {}", file.header.control_id.as_ref().unwrap());
-    println!("  File name: {}", file.header.file_name_id.as_ref().unwrap());
+    println!(
+        "  File control ID: {}",
+        file.header.control_id.as_ref().unwrap()
+    );
+    println!(
+        "  File name: {}",
+        file.header.file_name_id.as_ref().unwrap()
+    );
     println!("  Number of batches: {}", file.batches.len());
     println!("  Total messages: {}", file.total_message_count());
-    println!("  Trailer comment: {}", file.trailer.comment.as_ref().unwrap());
+    println!(
+        "  Trailer comment: {}",
+        file.trailer.comment.as_ref().unwrap()
+    );
 
     for (i, batch) in file.batches.iter().enumerate() {
         println!("\n  Batch {}:", i + 1);
-        println!("    Control ID: {}", batch.header.control_id.as_ref().unwrap());
+        println!(
+            "    Control ID: {}",
+            batch.header.control_id.as_ref().unwrap()
+        );
         println!("    Messages: {}", batch.messages.len());
         println!("    Comment: {}", batch.trailer.comment.as_ref().unwrap());
     }
@@ -186,7 +214,7 @@ BHS|^~\\&|APP|FAC|||20240315||BATCH||B001
 MSH|^~\\&|APP|FAC|SYS|HOSP|20240315||ADT^A01|MSG001|P|2.5
 PID|1|12345
 BTS|1
-FTS|10";  // Says 10 batches but only 1 present
+FTS|10"; // Says 10 batches but only 1 present
 
     match parse_file(invalid_file) {
         Ok(_) => println!("✗ Invalid file should have failed!"),
@@ -236,9 +264,11 @@ fn hierarchy_example() -> Result<(), Box<dyn std::error::Error>> {
 
     // Navigate the hierarchy
     for (batch_idx, batch) in file.batches.iter().enumerate() {
-        println!("\n  Batch {} [{}]:",
+        println!(
+            "\n  Batch {} [{}]:",
             batch_idx + 1,
-            batch.header.control_id.as_ref().unwrap());
+            batch.header.control_id.as_ref().unwrap()
+        );
 
         for (msg_idx, message) in batch.messages.iter().enumerate() {
             let control_id = message.get_control_id().unwrap_or("N/A");
@@ -248,8 +278,12 @@ fn hierarchy_example() -> Result<(), Box<dyn std::error::Error>> {
                 "Unknown".to_string()
             };
 
-            println!("    Message {} - Type: {}, Control ID: {}",
-                msg_idx + 1, msg_type, control_id);
+            println!(
+                "    Message {} - Type: {}, Control ID: {}",
+                msg_idx + 1,
+                msg_type,
+                control_id
+            );
         }
     }
 
@@ -258,10 +292,16 @@ fn hierarchy_example() -> Result<(), Box<dyn std::error::Error>> {
     let parsed = parse_file(&encoded)?;
 
     println!("\n✓ Round-trip verification:");
-    println!("  Original batches: {}, Parsed batches: {}",
-        file.batches.len(), parsed.batches.len());
-    println!("  Original messages: {}, Parsed messages: {}",
-        file.total_message_count(), parsed.total_message_count());
+    println!(
+        "  Original batches: {}, Parsed batches: {}",
+        file.batches.len(),
+        parsed.batches.len()
+    );
+    println!(
+        "  Original messages: {}, Parsed messages: {}",
+        file.total_message_count(),
+        parsed.total_message_count()
+    );
 
     Ok(())
 }

@@ -97,13 +97,14 @@ impl CrossFieldValidator {
 
             // Check if condition field equals the specified value
             if let Ok(Some(field_value)) = terser.get(&condition_field)
-                && field_value.trim() == condition_value.trim() {
-                    // If condition is true, check that then_field is valued
-                    if let Ok(Some(then_value)) = terser.get(&then_field) {
-                        return !then_value.trim().is_empty();
-                    }
-                    return false; // then_field not found or empty
+                && field_value.trim() == condition_value.trim()
+            {
+                // If condition is true, check that then_field is valued
+                if let Ok(Some(then_value)) = terser.get(&then_field) {
+                    return !then_value.trim().is_empty();
                 }
+                return false; // then_field not found or empty
+            }
 
             // Condition not met, so rule passes
             true
@@ -140,9 +141,10 @@ impl CrossFieldValidator {
 
             for field in &fields {
                 if let Ok(Some(value)) = terser.get(field)
-                    && !value.trim().is_empty() {
-                        valued_count += 1;
-                    }
+                    && !value.trim().is_empty()
+                {
+                    valued_count += 1;
+                }
             }
 
             // Pass if at most one field is valued
@@ -179,9 +181,10 @@ impl CrossFieldValidator {
 
             for field in &fields {
                 if let Ok(Some(value)) = terser.get(field)
-                    && !value.trim().is_empty() {
-                        return true; // At least one field is valued
-                    }
+                    && !value.trim().is_empty()
+                {
+                    return true; // At least one field is valued
+                }
             }
 
             false // None of the fields are valued
@@ -365,13 +368,14 @@ impl CrossFieldValidator {
 
             // Check if primary field is valued
             if let Ok(Some(primary_value)) = terser.get(&primary_field)
-                && !primary_value.trim().is_empty() {
-                    // Primary is valued, check dependent
-                    if let Ok(Some(dependent_value)) = terser.get(&dependent_field) {
-                        return !dependent_value.trim().is_empty();
-                    }
-                    return false; // Primary valued but dependent not
+                && !primary_value.trim().is_empty()
+            {
+                // Primary is valued, check dependent
+                if let Ok(Some(dependent_value)) = terser.get(&dependent_field) {
+                    return !dependent_value.trim().is_empty();
                 }
+                return false; // Primary valued but dependent not
+            }
 
             true // Primary not valued, so no dependency
         })

@@ -5,8 +5,8 @@
 //!
 //! Run with: `cargo run --example convert_vxu -p vyna-hl7-fhir`
 
-use vyna_hl7_parser::parse_message;
 use vyna_hl7_fhir::converters::ImmunizationConverter;
+use vyna_hl7_parser::parse_message;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Sample VXU^V04 message with multiple immunizations
@@ -41,23 +41,43 @@ RXR|IM^Intramuscular^HL70162|RD^Right Deltoid^HL70163\r";
         println!("Resource Type: {}", imm.resource_type);
         println!("Status: {}", imm.status);
         println!("Patient: {:?}", imm.patient.reference);
-        println!("Vaccine Code: {:?}", imm.vaccine_code.coding.as_ref()
-            .and_then(|c| c.first())
-            .and_then(|c| c.code.as_ref()));
-        println!("Vaccine Name: {:?}", imm.vaccine_code.coding.as_ref()
-            .and_then(|c| c.first())
-            .and_then(|c| c.display.as_ref()));
+        println!(
+            "Vaccine Code: {:?}",
+            imm.vaccine_code
+                .coding
+                .as_ref()
+                .and_then(|c| c.first())
+                .and_then(|c| c.code.as_ref())
+        );
+        println!(
+            "Vaccine Name: {:?}",
+            imm.vaccine_code
+                .coding
+                .as_ref()
+                .and_then(|c| c.first())
+                .and_then(|c| c.display.as_ref())
+        );
         println!("Occurrence: {}", imm.occurrence_date_time);
         println!("Lot Number: {:?}", imm.lot_number);
         println!("Expiration Date: {:?}", imm.expiration_date);
-        println!("Manufacturer: {:?}", imm.manufacturer.as_ref()
-            .and_then(|m| m.reference.as_ref()));
-        println!("Dose Quantity: {:?}", imm.dose_quantity.as_ref()
-            .map(|q| format!("{:?} {:?}", q.value, q.unit)));
-        println!("Site: {:?}", imm.site.as_ref()
-            .and_then(|s| s.coding.as_ref())
-            .and_then(|c| c.first())
-            .and_then(|c| c.display.as_ref()));
+        println!(
+            "Manufacturer: {:?}",
+            imm.manufacturer.as_ref().and_then(|m| m.reference.as_ref())
+        );
+        println!(
+            "Dose Quantity: {:?}",
+            imm.dose_quantity
+                .as_ref()
+                .map(|q| format!("{:?} {:?}", q.value, q.unit))
+        );
+        println!(
+            "Site: {:?}",
+            imm.site
+                .as_ref()
+                .and_then(|s| s.coding.as_ref())
+                .and_then(|c| c.first())
+                .and_then(|c| c.display.as_ref())
+        );
 
         // Serialize to JSON for full details
         let json = serde_json::to_string_pretty(&imm)?;
@@ -74,10 +94,14 @@ RXR|IM^Intramuscular^HL70162|RD^Right Deltoid^HL70163\r";
             println!("Performer(s):");
             for p in performer {
                 println!("  - Actor: {:?}", p.actor.reference);
-                println!("    Function: {:?}", p.function.as_ref()
-                    .and_then(|f| f.coding.as_ref())
-                    .and_then(|c| c.first())
-                    .and_then(|c| c.display.as_ref()));
+                println!(
+                    "    Function: {:?}",
+                    p.function
+                        .as_ref()
+                        .and_then(|f| f.coding.as_ref())
+                        .and_then(|c| c.first())
+                        .and_then(|c| c.display.as_ref())
+                );
             }
         }
 

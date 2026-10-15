@@ -41,7 +41,7 @@ required-features = ["testing"]
 [dev-dependencies]
 chrono.workspace = true
 tokio.workspace = true
-criterion = "0.8"
+criterion.workspace = true
 vyna-hl7-transform = { workspace = true, features = ["serde"] }
 vyna-hl7-templates.workspace = true
 vyna-hl7-fhir.workspace = true
@@ -124,6 +124,37 @@ wasm-bindgen = "0.2"
 # Testing
 proptest = "1.9"
 
+# Benchmarking (criterion only; benches declare no extra features)
+criterion = "0.8"
+
+# CLI argument parsing
+clap = { version = "4.5", features = ["derive", "cargo"] }
+
+# HTTP framework (vyna-hl7-http; tower/hyper stay crate-local)
+axum = "0.8"
+
+# HTTP client (members add features: testpanel adds "rustls")
+reqwest = { version = "0.13", features = ["json"] }
+
+# TLS stack (shared by MLLP and HTTP; members keep `optional = true`)
+rustls = "0.23"
+tokio-rustls = "0.26"
+webpki-roots = "1.0"
+
+# GUI test panel (eframe/egui/egui_extras move in lockstep)
+eframe = "0.36"
+egui = "0.36"
+egui_extras = { version = "0.36", features = ["syntect"] }
+
+# Shared utilities
+rand = "0.10"
+uuid = { version = "1.19", features = ["v4"] }
+base64 = "0.23"
+futures = "0.3"
+tracing-subscriber = "0.3"
+libunftp = "0.23"
+unftp-sbe-fs = "0.4"
+
 # Procedural macros
 proc-macro2 = "1.0"
 quote = "1.0"
@@ -166,7 +197,20 @@ suppaftp = { version = "12", features = ["tokio"] }
 russh = { version = "0.64" }
 russh-sftp = { version = "3" }
 
+[workspace.lints.rust]
+# `deny` (not `forbid`) so the one legitimate use — the counting
+# GlobalAlloc in the parser alloc-profile bench — can allow it back
+# with a local justification.
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+# Match the CI contract (`cargo clippy -- -D warnings`).
+all = "deny"
+
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
+
+[lints]
+workspace = true

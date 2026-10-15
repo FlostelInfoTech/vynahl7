@@ -17,8 +17,8 @@
 
 mod app;
 mod logo;
-mod tabs;
 mod samples;
+mod tabs;
 mod utils;
 
 use app::VynaHL7TestPanel;

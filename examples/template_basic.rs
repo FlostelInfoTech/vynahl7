@@ -7,7 +7,6 @@
 
 use vyna_hl7_templates::{FieldTemplate, MessageTemplate, SegmentTemplate, TemplateEngine};
 
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Basic Template Usage Example ===\n");
 
@@ -64,7 +63,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     template.add_segment(pid);
 
     println!("Template created: {}", template.name);
-    println!("  Message Type: {}^{}", template.message_type, template.trigger_event);
+    println!(
+        "  Message Type: {}^{}",
+        template.message_type, template.trigger_event
+    );
     println!("  Segments: {}\n", template.segments.len());
 
     // Create template engine and set variables
@@ -98,11 +100,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Verify field values
     println!("Field verification:");
     if message.segments.len() >= 2 {
-        println!("  MSH-3 (Sending App): {:?}", message.segments[0].fields.get(3).and_then(|f| f.value()));
-        println!("  PID-3 (Patient ID): {:?}", message.segments[1].fields.get(3).and_then(|f| f.value()));
-        println!("  PID-5 (Patient Name): {:?}", message.segments[1].fields.get(5).and_then(|f| f.value()));
-        println!("  PID-7 (DOB): {:?}", message.segments[1].fields.get(7).and_then(|f| f.value()));
-        println!("  PID-8 (Sex): {:?}", message.segments[1].fields.get(8).and_then(|f| f.value()));
+        println!(
+            "  MSH-3 (Sending App): {:?}",
+            message.segments[0].fields.get(3).and_then(|f| f.value())
+        );
+        println!(
+            "  PID-3 (Patient ID): {:?}",
+            message.segments[1].fields.get(3).and_then(|f| f.value())
+        );
+        println!(
+            "  PID-5 (Patient Name): {:?}",
+            message.segments[1].fields.get(5).and_then(|f| f.value())
+        );
+        println!(
+            "  PID-7 (DOB): {:?}",
+            message.segments[1].fields.get(7).and_then(|f| f.value())
+        );
+        println!(
+            "  PID-8 (Sex): {:?}",
+            message.segments[1].fields.get(8).and_then(|f| f.value())
+        );
     }
 
     Ok(())

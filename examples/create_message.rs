@@ -6,15 +6,11 @@
 //! - Use the Terser API to set values
 //! - Generate an ACK message
 
+use chrono::Utc;
 use vyna_hl7_core::{
-    delimiters::Delimiters,
-    field::Field,
-    message::Message,
-    segment::Segment,
-    Version,
+    Version, delimiters::Delimiters, field::Field, message::Message, segment::Segment,
 };
 use vyna_hl7_terser::TerserMut;
-use chrono::Utc;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== HL7 Message Builder Example ===\n");

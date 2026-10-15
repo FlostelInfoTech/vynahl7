@@ -7,9 +7,9 @@
 mod corpus;
 
 use corpus::*;
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use vyna_hl7_parser::parse_message;
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
+use vyna_hl7_parser::parse_message;
 
 fn bench_message_type_parse(c: &mut Criterion) {
     let mut group = c.benchmark_group("MessageType_Parse");
@@ -68,5 +68,9 @@ fn bench_message_type_roundtrip(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_message_type_parse, bench_message_type_roundtrip);
+criterion_group!(
+    benches,
+    bench_message_type_parse,
+    bench_message_type_roundtrip
+);
 criterion_main!(benches);

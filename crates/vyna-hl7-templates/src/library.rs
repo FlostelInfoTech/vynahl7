@@ -51,33 +51,81 @@ impl TemplateLibrary {
 
         // MSH segment
         let mut msh = SegmentTemplate::new("MSH").required();
-        msh.add_field(3, FieldTemplate::new().required().with_placeholder("{{sending_app}}"));
-        msh.add_field(4, FieldTemplate::new().required().with_placeholder("{{sending_facility}}"));
-        msh.add_field(5, FieldTemplate::new().with_placeholder("{{receiving_app}}"));
-        msh.add_field(6, FieldTemplate::new().with_placeholder("{{receiving_facility}}"));
+        msh.add_field(
+            3,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{sending_app}}"),
+        );
+        msh.add_field(
+            4,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{sending_facility}}"),
+        );
+        msh.add_field(
+            5,
+            FieldTemplate::new().with_placeholder("{{receiving_app}}"),
+        );
+        msh.add_field(
+            6,
+            FieldTemplate::new().with_placeholder("{{receiving_facility}}"),
+        );
         template.add_segment(msh);
 
         // EVN segment
         let mut evn = SegmentTemplate::new("EVN").required();
         evn.add_field(1, FieldTemplate::new().required().with_default("A01"));
-        evn.add_field(2, FieldTemplate::new().required().with_placeholder("{{event_datetime}}"));
+        evn.add_field(
+            2,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{event_datetime}}"),
+        );
         template.add_segment(evn);
 
         // PID segment
         let mut pid = SegmentTemplate::new("PID").required();
-        pid.add_field(3, FieldTemplate::new().required().with_placeholder("{{patient_id}}"));
-        pid.add_field(5, FieldTemplate::new().required().with_placeholder("{{patient_name}}"));
-        pid.add_field(7, FieldTemplate::new().with_placeholder("{{date_of_birth}}"));
+        pid.add_field(
+            3,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{patient_id}}"),
+        );
+        pid.add_field(
+            5,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{patient_name}}"),
+        );
+        pid.add_field(
+            7,
+            FieldTemplate::new().with_placeholder("{{date_of_birth}}"),
+        );
         pid.add_field(8, FieldTemplate::new().with_placeholder("{{sex}}"));
         pid.add_field(11, FieldTemplate::new().with_placeholder("{{address}}"));
         template.add_segment(pid);
 
         // PV1 segment
         let mut pv1 = SegmentTemplate::new("PV1").required();
-        pv1.add_field(2, FieldTemplate::new().required().with_placeholder("{{patient_class}}"));
-        pv1.add_field(3, FieldTemplate::new().with_placeholder("{{assigned_location}}"));
-        pv1.add_field(7, FieldTemplate::new().with_placeholder("{{attending_doctor}}"));
-        pv1.add_field(19, FieldTemplate::new().with_placeholder("{{visit_number}}"));
+        pv1.add_field(
+            2,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{patient_class}}"),
+        );
+        pv1.add_field(
+            3,
+            FieldTemplate::new().with_placeholder("{{assigned_location}}"),
+        );
+        pv1.add_field(
+            7,
+            FieldTemplate::new().with_placeholder("{{attending_doctor}}"),
+        );
+        pv1.add_field(
+            19,
+            FieldTemplate::new().with_placeholder("{{visit_number}}"),
+        );
         template.add_segment(pv1);
 
         template
@@ -90,19 +138,47 @@ impl TemplateLibrary {
 
         // Similar structure to A01 but for registration
         let mut msh = SegmentTemplate::new("MSH").required();
-        msh.add_field(3, FieldTemplate::new().required().with_placeholder("{{sending_app}}"));
-        msh.add_field(4, FieldTemplate::new().required().with_placeholder("{{sending_facility}}"));
+        msh.add_field(
+            3,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{sending_app}}"),
+        );
+        msh.add_field(
+            4,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{sending_facility}}"),
+        );
         template.add_segment(msh);
 
         let mut evn = SegmentTemplate::new("EVN").required();
         evn.add_field(1, FieldTemplate::new().required().with_default("A04"));
-        evn.add_field(2, FieldTemplate::new().required().with_placeholder("{{event_datetime}}"));
+        evn.add_field(
+            2,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{event_datetime}}"),
+        );
         template.add_segment(evn);
 
         let mut pid = SegmentTemplate::new("PID").required();
-        pid.add_field(3, FieldTemplate::new().required().with_placeholder("{{patient_id}}"));
-        pid.add_field(5, FieldTemplate::new().required().with_placeholder("{{patient_name}}"));
-        pid.add_field(7, FieldTemplate::new().with_placeholder("{{date_of_birth}}"));
+        pid.add_field(
+            3,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{patient_id}}"),
+        );
+        pid.add_field(
+            5,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{patient_name}}"),
+        );
+        pid.add_field(
+            7,
+            FieldTemplate::new().with_placeholder("{{date_of_birth}}"),
+        );
         pid.add_field(8, FieldTemplate::new().with_placeholder("{{sex}}"));
         template.add_segment(pid);
 
@@ -115,19 +191,42 @@ impl TemplateLibrary {
             .with_description("Update Patient Information");
 
         let mut msh = SegmentTemplate::new("MSH").required();
-        msh.add_field(3, FieldTemplate::new().required().with_placeholder("{{sending_app}}"));
-        msh.add_field(4, FieldTemplate::new().required().with_placeholder("{{sending_facility}}"));
+        msh.add_field(
+            3,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{sending_app}}"),
+        );
+        msh.add_field(
+            4,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{sending_facility}}"),
+        );
         template.add_segment(msh);
 
         let mut evn = SegmentTemplate::new("EVN").required();
         evn.add_field(1, FieldTemplate::new().required().with_default("A08"));
-        evn.add_field(2, FieldTemplate::new().required().with_placeholder("{{event_datetime}}"));
+        evn.add_field(
+            2,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{event_datetime}}"),
+        );
         template.add_segment(evn);
 
         let mut pid = SegmentTemplate::new("PID").required();
-        pid.add_field(3, FieldTemplate::new().required().with_placeholder("{{patient_id}}"));
+        pid.add_field(
+            3,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{patient_id}}"),
+        );
         pid.add_field(5, FieldTemplate::new().with_placeholder("{{patient_name}}"));
-        pid.add_field(7, FieldTemplate::new().with_placeholder("{{date_of_birth}}"));
+        pid.add_field(
+            7,
+            FieldTemplate::new().with_placeholder("{{date_of_birth}}"),
+        );
         pid.add_field(8, FieldTemplate::new().with_placeholder("{{sex}}"));
         pid.add_field(11, FieldTemplate::new().with_placeholder("{{address}}"));
         template.add_segment(pid);
@@ -143,26 +242,79 @@ impl TemplateLibrary {
             .with_description("Unsolicited Observation Result");
 
         let mut msh = SegmentTemplate::new("MSH").required();
-        msh.add_field(3, FieldTemplate::new().required().with_placeholder("{{sending_app}}"));
-        msh.add_field(4, FieldTemplate::new().required().with_placeholder("{{sending_facility}}"));
+        msh.add_field(
+            3,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{sending_app}}"),
+        );
+        msh.add_field(
+            4,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{sending_facility}}"),
+        );
         template.add_segment(msh);
 
         let mut pid = SegmentTemplate::new("PID").required();
-        pid.add_field(3, FieldTemplate::new().required().with_placeholder("{{patient_id}}"));
-        pid.add_field(5, FieldTemplate::new().required().with_placeholder("{{patient_name}}"));
+        pid.add_field(
+            3,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{patient_id}}"),
+        );
+        pid.add_field(
+            5,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{patient_name}}"),
+        );
         template.add_segment(pid);
 
         let mut obr = SegmentTemplate::new("OBR").required();
-        obr.add_field(1, FieldTemplate::new().required().with_placeholder("{{set_id}}"));
-        obr.add_field(4, FieldTemplate::new().required().with_placeholder("{{universal_service_id}}"));
-        obr.add_field(7, FieldTemplate::new().with_placeholder("{{observation_datetime}}"));
+        obr.add_field(
+            1,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{set_id}}"),
+        );
+        obr.add_field(
+            4,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{universal_service_id}}"),
+        );
+        obr.add_field(
+            7,
+            FieldTemplate::new().with_placeholder("{{observation_datetime}}"),
+        );
         template.add_segment(obr);
 
         let mut obx = SegmentTemplate::new("OBX").repeating();
-        obx.add_field(1, FieldTemplate::new().required().with_placeholder("{{set_id}}"));
-        obx.add_field(2, FieldTemplate::new().required().with_placeholder("{{value_type}}"));
-        obx.add_field(3, FieldTemplate::new().required().with_placeholder("{{observation_id}}"));
-        obx.add_field(5, FieldTemplate::new().required().with_placeholder("{{observation_value}}"));
+        obx.add_field(
+            1,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{set_id}}"),
+        );
+        obx.add_field(
+            2,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{value_type}}"),
+        );
+        obx.add_field(
+            3,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{observation_id}}"),
+        );
+        obx.add_field(
+            5,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{observation_value}}"),
+        );
         obx.add_field(6, FieldTemplate::new().with_placeholder("{{units}}"));
         obx.add_field(11, FieldTemplate::new().required().with_default("F")); // Final
         template.add_segment(obx);
@@ -178,24 +330,62 @@ impl TemplateLibrary {
             .with_description("General Order Message");
 
         let mut msh = SegmentTemplate::new("MSH").required();
-        msh.add_field(3, FieldTemplate::new().required().with_placeholder("{{sending_app}}"));
-        msh.add_field(4, FieldTemplate::new().required().with_placeholder("{{sending_facility}}"));
+        msh.add_field(
+            3,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{sending_app}}"),
+        );
+        msh.add_field(
+            4,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{sending_facility}}"),
+        );
         template.add_segment(msh);
 
         let mut pid = SegmentTemplate::new("PID").required();
-        pid.add_field(3, FieldTemplate::new().required().with_placeholder("{{patient_id}}"));
-        pid.add_field(5, FieldTemplate::new().required().with_placeholder("{{patient_name}}"));
+        pid.add_field(
+            3,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{patient_id}}"),
+        );
+        pid.add_field(
+            5,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{patient_name}}"),
+        );
         template.add_segment(pid);
 
         let mut orc = SegmentTemplate::new("ORC").required();
-        orc.add_field(1, FieldTemplate::new().required().with_placeholder("{{order_control}}"));
-        orc.add_field(2, FieldTemplate::new().with_placeholder("{{placer_order_number}}"));
+        orc.add_field(
+            1,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{order_control}}"),
+        );
+        orc.add_field(
+            2,
+            FieldTemplate::new().with_placeholder("{{placer_order_number}}"),
+        );
         orc.add_field(5, FieldTemplate::new().with_placeholder("{{order_status}}"));
         template.add_segment(orc);
 
         let mut obr = SegmentTemplate::new("OBR").required();
-        obr.add_field(1, FieldTemplate::new().required().with_placeholder("{{set_id}}"));
-        obr.add_field(4, FieldTemplate::new().required().with_placeholder("{{universal_service_id}}"));
+        obr.add_field(
+            1,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{set_id}}"),
+        );
+        obr.add_field(
+            4,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{universal_service_id}}"),
+        );
         template.add_segment(obr);
 
         template
@@ -209,14 +399,35 @@ impl TemplateLibrary {
             .with_description("Notification of New Appointment Booking");
 
         let mut msh = SegmentTemplate::new("MSH").required();
-        msh.add_field(3, FieldTemplate::new().required().with_placeholder("{{sending_app}}"));
-        msh.add_field(4, FieldTemplate::new().required().with_placeholder("{{sending_facility}}"));
+        msh.add_field(
+            3,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{sending_app}}"),
+        );
+        msh.add_field(
+            4,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{sending_facility}}"),
+        );
         template.add_segment(msh);
 
         let mut sch = SegmentTemplate::new("SCH").required();
-        sch.add_field(1, FieldTemplate::new().with_placeholder("{{placer_appointment_id}}"));
-        sch.add_field(2, FieldTemplate::new().with_placeholder("{{filler_appointment_id}}"));
-        sch.add_field(11, FieldTemplate::new().required().with_placeholder("{{appointment_timing}}"));
+        sch.add_field(
+            1,
+            FieldTemplate::new().with_placeholder("{{placer_appointment_id}}"),
+        );
+        sch.add_field(
+            2,
+            FieldTemplate::new().with_placeholder("{{filler_appointment_id}}"),
+        );
+        sch.add_field(
+            11,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{appointment_timing}}"),
+        );
         template.add_segment(sch);
 
         let mut pid = SegmentTemplate::new("PID");
@@ -235,24 +446,64 @@ impl TemplateLibrary {
             .with_description("Original Document Notification and Content");
 
         let mut msh = SegmentTemplate::new("MSH").required();
-        msh.add_field(3, FieldTemplate::new().required().with_placeholder("{{sending_app}}"));
-        msh.add_field(4, FieldTemplate::new().required().with_placeholder("{{sending_facility}}"));
+        msh.add_field(
+            3,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{sending_app}}"),
+        );
+        msh.add_field(
+            4,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{sending_facility}}"),
+        );
         template.add_segment(msh);
 
         let mut evn = SegmentTemplate::new("EVN").required();
         evn.add_field(1, FieldTemplate::new().required().with_default("T02"));
-        evn.add_field(2, FieldTemplate::new().required().with_placeholder("{{event_datetime}}"));
+        evn.add_field(
+            2,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{event_datetime}}"),
+        );
         template.add_segment(evn);
 
         let mut pid = SegmentTemplate::new("PID").required();
-        pid.add_field(3, FieldTemplate::new().required().with_placeholder("{{patient_id}}"));
-        pid.add_field(5, FieldTemplate::new().required().with_placeholder("{{patient_name}}"));
+        pid.add_field(
+            3,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{patient_id}}"),
+        );
+        pid.add_field(
+            5,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{patient_name}}"),
+        );
         template.add_segment(pid);
 
         let mut txa = SegmentTemplate::new("TXA").required();
-        txa.add_field(1, FieldTemplate::new().required().with_placeholder("{{set_id}}"));
-        txa.add_field(2, FieldTemplate::new().required().with_placeholder("{{document_type}}"));
-        txa.add_field(12, FieldTemplate::new().required().with_placeholder("{{unique_document_number}}"));
+        txa.add_field(
+            1,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{set_id}}"),
+        );
+        txa.add_field(
+            2,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{document_type}}"),
+        );
+        txa.add_field(
+            12,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{unique_document_number}}"),
+        );
         template.add_segment(txa);
 
         template

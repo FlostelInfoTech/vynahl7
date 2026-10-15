@@ -100,8 +100,8 @@ impl Encoding {
                     "R" => result.push(delimiters.repetition_separator),
                     "E" => result.push(delimiters.escape_character),
                     ".br" => result.push('\n'),
-                    "H" => {}, // Highlight on - formatting, ignored
-                    "N" => {}, // Highlight off - formatting, ignored
+                    "H" => {} // Highlight on - formatting, ignored
+                    "N" => {} // Highlight off - formatting, ignored
                     seq if seq.starts_with('X') => {
                         // Hexadecimal escapes carry whole bytes: each pair
                         // is one Latin-1 codepoint, so multi-pair bodies

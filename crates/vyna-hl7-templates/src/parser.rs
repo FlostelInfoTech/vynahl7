@@ -322,11 +322,10 @@ segments:
         let original = MessageTemplate::new("Test", "2.5", "ADT", "A01")
             .with_description("Test template")
             .with_segment(SegmentTemplate::new("MSH").required())
-            .with_segment(
-                SegmentTemplate::new("PID")
-                    .required()
-                    .with_field(5, FieldTemplate::new().required().with_placeholder("{{name}}"))
-            );
+            .with_segment(SegmentTemplate::new("PID").required().with_field(
+                5,
+                FieldTemplate::new().required().with_placeholder("{{name}}"),
+            ));
 
         let yaml = original.to_yaml().unwrap();
         let parsed = MessageTemplate::from_yaml(&yaml).unwrap();

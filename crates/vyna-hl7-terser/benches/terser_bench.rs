@@ -1,7 +1,7 @@
-use criterion::{criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use vyna_hl7_parser::parse_message;
 use vyna_hl7_terser::Terser;
-use std::hint::black_box;
 
 const TEST_MESSAGE: &str = r"MSH|^~\&|SendApp|SendFac|RecApp|RecFac|20240315143000||ADT^A01|12345|P|2.5
 PID|1|12345|67890^^^MRN||DOE^JOHN^A||19800101|M|||123 Main St^^Boston^MA^02101||555-1234
@@ -14,9 +14,7 @@ fn bench_terser_get_simple(c: &mut Criterion) {
     let terser = Terser::new(&message);
 
     c.bench_function("terser_get_simple_field", |b| {
-        b.iter(|| {
-            terser.get(black_box("PID-5")).unwrap()
-        })
+        b.iter(|| terser.get(black_box("PID-5")).unwrap())
     });
 }
 
@@ -25,9 +23,7 @@ fn bench_terser_get_component(c: &mut Criterion) {
     let terser = Terser::new(&message);
 
     c.bench_function("terser_get_component", |b| {
-        b.iter(|| {
-            terser.get(black_box("PID-5-1")).unwrap()
-        })
+        b.iter(|| terser.get(black_box("PID-5-1")).unwrap())
     });
 }
 
@@ -67,26 +63,14 @@ fn bench_terser_multiple_gets(c: &mut Criterion) {
 fn bench_terser_path_parsing(c: &mut Criterion) {
     let mut group = c.benchmark_group("terser_path_parsing");
 
-    let paths = vec![
-        "PID-5",
-        "PID-5-1",
-        "PID-5-1-2",
-        "OBX(2)-5",
-        "PID-11(2)-1",
-    ];
+    let paths = vec!["PID-5", "PID-5-1", "PID-5-1-2", "OBX(2)-5", "PID-11(2)-1"];
 
     for path in paths {
-        group.bench_with_input(
-            BenchmarkId::from_parameter(path),
-            path,
-            |b, path| {
-                let message = parse_message(TEST_MESSAGE).unwrap();
-                let terser = Terser::new(&message);
-                b.iter(|| {
-                    terser.get(black_box(path)).ok()
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::from_parameter(path), path, |b, path| {
+            let message = parse_message(TEST_MESSAGE).unwrap();
+            let terser = Terser::new(&message);
+            b.iter(|| terser.get(black_box(path)).ok())
+        });
     }
 
     group.finish();

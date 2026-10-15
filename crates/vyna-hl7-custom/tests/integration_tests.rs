@@ -3,7 +3,7 @@
 //! These tests verify end-to-end functionality of custom Z-segments
 //! including parsing, manipulation, and message integration.
 
-use vyna_hl7_custom::{z_segment, CustomSegment, CustomSegmentRegistry, MessageExt};
+use vyna_hl7_custom::{CustomSegment, CustomSegmentRegistry, MessageExt, z_segment};
 use vyna_hl7_parser::parse_message;
 
 // Test segments for integration testing
@@ -215,7 +215,13 @@ fn test_message_manipulation_remove_segments() {
     let mut message = parse_message(hl7_message).expect("Failed to parse message");
 
     // Verify initial state
-    assert_eq!(message.get_custom_segments::<IntegrationZPV>().unwrap().len(), 2);
+    assert_eq!(
+        message
+            .get_custom_segments::<IntegrationZPV>()
+            .unwrap()
+            .len(),
+        2
+    );
     assert!(message.has_custom_segment::<IntegrationZLO>());
 
     // Remove ZPV segments
@@ -224,7 +230,13 @@ fn test_message_manipulation_remove_segments() {
 
     // Verify removal
     assert!(!message.has_custom_segment::<IntegrationZPV>());
-    assert_eq!(message.get_custom_segments::<IntegrationZPV>().unwrap().len(), 0);
+    assert_eq!(
+        message
+            .get_custom_segments::<IntegrationZPV>()
+            .unwrap()
+            .len(),
+        0
+    );
 
     // ZLO should still be there
     assert!(message.has_custom_segment::<IntegrationZLO>());
@@ -403,7 +415,9 @@ fn test_registry_is_registered() {
 
     assert!(!registry.is_registered("ZPV"));
 
-    registry.register::<IntegrationZPV>().expect("Failed to register ZPV");
+    registry
+        .register::<IntegrationZPV>()
+        .expect("Failed to register ZPV");
 
     assert!(registry.is_registered("ZPV"));
 }
@@ -412,8 +426,12 @@ fn test_registry_is_registered() {
 fn test_registry_registered_ids() {
     let registry = CustomSegmentRegistry::new();
 
-    registry.register::<IntegrationZPV>().expect("Failed to register ZPV");
-    registry.register::<IntegrationZCU>().expect("Failed to register ZCU");
+    registry
+        .register::<IntegrationZPV>()
+        .expect("Failed to register ZPV");
+    registry
+        .register::<IntegrationZCU>()
+        .expect("Failed to register ZCU");
 
     let ids = registry.registered_ids();
     assert_eq!(ids.len(), 2);
@@ -471,7 +489,9 @@ fn test_complex_workflow() {
         .department_code("ER")
         .build()
         .expect("Failed to build ZPV");
-    message.set_custom_segment(new_zpv).expect("Failed to set ZPV");
+    message
+        .set_custom_segment(new_zpv)
+        .expect("Failed to set ZPV");
 
     // Verify update
     let updated_zpv = message

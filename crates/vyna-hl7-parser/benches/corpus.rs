@@ -128,7 +128,12 @@ pub fn generate_batch_message(n: usize) -> String {
             "MSH|^~\\&|HIS|HOSPITAL|EMR|HOSPITAL|20240315143000||ADT^A01^ADT_A01|MSG{:05}|P|2.5\r\
 PID|1||MRN{:05}^^^HOSPITAL^MR||PATIENT^TEST^{}||19800{}15|M|||{} MAIN ST^^BOSTON^MA^02101\r\
 PV1|1|I|ICU^{}01^A||||1234567^SMITH^JANE^^^MD\r",
-            i, i, i, (i % 12) + 1, i * 100, i
+            i,
+            i,
+            i,
+            (i % 12) + 1,
+            i * 100,
+            i
         ));
     }
 

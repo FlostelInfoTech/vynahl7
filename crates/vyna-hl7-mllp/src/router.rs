@@ -68,11 +68,8 @@
 //! # }
 //! ```
 
-use vyna_hl7_core::{
-    builders::ack::AckBuilder,
-    Message,
-};
 use std::sync::Arc;
+use vyna_hl7_core::{Message, builders::ack::AckBuilder};
 
 /// Result of handling a routed message
 #[derive(Debug, Clone)]
@@ -270,8 +267,7 @@ impl MessageRouter {
     fn find_route(&self, message_type: &str, trigger_event: &str) -> Option<&SyncHandler> {
         for route in &self.routes {
             let type_match = route.message_type == message_type || route.message_type == "*";
-            let trigger_match =
-                route.trigger_event == trigger_event || route.trigger_event == "*";
+            let trigger_match = route.trigger_event == trigger_event || route.trigger_event == "*";
 
             if type_match && trigger_match {
                 return Some(&route.handler);
@@ -291,10 +287,7 @@ impl MessageRouter {
                 .build()
                 .ok(),
 
-            RouteResult::Error(msg) => AckBuilder::for_message(original)
-                .error(&msg)
-                .build()
-                .ok(),
+            RouteResult::Error(msg) => AckBuilder::for_message(original).error(&msg).build().ok(),
 
             RouteResult::ErrorWithCode(msg, code, desc) => AckBuilder::for_message(original)
                 .error(&msg)
@@ -302,10 +295,7 @@ impl MessageRouter {
                 .build()
                 .ok(),
 
-            RouteResult::Reject(msg) => AckBuilder::for_message(original)
-                .reject(&msg)
-                .build()
-                .ok(),
+            RouteResult::Reject(msg) => AckBuilder::for_message(original).reject(&msg).build().ok(),
 
             RouteResult::Custom(response) => Some(response),
 
@@ -395,8 +385,8 @@ impl Routable for Message {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use vyna_hl7_core::{field::Field, segment::Segment};
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use vyna_hl7_core::{field::Field, segment::Segment};
 
     fn create_test_message(msg_type: &str, trigger: &str) -> Message {
         use vyna_hl7_core::field::{Component, Repetition};

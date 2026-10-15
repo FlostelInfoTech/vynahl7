@@ -1,9 +1,9 @@
 //! DFT (Detailed Financial Transaction) message builders
 
-use super::{generate_control_id, MessageBuilder};
+use super::{MessageBuilder, generate_control_id};
 use crate::{
-    error::Result, field::Field, message::Message, segment::Segment, types::format_timestamp,
-    Version,
+    Version, error::Result, field::Field, message::Message, segment::Segment,
+    types::format_timestamp,
 };
 use chrono::Local;
 
@@ -127,9 +127,9 @@ impl DftP03Builder {
         ft1.add_field(Field::from_value("1")); // Set ID
         ft1.add_field(Field::from_value("")); // Transaction ID
         ft1.add_field(Field::from_value("")); // Transaction Batch ID
-        let txn_date = self.transaction_date.unwrap_or_else(|| {
-            format_timestamp(&Local::now().naive_local())
-        });
+        let txn_date = self
+            .transaction_date
+            .unwrap_or_else(|| format_timestamp(&Local::now().naive_local()));
         ft1.add_field(Field::from_value(txn_date)); // FT1-4: Transaction Date
         ft1.add_field(Field::from_value("")); // Transaction Posting Date
         ft1.add_field(Field::from_value(

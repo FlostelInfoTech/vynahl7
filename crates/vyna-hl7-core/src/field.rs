@@ -1,7 +1,7 @@
 //! HL7 field, component, and subcomponent structures
 
-use crate::encoding::Encoding;
 use crate::delimiters::Delimiters;
+use crate::encoding::Encoding;
 use crate::error::Result;
 
 /// A subcomponent within a component
@@ -105,6 +105,9 @@ impl Component {
     }
 
     /// Get the first subcomponent value (most common case)
+    ///
+    /// Returns only the first subcomponent; use [`Component::encode`]
+    /// when the wire-complete value is needed.
     pub fn value(&self) -> Option<&str> {
         self.subcomponents.first().map(|s| s.as_str())
     }
@@ -176,6 +179,9 @@ impl Repetition {
     }
 
     /// Get the first component's value (most common case)
+    ///
+    /// Returns only the first component's first subcomponent; use
+    /// [`Repetition::encode`] when the wire-complete value is needed.
     pub fn value(&self) -> Option<&str> {
         self.components.first().and_then(|c| c.value())
     }
@@ -269,15 +275,31 @@ impl Field {
     /// `DOE\S\JOHN`. Use this constructor for composite values; use
     /// [`Field::from_value`] for literal values that may contain delimiter
     /// characters as text.
+    ///
+    /// Splits on the default HL7 separators; for messages with custom
+    /// encoding characters use [`Field::from_delimited_with`].
     pub fn from_delimited<S: AsRef<str>>(value: S) -> Self {
+        Self::from_delimited_with(value, &Delimiters::default())
+    }
+
+    /// Create from delimited content using explicit delimiters
+    ///
+    /// Same as [`Field::from_delimited`], but splits repetitions,
+    /// components, and subcomponents on the separators from `delimiters`
+    /// instead of the `~`/`^`/`&` defaults. Use this when building fields
+    /// for a message that declares custom encoding characters in MSH-2.
+    pub fn from_delimited_with<S: AsRef<str>>(value: S, delimiters: &Delimiters) -> Self {
+        let rep_sep = delimiters.repetition_separator;
+        let comp_sep = delimiters.component_separator;
+        let sub_sep = delimiters.subcomponent_separator;
         let repetitions = value
             .as_ref()
-            .split('~')
+            .split(rep_sep)
             .map(|rep| {
                 let components = rep
-                    .split('^')
+                    .split(comp_sep)
                     .map(|comp| {
-                        let subcomponents = comp.split('&').map(SubComponent::new).collect();
+                        let subcomponents = comp.split(sub_sep).map(SubComponent::new).collect();
                         Component { subcomponents }
                     })
                     .collect();
@@ -308,6 +330,9 @@ impl Field {
     }
 
     /// Get the first repetition's value (most common case)
+    ///
+    /// Returns only the first repetition's first component; use
+    /// [`Field::encode`] when the wire-complete value is needed.
     pub fn value(&self) -> Option<&str> {
         self.repetitions.first().and_then(|r| r.value())
     }
@@ -326,12 +351,17 @@ impl Field {
     }
 
     /// Get component at path (e.g., \[0\]\[2\] for first repetition, third component)
+    ///
+    /// Both indices are 0-based storage indices, matching
+    /// [`Field::get_repetition`] and [`Repetition::get_component`].
     pub fn get_component(&self, rep_index: usize, comp_index: usize) -> Option<&Component> {
         self.get_repetition(rep_index)
             .and_then(|r| r.get_component(comp_index))
     }
 
     /// Get subcomponent at path
+    ///
+    /// All three indices are 0-based storage indices.
     pub fn get_subcomponent(
         &self,
         rep_index: usize,
@@ -352,6 +382,47 @@ impl Default for Field {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+
+    /// Text alphabet without the wire-escaped characters (escape, field
+    /// separator, CR/LF): structural separators are included, since
+    /// split-then-rejoin round-trips them.
+    fn wire_text() -> impl Strategy<Value = String> {
+        prop::collection::vec(
+            prop::sample::select(vec![
+                'A', 'B', 'a', 'z', '0', '9', ' ', '.', '-', '%', '^', '~', '&',
+            ]),
+            0..40,
+        )
+        .prop_map(|chars| chars.into_iter().collect())
+    }
+
+    proptest! {
+        #[test]
+        fn from_delimited_with_roundtrips(s in wire_text()) {
+            let custom = Delimiters {
+                field_separator: '|',
+                component_separator: ':',
+                repetition_separator: ';',
+                escape_character: '\\',
+                subcomponent_separator: '!',
+            };
+            for delims in [Delimiters::default(), custom] {
+                let field = Field::from_delimited_with(&s, &delims);
+                prop_assert_eq!(&field.encode(&delims), &s);
+            }
+        }
+
+        #[test]
+        fn from_value_survives_encode_decode(s in wire_text()) {
+            // Literal values escape and decode back exactly.
+            let delims = Delimiters::default();
+            let field = Field::from_value(&s);
+            let encoded = field.encode(&delims);
+            let decoded = Encoding::decode(&encoded, &delims).unwrap();
+            prop_assert_eq!(decoded, s);
+        }
+    }
 
     #[test]
     fn test_subcomponent() {
@@ -452,6 +523,33 @@ mod tests {
             let field = Field::from_delimited(value);
             assert_eq!(field.encode(&delims), value);
         }
+    }
+
+    #[test]
+    fn test_from_delimited_with_custom_delimiters() {
+        let delims = Delimiters {
+            field_separator: '|',
+            component_separator: ':',
+            repetition_separator: ';',
+            escape_character: '\\',
+            subcomponent_separator: '!',
+        };
+        let field = Field::from_delimited_with("DOE:JOHN;A!B:C", &delims);
+        assert_eq!(field.get_component(0, 0).unwrap().value(), Some("DOE"));
+        assert_eq!(field.get_component(0, 1).unwrap().value(), Some("JOHN"));
+        assert_eq!(field.get_subcomponent(1, 0, 0).unwrap().as_str(), "A");
+        assert_eq!(field.get_subcomponent(1, 0, 1).unwrap().as_str(), "B");
+        assert_eq!(field.get_subcomponent(1, 1, 0).unwrap().as_str(), "C");
+        assert_eq!(field.encode(&delims), "DOE:JOHN;A!B:C");
+
+        // Default separators are literal text under custom delimiters.
+        let field = Field::from_delimited_with("DOE^JOHN~A&B", &delims);
+        assert_eq!(field.repetitions.len(), 1);
+        assert_eq!(field.get_repetition(0).unwrap().components.len(), 1);
+        assert_eq!(
+            field.get_subcomponent(0, 0, 0).unwrap().as_str(),
+            "DOE^JOHN~A&B"
+        );
     }
 
     #[test]

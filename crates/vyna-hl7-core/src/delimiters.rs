@@ -96,7 +96,11 @@ impl Delimiters {
         )
     }
 
-    /// Validate that all delimiters are unique
+    /// Validate delimiter rules: ASCII-only and unique
+    ///
+    /// HL7 delimiters must be single-byte ASCII characters: header
+    /// framing reads MSH-1/MSH-2 at byte offsets, so multibyte
+    /// separators would corrupt parsing. All five must also differ.
     pub fn validate(&self) -> Result<()> {
         let chars = [
             self.field_separator,
@@ -105,6 +109,14 @@ impl Delimiters {
             self.escape_character,
             self.subcomponent_separator,
         ];
+
+        for &c in &chars {
+            if !c.is_ascii() {
+                return Err(Error::InvalidDelimiters(format!(
+                    "Delimiter characters must be ASCII, got {c:?}"
+                )));
+            }
+        }
 
         for (i, &c1) in chars.iter().enumerate() {
             for (j, &c2) in chars.iter().enumerate() {
@@ -208,11 +220,14 @@ mod tests {
     }
 
     #[test]
-    fn test_four_multibyte_chars_are_accepted_when_unique() {
-        let delims = Delimiters::from_encoding_characters('|', "éüäö").unwrap();
-        assert_eq!(delims.component_separator, 'é');
-        assert_eq!(delims.repetition_separator, 'ü');
-        assert_eq!(delims.escape_character, 'ä');
-        assert_eq!(delims.subcomponent_separator, 'ö');
+    fn test_non_ascii_delimiters_are_rejected() {
+        // Multibyte separators break byte-offset MSH-1/MSH-2 framing,
+        // so they are rejected even when unique and correctly counted.
+        assert!(Delimiters::from_encoding_characters('|', "éüäö").is_err());
+        assert!(Delimiters::from_encoding_characters('é', "^~\\&").is_err());
+        // ASCII custom delimiters still work.
+        let delims = Delimiters::from_encoding_characters('!', ":;\\?").unwrap();
+        assert_eq!(delims.field_separator, '!');
+        assert_eq!(delims.encoding_characters(), ":;\\?");
     }
 }

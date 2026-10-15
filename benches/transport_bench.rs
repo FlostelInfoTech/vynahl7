@@ -3,13 +3,13 @@
 //! Run with:
 //!   cargo bench --bench transport_bench --features "testing"
 
-use vyna_hl7_core::{Field, Message, Segment};
-use vyna_hl7_http::{testing::MockHttpServer, HttpClient};
-use vyna_hl7_mllp::{testing::MockMllpServer, MllpClient};
-use vyna_hl7_parser::parse_message;
 use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use vyna_hl7_core::{Field, Message, Segment};
+use vyna_hl7_http::{HttpClient, testing::MockHttpServer};
+use vyna_hl7_mllp::{MllpClient, testing::MockMllpServer};
+use vyna_hl7_parser::parse_message;
 
 // ============================================================================
 // Test Messages
@@ -245,9 +245,7 @@ async fn bench_mllp_concurrent(
 
     // Warmup
     {
-        let mut client = MllpClient::connect(&addr)
-            .await
-            .expect("Failed to connect");
+        let mut client = MllpClient::connect(&addr).await.expect("Failed to connect");
         for _ in 0..warmup {
             let _ = client.send_message(&msg).await.expect("Warmup failed");
         }
@@ -267,9 +265,7 @@ async fn bench_mllp_concurrent(
         let latencies = Arc::clone(&latencies);
 
         handles.push(tokio::spawn(async move {
-            let mut client = MllpClient::connect(&addr)
-                .await
-                .expect("Failed to connect");
+            let mut client = MllpClient::connect(&addr).await.expect("Failed to connect");
             let mut local_latencies = Vec::with_capacity(iterations_per_client as usize);
 
             for _ in 0..iterations_per_client {
@@ -382,10 +378,7 @@ async fn bench_http_concurrent(
     {
         let client = HttpClient::new(&url).expect("Failed to create HTTP client");
         for _ in 0..warmup {
-            let _ = client
-                .send_message(&msg)
-                .await
-                .expect("HTTP warmup failed");
+            let _ = client.send_message(&msg).await.expect("HTTP warmup failed");
         }
     }
 
@@ -520,9 +513,11 @@ fn read_os() -> String {
     std::fs::read_to_string("/etc/os-release")
         .ok()
         .and_then(|c| {
-            c.lines()
-                .find(|l| l.starts_with("PRETTY_NAME="))
-                .map(|l| l.trim_start_matches("PRETTY_NAME=").trim_matches('"').to_string())
+            c.lines().find(|l| l.starts_with("PRETTY_NAME=")).map(|l| {
+                l.trim_start_matches("PRETTY_NAME=")
+                    .trim_matches('"')
+                    .to_string()
+            })
         })
         .unwrap_or_else(|| cmd("uname", &["-o"]))
 }
@@ -566,7 +561,9 @@ fn print_section_1_purpose() {
     println!("  ----------");
     println!("  Measure end-to-end HL7 message processing throughput and latency over real");
     println!("  network transports (MLLP over TCP, HTTP/1.1) on localhost. This benchmark");
-    println!("  answers: \"How fast can VynaHL7 send, receive, parse, and acknowledge HL7 messages");
+    println!(
+        "  answers: \"How fast can VynaHL7 send, receive, parse, and acknowledge HL7 messages"
+    );
     println!("  over a network?\" — the metric that matters in production interface engines.");
     println!();
     println!("  The full round-trip includes:");
@@ -621,15 +618,27 @@ fn print_section_3_configuration(iterations: u32, warmup: u32, sustained_secs: u
     println!("    Profile:       release (opt-level=3, lto=true, codegen-units=1)");
     println!();
     println!("  Benchmark Parameters:");
-    println!("    Iterations:    {} (single client per message type)", iterations);
+    println!(
+        "    Iterations:    {} (single client per message type)",
+        iterations
+    );
     println!("    Warmup:        {} messages (discarded)", warmup);
     println!("    Sustained:     {} seconds continuous", sustained_secs);
     println!("    Concurrency:   1, 4, 8 clients");
     println!();
     println!("  Test Messages:");
-    println!("    ADT^A01:       {}B  (patient admission — 3 segments)", ADT_SMALL.len());
-    println!("    ORU^R01:       {}B  (lab results — 9 segments, 4 OBX)", ORU_MEDIUM.len());
-    println!("    RDE^O11:       {}B  (pharmacy order — 7 segments, RXE/TQ1/RXR)", RDE_PHARMACY.len());
+    println!(
+        "    ADT^A01:       {}B  (patient admission — 3 segments)",
+        ADT_SMALL.len()
+    );
+    println!(
+        "    ORU^R01:       {}B  (lab results — 9 segments, 4 OBX)",
+        ORU_MEDIUM.len()
+    );
+    println!(
+        "    RDE^O11:       {}B  (pharmacy order — 7 segments, RXE/TQ1/RXR)",
+        RDE_PHARMACY.len()
+    );
     println!();
     println!("  Reproduce:");
     println!("    cargo bench --bench transport_bench --features testing");
@@ -713,12 +722,12 @@ fn print_section_4_results(
     println!();
     println!("  4d. Protocol Comparison (single client, ADT^A01)");
     println!();
-    let mllp_adt = results
-        .iter()
-        .find(|r| r.protocol == "MLLP/TCP" && r.message_type == "ADT^A01" && r.concurrent_clients == 1);
-    let http_adt = results
-        .iter()
-        .find(|r| r.protocol == "HTTP/1.1" && r.message_type == "ADT^A01" && r.concurrent_clients == 1);
+    let mllp_adt = results.iter().find(|r| {
+        r.protocol == "MLLP/TCP" && r.message_type == "ADT^A01" && r.concurrent_clients == 1
+    });
+    let http_adt = results.iter().find(|r| {
+        r.protocol == "HTTP/1.1" && r.message_type == "ADT^A01" && r.concurrent_clients == 1
+    });
     if let (Some(m), Some(h)) = (mllp_adt, http_adt) {
         println!(
             "  MLLP is {:.1}x faster throughput than HTTP ({:.0} vs {:.0} msg/s)",

@@ -30,11 +30,7 @@ fn main() {
     println!("  Version: {}", profile.metadata.version);
     println!(
         "  Organization: {}",
-        profile
-            .metadata
-            .organization
-            .as_deref()
-            .unwrap_or("N/A")
+        profile.metadata.organization.as_deref().unwrap_or("N/A")
     );
     println!("  HL7 Version: {:?}", profile.metadata.hl7_version);
     println!(
@@ -64,7 +60,10 @@ fn main() {
                     field.usage.as_str(),
                     field.cardinality,
                     field.datatype.as_deref().unwrap_or("N/A"),
-                    field.length.map(|l| l.to_string()).unwrap_or_else(|| "N/A".to_string())
+                    field
+                        .length
+                        .map(|l| l.to_string())
+                        .unwrap_or_else(|| "N/A".to_string())
                 );
             }
             if segment.fields.len() > 3 {
@@ -187,7 +186,12 @@ fn print_validation_summary(result: &vyna_hl7_conformance::ConformanceValidation
 
     if !result.errors.is_empty() {
         for (i, error) in result.errors.iter().enumerate().take(3) {
-            println!("    Error {}: [{}] {}", i + 1, error.location, error.message);
+            println!(
+                "    Error {}: [{}] {}",
+                i + 1,
+                error.location,
+                error.message
+            );
         }
         if result.errors.len() > 3 {
             println!("    ... and {} more errors", result.errors.len() - 3);

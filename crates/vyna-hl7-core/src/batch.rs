@@ -32,7 +32,12 @@
 //! FTS|2
 //! ```
 
-use crate::{error::{Error, Result}, message::Message, segment::Segment, field::Field};
+use crate::{
+    error::{Error, Result},
+    field::Field,
+    message::Message,
+    segment::Segment,
+};
 use chrono::{NaiveDateTime, Timelike};
 
 /// Format a creation datetime for a BHS-7/FHS-7 field.
@@ -121,19 +126,28 @@ impl FileHeader {
         fhs.add_field(Field::from_value(&self.encoding_characters));
 
         // FHS-3: Sending application
-        fhs.add_field(Field::from_value(self.sending_application.as_deref().unwrap_or("")));
+        fhs.add_field(Field::from_value(
+            self.sending_application.as_deref().unwrap_or(""),
+        ));
 
         // FHS-4: Sending facility
-        fhs.add_field(Field::from_value(self.sending_facility.as_deref().unwrap_or("")));
+        fhs.add_field(Field::from_value(
+            self.sending_facility.as_deref().unwrap_or(""),
+        ));
 
         // FHS-5: Receiving application
-        fhs.add_field(Field::from_value(self.receiving_application.as_deref().unwrap_or("")));
+        fhs.add_field(Field::from_value(
+            self.receiving_application.as_deref().unwrap_or(""),
+        ));
 
         // FHS-6: Receiving facility
-        fhs.add_field(Field::from_value(self.receiving_facility.as_deref().unwrap_or("")));
+        fhs.add_field(Field::from_value(
+            self.receiving_facility.as_deref().unwrap_or(""),
+        ));
 
         // FHS-7: Creation date/time
-        let datetime_str = self.creation_datetime
+        let datetime_str = self
+            .creation_datetime
             .map(|dt| format_creation_datetime(&dt))
             .unwrap_or_default();
         fhs.add_field(Field::from_value(&datetime_str));
@@ -142,7 +156,9 @@ impl FileHeader {
         fhs.add_field(Field::from_value(self.security.as_deref().unwrap_or("")));
 
         // FHS-9: File name/ID
-        fhs.add_field(Field::from_value(self.file_name_id.as_deref().unwrap_or("")));
+        fhs.add_field(Field::from_value(
+            self.file_name_id.as_deref().unwrap_or(""),
+        ));
 
         // FHS-10: Comment
         fhs.add_field(Field::from_value(self.comment.as_deref().unwrap_or("")));
@@ -151,7 +167,9 @@ impl FileHeader {
         fhs.add_field(Field::from_value(self.control_id.as_deref().unwrap_or("")));
 
         // FHS-12: Reference control ID
-        fhs.add_field(Field::from_value(self.reference_control_id.as_deref().unwrap_or("")));
+        fhs.add_field(Field::from_value(
+            self.reference_control_id.as_deref().unwrap_or(""),
+        ));
 
         // FHS-13: Sending network address (v2.6+). The slot is
         // always emitted when FHS-14 is present so the receiving
@@ -245,19 +263,28 @@ impl BatchHeader {
         bhs.add_field(Field::from_value(&self.encoding_characters));
 
         // BHS-3: Sending application
-        bhs.add_field(Field::from_value(self.sending_application.as_deref().unwrap_or("")));
+        bhs.add_field(Field::from_value(
+            self.sending_application.as_deref().unwrap_or(""),
+        ));
 
         // BHS-4: Sending facility
-        bhs.add_field(Field::from_value(self.sending_facility.as_deref().unwrap_or("")));
+        bhs.add_field(Field::from_value(
+            self.sending_facility.as_deref().unwrap_or(""),
+        ));
 
         // BHS-5: Receiving application
-        bhs.add_field(Field::from_value(self.receiving_application.as_deref().unwrap_or("")));
+        bhs.add_field(Field::from_value(
+            self.receiving_application.as_deref().unwrap_or(""),
+        ));
 
         // BHS-6: Receiving facility
-        bhs.add_field(Field::from_value(self.receiving_facility.as_deref().unwrap_or("")));
+        bhs.add_field(Field::from_value(
+            self.receiving_facility.as_deref().unwrap_or(""),
+        ));
 
         // BHS-7: Creation date/time
-        let datetime_str = self.creation_datetime
+        let datetime_str = self
+            .creation_datetime
             .map(|dt| format_creation_datetime(&dt))
             .unwrap_or_default();
         bhs.add_field(Field::from_value(&datetime_str));
@@ -266,7 +293,9 @@ impl BatchHeader {
         bhs.add_field(Field::from_value(self.security.as_deref().unwrap_or("")));
 
         // BHS-9: Batch name/ID/type
-        bhs.add_field(Field::from_value(self.batch_name_id_type.as_deref().unwrap_or("")));
+        bhs.add_field(Field::from_value(
+            self.batch_name_id_type.as_deref().unwrap_or(""),
+        ));
 
         // BHS-10: Comment
         bhs.add_field(Field::from_value(self.comment.as_deref().unwrap_or("")));
@@ -275,7 +304,9 @@ impl BatchHeader {
         bhs.add_field(Field::from_value(self.control_id.as_deref().unwrap_or("")));
 
         // BHS-12: Reference control ID
-        bhs.add_field(Field::from_value(self.reference_control_id.as_deref().unwrap_or("")));
+        bhs.add_field(Field::from_value(
+            self.reference_control_id.as_deref().unwrap_or(""),
+        ));
 
         // BHS-13: Sending network address (v2.6+). The slot is
         // always emitted when BHS-14 is present so the receiving
@@ -335,9 +366,7 @@ impl FileTrailer {
         let mut fts = Segment::new("FTS");
 
         // FTS-1: Batch count
-        let count_str = self.batch_count
-            .map(|c| c.to_string())
-            .unwrap_or_default();
+        let count_str = self.batch_count.map(|c| c.to_string()).unwrap_or_default();
         fts.add_field(Field::from_value(&count_str));
 
         // FTS-2: Comment
@@ -391,7 +420,8 @@ impl BatchTrailer {
         let mut bts = Segment::new("BTS");
 
         // BTS-1: Message count
-        let count_str = self.message_count
+        let count_str = self
+            .message_count
             .map(|c| c.to_string())
             .unwrap_or_default();
         bts.add_field(Field::from_value(&count_str));
@@ -401,7 +431,9 @@ impl BatchTrailer {
 
         // BTS-3: Batch totals (repeating)
         if !self.totals.is_empty() {
-            let totals_str = self.totals.iter()
+            let totals_str = self
+                .totals
+                .iter()
                 .map(|t| t.to_string())
                 .collect::<Vec<_>>()
                 .join("~");
@@ -632,8 +664,8 @@ impl Default for File {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::builders::adt::AdtBuilder;
     use crate::Version;
+    use crate::builders::adt::AdtBuilder;
 
     #[test]
     fn test_batch_header_to_segment() {
@@ -809,15 +841,40 @@ mod tests {
 
         // Batch 1 with 2 messages
         let mut batch1 = Batch::new();
-        batch1.add_message(AdtBuilder::a01(Version::V2_5).patient_id("1").build().unwrap());
-        batch1.add_message(AdtBuilder::a01(Version::V2_5).patient_id("2").build().unwrap());
+        batch1.add_message(
+            AdtBuilder::a01(Version::V2_5)
+                .patient_id("1")
+                .build()
+                .unwrap(),
+        );
+        batch1.add_message(
+            AdtBuilder::a01(Version::V2_5)
+                .patient_id("2")
+                .build()
+                .unwrap(),
+        );
         file.add_batch(batch1);
 
         // Batch 2 with 3 messages
         let mut batch2 = Batch::new();
-        batch2.add_message(AdtBuilder::a01(Version::V2_5).patient_id("3").build().unwrap());
-        batch2.add_message(AdtBuilder::a01(Version::V2_5).patient_id("4").build().unwrap());
-        batch2.add_message(AdtBuilder::a01(Version::V2_5).patient_id("5").build().unwrap());
+        batch2.add_message(
+            AdtBuilder::a01(Version::V2_5)
+                .patient_id("3")
+                .build()
+                .unwrap(),
+        );
+        batch2.add_message(
+            AdtBuilder::a01(Version::V2_5)
+                .patient_id("4")
+                .build()
+                .unwrap(),
+        );
+        batch2.add_message(
+            AdtBuilder::a01(Version::V2_5)
+                .patient_id("5")
+                .build()
+                .unwrap(),
+        );
         file.add_batch(batch2);
 
         assert_eq!(file.batch_count(), 2);

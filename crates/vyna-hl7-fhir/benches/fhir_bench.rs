@@ -1,14 +1,13 @@
 //! FHIR conversion benchmarks: individual converters, JSON serialization,
 //! and full parse-to-FHIR pipeline.
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use vyna_hl7_fhir::converters::{
-    AllergyIntoleranceConverter, ConditionConverter, DiagnosticReportConverter,
-    EncounterConverter, ObservationConverter, PatientConverter, PractitionerConverter,
-    ProcedureConverter,
+    AllergyIntoleranceConverter, ConditionConverter, DiagnosticReportConverter, EncounterConverter,
+    ObservationConverter, PatientConverter, PractitionerConverter, ProcedureConverter,
 };
 use vyna_hl7_parser::parse_message;
-use std::hint::black_box;
 
 // ORU with OBR + multiple OBX for observation/diagnostic report conversion
 const ORU_R01: &str = "\
@@ -62,7 +61,11 @@ fn bench_fhir_individual(c: &mut Criterion) {
     });
 
     group.bench_function("PractitionerConverter", |b| {
-        b.iter(|| black_box(PractitionerConverter::convert_attending_doctor(black_box(&oru))));
+        b.iter(|| {
+            black_box(PractitionerConverter::convert_attending_doctor(black_box(
+                &oru,
+            )))
+        });
     });
 
     group.bench_function("AllergyIntoleranceConverter", |b| {

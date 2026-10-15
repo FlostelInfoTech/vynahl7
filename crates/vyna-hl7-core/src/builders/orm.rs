@@ -1,13 +1,7 @@
 //! ORM (Order Message) message builders
 
-use super::{generate_control_id, MessageBuilder};
-use crate::{
-    error::Result,
-    field::Field,
-    message::Message,
-    segment::Segment,
-    Version,
-};
+use super::{MessageBuilder, generate_control_id};
+use crate::{Version, error::Result, field::Field, message::Message, segment::Segment};
 
 /// Builder for ORM^O01 - General Order Message
 pub struct OrmO01Builder {
@@ -128,16 +122,22 @@ impl OrmO01Builder {
         // Create ORC segment
         let mut orc = Segment::new("ORC");
         orc.add_field(Field::from_value(&self.order_control)); // ORC-1: Order Control
-        orc.add_field(Field::from_delimited(self.placer_order_number.as_deref().unwrap_or(""))); // ORC-2: Placer Order Number
+        orc.add_field(Field::from_delimited(
+            self.placer_order_number.as_deref().unwrap_or(""),
+        )); // ORC-2: Placer Order Number
 
         self.base.message.add_segment(orc);
 
         // Create OBR segment
         let mut obr = Segment::new("OBR");
         obr.add_field(Field::from_value("1")); // OBR-1: Set ID
-        obr.add_field(Field::from_delimited(self.placer_order_number.as_deref().unwrap_or(""))); // OBR-2: Placer Order Number
+        obr.add_field(Field::from_delimited(
+            self.placer_order_number.as_deref().unwrap_or(""),
+        )); // OBR-2: Placer Order Number
         obr.add_field(Field::from_value("")); // OBR-3: Filler Order Number
-        obr.add_field(Field::from_delimited(self.universal_service_id.as_deref().unwrap_or(""))); // OBR-4: Universal Service ID
+        obr.add_field(Field::from_delimited(
+            self.universal_service_id.as_deref().unwrap_or(""),
+        )); // OBR-4: Universal Service ID
 
         self.base.message.add_segment(obr);
 

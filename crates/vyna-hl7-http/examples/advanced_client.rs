@@ -33,7 +33,7 @@
 //! - `TLS_CLIENT_CERT`: Client certificate path for mTLS
 //! - `TLS_CLIENT_KEY`: Client key path for mTLS
 
-use vyna_hl7_core::{builders::adt::AdtBuilder, Version};
+use vyna_hl7_core::{Version, builders::adt::AdtBuilder};
 use vyna_hl7_http::{HttpClient, Result};
 
 #[cfg(feature = "retry")]
@@ -93,7 +93,8 @@ async fn send_with_retry() -> Result<()> {
     tracing::info!("🚀 Advanced HTTP Client - Send with Retry");
 
     // Get server URL
-    let url = std::env::var("HL7_SERVER_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let url =
+        std::env::var("HL7_SERVER_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
 
     // Create client
     #[cfg_attr(not(any(feature = "auth", feature = "tls")), allow(unused_mut))]
@@ -207,7 +208,8 @@ async fn connect_websocket() -> Result<()> {
 async fn send_batch() -> Result<()> {
     tracing::info!("📦 Advanced HTTP Client - Batch Send");
 
-    let url = std::env::var("HL7_SERVER_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let url =
+        std::env::var("HL7_SERVER_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
     let client = HttpClient::new(&url)?;
 
     let patient_ids = ["P001", "P002", "P003", "P004", "P005"];
@@ -231,7 +233,13 @@ async fn send_batch() -> Result<()> {
                 );
             }
             Err(e) => {
-                tracing::error!("❌ [{}/{}] Failed to send {}: {}", i + 1, patient_ids.len(), patient_id, e);
+                tracing::error!(
+                    "❌ [{}/{}] Failed to send {}: {}",
+                    i + 1,
+                    patient_ids.len(),
+                    patient_id,
+                    e
+                );
             }
         }
 
@@ -249,8 +257,8 @@ async fn send_batch() -> Result<()> {
 async fn send_http2() -> Result<()> {
     tracing::info!("🚀 Advanced HTTP Client - HTTP/2");
 
-    let url = std::env::var("HL7_SERVER_URL")
-        .unwrap_or_else(|_| "https://localhost:8443".to_string());
+    let url =
+        std::env::var("HL7_SERVER_URL").unwrap_or_else(|_| "https://localhost:8443".to_string());
 
     let mut client = HttpClient::new(&url)?;
 

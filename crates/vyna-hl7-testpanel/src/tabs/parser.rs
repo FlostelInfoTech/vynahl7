@@ -1,11 +1,11 @@
 //! Message Parser Tab - Parse and analyze HL7 messages
 
-use egui::{self, RichText, Color32};
-use egui_extras::{StripBuilder, Size};
-use vyna_hl7_parser::parse_message;
-use vyna_hl7_core::Message;
 use crate::samples;
-use crate::utils::{format_message_tree, get_message_stats, TreeNode, format_bytes};
+use crate::utils::{TreeNode, format_bytes, format_message_tree, get_message_stats};
+use egui::{self, Color32, RichText};
+use egui_extras::{Size, StripBuilder};
+use vyna_hl7_core::Message;
+use vyna_hl7_parser::parse_message;
 
 pub struct ParserTab {
     input_message: String,
@@ -98,123 +98,119 @@ impl ParserTab {
                 // Left column: Input
                 strip.cell(|ui| {
                     let panel_height = available_height - 10.0;
-                    egui::Frame::group(ui.style())
-                        .show(ui, |ui| {
-                            ui.set_height(panel_height);
-                            ui.set_width(ui.available_width());
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.set_height(panel_height);
+                        ui.set_width(ui.available_width());
 
-                            ui.heading("Input Message");
-                            ui.label(format!("Size: {}", format_bytes(self.input_message.len())));
+                        ui.heading("Input Message");
+                        ui.label(format!("Size: {}", format_bytes(self.input_message.len())));
 
-                            egui::ScrollArea::vertical()
-                                .id_salt("input_scroll")
-                                .auto_shrink([false, false])
-                                .show(ui, |ui| {
-                                    ui.add(
-                                        egui::TextEdit::multiline(&mut self.input_message)
-                                            .font(egui::TextStyle::Monospace)
-                                            .desired_width(f32::INFINITY)
-                                            .desired_rows(30)
-                                            .code_editor()
-                                    );
-                                });
-                        });
+                        egui::ScrollArea::vertical()
+                            .id_salt("input_scroll")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.add(
+                                    egui::TextEdit::multiline(&mut self.input_message)
+                                        .font(egui::TextStyle::Monospace)
+                                        .desired_width(f32::INFINITY)
+                                        .desired_rows(30)
+                                        .code_editor(),
+                                );
+                            });
+                    });
                 });
 
                 // Right column: Output
                 strip.cell(|ui| {
                     let panel_height = available_height - 10.0;
-                    egui::Frame::group(ui.style())
-                        .show(ui, |ui| {
-                            ui.set_height(panel_height);
-                            ui.set_width(ui.available_width());
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.set_height(panel_height);
+                        ui.set_width(ui.available_width());
 
-                            if let Some(ref error) = self.parse_error {
-                                ui.heading("Parse Error");
-                                ui.colored_label(Color32::RED, error);
-                            } else if let Some(ref message) = self.parsed_message {
-                                let stats = get_message_stats(message);
+                        if let Some(ref error) = self.parse_error {
+                            ui.heading("Parse Error");
+                            ui.colored_label(Color32::RED, error);
+                        } else if let Some(ref message) = self.parsed_message {
+                            let stats = get_message_stats(message);
 
-                                ui.heading("Parsed Message");
+                            ui.heading("Parsed Message");
 
-                                // Statistics panel
+                            // Statistics panel
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label(RichText::new("Type:").strong());
+                                ui.label(&stats.message_type);
+                                ui.separator();
+                                ui.label(RichText::new("Version:").strong());
+                                ui.label(&stats.version);
+                                ui.separator();
+                                ui.label(RichText::new("Segments:").strong());
+                                ui.label(stats.segment_count.to_string());
+                                ui.separator();
+                                ui.label(RichText::new("Fields:").strong());
+                                ui.label(stats.field_count.to_string());
+                            });
+
+                            ui.add_space(5.0);
+
+                            // Segment type breakdown
+                            ui.collapsing("Segment Breakdown", |ui| {
                                 ui.horizontal_wrapped(|ui| {
-                                    ui.label(RichText::new("Type:").strong());
-                                    ui.label(&stats.message_type);
-                                    ui.separator();
-                                    ui.label(RichText::new("Version:").strong());
-                                    ui.label(&stats.version);
-                                    ui.separator();
-                                    ui.label(RichText::new("Segments:").strong());
-                                    ui.label(stats.segment_count.to_string());
-                                    ui.separator();
-                                    ui.label(RichText::new("Fields:").strong());
-                                    ui.label(stats.field_count.to_string());
+                                    let mut types: Vec<_> = stats.segment_types.iter().collect();
+                                    types.sort_by(|a, b| a.0.cmp(b.0));
+                                    for (seg_type, count) in types {
+                                        ui.label(format!("{}: {}", seg_type, count));
+                                    }
                                 });
+                            });
 
-                                ui.add_space(5.0);
+                            ui.add_space(10.0);
 
-                                // Segment type breakdown
-                                ui.collapsing("Segment Breakdown", |ui| {
-                                    ui.horizontal_wrapped(|ui| {
-                                        let mut types: Vec<_> = stats.segment_types.iter().collect();
-                                        types.sort_by(|a, b| a.0.cmp(b.0));
-                                        for (seg_type, count) in types {
-                                            ui.label(format!("{}: {}", seg_type, count));
+                            if self.show_raw {
+                                // Raw encoded output
+                                ui.label(RichText::new("Encoded Output:").strong());
+                                let encoded = message.encode_with_separator("\n");
+                                egui::ScrollArea::vertical()
+                                    .id_salt("raw_scroll")
+                                    .auto_shrink([false, false])
+                                    .show(ui, |ui| {
+                                        ui.add(
+                                            egui::TextEdit::multiline(&mut encoded.as_str())
+                                                .font(egui::TextStyle::Monospace)
+                                                .desired_width(f32::INFINITY)
+                                                .interactive(false),
+                                        );
+                                    });
+                            } else {
+                                // Tree view
+                                ui.label(RichText::new("Message Structure:").strong());
+                                egui::ScrollArea::vertical()
+                                    .id_salt("tree_scroll")
+                                    .auto_shrink([false, false])
+                                    .show(ui, |ui| {
+                                        for node in &mut self.tree_nodes {
+                                            node.ui(ui);
                                         }
                                     });
-                                });
-
-                                ui.add_space(10.0);
-
-                                if self.show_raw {
-                                    // Raw encoded output
-                                    ui.label(RichText::new("Encoded Output:").strong());
-                                    let encoded = message.encode_with_separator("\n");
-                                    egui::ScrollArea::vertical()
-                                        .id_salt("raw_scroll")
-                                        .auto_shrink([false, false])
-                                        .show(ui, |ui| {
-                                            ui.add(
-                                                egui::TextEdit::multiline(&mut encoded.as_str())
-                                                    .font(egui::TextStyle::Monospace)
-                                                    .desired_width(f32::INFINITY)
-                                                    .interactive(false)
-                                            );
-                                        });
-                                } else {
-                                    // Tree view
-                                    ui.label(RichText::new("Message Structure:").strong());
-                                    egui::ScrollArea::vertical()
-                                        .id_salt("tree_scroll")
-                                        .auto_shrink([false, false])
-                                        .show(ui, |ui| {
-                                            for node in &mut self.tree_nodes {
-                                                node.ui(ui);
-                                            }
-                                        });
-                                }
-                            } else {
-                                ui.heading("Output");
-                                ui.label("Click 'Parse Message' to parse the input.");
-                                ui.add_space(20.0);
-                                ui.label("Supported message types:");
-                                ui.label("- ADT (A01-A40)");
-                                ui.label("- ORU, ORM, ORS");
-                                ui.label("- SIU (S12-S26)");
-                                ui.label("- VXU, RDE, RAS");
-                                ui.label("- ACK, QRY, and more...");
                             }
-                        });
+                        } else {
+                            ui.heading("Output");
+                            ui.label("Click 'Parse Message' to parse the input.");
+                            ui.add_space(20.0);
+                            ui.label("Supported message types:");
+                            ui.label("- ADT (A01-A40)");
+                            ui.label("- ORU, ORM, ORS");
+                            ui.label("- SIU (S12-S26)");
+                            ui.label("- VXU, RDE, RAS");
+                            ui.label("- ACK, QRY, and more...");
+                        }
+                    });
                 });
             });
     }
 
     fn parse_message(&mut self) {
         // Normalize line endings
-        let normalized = self.input_message
-            .replace("\r\n", "\r")
-            .replace("\n", "\r");
+        let normalized = self.input_message.replace("\r\n", "\r").replace("\n", "\r");
 
         match parse_message(&normalized) {
             Ok(message) => {

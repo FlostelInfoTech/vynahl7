@@ -191,7 +191,7 @@ const values = getTerserValues(message, [
 
 #### `validateMessage(message: WasmMessage): WasmValidationResult`
 
-Validate a message against HL7 standards.
+Validate a message against HL7 standards (strict posture).
 
 ```typescript
 const result = validateMessage(message);
@@ -203,6 +203,20 @@ if (result.isValid()) {
     console.log(`Errors: ${result.errorCount()}`);
     console.log(`Warnings: ${result.warningCount()}`);
     console.log(json.errors);
+}
+```
+
+#### `validateMessageWithMode(message: WasmMessage, mode): WasmValidationResult`
+
+Validate with an explicit posture: `"strict"` (default spec compliance),
+`"standard"` (strict except version drift warns), or `"lenient"` (only
+structural problems fail), matching the CLI `validate` flags.
+
+```typescript
+const result = validateMessageWithMode(message, "lenient");
+console.log(result.mode()); // "lenient"
+if (!result.schemaApplied()) {
+    console.log("No schema for this message type; structure-only validation.");
 }
 ```
 
@@ -268,6 +282,7 @@ The Terser API uses simple path notation to access fields:
 - Rust (latest stable)
 - wasm-pack (`cargo install wasm-pack`)
 - Node.js (for testing)
+- Firefox + geckodriver (only for `wasm-pack test --headless --firefox`)
 
 ### Build for Web
 

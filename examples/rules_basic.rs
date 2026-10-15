@@ -5,7 +5,7 @@
 //! Run with: cargo run --example rules_basic
 
 use vyna_hl7_core::{Field, Message, Segment};
-use vyna_hl7_validator::rules::{CrossFieldValidator, RulesEngine, RuleSeverity, ValidationRule};
+use vyna_hl7_validator::rules::{CrossFieldValidator, RuleSeverity, RulesEngine, ValidationRule};
 
 fn main() {
     println!("=== Basic Rules Engine Example ===\n");
@@ -155,10 +155,11 @@ fn custom_rule_validation(message: &Message) {
         if let Ok(Some(dob)) = terser.get("PID-7") {
             let dob = dob.trim();
             if dob.len() >= 4
-                && let Ok(year) = dob[0..4].parse::<i32>() {
-                    let current_year = 2025; // Could use chrono for actual current year
-                    return year >= current_year - 150 && year <= current_year;
-                }
+                && let Ok(year) = dob[0..4].parse::<i32>()
+            {
+                let current_year = 2025; // Could use chrono for actual current year
+                return year >= current_year - 150 && year <= current_year;
+            }
         }
         true // If no DOB or can't parse, pass the rule
     });
@@ -253,8 +254,7 @@ fn create_test_adt_message() -> Message {
     msh.fields.push(Field::from_value("ReceivingFac")); // MSH-6
     msh.fields.push(Field::from_value("20231101120000")); // MSH-7
     msh.fields.push(Field::from_value("")); // MSH-8
-    msh.fields
-        .push(Field::from_value("ADT^A01^ADT_A01")); // MSH-9
+    msh.fields.push(Field::from_value("ADT^A01^ADT_A01")); // MSH-9
     msh.fields.push(Field::from_value("MSG00001")); // MSH-10
     msh.fields.push(Field::from_value("P")); // MSH-11
     msh.fields.push(Field::from_value("2.5")); // MSH-12
@@ -276,8 +276,7 @@ fn create_test_adt_message() -> Message {
     let mut pv1 = Segment::new("PV1");
     pv1.fields.push(Field::from_value("1")); // PV1-1
     pv1.fields.push(Field::from_value("I")); // PV1-2 (Patient Class - Inpatient)
-    pv1.fields
-        .push(Field::from_value("Ward^Room^Bed")); // PV1-3
+    pv1.fields.push(Field::from_value("Ward^Room^Bed")); // PV1-3
     msg.segments.push(pv1);
 
     msg

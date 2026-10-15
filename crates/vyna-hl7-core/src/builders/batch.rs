@@ -385,8 +385,8 @@ impl Default for FileBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::builders::adt::AdtBuilder;
     use crate::Version;
+    use crate::builders::adt::AdtBuilder;
 
     #[test]
     fn test_batch_builder() {
@@ -427,10 +427,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let batch = BatchBuilder::new()
-            .add_message(msg)
-            .build()
-            .unwrap();
+        let batch = BatchBuilder::new().add_message(msg).build().unwrap();
 
         // Trailer should automatically have message_count set to 1
         assert_eq!(batch.trailer.message_count, Some(1));
@@ -480,15 +477,9 @@ mod tests {
             .build()
             .unwrap();
 
-        let batch = BatchBuilder::new()
-            .add_message(msg)
-            .build()
-            .unwrap();
+        let batch = BatchBuilder::new().add_message(msg).build().unwrap();
 
-        let file = FileBuilder::new()
-            .add_batch(batch)
-            .build()
-            .unwrap();
+        let file = FileBuilder::new().add_batch(batch).build().unwrap();
 
         // Trailer should automatically have batch_count set to 1
         assert_eq!(file.trailer.batch_count, Some(1));

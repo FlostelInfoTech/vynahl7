@@ -31,8 +31,11 @@ thiserror.workspace = true
 anyhow.workspace = true
 
 [dev-dependencies]
-criterion = "0.8"
+criterion.workspace = true
 
 [[bench]]
 name = "fhir_bench"
 harness = false
+
+[lints]
+workspace = true

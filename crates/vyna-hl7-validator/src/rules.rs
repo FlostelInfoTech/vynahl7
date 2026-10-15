@@ -54,10 +54,10 @@ pub mod declarative;
 
 pub use builtin::BuiltinRules;
 pub use cross_field::CrossFieldValidator;
-pub use declarative::{RuleConfig, RuleDefinition, ConditionConfig, DeclarativeError};
+pub use declarative::{ConditionConfig, DeclarativeError, RuleConfig, RuleDefinition};
 
-use vyna_hl7_core::Message;
 use std::sync::Arc;
+use vyna_hl7_core::Message;
 
 /// Severity level for validation rules
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -119,7 +119,10 @@ impl RulesValidationResult {
 
     /// Check if validation passed (no errors)
     pub fn passed(&self) -> bool {
-        !self.violations.iter().any(|v| v.severity == RuleSeverity::Error)
+        !self
+            .violations
+            .iter()
+            .any(|v| v.severity == RuleSeverity::Error)
     }
 
     /// Get all errors
@@ -201,7 +204,11 @@ pub struct ValidationRule {
 
 impl ValidationRule {
     /// Create a new validation rule
-    pub fn new(name: impl Into<String>, description: impl Into<String>, severity: RuleSeverity) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        description: impl Into<String>,
+        severity: RuleSeverity,
+    ) -> Self {
         Self {
             name: name.into(),
             description: description.into(),
@@ -225,13 +232,14 @@ impl ValidationRule {
     /// Evaluate the rule against a message
     pub fn evaluate(&self, message: &Message) -> Option<RuleViolation> {
         if let Some(condition) = &self.condition
-            && !condition(message) {
-                return Some(RuleViolation::new(
-                    self.name.clone(),
-                    self.severity,
-                    self.description.clone(),
-                ));
-            }
+            && !condition(message)
+        {
+            return Some(RuleViolation::new(
+                self.name.clone(),
+                self.severity,
+                self.description.clone(),
+            ));
+        }
         None
     }
 }
@@ -333,11 +341,7 @@ mod tests {
 
     #[test]
     fn test_validation_rule_creation() {
-        let rule = ValidationRule::new(
-            "test_rule",
-            "Test rule description",
-            RuleSeverity::Error,
-        );
+        let rule = ValidationRule::new("test_rule", "Test rule description", RuleSeverity::Error);
 
         assert_eq!(rule.name, "test_rule");
         assert_eq!(rule.description, "Test rule description");
@@ -350,7 +354,8 @@ mod tests {
             "always_pass",
             "Rule that always passes",
             RuleSeverity::Error,
-        ).with_condition(|_msg| true);
+        )
+        .with_condition(|_msg| true);
 
         let msg = create_test_message_with_gender();
         assert!(rule.evaluate(&msg).is_none());
@@ -358,11 +363,9 @@ mod tests {
 
     #[test]
     fn test_validation_rule_with_failing_condition() {
-        let rule = ValidationRule::new(
-            "always_fail",
-            "Rule that always fails",
-            RuleSeverity::Error,
-        ).with_condition(|_msg| false);
+        let rule =
+            ValidationRule::new("always_fail", "Rule that always fails", RuleSeverity::Error)
+                .with_condition(|_msg| false);
 
         let msg = create_test_message_with_gender();
         let violation = rule.evaluate(&msg);
@@ -379,17 +382,11 @@ mod tests {
         let mut engine = RulesEngine::new();
         assert_eq!(engine.rule_count(), 0);
 
-        let rule1 = ValidationRule::new(
-            "rule1",
-            "First rule",
-            RuleSeverity::Error,
-        ).with_condition(|_| true);
+        let rule1 = ValidationRule::new("rule1", "First rule", RuleSeverity::Error)
+            .with_condition(|_| true);
 
-        let rule2 = ValidationRule::new(
-            "rule2",
-            "Second rule",
-            RuleSeverity::Warning,
-        ).with_condition(|_| false);
+        let rule2 = ValidationRule::new("rule2", "Second rule", RuleSeverity::Warning)
+            .with_condition(|_| false);
 
         engine.add_rule(rule1);
         engine.add_rule(rule2);

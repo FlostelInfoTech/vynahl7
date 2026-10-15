@@ -1,7 +1,10 @@
 //! Pharmacy message builders (RDE, RAS, RDS, RGV, RRA, RRD)
 
-use super::{generate_control_id, MessageBuilder};
-use crate::{error::Result, field::Field, message::Message, segment::Segment, types::format_timestamp, Version};
+use super::{MessageBuilder, generate_control_id};
+use crate::{
+    Version, error::Result, field::Field, message::Message, segment::Segment,
+    types::format_timestamp,
+};
 use chrono::Local;
 
 fn now_timestamp() -> String {

@@ -1,11 +1,11 @@
 //! MLLP Tab - Send and receive messages via MLLP protocol
 
-use egui::{self, RichText, Color32};
-use egui_extras::{StripBuilder, Size};
-use vyna_hl7_core::CharacterSet;
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
 use crate::samples;
+use egui::{self, Color32, RichText};
+use egui_extras::{Size, StripBuilder};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use vyna_hl7_core::CharacterSet;
 
 /// Maximum buffered MLLP frame size (markers included), matching
 /// `vyna_hl7_mllp::DEFAULT_MAX_MESSAGE_SIZE`. Frames past this are
@@ -101,23 +101,21 @@ impl MllpTab {
                 // Left: Client
                 strip.cell(|ui| {
                     let panel_height = available_height - 10.0;
-                    egui::Frame::group(ui.style())
-                        .show(ui, |ui| {
-                            ui.set_height(panel_height);
-                            ui.set_width(ui.available_width());
-                            self.client_ui(ui, ctx);
-                        });
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.set_height(panel_height);
+                        ui.set_width(ui.available_width());
+                        self.client_ui(ui, ctx);
+                    });
                 });
 
                 // Right: Server
                 strip.cell(|ui| {
                     let panel_height = available_height - 10.0;
-                    egui::Frame::group(ui.style())
-                        .show(ui, |ui| {
-                            ui.set_height(panel_height);
-                            ui.set_width(ui.available_width());
-                            self.server_ui(ui, ctx);
-                        });
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.set_height(panel_height);
+                        ui.set_width(ui.available_width());
+                        self.server_ui(ui, ctx);
+                    });
                 });
             });
     }
@@ -137,12 +135,12 @@ impl MllpTab {
             ui.label("Host:");
             ui.add_enabled(
                 !is_sending,
-                egui::TextEdit::singleline(&mut self.client_host).desired_width(150.0)
+                egui::TextEdit::singleline(&mut self.client_host).desired_width(150.0),
             );
             ui.label("Port:");
             ui.add_enabled(
                 !is_sending,
-                egui::TextEdit::singleline(&mut self.client_port).desired_width(60.0)
+                egui::TextEdit::singleline(&mut self.client_port).desired_width(60.0),
             );
         });
 
@@ -150,7 +148,7 @@ impl MllpTab {
             ui.label("Timeout (sec):");
             ui.add_enabled(
                 !is_sending,
-                egui::DragValue::new(&mut self.client_timeout).range(1..=120)
+                egui::DragValue::new(&mut self.client_timeout).range(1..=120),
             );
         });
 
@@ -184,7 +182,7 @@ impl MllpTab {
                         .font(egui::TextStyle::Monospace)
                         .desired_width(f32::INFINITY)
                         .desired_rows(12)
-                        .code_editor()
+                        .code_editor(),
                 );
             });
 
@@ -241,7 +239,7 @@ impl MllpTab {
             ui.label("Listen Port:");
             ui.add_enabled(
                 !server_running,
-                egui::TextEdit::singleline(&mut self.server_port).desired_width(60.0)
+                egui::TextEdit::singleline(&mut self.server_port).desired_width(60.0),
             );
         });
 
@@ -252,12 +250,18 @@ impl MllpTab {
         // Start/Stop buttons
         ui.horizontal(|ui| {
             if server_running {
-                if ui.button(RichText::new("Stop Server").color(Color32::RED)).clicked() {
+                if ui
+                    .button(RichText::new("Stop Server").color(Color32::RED))
+                    .clicked()
+                {
                     self.stop_server();
                 }
                 ui.colored_label(Color32::GREEN, "Server Running");
             } else {
-                if ui.button(RichText::new("Start Server").color(Color32::GREEN)).clicked() {
+                if ui
+                    .button(RichText::new("Start Server").color(Color32::GREEN))
+                    .clicked()
+                {
                     self.start_server(ctx.clone());
                 }
                 ui.colored_label(Color32::GRAY, "Server Stopped");
@@ -409,12 +413,12 @@ impl MllpTab {
 async fn send_mllp_message(addr: &str, message: &str, timeout_secs: u32) -> Result<String, String> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpStream;
-    use tokio::time::{timeout, Duration};
+    use tokio::time::{Duration, timeout};
 
     // MLLP frame bytes
-    const VT: u8 = 0x0B;  // Start byte
-    const FS: u8 = 0x1C;  // End byte 1
-    const CR: u8 = 0x0D;  // End byte 2
+    const VT: u8 = 0x0B; // Start byte
+    const FS: u8 = 0x1C; // End byte 1
+    const CR: u8 = 0x0D; // End byte 2
 
     // Normalize line endings to CR
     let normalized_message = message.replace("\r\n", "\r").replace('\n', "\r");
@@ -436,9 +440,13 @@ async fn send_mllp_message(addr: &str, message: &str, timeout_secs: u32) -> Resu
     let (mut reader, mut writer) = stream.into_split();
 
     // Send the framed message
-    writer.write_all(&framed).await
+    writer
+        .write_all(&framed)
+        .await
         .map_err(|e| format!("Failed to send message: {}", e))?;
-    writer.flush().await
+    writer
+        .flush()
+        .await
         .map_err(|e| format!("Failed to flush: {}", e))?;
 
     // Read response with timeout
@@ -472,9 +480,10 @@ async fn send_mllp_message(addr: &str, message: &str, timeout_secs: u32) -> Resu
             }
         }
         Ok::<_, std::io::Error>(())
-    }).await
-        .map_err(|_| format!("Read timeout after {} seconds", timeout_secs))?
-        .map_err(|e| format!("Failed to read response: {}", e));
+    })
+    .await
+    .map_err(|_| format!("Read timeout after {} seconds", timeout_secs))?
+    .map_err(|e| format!("Failed to read response: {}", e));
 
     response?;
 
@@ -484,7 +493,11 @@ async fn send_mllp_message(addr: &str, message: &str, timeout_secs: u32) -> Resu
     }
 
     // Remove MLLP framing
-    let start = if response_buf.first() == Some(&VT) { 1 } else { 0 };
+    let start = if response_buf.first() == Some(&VT) {
+        1
+    } else {
+        0
+    };
     let end = if response_buf.len() >= 2
         && response_buf[response_buf.len() - 2] == FS
         && response_buf[response_buf.len() - 1] == CR
@@ -513,7 +526,7 @@ async fn run_mllp_server(
 ) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
-    use tokio::time::{timeout, Duration};
+    use tokio::time::{Duration, timeout};
 
     // MLLP frame bytes
     const VT: u8 = 0x0B;
@@ -592,7 +605,8 @@ async fn run_mllp_server(
                         }
 
                         // Read with timeout
-                        let read_result = timeout(Duration::from_secs(30), stream.read(&mut buf)).await;
+                        let read_result =
+                            timeout(Duration::from_secs(30), stream.read(&mut buf)).await;
 
                         match read_result {
                             Ok(Ok(0)) => {
@@ -600,7 +614,9 @@ async fn run_mllp_server(
                                 {
                                     let mut s = state_clone.lock().unwrap();
                                     s.server_messages.push(LogEntry {
-                                        timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                                        timestamp: chrono::Local::now()
+                                            .format("%H:%M:%S")
+                                            .to_string(),
                                         direction: Direction::Info,
                                         message: format!("Connection from {} closed", peer_addr),
                                     });
@@ -634,7 +650,11 @@ async fn run_mllp_server(
                                     && message_buf[message_buf.len() - 1] == CR
                                 {
                                     // Extract message
-                                    let start = if message_buf.first() == Some(&VT) { 1 } else { 0 };
+                                    let start = if message_buf.first() == Some(&VT) {
+                                        1
+                                    } else {
+                                        0
+                                    };
                                     let end = message_buf.len() - 2;
 
                                     let decoded =
@@ -645,7 +665,9 @@ async fn run_mllp_server(
                                         {
                                             let mut s = state_clone.lock().unwrap();
                                             s.server_messages.push(LogEntry {
-                                                timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                                                timestamp: chrono::Local::now()
+                                                    .format("%H:%M:%S")
+                                                    .to_string(),
                                                 direction: Direction::Received,
                                                 message: hl7_message.clone(),
                                             });
@@ -664,14 +686,18 @@ async fn run_mllp_server(
                                             if let Err(e) = stream.write_all(&ack_frame).await {
                                                 let mut s = state_clone.lock().unwrap();
                                                 s.server_messages.push(LogEntry {
-                                                    timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                                                    timestamp: chrono::Local::now()
+                                                        .format("%H:%M:%S")
+                                                        .to_string(),
                                                     direction: Direction::Error,
                                                     message: format!("Failed to send ACK: {}", e),
                                                 });
                                             } else {
                                                 let mut s = state_clone.lock().unwrap();
                                                 s.server_messages.push(LogEntry {
-                                                    timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+                                                    timestamp: chrono::Local::now()
+                                                        .format("%H:%M:%S")
+                                                        .to_string(),
                                                     direction: Direction::Sent,
                                                     message: ack,
                                                 });
@@ -733,7 +759,10 @@ async fn run_mllp_server(
 /// Format an HL7 message for display by converting segment separators to line feeds
 fn format_hl7_for_display(message: &str) -> String {
     // HL7 uses \r as segment separator - convert to \n for display
-    message.replace('\r', "\n").trim_end_matches('\n').to_string()
+    message
+        .replace('\r', "\n")
+        .trim_end_matches('\n')
+        .to_string()
 }
 
 /// Strip HL7 structural characters from a peer-supplied ACK field.

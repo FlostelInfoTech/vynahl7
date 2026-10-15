@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Field::from_delimited_with` splits composite values on custom MSH-2 separators
+- `Segment::new_header`/`new_header_with` push MSH/FHS/BHS delimiter placeholders; `is_header` identifies header segments; `try_encode` rejects placeholder-less headers instead of dropping content
+- Streaming parser honors `ParserConfig`: `parse_streaming_with_config`, `process_with_handler_with_config`, `StreamingMessageBuilder::with_config`/`warnings`/`finish_with_warnings`
+- `TerserQuery::try_get_if` returns `Err` on malformed paths instead of panicking
+- FHIR `converted_segment_ids`/`skipped_segment_ids` report which segments bundle conversion drops
+- WASM `validateMessageWithMode` (strict/standard/lenient parity with the CLI), `mode()`/`schemaApplied()` on results, receiving app/facility in message JSON
+
+### Fixed
+
+- ORU FHIR bundles now include the Patient resource when PID is present
+- Terser field-0 paths (`PID-0`) are malformed (`Err`) on reads and writes instead of a silent `None` on reads
+- `Delimiters::validate` rejects non-ASCII separators, which corrupt byte-offset MSH-1/MSH-2 framing
+- Streaming parser no longer hard-errors on invalid escapes when `preserve_invalid_escapes` is set (warns like the batch parser)
+- `query_response` example builds composite fields with `from_delimited` (was emitting `\S\` escapes)
+- CLI strips trailing paths from `mllp://` send targets; `info` average guards empty messages; `convert` failures use `bail!`
+- FHIR `convert_oru` example now converts OBR DiagnosticReports; `convert_adt` shows bundle conversion and dropped segments
+- Docs: `integration.md` CLI section lists all 7 commands with `diff` flags and the `fhir` feature gate; schemas README catalog regenerated (47 keys, 310 files with per-version availability); CONVERTERS.md discloses lossy status/gender/class/type defaults; `performance.md` lists all 13 bench targets; SBOM README clarifies 22 crates + facade; WASM README/d.ts cover the new validation API and Firefox/geckodriver test prereq
+
+### Changed
+
+- **Breaking**: `Terser::get("PID-0")` returns `Err` (was `Ok(None)`); component/subcomponent 0 still reads `None`
+- **Breaking**: `Delimiters::from_encoding_characters`/`validate` reject non-ASCII separators (previously accepted when unique)
+- ORU `--to fhir` CLI output now includes the Patient resource when PID is present
+
 ## [0.9.0] - 2026-10-13
 
 ### Fixed

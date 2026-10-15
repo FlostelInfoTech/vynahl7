@@ -20,14 +20,14 @@ thiserror.workspace = true
 anyhow.workspace = true
 
 # HTTP framework (latest versions - December 2025)
-axum = "0.8"
+axum.workspace = true
 tower = "0.5"
 tower-http = { version = "0.7", features = ["trace", "cors", "compression-gzip"] }
 hyper = { version = "1.8", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio", "client-legacy", "http1", "http2"] }
 
 # HTTP client
-reqwest = { version = "0.13", features = ["json"] }
+reqwest.workspace = true
 
 # Date/time for RFC 2822 dates
 chrono.workspace = true
@@ -37,12 +37,12 @@ serde.workspace = true
 serde_json.workspace = true
 
 # Security - TLS/mTLS (optional)
-tokio-rustls = { version = "0.26", optional = true }
-rustls = { version = "0.23", optional = true }
-webpki-roots = { version = "1.0", optional = true }
+tokio-rustls = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+webpki-roots = { workspace = true, optional = true }
 
 # Security - Authentication (optional)
-base64 = { version = "0.23", optional = true }
+base64 = { workspace = true, optional = true }
 jsonwebtoken = { version = "11", features = ["rust_crypto"], optional = true }
 
 # Protocol - WebSocket (optional)
@@ -52,12 +52,12 @@ futures-util = { version = "0.3", optional = true }
 # Protocol - Retry (optional)
 # Note: retry uses the hand-rolled executor in retry.rs (backed by rand);
 # no reqwest middleware crates are involved.
-rand = { version = "0.10", optional = true }
+rand = { workspace = true, optional = true }
 
 # Operational - Logging (optional)
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"], optional = true }
-uuid = { version = "1.19", features = ["v4"], optional = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"], optional = true }
+uuid = { workspace = true, optional = true }
 vyna-hl7-terser = { workspace = true, optional = true }
 
 # Operational - Metrics (optional)
@@ -103,5 +103,8 @@ full = ["tls", "auth", "oauth", "websocket", "retry", "logging", "metrics", "rat
 
 [dev-dependencies]
 tokio-test = "0.4"
-tracing-subscriber = "0.3"
+tracing-subscriber.workspace = true
 vyna-hl7-terser.workspace = true
+
+[lints]
+workspace = true

@@ -5,8 +5,8 @@
 //!
 //! Run with: `cargo run --example convert_orm -p vyna-hl7-fhir`
 
-use vyna_hl7_parser::parse_message;
 use vyna_hl7_fhir::converters::ServiceRequestConverter;
+use vyna_hl7_parser::parse_message;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Sample ORM^O01 message with multiple orders
@@ -52,20 +52,32 @@ OBR|1|ORD2024031503|FIL2024031503|24326-1^Electrolytes Panel^LN|A|20240315140000
         }
 
         if let Some(code) = &sr.code {
-            println!("Service Code: {:?}", code.coding.as_ref()
-                .and_then(|c| c.first())
-                .and_then(|c| c.code.as_ref()));
-            println!("Service Name: {:?}", code.coding.as_ref()
-                .and_then(|c| c.first())
-                .and_then(|c| c.display.as_ref()));
+            println!(
+                "Service Code: {:?}",
+                code.coding
+                    .as_ref()
+                    .and_then(|c| c.first())
+                    .and_then(|c| c.code.as_ref())
+            );
+            println!(
+                "Service Name: {:?}",
+                code.coding
+                    .as_ref()
+                    .and_then(|c| c.first())
+                    .and_then(|c| c.display.as_ref())
+            );
         }
 
         println!("Priority: {:?}", sr.priority);
         println!("Authored On: {:?}", sr.authored_on);
-        println!("Requester: {:?}", sr.requester.as_ref()
-            .and_then(|r| r.reference.as_ref()));
-        println!("Encounter: {:?}", sr.encounter.as_ref()
-            .and_then(|e| e.reference.as_ref()));
+        println!(
+            "Requester: {:?}",
+            sr.requester.as_ref().and_then(|r| r.reference.as_ref())
+        );
+        println!(
+            "Encounter: {:?}",
+            sr.encounter.as_ref().and_then(|e| e.reference.as_ref())
+        );
 
         // Serialize to JSON
         let json = serde_json::to_string_pretty(&sr)?;
@@ -73,7 +85,8 @@ OBR|1|ORD2024031503|FIL2024031503|24326-1^Electrolytes Panel^LN|A|20240315140000
     }
 
     // Example: Filter by priority
-    let stat_orders: Vec<_> = service_requests.iter()
+    let stat_orders: Vec<_> = service_requests
+        .iter()
         .filter(|sr| sr.priority.as_deref() == Some("stat"))
         .collect();
 
@@ -81,23 +94,29 @@ OBR|1|ORD2024031503|FIL2024031503|24326-1^Electrolytes Panel^LN|A|20240315140000
     println!("Found {} STAT orders", stat_orders.len());
     for sr in stat_orders {
         if let Some(code) = &sr.code
-            && let Some(display) = code.coding.as_ref()
+            && let Some(display) = code
+                .coding
+                .as_ref()
                 .and_then(|c| c.first())
-                .and_then(|c| c.display.as_ref()) {
-                println!("  - {}", display);
-            }
+                .and_then(|c| c.display.as_ref())
+        {
+            println!("  - {}", display);
+        }
     }
 
     // Example: Group by requisition
     if let Some(first_sr) = service_requests.first()
-        && let Some(requisition) = &first_sr.requisition {
-            println!("\n=== Orders in Requisition {:?} ===", requisition.value);
-            let same_requisition: Vec<_> = service_requests.iter()
-                .filter(|sr| sr.requisition.as_ref().and_then(|r| r.value.as_ref())
-                    == requisition.value.as_ref())
-                .collect();
-            println!("Count: {}", same_requisition.len());
-        }
+        && let Some(requisition) = &first_sr.requisition
+    {
+        println!("\n=== Orders in Requisition {:?} ===", requisition.value);
+        let same_requisition: Vec<_> = service_requests
+            .iter()
+            .filter(|sr| {
+                sr.requisition.as_ref().and_then(|r| r.value.as_ref()) == requisition.value.as_ref()
+            })
+            .collect();
+        println!("Count: {}", same_requisition.len());
+    }
 
     println!("\n✓ Conversion complete!");
 

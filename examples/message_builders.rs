@@ -1,7 +1,7 @@
 //! Example demonstrating HL7 message builders
 
-use vyna_hl7_core::builders::adt::AdtBuilder;
 use vyna_hl7_core::Version;
+use vyna_hl7_core::builders::adt::AdtBuilder;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== HL7 Message Builders Example ===\n");
@@ -255,7 +255,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create ORU^R01 message
     println!("Creating ORU^R01 (Observation Result)...");
-    use vyna_hl7_core::builders::oru::{OruR01Builder, Observation};
+    use vyna_hl7_core::builders::oru::{Observation, OruR01Builder};
 
     let oru_message = OruR01Builder::new(Version::V2_5)
         .sending_application("LabApp")

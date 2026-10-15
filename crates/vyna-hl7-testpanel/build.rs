@@ -22,9 +22,7 @@ fn main() {
         true
     };
 
-    if should_generate
-        && let Err(e) = generate_ico_from_svg(svg_path, ico_path)
-    {
+    if should_generate && let Err(e) = generate_ico_from_svg(svg_path, ico_path) {
         eprintln!("Warning: Failed to generate ICO from SVG: {}", e);
     }
 

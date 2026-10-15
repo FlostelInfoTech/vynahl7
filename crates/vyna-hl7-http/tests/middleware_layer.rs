@@ -7,9 +7,9 @@
 #![cfg(feature = "oauth")]
 
 use axum::{Router, routing::post};
+use std::sync::Arc;
 use vyna_hl7_http::auth::JwtConfig;
 use vyna_hl7_http::middleware::{JwtAuthState, jwt_middleware};
-use std::sync::Arc;
 
 #[test]
 fn jwt_middleware_layers_onto_router() {

@@ -44,11 +44,7 @@ impl TemplateResolver {
     }
 
     /// Internal resolve method with cycle detection
-    fn resolve_internal(
-        &self,
-        name: &str,
-        visited: &mut Vec<String>,
-    ) -> Result<MessageTemplate> {
+    fn resolve_internal(&self, name: &str, visited: &mut Vec<String>) -> Result<MessageTemplate> {
         // Bound recursion depth before following another extends link.
         if visited.len() >= MAX_INHERITANCE_DEPTH {
             return Err(Error::inheritance(format!(
@@ -150,10 +146,7 @@ impl TemplateResolver {
     }
 
     /// Merge two segment templates (child overrides base)
-    fn merge_segment_templates(
-        base: &SegmentTemplate,
-        child: &SegmentTemplate,
-    ) -> SegmentTemplate {
+    fn merge_segment_templates(base: &SegmentTemplate, child: &SegmentTemplate) -> SegmentTemplate {
         let mut merged = base.clone();
 
         // Flags are sticky: a plain bool cannot distinguish "child sets
@@ -228,10 +221,15 @@ mod tests {
         base.add_segment(pid_base);
 
         // Child overrides PID segment
-        let mut child = MessageTemplate::new("ExtendedADT", "2.5", "ADT", "A01")
-            .with_extends("BaseADT");
+        let mut child =
+            MessageTemplate::new("ExtendedADT", "2.5", "ADT", "A01").with_extends("BaseADT");
         let mut pid_child = SegmentTemplate::new("PID").required();
-        pid_child.add_field(3, FieldTemplate::new().required().with_placeholder("{{child_id}}"));
+        pid_child.add_field(
+            3,
+            FieldTemplate::new()
+                .required()
+                .with_placeholder("{{child_id}}"),
+        );
         child.add_segment(pid_child);
 
         resolver.register(base);
@@ -288,8 +286,8 @@ mod tests {
         base.add_variable("facility", "BaseFacility");
 
         // Child overrides one variable and adds another
-        let mut child = MessageTemplate::new("ExtendedADT", "2.5", "ADT", "A01")
-            .with_extends("BaseADT");
+        let mut child =
+            MessageTemplate::new("ExtendedADT", "2.5", "ADT", "A01").with_extends("BaseADT");
         child.add_variable("facility", "ChildFacility"); // Override
         child.add_variable("location", "ChildLocation"); // New
 
@@ -340,12 +338,10 @@ mod tests {
         let mut resolver = TemplateResolver::new();
 
         // Template A extends B
-        let template_a = MessageTemplate::new("A", "2.5", "ADT", "A01")
-            .with_extends("B");
+        let template_a = MessageTemplate::new("A", "2.5", "ADT", "A01").with_extends("B");
 
         // Template B extends A (circular!)
-        let template_b = MessageTemplate::new("B", "2.5", "ADT", "A01")
-            .with_extends("A");
+        let template_b = MessageTemplate::new("B", "2.5", "ADT", "A01").with_extends("A");
 
         resolver.register(template_a);
         resolver.register(template_b);
@@ -359,8 +355,7 @@ mod tests {
     fn test_missing_base_template() {
         let mut resolver = TemplateResolver::new();
 
-        let child = MessageTemplate::new("Child", "2.5", "ADT", "A01")
-            .with_extends("NonExistent");
+        let child = MessageTemplate::new("Child", "2.5", "ADT", "A01").with_extends("NonExistent");
 
         resolver.register(child);
 

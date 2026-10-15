@@ -1,13 +1,13 @@
 //! QRY (Query) message builders
 
-use super::{generate_control_id, MessageBuilder};
+use super::{MessageBuilder, generate_control_id};
 use crate::{
+    Version,
     error::Result,
     field::{Component, Field, Repetition},
     message::Message,
     segment::Segment,
     types::format_timestamp,
-    Version,
 };
 use chrono::Local;
 

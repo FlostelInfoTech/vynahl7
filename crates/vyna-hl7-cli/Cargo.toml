@@ -26,7 +26,7 @@ vyna-hl7-http = { workspace = true, features = ["auth"] }
 tokio.workspace = true
 
 # CLI
-clap = { version = "4.5", features = ["derive", "cargo"] }
+clap.workspace = true
 
 # Serialization
 serde_json.workspace = true
@@ -49,3 +49,6 @@ tls = ["vyna-hl7-mllp/tls", "vyna-hl7-http/tls"]
 tokio.workspace = true
 vyna-hl7-mllp = { workspace = true, features = ["testing"] }
 vyna-hl7-http = { workspace = true, features = ["testing", "auth"] }
+
+[lints]
+workspace = true

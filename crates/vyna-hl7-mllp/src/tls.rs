@@ -212,10 +212,7 @@ impl TlsServerConfig {
     /// let config = TlsServerConfig::new("server-cert.pem", "server-key.pem").unwrap();
     /// # }
     /// ```
-    pub fn new(
-        cert_path: impl AsRef<Path>,
-        key_path: impl AsRef<Path>,
-    ) -> Result<Self> {
+    pub fn new(cert_path: impl AsRef<Path>, key_path: impl AsRef<Path>) -> Result<Self> {
         // Load server certificate
         let certs: Vec<CertificateDer> = load_certs(cert_path, "server certificate")?;
 
@@ -282,9 +279,10 @@ impl TlsServerConfig {
         // Load server private key
         let key = load_private_key(key_path)?;
 
-        let client_cert_verifier = rustls::server::WebPkiClientVerifier::builder(Arc::new(client_auth_roots))
-            .build()
-            .map_err(|e| Error::Network(format!("Failed to build client verifier: {}", e)))?;
+        let client_cert_verifier =
+            rustls::server::WebPkiClientVerifier::builder(Arc::new(client_auth_roots))
+                .build()
+                .map_err(|e| Error::Network(format!("Failed to build client verifier: {}", e)))?;
 
         let config = ServerConfig::builder()
             .with_client_cert_verifier(client_cert_verifier)

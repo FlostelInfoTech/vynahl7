@@ -39,9 +39,9 @@
 //! cargo run --example mllp_tls_client --features tls
 //! ```
 
+use std::env;
 use vyna_hl7_core::{Field, Message, Segment};
 use vyna_hl7_mllp::{MllpServer, tls::TlsServerConfig};
-use std::env;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -145,7 +145,10 @@ fn create_ack(msg: &Message) -> Message {
     }
 
     // Timestamp
-    msh.fields.push(Field::from_value(format!("{}", chrono::Utc::now().format("%Y%m%d%H%M%S"))));
+    msh.fields.push(Field::from_value(format!(
+        "{}",
+        chrono::Utc::now().format("%Y%m%d%H%M%S")
+    )));
 
     // Security
     msh.fields.push(Field::from_value(""));

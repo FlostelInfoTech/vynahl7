@@ -3,9 +3,9 @@
 //! This module provides mock servers and test helpers for integration testing.
 
 use crate::{MllpConfig, MllpServer};
-use vyna_hl7_core::{builders::ack::AckBuilder, error::Result, Message};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use vyna_hl7_core::{Message, builders::ack::AckBuilder, error::Result};
 
 /// Message handler function type
 pub type MessageHandler = Arc<dyn Fn(Message) -> Result<Message> + Send + Sync>;
@@ -135,7 +135,8 @@ impl MockMllpServer {
         // Bind to random port
         #[cfg(feature = "tls")]
         let server = if let Some(ref tls_config) = self.tls_config {
-            MllpServer::bind_tls_with_config("127.0.0.1:0", tls_config.clone(), self.config.clone()).await?
+            MllpServer::bind_tls_with_config("127.0.0.1:0", tls_config.clone(), self.config.clone())
+                .await?
         } else {
             MllpServer::bind_with_config("127.0.0.1:0", self.config.clone()).await?
         };
@@ -232,10 +233,7 @@ impl MockMllpServer {
         }
 
         if let Some(task) = self.server_task.take() {
-            let _ = tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                task
-            ).await;
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), task).await;
         }
 
         Ok(())
@@ -269,10 +267,7 @@ mod tests {
     #[tokio::test]
     async fn test_mock_server_basic() {
         // Create and start mock server
-        let server = MockMllpServer::new()
-            .start()
-            .await
-            .unwrap();
+        let server = MockMllpServer::new().start().await.unwrap();
 
         let addr = server.url();
 
@@ -338,10 +333,7 @@ mod tests {
         // Check custom response - should have MSH first, then MSA
         assert_eq!(response.segments[0].id, "MSH");
         assert_eq!(response.segments[1].id, "MSA");
-        assert_eq!(
-            response.segments[1].fields[0].value(),
-            Some("AA")
-        );
+        assert_eq!(response.segments[1].fields[0].value(), Some("AA"));
 
         client.close().await.unwrap();
         server.shutdown().await.unwrap();

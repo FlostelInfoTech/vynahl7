@@ -7,14 +7,20 @@
 
 use vyna_hl7_core::Version;
 use vyna_hl7_parser::parse_message;
-use vyna_hl7_validator::{list_available_schemas, Validator};
+use vyna_hl7_validator::{Validator, list_available_schemas};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== HL7 Schema Validation Example ===\n");
 
     // List available schemas for different versions
     println!("--- Available Schemas ---");
-    for version in [Version::V2_3, Version::V2_4, Version::V2_5, Version::V2_6, Version::V2_7] {
+    for version in [
+        Version::V2_3,
+        Version::V2_4,
+        Version::V2_5,
+        Version::V2_6,
+        Version::V2_7,
+    ] {
         let schemas = list_available_schemas(version);
         println!("{}: {:?}", version.as_str(), schemas);
     }
@@ -38,7 +44,10 @@ PV1|1|I|WARD^ROOM^BED|||ATTEND^DOCTOR^A|||MED||||1|||ATTEND^DOCTOR^A||VN12345";
     } else {
         println!("✗ Message validation failed:");
         for error in &result.errors {
-            println!("  {} [{}]: {}", error.location, error.error_type as i32, error.message);
+            println!(
+                "  {} [{}]: {}",
+                error.location, error.error_type as i32, error.message
+            );
         }
     }
 
@@ -75,11 +84,18 @@ OBX|2|NM|RBC^Red Blood Count^LN||4.5|10*6/uL|4.2-5.4|N|||F";
 
     // Demonstrate cross-version compatibility
     println!("--- Cross-Version Schema Validation ---");
-    for version in [Version::V2_3, Version::V2_4, Version::V2_5, Version::V2_6, Version::V2_7] {
+    for version in [
+        Version::V2_3,
+        Version::V2_4,
+        Version::V2_5,
+        Version::V2_6,
+        Version::V2_7,
+    ] {
         match Validator::for_message_type(version, "ADT", "A01") {
             Ok(val) => {
                 let res = val.validate(&message);
-                println!("{}: {} (errors: {}, warnings: {})",
+                println!(
+                    "{}: {} (errors: {}, warnings: {})",
                     version.as_str(),
                     if res.is_valid() { "✓" } else { "✗" },
                     res.errors.len(),

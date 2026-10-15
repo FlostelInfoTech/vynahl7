@@ -1,12 +1,12 @@
 //! Full cross-crate pipeline benchmarks measuring cumulative cost
 //! of parse → validate → extract → transform → encode workflows.
 
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use std::hint::black_box;
+use vyna_hl7_core::Version;
 use vyna_hl7_parser::parse_message;
 use vyna_hl7_terser::{CachedTerser, Terser, TerserMut};
-use vyna_hl7_validator::{Validator};
-use vyna_hl7_core::Version;
-use std::hint::black_box;
+use vyna_hl7_validator::Validator;
 
 const ADT_A01: &str = "\
 MSH|^~\\&|HIS|HOSPITAL|EMR|HOSPITAL|20240315143000||ADT^A01^ADT_A01|MSG00001|P|2.5|||AL|NE\r\
@@ -79,8 +79,7 @@ fn bench_pipeline_parse_extract(c: &mut Criterion) {
     let mut group = c.benchmark_group("Pipeline_Parse_Extract");
 
     let clinical_paths = [
-        "PID-3", "PID-5-1", "PID-5-2", "PID-7", "PID-8",
-        "PV1-2", "PV1-3", "PV1-7-1", "PV1-44",
+        "PID-3", "PID-5-1", "PID-5-2", "PID-7", "PID-8", "PV1-2", "PV1-3", "PV1-7-1", "PV1-44",
         "MSH-9",
     ];
 
@@ -151,8 +150,13 @@ fn generate_ack(original: &vyna_hl7_core::Message) -> String {
 
     format!(
         "MSH|^~\\&|{}|{}|{}|{}|20240315143001||ACK|ACK{}|P|{}\rMSA|AA|{}\r",
-        receiving_app, receiving_fac, sending_app, sending_fac,
-        msg_control_id, version, msg_control_id
+        receiving_app,
+        receiving_fac,
+        sending_app,
+        sending_fac,
+        msg_control_id,
+        version,
+        msg_control_id
     )
 }
 
@@ -165,10 +169,10 @@ fn bench_pipeline_interface_engine_sim(c: &mut Criterion) {
             let msg = parse_message(black_box(ADT_A01)).unwrap();
             // Extract routing fields
             let terser = Terser::new(&msg);
-            let _ = terser.get("MSH-9").unwrap();      // message type
-            let _ = terser.get("MSH-5").unwrap();       // receiving app
-            let _ = terser.get("PID-3").unwrap();       // patient ID
-            let _ = terser.get("PV1-2").unwrap();       // patient class
+            let _ = terser.get("MSH-9").unwrap(); // message type
+            let _ = terser.get("MSH-5").unwrap(); // receiving app
+            let _ = terser.get("PID-3").unwrap(); // patient ID
+            let _ = terser.get("PV1-2").unwrap(); // patient class
             // Generate ACK
             let ack = generate_ack(&msg);
             black_box(ack)
@@ -182,7 +186,7 @@ fn bench_pipeline_interface_engine_sim(c: &mut Criterion) {
             let _ = terser.get("MSH-9").unwrap();
             let _ = terser.get("MSH-5").unwrap();
             let _ = terser.get("PID-3").unwrap();
-            let _ = terser.get("OBR-4").unwrap();       // order type
+            let _ = terser.get("OBR-4").unwrap(); // order type
             let ack = generate_ack(&msg);
             black_box(ack)
         });

@@ -281,25 +281,101 @@ DG1|1||I10^原发性高血压^I10|Essential hypertension|20240115|A|05^CIRCULATO
 /// Get all sample messages with descriptions
 pub fn get_sample_messages() -> Vec<(&'static str, &'static str, &'static str)> {
     vec![
-        ("ADT^A01 - Patient Admit", "Full admission message with demographics, visit info, vitals, allergies, diagnosis, and insurance", ADT_A01),
-        ("ADT^A01 - UTF-8 i18n Admit", "Admission with UTF-8 Chinese patient name, Japanese next of kin, and CJK display text", ADT_A01_I18N),
-        ("ADT^A02 - Transfer", "ICU to step-down transfer with prior location, transfer reason, and diet upgrade", ADT_A02),
-        ("ADT^A03 - Discharge", "Discharge message with disposition, final diagnoses, DRG, discharge vitals, and dual coverage", ADT_A03),
-        ("ADT^A04 - Register Outpatient", "Outpatient registration with visit reason, allergy, guarantor, and insurance", ADT_A04),
-        ("ADT^A08 - Update Patient", "Demographics update with full visit, vitals, allergy, diagnosis, and insurance context", ADT_A08),
-        ("ADT^A11 - Cancel Admit", "Cancelled admission (duplicate registration) with visit and coverage", ADT_A11),
-        ("ADT^A12 - Cancel Transfer", "Cancelled transfer to medical unit, patient remains on step-down", ADT_A12),
-        ("ADT^A13 - Cancel Discharge", "Cancelled discharge (physician order) with working diagnosis", ADT_A13),
-        ("ORU^R01 - Lab Results", "Comprehensive metabolic panel results with specimen details, abnormal flags, and 14 analytes", ORU_R01),
-        ("ORM^O01 - Lab Order", "New lab orders for CMP and CBC with diagnosis, insurance, and collection notes", ORM_O01),
-        ("SIU^S12 - Schedule", "New appointment booking with contacts, resources, room, and instructions", SIU_S12),
-        ("VXU^V04 - Immunization", "Pediatric flu shot administration with funding, VIS dates, and eligibility", VXU_V04),
-        ("MDM^T02 - Document", "Transcribed discharge summary notification with authentication status", MDM_T02),
-        ("RDE^O11 - Pharmacy", "Inpatient influenza vaccine order with dosing, allergy, and hold instructions", RDE_O11),
-        ("BAR^P01 - Billing", "New cardiac account with procedures, DRG, guarantor, insurance, and UB data", BAR_P01),
-        ("QRY^A19 - Query", "Patient demographics query with filters and date range", QRY_A19),
-        ("ACK - Acknowledgment", "Positive acknowledgment with sequence tracking and info note", ACK),
-        ("Minimal", "Simple minimal ADT message for basic testing", MINIMAL),
+        (
+            "ADT^A01 - Patient Admit",
+            "Full admission message with demographics, visit info, vitals, allergies, diagnosis, and insurance",
+            ADT_A01,
+        ),
+        (
+            "ADT^A01 - UTF-8 i18n Admit",
+            "Admission with UTF-8 Chinese patient name, Japanese next of kin, and CJK display text",
+            ADT_A01_I18N,
+        ),
+        (
+            "ADT^A02 - Transfer",
+            "ICU to step-down transfer with prior location, transfer reason, and diet upgrade",
+            ADT_A02,
+        ),
+        (
+            "ADT^A03 - Discharge",
+            "Discharge message with disposition, final diagnoses, DRG, discharge vitals, and dual coverage",
+            ADT_A03,
+        ),
+        (
+            "ADT^A04 - Register Outpatient",
+            "Outpatient registration with visit reason, allergy, guarantor, and insurance",
+            ADT_A04,
+        ),
+        (
+            "ADT^A08 - Update Patient",
+            "Demographics update with full visit, vitals, allergy, diagnosis, and insurance context",
+            ADT_A08,
+        ),
+        (
+            "ADT^A11 - Cancel Admit",
+            "Cancelled admission (duplicate registration) with visit and coverage",
+            ADT_A11,
+        ),
+        (
+            "ADT^A12 - Cancel Transfer",
+            "Cancelled transfer to medical unit, patient remains on step-down",
+            ADT_A12,
+        ),
+        (
+            "ADT^A13 - Cancel Discharge",
+            "Cancelled discharge (physician order) with working diagnosis",
+            ADT_A13,
+        ),
+        (
+            "ORU^R01 - Lab Results",
+            "Comprehensive metabolic panel results with specimen details, abnormal flags, and 14 analytes",
+            ORU_R01,
+        ),
+        (
+            "ORM^O01 - Lab Order",
+            "New lab orders for CMP and CBC with diagnosis, insurance, and collection notes",
+            ORM_O01,
+        ),
+        (
+            "SIU^S12 - Schedule",
+            "New appointment booking with contacts, resources, room, and instructions",
+            SIU_S12,
+        ),
+        (
+            "VXU^V04 - Immunization",
+            "Pediatric flu shot administration with funding, VIS dates, and eligibility",
+            VXU_V04,
+        ),
+        (
+            "MDM^T02 - Document",
+            "Transcribed discharge summary notification with authentication status",
+            MDM_T02,
+        ),
+        (
+            "RDE^O11 - Pharmacy",
+            "Inpatient influenza vaccine order with dosing, allergy, and hold instructions",
+            RDE_O11,
+        ),
+        (
+            "BAR^P01 - Billing",
+            "New cardiac account with procedures, DRG, guarantor, insurance, and UB data",
+            BAR_P01,
+        ),
+        (
+            "QRY^A19 - Query",
+            "Patient demographics query with filters and date range",
+            QRY_A19,
+        ),
+        (
+            "ACK - Acknowledgment",
+            "Positive acknowledgment with sequence tracking and info note",
+            ACK,
+        ),
+        (
+            "Minimal",
+            "Simple minimal ADT message for basic testing",
+            MINIMAL,
+        ),
     ]
 }
 
@@ -912,10 +988,7 @@ mod tests {
         assert_eq!(field(&m, "PV1-19-1").as_deref(), Some("VN00001"));
         assert_eq!(field(&m, "PV1-44").as_deref(), Some("20240115120000"));
         assert_eq!(field(&m, "PV2-1-1").as_deref(), Some("3N"));
-        assert_eq!(
-            field(&m, "PV2-4").as_deref(),
-            Some("TRANSFER CANCELLED")
-        );
+        assert_eq!(field(&m, "PV2-4").as_deref(), Some("TRANSFER CANCELLED"));
         assert_eq!(field(&m, "PID-33").as_deref(), Some("20240118140000"));
         assert_eq!(segment_count(&m, "OBX"), 3);
         assert_eq!(segment_count(&m, "DG1"), 2);
@@ -947,8 +1020,8 @@ mod tests {
     fn enriched_samples_pass_schema_validation() {
         // MINIMAL is intentionally sparse and excluded.
         for text in [
-            ADT_A01, ADT_A02, ADT_A03, ADT_A04, ADT_A08, ADT_A11, ADT_A12, ADT_A13,
-            ORU_R01, ORM_O01, SIU_S12, VXU_V04, MDM_T02, RDE_O11, BAR_P01, QRY_A19, ACK,
+            ADT_A01, ADT_A02, ADT_A03, ADT_A04, ADT_A08, ADT_A11, ADT_A12, ADT_A13, ORU_R01,
+            ORM_O01, SIU_S12, VXU_V04, MDM_T02, RDE_O11, BAR_P01, QRY_A19, ACK,
         ] {
             let message = parse_sample(text);
             let (msg_type, trigger) = message

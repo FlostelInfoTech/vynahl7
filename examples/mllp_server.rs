@@ -5,9 +5,9 @@
 //! - Parses incoming messages
 //! - Sends ACK responses
 
+use chrono::Utc;
 use vyna_hl7_core::{delimiters::Delimiters, field::Field, message::Message, segment::Segment};
 use vyna_hl7_mllp::MllpServer;
-use chrono::Utc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

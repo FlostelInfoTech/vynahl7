@@ -29,8 +29,16 @@ fn main() {
     println!("--- Timestamp (DTM/TS) Validation ---");
     test_validation("20240315", DataType::DTM, "Valid date only");
     test_validation("20240315143000", DataType::DTM, "Valid full timestamp");
-    test_validation("20240315143000.1234", DataType::DTM, "Valid timestamp with fractions");
-    test_validation("202403151", DataType::DTM, "Invalid timestamp (wrong length)");
+    test_validation(
+        "20240315143000.1234",
+        DataType::DTM,
+        "Valid timestamp with fractions",
+    );
+    test_validation(
+        "202403151",
+        DataType::DTM,
+        "Invalid timestamp (wrong length)",
+    );
     println!();
 
     // Numeric validation (NM)

@@ -63,6 +63,11 @@ impl<'a> Terser<'a> {
     /// `OBX(5)` when the message holds two OBX segments).
     /// [`CachedTerser::get`](crate::CachedTerser::get) shares this contract.
     ///
+    /// A component or subcomponent index of 0 parses but never resolves:
+    /// reads return `Ok(None)` for it (writes reject it, as they do every
+    /// 0 index). Segment, field, and repetition 0 are malformed paths and
+    /// return `Err` on both reads and writes.
+    ///
     /// # Whole-field reads yield the first component
     ///
     /// A path without a component (e.g. `PID-5`) returns the first
@@ -448,6 +453,19 @@ mod tests {
         // MSH-9-0 should be invalid (HL7 doesn't use 0-based)
         let result = terser.get("MSH-9-0").unwrap();
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_field_zero_path_is_malformed_on_read() {
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\rPID|1\r";
+        let message = parse_message(hl7).unwrap();
+        let terser = Terser::new(&message);
+
+        // Field 0 is the segment id: malformed on reads, like segment
+        // and repetition 0 — not a silent None.
+        assert!(terser.get("PID-0").is_err());
+        assert!(terser.get("PID-0-1").is_err());
+        assert!(terser.get("MSH-0").is_err());
     }
 
     #[test]

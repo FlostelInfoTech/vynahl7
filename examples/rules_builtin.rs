@@ -214,7 +214,8 @@ fn create_oru_message() -> Message {
     obr.fields.push(Field::from_value("1")); // OBR-1
     obr.fields.push(Field::from_value("ORDER123")); // OBR-2
     obr.fields.push(Field::from_value("FILLER456")); // OBR-3
-    obr.fields.push(Field::from_value("CBC^Complete Blood Count^LN")); // OBR-4 (Universal Service ID)
+    obr.fields
+        .push(Field::from_value("CBC^Complete Blood Count^LN")); // OBR-4 (Universal Service ID)
     obr.fields.push(Field::from_value("")); // OBR-5
     obr.fields.push(Field::from_value("")); // OBR-6
     obr.fields.push(Field::from_value("20231101080000")); // OBR-7 (Observation DateTime)
@@ -232,7 +233,8 @@ fn create_oru_message() -> Message {
     let mut obx = Segment::new("OBX");
     obx.fields.push(Field::from_value("1")); // OBX-1
     obx.fields.push(Field::from_value("NM")); // OBX-2 (Value Type - Numeric)
-    obx.fields.push(Field::from_value("WBC^White Blood Cell Count^LN")); // OBX-3 (Observation Identifier)
+    obx.fields
+        .push(Field::from_value("WBC^White Blood Cell Count^LN")); // OBX-3 (Observation Identifier)
     obx.fields.push(Field::from_value("")); // OBX-4
     obx.fields.push(Field::from_value("7.5")); // OBX-5 (Observation Value)
     obx.fields.push(Field::from_value("10^3/uL")); // OBX-6

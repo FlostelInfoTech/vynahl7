@@ -1,14 +1,15 @@
 //! Utility functions for the VynaHL7 Test Panel
 
-use vyna_hl7_core::{Message, Delimiters, Field, Repetition, Component};
-use vyna_hl7_validator::{MessageSchema, schema_loader};
-use std::collections::HashMap;
 use once_cell::sync::Lazy;
+use std::collections::HashMap;
+use vyna_hl7_core::{Component, Delimiters, Field, Message, Repetition};
+use vyna_hl7_validator::{MessageSchema, schema_loader};
 
 /// Display a field value without escape encoding (for UI display)
 /// Joins repetitions with the repetition separator
 fn display_field(field: &Field, delimiters: &Delimiters) -> String {
-    field.repetitions
+    field
+        .repetitions
         .iter()
         .map(|r| display_repetition(r, delimiters))
         .collect::<Vec<_>>()
@@ -18,7 +19,8 @@ fn display_field(field: &Field, delimiters: &Delimiters) -> String {
 /// Display a repetition value without escape encoding (for UI display)
 /// Joins components with the component separator
 fn display_repetition(repetition: &Repetition, delimiters: &Delimiters) -> String {
-    repetition.components
+    repetition
+        .components
         .iter()
         .map(|c| display_component(c, delimiters))
         .collect::<Vec<_>>()
@@ -28,7 +30,8 @@ fn display_repetition(repetition: &Repetition, delimiters: &Delimiters) -> Strin
 /// Display a component value without escape encoding (for UI display)
 /// Joins subcomponents with the subcomponent separator
 fn display_component(component: &Component, delimiters: &Delimiters) -> String {
-    component.subcomponents
+    component
+        .subcomponents
         .iter()
         .map(|sc| sc.value.clone())
         .collect::<Vec<_>>()
@@ -41,80 +44,80 @@ static FIELD_DATA_TYPES: Lazy<HashMap<(&'static str, usize), &'static str>> = La
     let mut m = HashMap::new();
 
     // MSH fields
-    m.insert(("MSH", 3), "HD");   // Sending Application
-    m.insert(("MSH", 4), "HD");   // Sending Facility
-    m.insert(("MSH", 5), "HD");   // Receiving Application
-    m.insert(("MSH", 6), "HD");   // Receiving Facility
-    m.insert(("MSH", 9), "MSG");  // Message Type
-    m.insert(("MSH", 11), "PT");  // Processing ID
+    m.insert(("MSH", 3), "HD"); // Sending Application
+    m.insert(("MSH", 4), "HD"); // Sending Facility
+    m.insert(("MSH", 5), "HD"); // Receiving Application
+    m.insert(("MSH", 6), "HD"); // Receiving Facility
+    m.insert(("MSH", 9), "MSG"); // Message Type
+    m.insert(("MSH", 11), "PT"); // Processing ID
     m.insert(("MSH", 12), "VID"); // Version ID
 
     // PID fields
-    m.insert(("PID", 3), "CX");   // Patient Identifier List
-    m.insert(("PID", 5), "XPN");  // Patient Name
-    m.insert(("PID", 6), "XPN");  // Mother's Maiden Name
-    m.insert(("PID", 9), "XPN");  // Patient Alias
-    m.insert(("PID", 10), "CE");  // Race
+    m.insert(("PID", 3), "CX"); // Patient Identifier List
+    m.insert(("PID", 5), "XPN"); // Patient Name
+    m.insert(("PID", 6), "XPN"); // Mother's Maiden Name
+    m.insert(("PID", 9), "XPN"); // Patient Alias
+    m.insert(("PID", 10), "CE"); // Race
     m.insert(("PID", 11), "XAD"); // Patient Address
     m.insert(("PID", 13), "XTN"); // Phone Number - Home
     m.insert(("PID", 14), "XTN"); // Phone Number - Business
-    m.insert(("PID", 15), "CE");  // Primary Language
-    m.insert(("PID", 16), "CE");  // Marital Status
-    m.insert(("PID", 17), "CE");  // Religion
-    m.insert(("PID", 18), "CX");  // Patient Account Number
-    m.insert(("PID", 22), "CE");  // Ethnic Group
+    m.insert(("PID", 15), "CE"); // Primary Language
+    m.insert(("PID", 16), "CE"); // Marital Status
+    m.insert(("PID", 17), "CE"); // Religion
+    m.insert(("PID", 18), "CX"); // Patient Account Number
+    m.insert(("PID", 22), "CE"); // Ethnic Group
 
     // PV1 fields
-    m.insert(("PV1", 3), "PL");   // Assigned Patient Location
-    m.insert(("PV1", 6), "PL");   // Prior Patient Location
-    m.insert(("PV1", 7), "XCN");  // Attending Doctor
-    m.insert(("PV1", 8), "XCN");  // Referring Doctor
-    m.insert(("PV1", 9), "XCN");  // Consulting Doctor
+    m.insert(("PV1", 3), "PL"); // Assigned Patient Location
+    m.insert(("PV1", 6), "PL"); // Prior Patient Location
+    m.insert(("PV1", 7), "XCN"); // Attending Doctor
+    m.insert(("PV1", 8), "XCN"); // Referring Doctor
+    m.insert(("PV1", 9), "XCN"); // Consulting Doctor
     m.insert(("PV1", 17), "XCN"); // Admitting Doctor
-    m.insert(("PV1", 19), "CX");  // Visit Number
+    m.insert(("PV1", 19), "CX"); // Visit Number
 
     // OBR fields
-    m.insert(("OBR", 2), "EI");   // Placer Order Number
-    m.insert(("OBR", 3), "EI");   // Filler Order Number
-    m.insert(("OBR", 4), "CE");   // Universal Service Identifier
+    m.insert(("OBR", 2), "EI"); // Placer Order Number
+    m.insert(("OBR", 3), "EI"); // Filler Order Number
+    m.insert(("OBR", 4), "CE"); // Universal Service Identifier
     m.insert(("OBR", 16), "XCN"); // Ordering Provider
 
     // OBX fields
-    m.insert(("OBX", 3), "CE");   // Observation Identifier
-    m.insert(("OBX", 6), "CE");   // Units
+    m.insert(("OBX", 3), "CE"); // Observation Identifier
+    m.insert(("OBX", 6), "CE"); // Units
     m.insert(("OBX", 16), "XCN"); // Responsible Observer
 
     // ORC fields
-    m.insert(("ORC", 2), "EI");   // Placer Order Number
-    m.insert(("ORC", 3), "EI");   // Filler Order Number
+    m.insert(("ORC", 2), "EI"); // Placer Order Number
+    m.insert(("ORC", 3), "EI"); // Filler Order Number
     m.insert(("ORC", 10), "XCN"); // Entered By
     m.insert(("ORC", 11), "XCN"); // Verified By
     m.insert(("ORC", 12), "XCN"); // Ordering Provider
 
     // NK1 fields
-    m.insert(("NK1", 2), "XPN");  // Name
-    m.insert(("NK1", 3), "CE");   // Relationship
-    m.insert(("NK1", 4), "XAD");  // Address
-    m.insert(("NK1", 5), "XTN");  // Phone Number
-    m.insert(("NK1", 6), "XTN");  // Business Phone Number
+    m.insert(("NK1", 2), "XPN"); // Name
+    m.insert(("NK1", 3), "CE"); // Relationship
+    m.insert(("NK1", 4), "XAD"); // Address
+    m.insert(("NK1", 5), "XTN"); // Phone Number
+    m.insert(("NK1", 6), "XTN"); // Business Phone Number
 
     // IN1 fields
-    m.insert(("IN1", 3), "CX");   // Insurance Company ID
-    m.insert(("IN1", 4), "XON");  // Insurance Company Name
-    m.insert(("IN1", 5), "XAD");  // Insurance Company Address
+    m.insert(("IN1", 3), "CX"); // Insurance Company ID
+    m.insert(("IN1", 4), "XON"); // Insurance Company Name
+    m.insert(("IN1", 5), "XAD"); // Insurance Company Address
     m.insert(("IN1", 16), "XPN"); // Name of Insured
 
     // DG1 fields
-    m.insert(("DG1", 3), "CE");   // Diagnosis Code
+    m.insert(("DG1", 3), "CE"); // Diagnosis Code
 
     // AL1 fields
-    m.insert(("AL1", 3), "CE");   // Allergen Code/Description
+    m.insert(("AL1", 3), "CE"); // Allergen Code/Description
 
     // RXA fields
-    m.insert(("RXA", 5), "CE");   // Administered Code
-    m.insert(("RXA", 7), "CE");   // Administered Units
+    m.insert(("RXA", 5), "CE"); // Administered Code
+    m.insert(("RXA", 7), "CE"); // Administered Units
     m.insert(("RXA", 10), "XCN"); // Administering Provider
-    m.insert(("RXA", 17), "CE");  // Substance Manufacturer Name
+    m.insert(("RXA", 17), "CE"); // Substance Manufacturer Name
 
     m
 });
@@ -540,12 +543,12 @@ pub fn get_field_name(segment_id: &str, field_num: usize) -> Option<&'static str
 /// Format a message as a tree structure for display
 /// Try to load the schema for a parsed message
 pub fn load_message_schema(message: &Message) -> Option<MessageSchema> {
-    let version = message.get_version().unwrap_or(vyna_hl7_core::Version::V2_5);
-    message
-        .get_message_type()
-        .and_then(|(msg_type, trigger)| {
-            schema_loader::load_schema(version, &msg_type, &trigger).ok()
-        })
+    let version = message
+        .get_version()
+        .unwrap_or(vyna_hl7_core::Version::V2_5);
+    message.get_message_type().and_then(|(msg_type, trigger)| {
+        schema_loader::load_schema(version, &msg_type, &trigger).ok()
+    })
 }
 
 pub fn format_message_tree(message: &Message) -> Vec<TreeNode> {
@@ -553,12 +556,16 @@ pub fn format_message_tree(message: &Message) -> Vec<TreeNode> {
     format_message_tree_with_schema(message, schema.as_ref())
 }
 
-pub fn format_message_tree_with_schema(message: &Message, schema: Option<&MessageSchema>) -> Vec<TreeNode> {
+pub fn format_message_tree_with_schema(
+    message: &Message,
+    schema: Option<&MessageSchema>,
+) -> Vec<TreeNode> {
     let mut nodes = Vec::new();
     let delimiters = &message.delimiters;
 
     // Track segment counts for Terser indexing (e.g., OBX(1), OBX(2))
-    let mut segment_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut segment_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
 
     for (seg_idx, segment) in message.segments.iter().enumerate() {
         // Increment segment count for this type
@@ -578,7 +585,7 @@ pub fn format_message_tree_with_schema(message: &Message, schema: Option<&Messag
             label: seg_label,
             children: Vec::new(),
             expanded: seg_idx == 0, // Expand first segment by default
-            path: None, // Segments don't have a direct Terser path
+            path: None,             // Segments don't have a direct Terser path
         };
 
         for (field_idx, field) in segment.fields.iter().enumerate() {
@@ -649,11 +656,8 @@ pub fn format_message_tree_with_schema(message: &Message, schema: Option<&Messag
                         if !rep_value.is_empty() {
                             // Terser paths use 1-based repetition indexes.
                             let rep_path = format!("{}({})", field_path, rep_idx + 1);
-                            let rep_label = format!(
-                                "Rep {}: {}",
-                                rep_idx + 1,
-                                truncate_string(&rep_value, 50)
-                            );
+                            let rep_label =
+                                format!("Rep {}: {}", rep_idx + 1, truncate_string(&rep_value, 50));
 
                             let mut rep_node = TreeNode {
                                 label: rep_label,
@@ -663,12 +667,26 @@ pub fn format_message_tree_with_schema(message: &Message, schema: Option<&Messag
                             };
 
                             // Add components with names
-                            add_component_nodes(&mut rep_node, repetition, &rep_path, data_type, schema_components, delimiters);
+                            add_component_nodes(
+                                &mut rep_node,
+                                repetition,
+                                &rep_path,
+                                data_type,
+                                schema_components,
+                                delimiters,
+                            );
                             field_node.children.push(rep_node);
                         }
                     } else {
                         // Single repetition - add components directly
-                        add_component_nodes(&mut field_node, repetition, &field_path, data_type, schema_components, delimiters);
+                        add_component_nodes(
+                            &mut field_node,
+                            repetition,
+                            &field_path,
+                            data_type,
+                            schema_components,
+                            delimiters,
+                        );
                     }
                 }
 
@@ -704,7 +722,11 @@ fn add_component_nodes(
                 let comp_num_str = comp_num.to_string();
                 let comp_name: Option<String> = schema_components
                     .and_then(|comps| comps.get(&comp_num_str).map(|c| c.name.clone()))
-                    .or_else(|| data_type.and_then(|dt| get_component_name(dt, comp_num)).map(|s| s.to_string()));
+                    .or_else(|| {
+                        data_type
+                            .and_then(|dt| get_component_name(dt, comp_num))
+                            .map(|s| s.to_string())
+                    });
 
                 // Use Terser notation: SEG-F-C (e.g., MSH-9-1)
                 let comp_label = if let Some(ref name) = comp_name {
@@ -715,11 +737,7 @@ fn add_component_nodes(
                         truncate_string(&comp_value, 35)
                     )
                 } else {
-                    format!(
-                        "{}: {}",
-                        comp_path,
-                        truncate_string(&comp_value, 40)
-                    )
+                    format!("{}: {}", comp_path, truncate_string(&comp_value, 40))
                 };
 
                 let mut comp_node = TreeNode {
@@ -804,7 +822,11 @@ impl TreeNode {
                 .show(ui, |ui| {
                     // If this node has a path, add a clickable button
                     if let Some(ref path) = self.path {
-                        if ui.small_button(format!("📋 {}", path)).on_hover_text("Click to query this path").clicked() {
+                        if ui
+                            .small_button(format!("📋 {}", path))
+                            .on_hover_text("Click to query this path")
+                            .clicked()
+                        {
                             clicked_path = Some(path.clone());
                         }
                         ui.add_space(2.0);
@@ -852,18 +874,21 @@ pub fn format_bytes(bytes: usize) -> String {
 pub fn get_message_stats(message: &Message) -> MessageStats {
     let segment_count = message.segments.len();
     let mut field_count = 0;
-    let mut segment_types: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut segment_types: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
 
     for segment in &message.segments {
         *segment_types.entry(segment.id.clone()).or_insert(0) += 1;
         field_count += segment.fields.len();
     }
 
-    let message_type = message.get_message_type()
+    let message_type = message
+        .get_message_type()
         .map(|(t, e)| format!("{}^{}", t, e))
         .unwrap_or_else(|| "Unknown".to_string());
 
-    let version = message.get_version()
+    let version = message
+        .get_version()
         .map(|v| v.as_str().to_string())
         .unwrap_or_else(|| "Unknown".to_string());
 

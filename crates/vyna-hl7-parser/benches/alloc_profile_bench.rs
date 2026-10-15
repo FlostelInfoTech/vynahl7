@@ -3,7 +3,9 @@
 //! Run with:
 //!   cargo bench -p vyna-hl7-parser --bench alloc_profile_bench
 
-#[allow(dead_code)]
+// A counting GlobalAlloc needs unsafe by construction; this bench-only
+// shim is the workspace's sole `unsafe_code` exception.
+#[allow(dead_code, unsafe_code)]
 mod alloc_counter;
 #[allow(dead_code)]
 mod bench_env;
@@ -16,8 +18,8 @@ use alloc_counter::CountingAllocator;
 static ALLOC: CountingAllocator = CountingAllocator::new();
 
 use corpus::*;
-use vyna_hl7_parser::{parse_batch, parse_message};
 use std::hint::black_box;
+use vyna_hl7_parser::{parse_batch, parse_message};
 
 fn measure_parse(name: &str, input: &str, iterations: usize) {
     for _ in 0..10 {
@@ -93,9 +95,14 @@ fn main() {
     println!("  ---------------");
     println!("  Allocator:     Custom GlobalAlloc wrapper around std::alloc::System");
     println!("                 Counts every alloc() call and sums requested layout sizes");
-    println!("                 Does NOT count reallocs or track dealloc (measures gross allocation)");
+    println!(
+        "                 Does NOT count reallocs or track dealloc (measures gross allocation)"
+    );
     println!("  Warmup:        10 parses discarded (stabilizes allocator internal state)");
-    println!("  Iterations:    {} per message type (results averaged)", iterations);
+    println!(
+        "  Iterations:    {} per message type (results averaged)",
+        iterations
+    );
     println!("  Measurement:   Total alloc count and alloc bytes across all iterations, divided");
     println!("                 by iteration count to get per-parse averages");
     println!("  Messages:      9 realistic HL7 messages (ADT, ORU, RDE, SIU, MDM, DFT, ORM)");
@@ -113,7 +120,10 @@ fn main() {
     println!("    OS:            {}", env.os);
     println!("    Kernel:        {}", env.kernel);
     println!("    CPU:           {}", env.cpu_model);
-    println!("    Cores:         {} physical / {} logical", env.cpu_cores_physical, env.cpu_cores_logical);
+    println!(
+        "    Cores:         {} physical / {} logical",
+        env.cpu_cores_physical, env.cpu_cores_logical
+    );
     println!("    RAM:           {}", env.memory_total);
     println!();
     println!("  Toolchain:");

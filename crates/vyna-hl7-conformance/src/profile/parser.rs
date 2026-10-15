@@ -5,11 +5,11 @@ use crate::profile::{
     Cardinality, ConformanceProfile, FieldProfile, MessageProfile, ProfileMetadata, SegmentProfile,
     Usage,
 };
-use quick_xml::events::Event;
 use quick_xml::Reader;
-use vyna_hl7_core::Version;
+use quick_xml::events::Event;
 use std::io::BufRead;
 use std::path::Path;
+use vyna_hl7_core::Version;
 
 /// Parser for HL7 conformance profile XML files
 ///
@@ -71,7 +71,10 @@ impl ProfileParser {
                             // Parse root element attributes
                             for attr in e.attributes() {
                                 let attr = attr.map_err(|e| {
-                                    ConformanceError::ParseError(format!("Invalid attribute: {}", e))
+                                    ConformanceError::ParseError(format!(
+                                        "Invalid attribute: {}",
+                                        e
+                                    ))
                                 })?;
                                 if attr.key.as_ref() == "HL7Version" {
                                     let version_str = Self::attr_value(&attr)?;
@@ -83,7 +86,10 @@ impl ProfileParser {
                             // Parse static definition attributes
                             for attr in e.attributes() {
                                 let attr = attr.map_err(|e| {
-                                    ConformanceError::ParseError(format!("Invalid attribute: {}", e))
+                                    ConformanceError::ParseError(format!(
+                                        "Invalid attribute: {}",
+                                        e
+                                    ))
                                 })?;
                                 match attr.key.as_ref() {
                                     "MsgType" => {
@@ -165,9 +171,8 @@ impl ProfileParser {
         let mut version = None;
 
         for attr in element.attributes() {
-            let attr = attr.map_err(|e| {
-                ConformanceError::ParseError(format!("Invalid attribute: {}", e))
-            })?;
+            let attr = attr
+                .map_err(|e| ConformanceError::ParseError(format!("Invalid attribute: {}", e)))?;
             match attr.key.as_ref() {
                 "Name" => name = Some(Self::attr_value(&attr)?),
                 "OrgName" => org_name = Some(Self::attr_value(&attr)?),
@@ -204,9 +209,8 @@ impl ProfileParser {
 
         // Parse attributes
         for attr in element.attributes() {
-            let attr = attr.map_err(|e| {
-                ConformanceError::ParseError(format!("Invalid attribute: {}", e))
-            })?;
+            let attr = attr
+                .map_err(|e| ConformanceError::ParseError(format!("Invalid attribute: {}", e)))?;
             match attr.key.as_ref() {
                 "Name" => name = Some(Self::attr_value(&attr)?),
                 "LongName" => long_name = Some(Self::attr_value(&attr)?),
@@ -305,9 +309,8 @@ impl ProfileParser {
         let mut item_no = None;
 
         for attr in element.attributes() {
-            let attr = attr.map_err(|e| {
-                ConformanceError::ParseError(format!("Invalid attribute: {}", e))
-            })?;
+            let attr = attr
+                .map_err(|e| ConformanceError::ParseError(format!("Invalid attribute: {}", e)))?;
             match attr.key.as_ref() {
                 "Name" => name = Some(Self::attr_value(&attr)?),
                 "Usage" => usage = Some(Self::attr_value(&attr)?),
@@ -373,24 +376,12 @@ mod tests {
 
     #[test]
     fn test_parse_version() {
-        assert_eq!(
-            ProfileParser::parse_version("2.5").unwrap(),
-            Version::V2_5
-        );
-        assert_eq!(
-            ProfileParser::parse_version("2.3").unwrap(),
-            Version::V2_3
-        );
+        assert_eq!(ProfileParser::parse_version("2.5").unwrap(), Version::V2_5);
+        assert_eq!(ProfileParser::parse_version("2.3").unwrap(), Version::V2_3);
         assert!(ProfileParser::parse_version("9.9").is_err());
         // v2.1 and v2.8 are now supported
-        assert_eq!(
-            ProfileParser::parse_version("2.1").unwrap(),
-            Version::V2_1
-        );
-        assert_eq!(
-            ProfileParser::parse_version("2.8").unwrap(),
-            Version::V2_8
-        );
+        assert_eq!(ProfileParser::parse_version("2.1").unwrap(), Version::V2_1);
+        assert_eq!(ProfileParser::parse_version("2.8").unwrap(), Version::V2_8);
     }
 
     #[test]
@@ -519,7 +510,10 @@ mod tests {
         let profile = ProfileParser::parse_file("profiles/sample_adt_a01.xml").unwrap();
 
         assert_eq!(profile.metadata.name, "Sample ADT A01 Profile");
-        assert_eq!(profile.metadata.organization, Some("VynaHL7 Project".to_string()));
+        assert_eq!(
+            profile.metadata.organization,
+            Some("VynaHL7 Project".to_string())
+        );
         assert_eq!(profile.metadata.hl7_version, Version::V2_5);
 
         assert_eq!(profile.message.message_type, "ADT");

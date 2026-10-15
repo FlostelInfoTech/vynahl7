@@ -2,8 +2,8 @@
 //!
 //! This example demonstrates using YAML configuration to define transformation rules.
 
-use vyna_hl7_core::builders::adt::AdtBuilder;
 use vyna_hl7_core::Version;
+use vyna_hl7_core::builders::adt::AdtBuilder;
 use vyna_hl7_parser::parse_message;
 use vyna_hl7_terser::Terser;
 use vyna_hl7_transform::config::TransformConfig;
@@ -80,10 +80,22 @@ rules:
 
     println!("Verification:");
     println!("  Patient ID: {}", terser.get("PID-3")?.unwrap_or("N/A"));
-    println!("  Sex (uppercase): {}", terser.get("PID-8")?.unwrap_or("N/A"));
-    println!("  Sending App (uppercase): {}", terser.get("MSH-3")?.unwrap_or("N/A"));
-    println!("  Sending Facility (uppercase): {}", terser.get("MSH-4")?.unwrap_or("N/A"));
-    println!("  Date of Birth (formatted): {}", terser.get("PID-7")?.unwrap_or("N/A"));
+    println!(
+        "  Sex (uppercase): {}",
+        terser.get("PID-8")?.unwrap_or("N/A")
+    );
+    println!(
+        "  Sending App (uppercase): {}",
+        terser.get("MSH-3")?.unwrap_or("N/A")
+    );
+    println!(
+        "  Sending Facility (uppercase): {}",
+        terser.get("MSH-4")?.unwrap_or("N/A")
+    );
+    println!(
+        "  Date of Birth (formatted): {}",
+        terser.get("PID-7")?.unwrap_or("N/A")
+    );
 
     Ok(())
 }

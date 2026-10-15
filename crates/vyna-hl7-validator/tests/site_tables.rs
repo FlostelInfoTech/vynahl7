@@ -2,8 +2,8 @@
 //! extend the standard tables (e.g. NDC drug codes where HL7 v2.5 tables
 //! RXE-2 to 0292/CVX) register their codes explicitly.
 
-use vyna_hl7_core::builders::pharmacy::RdeO11Builder;
 use vyna_hl7_core::Version;
+use vyna_hl7_core::builders::pharmacy::RdeO11Builder;
 use vyna_hl7_validator::Validator;
 
 fn ndc_coded_order() -> vyna_hl7_core::Message {

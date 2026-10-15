@@ -36,7 +36,7 @@ VynaHL7-FHIR provides 9 production-ready converters for transforming HL7 v2.x me
 | PID-3 | Patient.identifier | Multiple identifiers supported with repetitions |
 | PID-5 | Patient.name | Supports multiple names with all components |
 | PID-7 | Patient.birthDate | Converted from YYYYMMDD to YYYY-MM-DD |
-| PID-8 | Patient.gender | M→male, F→female, O→other, U/A→unknown |
+| PID-8 | Patient.gender | M→male, F→female, O→other, U/A→unknown, anything else→unknown (lossy default) |
 | PID-11 | Patient.address | Multiple addresses with full components |
 | PID-13 | Patient.telecom | Home phone |
 | PID-14 | Patient.telecom | Work phone |
@@ -73,7 +73,7 @@ let patient = PatientConverter::convert(&message)?;
 | OBX-6 | Observation.valueQuantity.unit | For numeric values |
 | OBX-7 | Observation.referenceRange | Normal range |
 | OBX-8 | Observation.interpretation | N, H, L, etc. |
-| OBX-11 | Observation.status | F→final, P→preliminary, etc. |
+| OBX-11 | Observation.status | F→final, P→preliminary, etc.; unmapped codes→final (lossy default) |
 | OBX-14 | Observation.effectiveDateTime | When observed |
 | OBX-16 | Observation.performer | Responsible observer |
 
@@ -85,6 +85,7 @@ let patient = PatientConverter::convert(&message)?;
 - **DT** (Date) → valueDateTime
 - **TM** (Time) → valueTime
 - **TS/DTM** (Timestamp) → valueDateTime
+- **Any other OBX-2 type** → valueString (lossy fallback)
 
 #### Usage Example
 
@@ -147,7 +148,7 @@ let practitioners = PractitionerConverter::extract_all_practitioners(&message)?;
 
 | HL7 Field | FHIR Element | Notes |
 |-----------|--------------|-------|
-| PV1-2 | Encounter.class | I→IMP, O→AMB, E→EMER |
+| PV1-2 | Encounter.class | I→IMP, O→AMB, E→EMER; anything else→AMB (lossy default) |
 | PV1-3 | Encounter.location | Assigned patient location |
 | PV1-4 | Encounter.type | Admission type |
 | PV1-7 | Encounter.participant | Attending doctor |
@@ -168,6 +169,7 @@ let practitioners = PractitionerConverter::extract_all_practitioners(&message)?;
 | O | AMB | ambulatory |
 | E | EMER | emergency |
 | P | PRENC | pre-admission |
+| (other) | AMB | ambulatory (lossy default) |
 
 ---
 
@@ -184,7 +186,7 @@ let practitioners = PractitionerConverter::extract_all_practitioners(&message)?;
 | OBR-4 | DiagnosticReport.code | Universal service ID |
 | OBR-7 | DiagnosticReport.effectiveDateTime | Observation date/time |
 | OBR-22 | DiagnosticReport.issued | Results report date/time |
-| OBR-25 | DiagnosticReport.status | O→registered, P→preliminary, F→final |
+| OBR-25 | DiagnosticReport.status | O→registered, P→preliminary, F→final; unmapped codes→final (lossy default) |
 
 #### Automatic Linking
 

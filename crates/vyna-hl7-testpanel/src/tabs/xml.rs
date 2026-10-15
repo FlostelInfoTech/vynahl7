@@ -1,10 +1,10 @@
 //! XML Tab - Convert between ER7 and XML formats
 
-use egui::{self, RichText, Color32};
-use egui_extras::{StripBuilder, Size};
-use vyna_hl7_parser::parse_message;
-use vyna_hl7_xml::{XmlEncoder, XmlDecoder, XmlEncoderConfig};
 use crate::samples;
+use egui::{self, Color32, RichText};
+use egui_extras::{Size, StripBuilder};
+use vyna_hl7_parser::parse_message;
+use vyna_hl7_xml::{XmlDecoder, XmlEncoder, XmlEncoderConfig};
 
 pub struct XmlTab {
     // ER7 to XML
@@ -76,7 +76,8 @@ impl XmlTab {
     <PID.7>19800101</PID.7>
     <PID.8>M</PID.8>
   </PID>
-</HL7Message>"#.to_string()
+</HL7Message>"#
+            .to_string()
     }
 
     /// Set the ER7 input message content (used by File > Open)
@@ -99,8 +100,16 @@ impl XmlTab {
         // Direction selector
         ui.horizontal(|ui| {
             ui.label("Conversion:");
-            ui.selectable_value(&mut self.active_direction, XmlDirection::Er7ToXml, "ER7 -> XML");
-            ui.selectable_value(&mut self.active_direction, XmlDirection::XmlToEr7, "XML -> ER7");
+            ui.selectable_value(
+                &mut self.active_direction,
+                XmlDirection::Er7ToXml,
+                "ER7 -> XML",
+            );
+            ui.selectable_value(
+                &mut self.active_direction,
+                XmlDirection::XmlToEr7,
+                "XML -> ER7",
+            );
 
             ui.separator();
 
@@ -119,7 +128,10 @@ impl XmlTab {
     fn er7_to_xml_ui(&mut self, ui: &mut egui::Ui) {
         // Controls
         ui.horizontal(|ui| {
-            if ui.button(RichText::new("Convert to XML").strong()).clicked() {
+            if ui
+                .button(RichText::new("Convert to XML").strong())
+                .clicked()
+            {
                 self.convert_to_xml();
             }
 
@@ -152,64 +164,62 @@ impl XmlTab {
                 // Left: ER7 Input
                 strip.cell(|ui| {
                     let panel_height = available_height - 10.0;
-                    egui::Frame::group(ui.style())
-                        .show(ui, |ui| {
-                            ui.set_height(panel_height);
-                            ui.set_width(ui.available_width());
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.set_height(panel_height);
+                        ui.set_width(ui.available_width());
 
-                            ui.heading("ER7 Input (Pipe-delimited)");
+                        ui.heading("ER7 Input (Pipe-delimited)");
 
-                            egui::ScrollArea::vertical()
-                                .id_salt("er7_input")
-                                .auto_shrink([false, false])
-                                .show(ui, |ui| {
-                                    ui.add(
-                                        egui::TextEdit::multiline(&mut self.er7_input)
-                                            .font(egui::TextStyle::Monospace)
-                                            .desired_width(f32::INFINITY)
-                                            .desired_rows(30)
-                                            .code_editor()
-                                    );
-                                });
-                        });
+                        egui::ScrollArea::vertical()
+                            .id_salt("er7_input")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.add(
+                                    egui::TextEdit::multiline(&mut self.er7_input)
+                                        .font(egui::TextStyle::Monospace)
+                                        .desired_width(f32::INFINITY)
+                                        .desired_rows(30)
+                                        .code_editor(),
+                                );
+                            });
+                    });
                 });
 
                 // Right: XML Output
                 strip.cell(|ui| {
                     let panel_height = available_height - 10.0;
-                    egui::Frame::group(ui.style())
-                        .show(ui, |ui| {
-                            ui.set_height(panel_height);
-                            ui.set_width(ui.available_width());
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.set_height(panel_height);
+                        ui.set_width(ui.available_width());
 
-                            ui.heading("XML Output");
+                        ui.heading("XML Output");
 
-                            if let Some(ref error) = self.er7_to_xml_error {
-                                ui.colored_label(Color32::RED, format!("Error: {}", error));
-                            }
+                        if let Some(ref error) = self.er7_to_xml_error {
+                            ui.colored_label(Color32::RED, format!("Error: {}", error));
+                        }
 
-                            if !self.xml_output.is_empty() {
-                                ui.horizontal(|ui| {
-                                    if ui.button("Copy to Clipboard").clicked() {
-                                        ui.ctx().copy_text(self.xml_output.clone());
-                                    }
-                                    ui.label(format!("Size: {} bytes", self.xml_output.len()));
-                                });
-                            }
+                        if !self.xml_output.is_empty() {
+                            ui.horizontal(|ui| {
+                                if ui.button("Copy to Clipboard").clicked() {
+                                    ui.ctx().copy_text(self.xml_output.clone());
+                                }
+                                ui.label(format!("Size: {} bytes", self.xml_output.len()));
+                            });
+                        }
 
-                            egui::ScrollArea::vertical()
-                                .id_salt("xml_output")
-                                .auto_shrink([false, false])
-                                .show(ui, |ui| {
-                                    ui.add(
-                                        egui::TextEdit::multiline(&mut self.xml_output.as_str())
-                                            .font(egui::TextStyle::Monospace)
-                                            .desired_width(f32::INFINITY)
-                                            .desired_rows(30)
-                                            .interactive(false)
-                                    );
-                                });
-                        });
+                        egui::ScrollArea::vertical()
+                            .id_salt("xml_output")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.add(
+                                    egui::TextEdit::multiline(&mut self.xml_output.as_str())
+                                        .font(egui::TextStyle::Monospace)
+                                        .desired_width(f32::INFINITY)
+                                        .desired_rows(30)
+                                        .interactive(false),
+                                );
+                            });
+                    });
                 });
             });
     }
@@ -217,7 +227,10 @@ impl XmlTab {
     fn xml_to_er7_ui(&mut self, ui: &mut egui::Ui) {
         // Controls
         ui.horizontal(|ui| {
-            if ui.button(RichText::new("Convert to ER7").strong()).clicked() {
+            if ui
+                .button(RichText::new("Convert to ER7").strong())
+                .clicked()
+            {
                 self.convert_to_er7();
             }
 
@@ -238,64 +251,62 @@ impl XmlTab {
                 // Left: XML Input
                 strip.cell(|ui| {
                     let panel_height = available_height - 10.0;
-                    egui::Frame::group(ui.style())
-                        .show(ui, |ui| {
-                            ui.set_height(panel_height);
-                            ui.set_width(ui.available_width());
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.set_height(panel_height);
+                        ui.set_width(ui.available_width());
 
-                            ui.heading("XML Input");
+                        ui.heading("XML Input");
 
-                            egui::ScrollArea::vertical()
-                                .id_salt("xml_input")
-                                .auto_shrink([false, false])
-                                .show(ui, |ui| {
-                                    ui.add(
-                                        egui::TextEdit::multiline(&mut self.xml_input)
-                                            .font(egui::TextStyle::Monospace)
-                                            .desired_width(f32::INFINITY)
-                                            .desired_rows(30)
-                                            .code_editor()
-                                    );
-                                });
-                        });
+                        egui::ScrollArea::vertical()
+                            .id_salt("xml_input")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.add(
+                                    egui::TextEdit::multiline(&mut self.xml_input)
+                                        .font(egui::TextStyle::Monospace)
+                                        .desired_width(f32::INFINITY)
+                                        .desired_rows(30)
+                                        .code_editor(),
+                                );
+                            });
+                    });
                 });
 
                 // Right: ER7 Output
                 strip.cell(|ui| {
                     let panel_height = available_height - 10.0;
-                    egui::Frame::group(ui.style())
-                        .show(ui, |ui| {
-                            ui.set_height(panel_height);
-                            ui.set_width(ui.available_width());
+                    egui::Frame::group(ui.style()).show(ui, |ui| {
+                        ui.set_height(panel_height);
+                        ui.set_width(ui.available_width());
 
-                            ui.heading("ER7 Output (Pipe-delimited)");
+                        ui.heading("ER7 Output (Pipe-delimited)");
 
-                            if let Some(ref error) = self.xml_to_er7_error {
-                                ui.colored_label(Color32::RED, format!("Error: {}", error));
-                            }
+                        if let Some(ref error) = self.xml_to_er7_error {
+                            ui.colored_label(Color32::RED, format!("Error: {}", error));
+                        }
 
-                            if !self.er7_output.is_empty() {
-                                ui.horizontal(|ui| {
-                                    if ui.button("Copy to Clipboard").clicked() {
-                                        ui.ctx().copy_text(self.er7_output.clone());
-                                    }
-                                    ui.label(format!("Size: {} bytes", self.er7_output.len()));
-                                });
-                            }
+                        if !self.er7_output.is_empty() {
+                            ui.horizontal(|ui| {
+                                if ui.button("Copy to Clipboard").clicked() {
+                                    ui.ctx().copy_text(self.er7_output.clone());
+                                }
+                                ui.label(format!("Size: {} bytes", self.er7_output.len()));
+                            });
+                        }
 
-                            egui::ScrollArea::vertical()
-                                .id_salt("er7_output")
-                                .auto_shrink([false, false])
-                                .show(ui, |ui| {
-                                    ui.add(
-                                        egui::TextEdit::multiline(&mut self.er7_output.as_str())
-                                            .font(egui::TextStyle::Monospace)
-                                            .desired_width(f32::INFINITY)
-                                            .desired_rows(30)
-                                            .interactive(false)
-                                    );
-                                });
-                        });
+                        egui::ScrollArea::vertical()
+                            .id_salt("er7_output")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.add(
+                                    egui::TextEdit::multiline(&mut self.er7_output.as_str())
+                                        .font(egui::TextStyle::Monospace)
+                                        .desired_width(f32::INFINITY)
+                                        .desired_rows(30)
+                                        .interactive(false),
+                                );
+                            });
+                    });
                 });
             });
     }
@@ -305,9 +316,7 @@ impl XmlTab {
         self.er7_to_xml_error = None;
 
         // Parse the ER7 message
-        let normalized = self.er7_input
-            .replace("\r\n", "\r")
-            .replace("\n", "\r");
+        let normalized = self.er7_input.replace("\r\n", "\r").replace("\n", "\r");
 
         let message = match parse_message(&normalized) {
             Ok(m) => m,

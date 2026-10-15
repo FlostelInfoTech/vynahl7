@@ -8,11 +8,8 @@
 //! - Encode batches for transmission
 
 use vyna_hl7_core::{
-    builders::{
-        adt::AdtBuilder,
-        batch::BatchBuilder,
-    },
     Version,
+    builders::{adt::AdtBuilder, batch::BatchBuilder},
 };
 use vyna_hl7_parser::parse_batch;
 
@@ -79,9 +76,18 @@ fn create_batch_example() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✓ Created batch with {} messages", batch.messages.len());
     println!("  Batch ID: {}", batch.header.control_id.as_ref().unwrap());
-    println!("  Sending: {}", batch.header.sending_application.as_ref().unwrap());
-    println!("  Receiving: {}", batch.header.receiving_application.as_ref().unwrap());
-    println!("  Message count in trailer: {}", batch.trailer.message_count.unwrap());
+    println!(
+        "  Sending: {}",
+        batch.header.sending_application.as_ref().unwrap()
+    );
+    println!(
+        "  Receiving: {}",
+        batch.header.receiving_application.as_ref().unwrap()
+    );
+    println!(
+        "  Message count in trailer: {}",
+        batch.trailer.message_count.unwrap()
+    );
 
     Ok(())
 }
@@ -101,10 +107,19 @@ BTS|2|Batch complete";
     let batch = parse_batch(batch_text)?;
 
     println!("✓ Parsed batch successfully");
-    println!("  Batch control ID: {}", batch.header.control_id.as_ref().unwrap());
-    println!("  Batch name: {}", batch.header.batch_name_id_type.as_ref().unwrap());
+    println!(
+        "  Batch control ID: {}",
+        batch.header.control_id.as_ref().unwrap()
+    );
+    println!(
+        "  Batch name: {}",
+        batch.header.batch_name_id_type.as_ref().unwrap()
+    );
     println!("  Number of messages: {}", batch.messages.len());
-    println!("  Trailer comment: {}", batch.trailer.comment.as_ref().unwrap());
+    println!(
+        "  Trailer comment: {}",
+        batch.trailer.comment.as_ref().unwrap()
+    );
 
     // Access individual messages
     for (i, msg) in batch.messages.iter().enumerate() {
@@ -143,7 +158,7 @@ BTS|2";
 BHS|^~\\&|APP|FAC|||20240315||BATCH||B002
 MSH|^~\\&|APP|FAC|SYS|HOSP|20240315||ADT^A01|MSG001|P|2.5
 PID|1|12345
-BTS|5";  // Says 5 messages but only 1 present
+BTS|5"; // Says 5 messages but only 1 present
 
     match parse_batch(invalid_batch) {
         Ok(_) => println!("✗ Invalid batch should have failed!"),
@@ -178,11 +193,17 @@ fn encoding_example() -> Result<(), Box<dyn std::error::Error>> {
 
     // Encode with standard \r separator for transmission
     let transmission_format = batch.encode_with_separator("\r");
-    println!("\n✓ Transmission format length: {} bytes", transmission_format.len());
+    println!(
+        "\n✓ Transmission format length: {} bytes",
+        transmission_format.len()
+    );
 
     // Parse the encoded batch to verify round-trip
     let parsed = parse_batch(&transmission_format)?;
-    println!("✓ Round-trip successful: {} messages", parsed.messages.len());
+    println!(
+        "✓ Round-trip successful: {} messages",
+        parsed.messages.len()
+    );
 
     Ok(())
 }

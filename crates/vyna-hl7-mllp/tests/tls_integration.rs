@@ -6,9 +6,9 @@
 
 use vyna_hl7_core::{Field, Message, Segment};
 use vyna_hl7_mllp::{
+    MllpClient,
     testing::MockMllpServer,
     tls::{TlsClientConfig, TlsServerConfig},
-    MllpClient,
 };
 
 mod test_certs;
@@ -122,10 +122,7 @@ async fn test_tls_custom_handler() {
     assert_eq!(response.segments[0].id, "MSH");
     assert_eq!(response.segments[1].id, "MSA");
     assert_eq!(response.segments[1].fields[0].value(), Some("AA"));
-    assert_eq!(
-        response.segments[1].fields[1].value(),
-        Some("TLS_TEST")
-    );
+    assert_eq!(response.segments[1].fields[1].value(), Some("TLS_TEST"));
 
     // Cleanup
     client.close().await.expect("Failed to close client");
@@ -359,7 +356,8 @@ async fn test_tls_concurrent_connections() {
             let mut msh = Segment::new("MSH");
             msh.fields.push(Field::from_value("|"));
             msh.fields.push(Field::from_value("^~\\&"));
-            msh.fields.push(Field::from_value(format!("CONCURRENT_{}", i)));
+            msh.fields
+                .push(Field::from_value(format!("CONCURRENT_{}", i)));
             msg.segments.push(msh);
 
             let response = client

@@ -1,13 +1,13 @@
 //! Message Builder Tab - Build HL7 messages visually
 
-use egui::{self, RichText, Color32};
-use egui_extras::{StripBuilder, Size};
+use egui::{self, Color32, RichText};
+use egui_extras::{Size, StripBuilder};
+use std::collections::{HashMap, HashSet};
 use vyna_hl7_core::builders::adt::AdtA01Builder;
 use vyna_hl7_core::{CharacterSet, Field, Message, Version};
 use vyna_hl7_parser::parse_message;
 use vyna_hl7_templates::{MessageTemplate, TemplateEngine, TemplateLibrary};
 use vyna_hl7_terser::TerserMut;
-use std::collections::{HashMap, HashSet};
 
 pub struct BuilderTab {
     // Message type selection
@@ -220,10 +220,7 @@ fn collect_template_variables(template: &MessageTemplate) -> Vec<TemplateVariabl
 /// locations. Whole-field locations read the full encoded field (so
 /// `DOE^JOHN` round-trips intact); component locations read the first
 /// repetition's component value.
-fn backfill_values(
-    message: &Message,
-    variables: &[TemplateVariable],
-) -> HashMap<String, String> {
+fn backfill_values(message: &Message, variables: &[TemplateVariable]) -> HashMap<String, String> {
     let mut values = HashMap::new();
     for variable in variables {
         for location in &variable.locations {
@@ -395,7 +392,7 @@ impl Default for BuilderTab {
             receiving_facility: "RECEIVING_FAC".to_string(),
             built_message: None,
             build_error: None,
-            show_line_feeds: true,  // Default to showing line feeds for readability
+            show_line_feeds: true, // Default to showing line feeds for readability
             build_mode: BuildMode::Form,
             template_library: TemplateLibrary::new(),
             selected_template: "ADT_A01".to_string(),
@@ -507,10 +504,10 @@ impl BuilderTab {
                                 ui.selectable_value(&mut self.message_type, MessageType::AdtA04, "ADT^A04 (Register)");
                                 ui.selectable_value(&mut self.message_type, MessageType::AdtA08, "ADT^A08 (Update)");
                             });
-    
+
                             ui.add_space(10.0);
                             ui.separator();
-    
+
                             // Message Header
                             ui.heading("Message Header");
                             ui.horizontal(|ui| {
@@ -529,20 +526,20 @@ impl BuilderTab {
                                 ui.label("Receiving Facility:");
                                 ui.text_edit_singleline(&mut self.receiving_facility);
                             });
-    
+
                             ui.add_space(10.0);
                             ui.separator();
-    
+
                             // Patient Information
                             ui.heading("Patient Information");
-    
+
                             ui.horizontal(|ui| {
                                 ui.label("Patient ID:");
                                 ui.text_edit_singleline(&mut self.patient_id);
                                 ui.label("System:");
                                 ui.text_edit_singleline(&mut self.patient_id_system);
                             });
-    
+
                             ui.horizontal(|ui| {
                                 ui.label("Family Name:");
                                 ui.text_edit_singleline(&mut self.family_name);
@@ -553,12 +550,12 @@ impl BuilderTab {
                                 ui.label("Middle:");
                                 ui.add_sized([60.0, 20.0], egui::TextEdit::singleline(&mut self.middle_name));
                             });
-    
+
                             ui.horizontal(|ui| {
                                 ui.label("Birth Date (YYYY-MM-DD):");
                                 ui.text_edit_singleline(&mut self.birth_date);
                             });
-    
+
                             ui.horizontal(|ui| {
                                 ui.label("Gender:");
                                 ui.selectable_value(&mut self.gender, Gender::Male, "Male");
@@ -566,10 +563,10 @@ impl BuilderTab {
                                 ui.selectable_value(&mut self.gender, Gender::Other, "Other");
                                 ui.selectable_value(&mut self.gender, Gender::Unknown, "Unknown");
                             });
-    
+
                             ui.add_space(10.0);
                             ui.separator();
-    
+
                             // Address
                             ui.heading("Address");
                             ui.horizontal(|ui| {
@@ -588,10 +585,10 @@ impl BuilderTab {
                                 ui.label("Country:");
                                 ui.add_sized([60.0, 20.0], egui::TextEdit::singleline(&mut self.country));
                             });
-    
+
                             ui.add_space(10.0);
                             ui.separator();
-    
+
                             // Contact
                             ui.heading("Contact Information");
                             ui.horizontal(|ui| {
@@ -602,10 +599,10 @@ impl BuilderTab {
                                 ui.label("Work Phone:");
                                 ui.text_edit_singleline(&mut self.phone_work);
                             });
-    
+
                             ui.add_space(10.0);
                             ui.separator();
-    
+
                             // Visit Information
                             ui.heading("Visit Information");
                             ui.horizontal(|ui| {
@@ -615,14 +612,14 @@ impl BuilderTab {
                                 ui.selectable_value(&mut self.patient_class, PatientClass::Emergency, "Emergency");
                                 ui.selectable_value(&mut self.patient_class, PatientClass::Observation, "Observation");
                             });
-    
+
                             ui.horizontal(|ui| {
                                 ui.label("Room:");
                                 ui.add_sized([80.0, 20.0], egui::TextEdit::singleline(&mut self.room));
                                 ui.label("Bed:");
                                 ui.add_sized([80.0, 20.0], egui::TextEdit::singleline(&mut self.bed));
                             });
-    
+
                             ui.horizontal(|ui| {
                                 ui.label("Attending Dr ID:");
                                 ui.text_edit_singleline(&mut self.attending_doctor_id);
@@ -631,9 +628,9 @@ impl BuilderTab {
                                 ui.label("Attending Dr Name:");
                                 ui.text_edit_singleline(&mut self.attending_doctor_name);
                             });
-    
+
                             ui.add_space(20.0);
-    
+
                             // Build button
                             ui.horizontal(|ui| {
                                 if ui.button(RichText::new("Build Message").strong()).clicked() {
@@ -725,7 +722,11 @@ impl BuilderTab {
             .selected_text(self.selected_template.as_str())
             .show_ui(ui, |ui| {
                 for name in &names {
-                    ui.selectable_value(&mut self.selected_template, name.to_string(), name.as_str());
+                    ui.selectable_value(
+                        &mut self.selected_template,
+                        name.to_string(),
+                        name.as_str(),
+                    );
                 }
             });
 
@@ -853,11 +854,7 @@ impl BuilderTab {
     /// from its recorded template locations. Variables with no value in
     /// the file keep their current content.
     fn load_message_into_template(&mut self) {
-        let Some(template) = self
-            .template_library
-            .get(&self.selected_template)
-            .cloned()
-        else {
+        let Some(template) = self.template_library.get(&self.selected_template).cloned() else {
             self.template_notice = Some("No template selected.".to_string());
             return;
         };
@@ -870,13 +867,11 @@ impl BuilderTab {
             return;
         };
         let loaded = (|| -> Result<(usize, usize), String> {
-            let bytes =
-                std::fs::read(&path).map_err(|e| format!("Cannot read file: {}", e))?;
+            let bytes = std::fs::read(&path).map_err(|e| format!("Cannot read file: {}", e))?;
             let text = CharacterSet::decode_message(&bytes)
                 .map_err(|e| format!("Cannot decode file: {}", e))?;
             let normalized = text.replace("\r\n", "\r").replace('\n', "\r");
-            let message =
-                parse_message(&normalized).map_err(|e| format!("Cannot parse: {}", e))?;
+            let message = parse_message(&normalized).map_err(|e| format!("Cannot parse: {}", e))?;
             let variables = collect_template_variables(&template);
             let values = backfill_values(&message, &variables);
             let found = values.len();
@@ -903,11 +898,7 @@ impl BuilderTab {
     /// The template name comes from the chosen file name; JSON is used
     /// for `.json` files, YAML otherwise.
     fn save_as_template(&mut self) {
-        let Some(template) = self
-            .template_library
-            .get(&self.selected_template)
-            .cloned()
-        else {
+        let Some(template) = self.template_library.get(&self.selected_template).cloned() else {
             self.template_notice = Some("No template selected.".to_string());
             return;
         };
@@ -964,8 +955,7 @@ impl BuilderTab {
         match parsed {
             Ok(template) => {
                 let name = self.register_template(template);
-                self.template_notice =
-                    Some(format!("Loaded template '{name}' from {file_label}."));
+                self.template_notice = Some(format!("Loaded template '{name}' from {file_label}."));
                 self.built_message = None;
                 self.build_error = None;
             }
@@ -1030,7 +1020,10 @@ impl BuilderTab {
         // Note: Patient name is constructed directly in the builder call below
 
         // Build attending doctor field
-        let attending_doctor = format!("{}^{}", self.attending_doctor_id, self.attending_doctor_name);
+        let attending_doctor = format!(
+            "{}^{}",
+            self.attending_doctor_id, self.attending_doctor_name
+        );
 
         // Build assigned location
         let assigned_location = format!("{}^{}", self.room, self.bed);
@@ -1330,7 +1323,10 @@ mod tests {
                 "template {name} MSH malformed: {msh}"
             );
             assert!(
-                msh.contains(&format!("{}^{}", template.message_type, template.trigger_event)),
+                msh.contains(&format!(
+                    "{}^{}",
+                    template.message_type, template.trigger_event
+                )),
                 "template {name} MSH-9 missing: {msh}"
             );
         }
@@ -1445,7 +1441,8 @@ mod tests {
             .iter()
             .map(|v| (v.name.clone(), format!("V_{}", v.name)))
             .collect();
-        tab.template_values.insert("ADT_A01".to_string(), expected.clone());
+        tab.template_values
+            .insert("ADT_A01".to_string(), expected.clone());
 
         let text = tab.try_build_template_message().unwrap();
         let normalized = text.replace('\n', "\r");
@@ -1473,7 +1470,10 @@ mod tests {
         let template = tab.template_library.get("ADT_A01").unwrap().clone();
         let variables = collect_template_variables(&template);
         let restored = backfill_values(&message, &variables);
-        assert_eq!(restored.get("patient_name").map(String::as_str), Some("DOE^JOHN"));
+        assert_eq!(
+            restored.get("patient_name").map(String::as_str),
+            Some("DOE^JOHN")
+        );
         // Empty locations contribute nothing.
         assert!(!restored.contains_key("visit_number"));
     }
@@ -1491,7 +1491,10 @@ mod tests {
         let baked = bake_template_values(template, "MY_ADT".to_string(), &values);
         assert_eq!(baked.name, "MY_ADT");
         let defaults = baked.variables.as_ref().unwrap();
-        assert_eq!(defaults.get("sending_app").map(String::as_str), Some("MYAPP"));
+        assert_eq!(
+            defaults.get("sending_app").map(String::as_str),
+            Some("MYAPP")
+        );
         assert!(!defaults.contains_key("patient_id"));
 
         let yaml = baked.to_yaml().unwrap();

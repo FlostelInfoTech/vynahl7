@@ -155,15 +155,23 @@ validator
 ```bash
 cargo install --path crates/vyna-hl7-cli
 
+vynahl7 parse message.hl7 --format pretty
 vynahl7 validate message.hl7            # strict (default)
 vynahl7 validate message.hl7 --standard # drift warns
 vynahl7 validate message.hl7 --lenient  # structure-only failures
 vynahl7 validate message.hl7 --format json  # machine-readable incl. "mode"
 vynahl7 extract message.hl7 PID-5 OBX\(2\)-5
+vynahl7 convert message.hl7 --to json --pretty
+vynahl7 convert message.hl7 --to fhir   # needs the CLI "fhir" feature
+vynahl7 info message.hl7
 vynahl7 send message.hl7 --to mllp://127.0.0.1:2575
-vynahl7 diff old.hl7 new.hl7
+vynahl7 diff old.hl7 new.hl7 --format json --ignore MSH-7,MSH-10
 vynahl7 --charset 8859/1 parse latin1.hl7  # force decoding, ignore MSH-18
 ```
+
+`diff` exits 1 when the messages differ. `--to fhir` is only built
+with the `fhir` feature (`cargo install --path crates/vyna-hl7-cli
+--features fhir`); without it the command errors.
 
 Input decoding follows the MSH-18 declaration by default; the global
 `--charset` flag overrides it (MSH-18 spellings such as `8859/1`,

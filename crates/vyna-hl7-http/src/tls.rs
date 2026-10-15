@@ -297,10 +297,7 @@ impl TlsServerConfig {
     /// let config = TlsServerConfig::new("server-cert.pem", "server-key.pem").unwrap();
     /// # }
     /// ```
-    pub fn new(
-        cert_path: impl AsRef<Path>,
-        key_path: impl AsRef<Path>,
-    ) -> Result<Self> {
+    pub fn new(cert_path: impl AsRef<Path>, key_path: impl AsRef<Path>) -> Result<Self> {
         // Load server certificate
         let certs: Vec<CertificateDer> = load_certs(cert_path, "server certificate")?;
 
@@ -371,9 +368,10 @@ impl TlsServerConfig {
         // Load server private key
         let key = load_private_key(key_path, "private key")?;
 
-        let client_cert_verifier = rustls::server::WebPkiClientVerifier::builder(Arc::new(client_auth_roots))
-            .build()
-            .map_err(|e| config_error("Failed to build client verifier", e))?;
+        let client_cert_verifier =
+            rustls::server::WebPkiClientVerifier::builder(Arc::new(client_auth_roots))
+                .build()
+                .map_err(|e| config_error("Failed to build client verifier", e))?;
 
         let config = ServerConfig::builder()
             .with_client_cert_verifier(client_cert_verifier)
@@ -476,8 +474,11 @@ nCxb/gJF/elKGU4Z9nNlshhlJTXQ2ZOdvuEmJ+k6kZjAdfH0MXht
 "#;
 
     fn write_fixture(name: &str, contents: &str) -> std::path::PathBuf {
-        let path =
-            std::env::temp_dir().join(format!("vyna_hl7_http_tls_test_{}_{}", std::process::id(), name));
+        let path = std::env::temp_dir().join(format!(
+            "vyna_hl7_http_tls_test_{}_{}",
+            std::process::id(),
+            name
+        ));
         std::fs::write(&path, contents).expect("write fixture");
         path
     }

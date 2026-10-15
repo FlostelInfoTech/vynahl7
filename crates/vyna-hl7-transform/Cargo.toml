@@ -18,7 +18,7 @@ vyna-hl7-terser.workspace = true
 thiserror.workspace = true
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-serde_yaml = { version = "0.9", optional = true }
+serde_yaml = { workspace = true, optional = true }
 chrono.workspace = true
 regex.workspace = true
 
@@ -28,3 +28,6 @@ serde = ["dep:serde", "dep:serde_json", "dep:serde_yaml"]
 
 [dev-dependencies]
 vyna-hl7-parser.workspace = true
+
+[lints]
+workspace = true

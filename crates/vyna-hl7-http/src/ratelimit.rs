@@ -162,7 +162,6 @@ impl RateLimitConfig {
     }
 }
 
-
 /// Default rate limiting configurations for common use cases
 #[cfg(feature = "ratelimit")]
 pub mod presets {

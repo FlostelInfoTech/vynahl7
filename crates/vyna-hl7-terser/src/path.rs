@@ -174,9 +174,7 @@ impl TerserPath {
             let field_str = &part[..paren_pos];
             let rep_str = &part[paren_pos + 1..];
 
-            let field_index = field_str
-                .parse::<usize>()
-                .map_err(|_| Error::terser_path("Invalid field index"))?;
+            let field_index = Self::parse_field_index(field_str)?;
 
             if let Some(close_paren) = rep_str.find(')') {
                 // Reject trailing garbage such as "5(2)x": only the
@@ -203,12 +201,23 @@ impl TerserPath {
                 Err(Error::terser_path("Missing closing parenthesis"))
             }
         } else {
-            let field_index = part
-                .parse::<usize>()
-                .map_err(|_| Error::terser_path("Invalid field index"))?;
+            let field_index = Self::parse_field_index(part)?;
             // No repetition specified = first repetition (internal index 0)
             Ok((field_index, 0))
         }
+    }
+
+    /// Parse a 1-based field number; field 0 is the segment id, never a field
+    fn parse_field_index(field_str: &str) -> Result<usize> {
+        let field_index = field_str
+            .parse::<usize>()
+            .map_err(|_| Error::terser_path("Invalid field index"))?;
+        if field_index == 0 {
+            return Err(Error::terser_path(
+                "Invalid field index 0: HL7 uses 1-based indexing (field 0 is the segment id)",
+            ));
+        }
+        Ok(field_index)
     }
 
     /// Parse a simple numeric index
@@ -294,6 +303,18 @@ mod tests {
         // PID-11(0) should be invalid (HL7 uses 1-based indexing)
         let result = TerserPath::parse("PID-11(0)-1");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_field_index_zero_is_invalid() {
+        // Field 0 is the segment id, never an addressable field.
+        assert!(TerserPath::parse("PID-0").is_err());
+        assert!(TerserPath::parse("PID-00").is_err());
+        assert!(TerserPath::parse("PID-0(1)-1").is_err());
+        assert!(TerserPath::parse("PID-0-1").is_err());
+        // Nearby valid paths still parse.
+        assert!(TerserPath::parse("PID-1").is_ok());
+        assert!(TerserPath::parse("PID-10(1)-1").is_ok());
     }
 
     #[test]

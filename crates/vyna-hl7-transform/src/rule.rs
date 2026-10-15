@@ -241,16 +241,14 @@ mod tests {
             Ok(value.to_uppercase())
         }
 
-        let rule = TransformationRule::new("PID-5-1", "PID-5-1")
-            .with_transform(uppercase);
+        let rule = TransformationRule::new("PID-5-1", "PID-5-1").with_transform(uppercase);
 
         assert!(rule.transform_fn.is_some());
     }
 
     #[test]
     fn test_rule_with_default() {
-        let rule = TransformationRule::new("PID-5-1", "PID-5-1")
-            .with_default("UNKNOWN");
+        let rule = TransformationRule::new("PID-5-1", "PID-5-1").with_default("UNKNOWN");
 
         assert_eq!(rule.default_value, Some("UNKNOWN".to_string()));
     }
@@ -270,8 +268,7 @@ mod tests {
             Ok(value.to_uppercase())
         }
 
-        let rule = TransformationRule::new("PID-5-1", "PID-5-1")
-            .with_transform(uppercase);
+        let rule = TransformationRule::new("PID-5-1", "PID-5-1").with_transform(uppercase);
         let context = TransformContext::new();
 
         let result = rule.apply("smith", &context).unwrap();
@@ -280,8 +277,7 @@ mod tests {
 
     #[test]
     fn test_apply_empty_with_default() {
-        let rule = TransformationRule::new("PID-5-1", "PID-5-1")
-            .with_default("UNKNOWN");
+        let rule = TransformationRule::new("PID-5-1", "PID-5-1").with_default("UNKNOWN");
         let context = TransformContext::new();
 
         let result = rule.apply("", &context).unwrap();

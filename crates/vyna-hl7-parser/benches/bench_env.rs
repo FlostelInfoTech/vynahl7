@@ -45,7 +45,9 @@ impl EnvInfo {
     pub fn print_report(&self) {
         println!();
         println!("╔══════════════════════════════════════════════════════════════════════════╗");
-        println!("║                    VynaHL7 Benchmark Environment Report                      ║");
+        println!(
+            "║                    VynaHL7 Benchmark Environment Report                      ║"
+        );
         println!("╠══════════════════════════════════════════════════════════════════════════╣");
         println!("║  System                                                                  ║");
         println!("╠══════════════════════════════════════════════════════════════════════════╣");
@@ -118,9 +120,10 @@ fn read_cpu_model() -> String {
     if let Ok(content) = std::fs::read_to_string("/proc/cpuinfo") {
         for line in content.lines() {
             if line.starts_with("model name")
-                && let Some(val) = line.split(':').nth(1) {
-                    return val.trim().to_string();
-                }
+                && let Some(val) = line.split(':').nth(1)
+            {
+                return val.trim().to_string();
+            }
         }
     }
     // macOS fallback
@@ -137,9 +140,10 @@ fn read_cpu_physical_cores() -> String {
         let mut core_ids = std::collections::HashSet::new();
         for line in content.lines() {
             if line.starts_with("core id")
-                && let Some(val) = line.split(':').nth(1) {
-                    core_ids.insert(val.trim().to_string());
-                }
+                && let Some(val) = line.split(':').nth(1)
+            {
+                core_ids.insert(val.trim().to_string());
+            }
         }
         if !core_ids.is_empty() {
             return core_ids.len().to_string();
@@ -158,25 +162,27 @@ fn read_cpu_freq() -> String {
     if let Ok(khz) =
         read_file_trimmed("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").parse::<u64>()
     {
-            let ghz = khz as f64 / 1_000_000.0;
-            return format!("{:.2} GHz (max)", ghz);
-        }
+        let ghz = khz as f64 / 1_000_000.0;
+        return format!("{:.2} GHz (max)", ghz);
+    }
     // Try /proc/cpuinfo
     if let Ok(content) = std::fs::read_to_string("/proc/cpuinfo") {
         for line in content.lines() {
             if line.starts_with("cpu MHz")
                 && let Some(val) = line.split(':').nth(1)
-                    && let Ok(mhz) = val.trim().parse::<f64>() {
-                        return format!("{:.2} GHz (current)", mhz / 1000.0);
-                    }
+                && let Ok(mhz) = val.trim().parse::<f64>()
+            {
+                return format!("{:.2} GHz (current)", mhz / 1000.0);
+            }
         }
     }
     // macOS fallback
     let out = cmd_output("sysctl", &["-n", "hw.cpufrequency"]);
     if out != "unknown"
-        && let Ok(hz) = out.parse::<u64>() {
-            return format!("{:.2} GHz", hz as f64 / 1_000_000_000.0);
-        }
+        && let Ok(hz) = out.parse::<u64>()
+    {
+        return format!("{:.2} GHz", hz as f64 / 1_000_000_000.0);
+    }
     "unknown".into()
 }
 
@@ -187,18 +193,20 @@ fn read_memory_total() -> String {
             if line.starts_with("MemTotal:") {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 2
-                    && let Ok(kb) = parts[1].parse::<u64>() {
-                        let gb = kb as f64 / 1_048_576.0;
-                        return format!("{:.1} GB", gb);
-                    }
+                    && let Ok(kb) = parts[1].parse::<u64>()
+                {
+                    let gb = kb as f64 / 1_048_576.0;
+                    return format!("{:.1} GB", gb);
+                }
             }
         }
     }
     // macOS fallback
     let out = cmd_output("sysctl", &["-n", "hw.memsize"]);
     if out != "unknown"
-        && let Ok(bytes) = out.parse::<u64>() {
-            return format!("{:.1} GB", bytes as f64 / 1_073_741_824.0);
-        }
+        && let Ok(bytes) = out.parse::<u64>()
+    {
+        return format!("{:.1} GB", bytes as f64 / 1_073_741_824.0);
+    }
     "unknown".into()
 }

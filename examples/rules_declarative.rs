@@ -212,7 +212,10 @@ rules:
 
     match RuleConfig::from_yaml_str(yaml) {
         Ok(config) => {
-            println!("Loaded {} rules demonstrating all condition types", config.rules.len());
+            println!(
+                "Loaded {} rules demonstrating all condition types",
+                config.rules.len()
+            );
 
             match config.into_validation_rules() {
                 Ok(rules) => {

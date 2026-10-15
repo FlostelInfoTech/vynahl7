@@ -70,6 +70,7 @@
 //! ```
 
 use crate::{
+    Version,
     charset::CharacterSet,
     delimiters::Delimiters,
     error::Result,
@@ -77,7 +78,6 @@ use crate::{
     message::Message,
     segment::Segment,
     types::format_timestamp,
-    Version,
 };
 use chrono::Local;
 
@@ -254,11 +254,12 @@ impl AckBuilder {
         let original_control_id = message.get_control_id().unwrap_or("").to_string();
         let original_sending_app = message.get_sending_application().unwrap_or("").to_string();
         let original_sending_facility = message.get_sending_facility().unwrap_or("").to_string();
-        let original_receiving_app = message.get_receiving_application().unwrap_or("").to_string();
-        let original_receiving_facility = message
-            .get_receiving_facility()
+        let original_receiving_app = message
+            .get_receiving_application()
             .unwrap_or("")
             .to_string();
+        let original_receiving_facility =
+            message.get_receiving_facility().unwrap_or("").to_string();
 
         // Get processing ID from MSH-11
         let processing_id = msh
@@ -735,9 +736,10 @@ impl CommitAckBuilder {
 
         // Update MSA-1 to use commit code instead
         if let Some(msa) = message.get_segment_by_id_mut("MSA")
-            && let Some(field) = msa.get_field_mut(1) {
-                *field = Field::from_value(self.commit_code.as_str());
-            }
+            && let Some(field) = msa.get_field_mut(1)
+        {
+            *field = Field::from_value(self.commit_code.as_str());
+        }
 
         Ok(message)
     }
@@ -870,7 +872,13 @@ mod tests {
         let incoming = create_test_message();
         let ack = AckBuilder::for_message(&incoming)
             .error("Validation failed")
-            .add_error("PID", Some(5), "101", "Required field missing", ErrorSeverity::Error)
+            .add_error(
+                "PID",
+                Some(5),
+                "101",
+                "Required field missing",
+                ErrorSeverity::Error,
+            )
             .build()
             .unwrap();
 
@@ -968,27 +976,15 @@ mod tests {
     #[test]
     fn test_ack_echoes_declared_charset() {
         let incoming = incoming_with_charset(Some("8859/1"));
-        let ack = AckBuilder::for_message(&incoming)
-            .accept()
-            .build()
-            .unwrap();
-        assert_eq!(
-            ack.get_msh().unwrap().get_field_value(18),
-            Some("8859/1")
-        );
-        assert_eq!(
-            ack.get_character_set().unwrap(),
-            CharacterSet::Iso8859(1)
-        );
+        let ack = AckBuilder::for_message(&incoming).accept().build().unwrap();
+        assert_eq!(ack.get_msh().unwrap().get_field_value(18), Some("8859/1"));
+        assert_eq!(ack.get_character_set().unwrap(), CharacterSet::Iso8859(1));
     }
 
     #[test]
     fn test_ack_omits_undeclared_charset() {
         let incoming = incoming_with_charset(None);
-        let ack = AckBuilder::for_message(&incoming)
-            .accept()
-            .build()
-            .unwrap();
+        let ack = AckBuilder::for_message(&incoming).accept().build().unwrap();
         assert_eq!(ack.get_msh().unwrap().get_field_value(18), None);
     }
 

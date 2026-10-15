@@ -121,12 +121,20 @@ jobs:
 
   fmt:
     runs-on: ubuntu-latest
-    # Advisory only until the repo-wide rustfmt normalization lands
-    # (large pre-existing baseline drift); then remove continue-on-error.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - run: cargo fmt --check --edition 2024
+      - run: cargo fmt --check
+
+  # Minimum supported Rust version: every manifest pins rust-version 1.99,
+  # so the locked workspace must at least check under that toolchain.
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.99
+      - uses: Swatinem/rust-cache@v2
+      - name: Check under MSRV toolchain
+        run: cargo check --workspace --locked

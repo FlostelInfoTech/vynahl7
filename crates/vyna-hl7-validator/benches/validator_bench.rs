@@ -1,12 +1,12 @@
 //! Validator benchmarks: schema validation, data type validation,
 //! vocabulary validation, and full parse+validate pipeline.
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use vyna_hl7_core::types::DataType;
-use vyna_hl7_core::Version;
-use vyna_hl7_parser::parse_message;
-use vyna_hl7_validator::{validate_data_type, TableRegistry, Validator};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
+use vyna_hl7_core::Version;
+use vyna_hl7_core::types::DataType;
+use vyna_hl7_parser::parse_message;
+use vyna_hl7_validator::{TableRegistry, Validator, validate_data_type};
 
 // Representative messages for validation benchmarks
 const ADT_A01: &str = "\
@@ -50,9 +50,7 @@ fn bench_schema_validation(c: &mut Criterion) {
             BenchmarkId::new("load_schema", *name),
             &(msg_type, trigger),
             |b, (mt, te)| {
-                b.iter(|| {
-                    black_box(Validator::for_message_type(Version::V2_5, mt, te).unwrap())
-                });
+                b.iter(|| black_box(Validator::for_message_type(Version::V2_5, mt, te).unwrap()));
             },
         );
     }
@@ -155,16 +153,12 @@ fn bench_full_validation_pipeline(c: &mut Criterion) {
     for (name, msg_type, trigger, raw_msg) in &messages {
         let validator = Validator::for_message_type(Version::V2_5, msg_type, trigger).unwrap();
 
-        group.bench_with_input(
-            BenchmarkId::from_parameter(name),
-            raw_msg,
-            |b, msg| {
-                b.iter(|| {
-                    let parsed = parse_message(black_box(msg)).unwrap();
-                    black_box(validator.validate(&parsed))
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::from_parameter(name), raw_msg, |b, msg| {
+            b.iter(|| {
+                let parsed = parse_message(black_box(msg)).unwrap();
+                black_box(validator.validate(&parsed))
+            });
+        });
     }
 
     group.finish();

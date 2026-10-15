@@ -765,20 +765,19 @@ fn convert_command(
                         }
                     }
                     Err(e) => {
-                        eprintln!("{}", format!("FHIR conversion failed: {}", e).red());
-                        std::process::exit(1);
+                        bail!("FHIR conversion failed: {e}");
                     }
                 }
             }
             #[cfg(not(feature = "fhir"))]
             {
-                eprintln!("{}", "FHIR conversion requires the 'fhir' feature. Rebuild with: cargo build --features fhir".red());
-                std::process::exit(1);
+                bail!(
+                    "FHIR conversion requires the 'fhir' feature. Rebuild with: cargo build --features fhir"
+                );
             }
         }
         _ => {
-            eprintln!("{}", format!("Unsupported output format: {}", to).red());
-            std::process::exit(1);
+            bail!("Unsupported output format: {to} (expected json or fhir)");
         }
     }
 
@@ -866,7 +865,7 @@ fn info_command(input: &str, charset: Option<CharacterSet>) -> Result<()> {
     );
     println!(
         "  Average Segment Size: {} bytes",
-        (encoded.len() / message.segments.len())
+        (encoded.len() / message.segments.len().max(1))
             .to_string()
             .yellow()
     );
@@ -886,14 +885,17 @@ enum SendTarget<'a> {
 /// Split a `--to` endpoint into its transport and address.
 ///
 /// Returns `None` when the scheme is not `mllp://`, `http://`, or
-/// `https://` (compared case-insensitively).
+/// `https://` (compared case-insensitively). MLLP addresses are bare
+/// `host:port`: any trailing path is stripped so `mllp://host:2575/`
+/// connects instead of failing obscurely downstream.
 fn parse_send_target(to: &str) -> Option<SendTarget<'_>> {
     if to
         .get(..7)
         .is_some_and(|s| s.eq_ignore_ascii_case("mllp://"))
     {
         // Byte 7 is a char boundary: the matched prefix is all ASCII.
-        Some(SendTarget::Mllp(&to[7..]))
+        let addr = to[7..].split('/').next().unwrap_or("");
+        Some(SendTarget::Mllp(addr))
     } else if to
         .get(..7)
         .is_some_and(|s| s.eq_ignore_ascii_case("http://"))
@@ -1302,6 +1304,16 @@ mod tests {
         // Lowercase still dispatches; unknown schemes do not.
         assert!(matches!(
             parse_send_target("mllp://host:2575"),
+            Some(SendTarget::Mllp("host:2575"))
+        ));
+        // MLLP has no path concept: a trailing path is stripped so the
+        // address stays a bare host:port for the transport client.
+        assert!(matches!(
+            parse_send_target("mllp://host:2575/"),
+            Some(SendTarget::Mllp("host:2575"))
+        ));
+        assert!(matches!(
+            parse_send_target("mllp://host:2575/hl7/deep"),
             Some(SendTarget::Mllp("host:2575"))
         ));
         assert!(parse_send_target("ftp://host/hl7").is_none());

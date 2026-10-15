@@ -4,12 +4,12 @@
 //! segments instead of the older QRD-based queries. QBP is the standard query mechanism in
 //! HL7 v2.5+.
 
-use super::{generate_control_id, MessageBuilder};
+use super::{MessageBuilder, generate_control_id};
 use crate::{
+    Version,
     builders::fields::{QpdBuilder, RcpBuilder},
     error::Result,
     message::Message,
-    Version,
 };
 
 /// Builder for QBP^Q11 - Query by Parameter (e.g., Immunization History Query)
@@ -180,8 +180,7 @@ impl QbpQ11Builder {
         self.base.message.add_segment(qpd_builder.build());
 
         // RCP segment
-        let mut rcp_builder = RcpBuilder::new()
-            .query_priority(&self.query_priority);
+        let mut rcp_builder = RcpBuilder::new().query_priority(&self.query_priority);
 
         if let Some(limit) = &self.quantity_limit {
             rcp_builder = rcp_builder.quantity_limit(limit);
@@ -300,8 +299,7 @@ impl QbpQ15Builder {
 
         self.base.message.add_segment(qpd_builder.build());
 
-        let mut rcp_builder = RcpBuilder::new()
-            .query_priority(&self.query_priority);
+        let mut rcp_builder = RcpBuilder::new().query_priority(&self.query_priority);
 
         if let Some(limit) = &self.quantity_limit {
             rcp_builder = rcp_builder.quantity_limit(limit);
@@ -426,8 +424,7 @@ impl QbpQ21Builder {
 
         self.base.message.add_segment(qpd_builder.build());
 
-        let mut rcp_builder = RcpBuilder::new()
-            .query_priority(&self.query_priority);
+        let mut rcp_builder = RcpBuilder::new().query_priority(&self.query_priority);
 
         if let Some(limit) = &self.quantity_limit {
             rcp_builder = rcp_builder.quantity_limit(limit);
@@ -566,8 +563,7 @@ impl QbpQ22Builder {
 
         self.base.message.add_segment(qpd_builder.build());
 
-        let mut rcp_builder = RcpBuilder::new()
-            .query_priority(&self.query_priority);
+        let mut rcp_builder = RcpBuilder::new().query_priority(&self.query_priority);
 
         if let Some(limit) = &self.quantity_limit {
             rcp_builder = rcp_builder.quantity_limit(limit);

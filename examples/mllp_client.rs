@@ -5,9 +5,11 @@
 //! - Connect to an MLLP server
 //! - Send the message and receive an ACK
 
-use vyna_hl7_core::{delimiters::Delimiters, field::Field, message::Message, segment::Segment, Version};
-use vyna_hl7_mllp::MllpClient;
 use chrono::Utc;
+use vyna_hl7_core::{
+    Version, delimiters::Delimiters, field::Field, message::Message, segment::Segment,
+};
+use vyna_hl7_mllp::MllpClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

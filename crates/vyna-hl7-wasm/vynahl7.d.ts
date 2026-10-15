@@ -85,6 +85,12 @@ export class WasmValidationResult {
   /** Get the number of validation warnings */
   warningCount(): number;
 
+  /** Get the validation posture ("strict", "standard", or "lenient") */
+  mode(): string;
+
+  /** Whether a message schema was applied (false means structure-only validation) */
+  schemaApplied(): boolean;
+
   /** Convert validation result to JSON */
   toJson(): ValidationResultJson;
 }
@@ -185,7 +191,7 @@ export function setTerserValue(message: WasmMessage, path: string, value: string
 export function getTerserValues(message: WasmMessage, paths: string[]): Record<string, string | null>;
 
 /**
- * Validate a message against HL7 standards
+ * Validate a message against HL7 standards (strict posture)
  *
  * @param message - The message to validate
  * @returns Validation result
@@ -200,6 +206,26 @@ export function getTerserValues(message: WasmMessage, paths: string[]): Record<s
  * ```
  */
 export function validateMessage(message: WasmMessage): WasmValidationResult;
+
+/**
+ * Validate a message with an explicit posture
+ *
+ * @param message - The message to validate
+ * @param mode - One of "strict" (default spec compliance), "standard"
+ * (strict except version drift warns), or "lenient" (only structural
+ * problems fail), matching the CLI validate flags
+ * @returns Validation result carrying the effective mode and schemaApplied
+ * @throws Error if the mode is not strict, standard, or lenient
+ *
+ * @example
+ * ```typescript
+ * const result = validateMessageWithMode(message, "lenient");
+ * ```
+ */
+export function validateMessageWithMode(
+  message: WasmMessage,
+  mode: "strict" | "standard" | "lenient"
+): WasmValidationResult;
 
 /**
  * Create a new HL7 message with MSH segment
@@ -324,6 +350,8 @@ export interface MessageJson {
   message_type?: string;
   sending_application?: string;
   sending_facility?: string;
+  receiving_application?: string;
+  receiving_facility?: string;
   control_id?: string;
   segments: SegmentJson[];
 }
@@ -335,6 +363,8 @@ export interface SegmentJson {
 
 export interface ValidationResultJson {
   is_valid: boolean;
+  mode: string;
+  schema_applied: boolean;
   errors: ValidationError[];
   warnings: ValidationError[];
 }

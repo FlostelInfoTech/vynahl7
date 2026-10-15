@@ -764,7 +764,9 @@ impl QpdBuilder {
         let mut qpd = crate::segment::Segment::new("QPD");
 
         // QPD-1: Message Query Name
-        qpd.add_field(Field::from_delimited(self.message_query_name.as_deref().unwrap_or("")));
+        qpd.add_field(Field::from_delimited(
+            self.message_query_name.as_deref().unwrap_or(""),
+        ));
 
         // QPD-2: Query Tag
         qpd.add_field(Field::from_value(self.query_tag.as_deref().unwrap_or("")));
@@ -863,7 +865,9 @@ impl RcpBuilder {
         let mut rcp = crate::segment::Segment::new("RCP");
 
         // RCP-1: Query Priority
-        rcp.add_field(Field::from_value(self.query_priority.as_deref().unwrap_or("")));
+        rcp.add_field(Field::from_value(
+            self.query_priority.as_deref().unwrap_or(""),
+        ));
 
         // RCP-2: Quantity Limited Request (CQ composite: "100^RD")
         rcp.add_field(Field::from_delimited(
@@ -876,10 +880,14 @@ impl RcpBuilder {
         ));
 
         // RCP-4: Execution and Delivery Time
-        rcp.add_field(Field::from_value(self.execution_time.as_deref().unwrap_or("")));
+        rcp.add_field(Field::from_value(
+            self.execution_time.as_deref().unwrap_or(""),
+        ));
 
         // RCP-5: Modify Indicator
-        rcp.add_field(Field::from_value(self.modify_indicator.as_deref().unwrap_or("")));
+        rcp.add_field(Field::from_value(
+            self.modify_indicator.as_deref().unwrap_or(""),
+        ));
 
         // RCP-6: Sort-by Field (SRT composite)
         rcp.add_field(Field::from_delimited(
@@ -887,7 +895,9 @@ impl RcpBuilder {
         ));
 
         // RCP-7: Segment Group Inclusion
-        rcp.add_field(Field::from_value(self.segment_group_inclusion.as_deref().unwrap_or("")));
+        rcp.add_field(Field::from_value(
+            self.segment_group_inclusion.as_deref().unwrap_or(""),
+        ));
 
         rcp
     }
@@ -976,24 +986,29 @@ impl QakBuilder {
         qak.add_field(Field::from_value(self.query_tag.as_deref().unwrap_or("")));
 
         // QAK-2: Query Response Status
-        qak.add_field(Field::from_value(self.query_response_status.as_deref().unwrap_or("OK")));
+        qak.add_field(Field::from_value(
+            self.query_response_status.as_deref().unwrap_or("OK"),
+        ));
 
         // QAK-3: Message Query Name
-        qak.add_field(Field::from_delimited(self.message_query_name.as_deref().unwrap_or("")));
+        qak.add_field(Field::from_delimited(
+            self.message_query_name.as_deref().unwrap_or(""),
+        ));
 
         // QAK-4: Hit Count Total
         qak.add_field(Field::from_value(
-            self.hit_count_total.map_or(String::new(), |c| c.to_string())
+            self.hit_count_total
+                .map_or(String::new(), |c| c.to_string()),
         ));
 
         // QAK-5: This Payload
         qak.add_field(Field::from_value(
-            self.this_payload.map_or(String::new(), |c| c.to_string())
+            self.this_payload.map_or(String::new(), |c| c.to_string()),
         ));
 
         // QAK-6: Hits Remaining
         qak.add_field(Field::from_value(
-            self.hits_remaining.map_or(String::new(), |c| c.to_string())
+            self.hits_remaining.map_or(String::new(), |c| c.to_string()),
         ));
 
         qak

@@ -205,7 +205,10 @@ impl BuiltinRules {
                 "Value Type (OBX-2) must be CE, CF, CK, CN, CP, CX, DT, ED, FT, MO, NM, PN, RP, SN, ST, TM, TN, TS, TX, or XAD",
                 RuleSeverity::Error,
                 "OBX-2",
-                vec!["CE", "CF", "CK", "CN", "CP", "CX", "DT", "ED", "FT", "MO", "NM", "PN", "RP", "SN", "ST", "TM", "TN", "TS", "TX", "XAD", "XCN", "XON", "XPN", "XTN"],
+                vec![
+                    "CE", "CF", "CK", "CN", "CP", "CX", "DT", "ED", "FT", "MO", "NM", "PN", "RP",
+                    "SN", "ST", "TM", "TN", "TS", "TX", "XAD", "XCN", "XON", "XPN", "XTN",
+                ],
             ),
             CrossFieldValidator::field_valued(
                 "obx_observation_identifier_required",
@@ -241,7 +244,12 @@ impl BuiltinRules {
                 "Order Control (ORC-1) must be a valid code (NW, OK, UA, CA, OC, CR, DC, DE, DF, DR, FU, HD, HR, LI, NA, NW, OC, OD, OE, OF, OH, OK, OP, OR, PA, PR, RE, RF, RL, RO, RP, RQ, RR, RU, SC, SN, SR, SS, UA, UC, UD, UF, UH, UM, UN, UP, UR, UX, XO, XR, XX)",
                 RuleSeverity::Error,
                 "ORC-1",
-                vec!["NW", "OK", "UA", "CA", "OC", "CR", "DC", "DE", "DF", "DR", "FU", "HD", "HR", "LI", "NA", "OD", "OE", "OF", "OH", "OP", "OR", "PA", "PR", "RE", "RF", "RL", "RO", "RP", "RQ", "RR", "RU", "SC", "SN", "SR", "SS", "UC", "UD", "UF", "UH", "UM", "UN", "UP", "UR", "UX", "XO", "XR", "XX"],
+                vec![
+                    "NW", "OK", "UA", "CA", "OC", "CR", "DC", "DE", "DF", "DR", "FU", "HD", "HR",
+                    "LI", "NA", "OD", "OE", "OF", "OH", "OP", "OR", "PA", "PR", "RE", "RF", "RL",
+                    "RO", "RP", "RQ", "RR", "RU", "SC", "SN", "SR", "SS", "UC", "UD", "UF", "UH",
+                    "UM", "UN", "UP", "UR", "UX", "XO", "XR", "XX",
+                ],
             ),
             CrossFieldValidator::at_least_one(
                 "orc_order_number_required",

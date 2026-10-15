@@ -19,21 +19,20 @@
 //! cargo run --example http_client
 //! ```
 
-use vyna_hl7_core::builders::adt::AdtBuilder;
+use std::time::Duration;
 use vyna_hl7_core::Version;
+use vyna_hl7_core::builders::adt::AdtBuilder;
 use vyna_hl7_http::HttpClient;
 use vyna_hl7_terser::Terser;
-use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("HL7 HTTP Client Example\n");
 
     // Create HTTP client
-    let client = HttpClient::new("http://127.0.0.1:8080")?
-        .with_timeout(Duration::from_secs(30))?;
-        // Optionally enable authentication if server requires it:
-        // .with_auth("username".into(), "password".into());
+    let client = HttpClient::new("http://127.0.0.1:8080")?.with_timeout(Duration::from_secs(30))?;
+    // Optionally enable authentication if server requires it:
+    // .with_auth("username".into(), "password".into());
 
     println!("Connected to: http://127.0.0.1:8080\n");
 
@@ -71,7 +70,10 @@ async fn send_adt_a01(client: &HttpClient) -> Result<(), Box<dyn std::error::Err
 
     println!("Sending ADT^A01 message...");
     println!("Patient: JOHN DOE (ID: 12345)");
-    println!("Message Control ID: {}", message.get_control_id().unwrap_or("N/A"));
+    println!(
+        "Message Control ID: {}",
+        message.get_control_id().unwrap_or("N/A")
+    );
 
     let ack = client.send_message(&message).await?;
     let terser = Terser::new(&ack);
@@ -93,7 +95,10 @@ async fn send_adt_a08(client: &HttpClient) -> Result<(), Box<dyn std::error::Err
 
     println!("Sending ADT^A08 message...");
     println!("Patient: JOHN DOE (ID: 12345) - UPDATE");
-    println!("Message Control ID: {}", message.get_control_id().unwrap_or("N/A"));
+    println!(
+        "Message Control ID: {}",
+        message.get_control_id().unwrap_or("N/A")
+    );
 
     let ack = client.send_message(&message).await?;
     let terser = Terser::new(&ack);
@@ -113,7 +118,10 @@ async fn send_adt_a03(client: &HttpClient) -> Result<(), Box<dyn std::error::Err
 
     println!("Sending ADT^A03 message...");
     println!("Patient: JOHN DOE (ID: 12345) - DISCHARGE");
-    println!("Message Control ID: {}", message.get_control_id().unwrap_or("N/A"));
+    println!(
+        "Message Control ID: {}",
+        message.get_control_id().unwrap_or("N/A")
+    );
 
     let ack = client.send_message(&message).await?;
     let terser = Terser::new(&ack);

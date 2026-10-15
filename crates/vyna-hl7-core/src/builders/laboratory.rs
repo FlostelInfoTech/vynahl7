@@ -1,7 +1,7 @@
 //! Laboratory message builders (OUL, OML)
 
-use super::{generate_control_id, MessageBuilder};
-use crate::{error::Result, field::Field, message::Message, segment::Segment, Version};
+use super::{MessageBuilder, generate_control_id};
+use crate::{Version, error::Result, field::Field, message::Message, segment::Segment};
 
 /// Builder for OUL^R21 - Unsolicited Laboratory Observation
 pub struct OulR21Builder {
@@ -115,7 +115,9 @@ impl OulR21Builder {
         obr.add_field(Field::from_value("1")); // Set ID
         obr.add_field(Field::from_value("")); // Placer Order Number
         obr.add_field(Field::from_value("")); // Filler Order Number
-        obr.add_field(Field::from_delimited(self.observation_id.as_deref().unwrap_or(""))); // Universal Service ID
+        obr.add_field(Field::from_delimited(
+            self.observation_id.as_deref().unwrap_or(""),
+        )); // Universal Service ID
 
         self.base.message.add_segment(obr);
 
@@ -124,9 +126,13 @@ impl OulR21Builder {
             let mut obx = Segment::new("OBX");
             obx.add_field(Field::from_value("1")); // Set ID
             obx.add_field(Field::from_value("ST")); // Value Type
-            obx.add_field(Field::from_delimited(self.observation_id.as_deref().unwrap_or(""))); // Observation ID
+            obx.add_field(Field::from_delimited(
+                self.observation_id.as_deref().unwrap_or(""),
+            )); // Observation ID
             obx.add_field(Field::from_value("")); // Observation Sub-ID
-            obx.add_field(Field::from_value(self.observation_value.as_deref().unwrap_or(""))); // Observation Value
+            obx.add_field(Field::from_value(
+                self.observation_value.as_deref().unwrap_or(""),
+            )); // Observation Value
             obx.add_field(Field::from_value("")); // Units
             obx.add_field(Field::from_value("")); // References Range
             obx.add_field(Field::from_value("")); // Abnormal Flags
@@ -248,17 +254,25 @@ impl OmlO21Builder {
 
         // ORC segment
         let mut orc = Segment::new("ORC");
-        orc.add_field(Field::from_value(self.order_control.as_deref().unwrap_or("NW")));
-        orc.add_field(Field::from_delimited(self.placer_order_number.as_deref().unwrap_or("")));
+        orc.add_field(Field::from_value(
+            self.order_control.as_deref().unwrap_or("NW"),
+        ));
+        orc.add_field(Field::from_delimited(
+            self.placer_order_number.as_deref().unwrap_or(""),
+        ));
 
         self.base.message.add_segment(orc);
 
         // OBR segment
         let mut obr = Segment::new("OBR");
         obr.add_field(Field::from_value("1")); // Set ID
-        obr.add_field(Field::from_delimited(self.placer_order_number.as_deref().unwrap_or(""))); // Placer Order Number
+        obr.add_field(Field::from_delimited(
+            self.placer_order_number.as_deref().unwrap_or(""),
+        )); // Placer Order Number
         obr.add_field(Field::from_value("")); // Filler Order Number
-        obr.add_field(Field::from_delimited(self.universal_service_id.as_deref().unwrap_or(""))); // Universal Service ID
+        obr.add_field(Field::from_delimited(
+            self.universal_service_id.as_deref().unwrap_or(""),
+        )); // Universal Service ID
 
         self.base.message.add_segment(obr);
 

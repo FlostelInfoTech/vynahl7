@@ -402,15 +402,31 @@ stream.flush().await?;
 
 ### Standard Benchmarks (Parsing Only)
 
+All 13 benchmark targets:
+
 ```bash
+# Core data structures
+cargo bench -p vyna-hl7-core --bench core_bench
+
 # Parser benchmarks
 cargo bench -p vyna-hl7-parser --bench parser_bench
-
-# Industry-standard benchmarks
 cargo bench -p vyna-hl7-parser --bench industry_bench
+cargo bench -p vyna-hl7-parser --bench message_types_bench
+cargo bench -p vyna-hl7-parser --bench edge_cases_bench
+cargo bench -p vyna-hl7-parser --bench alloc_profile_bench
+cargo bench -p vyna-hl7-parser --bench env_report_bench
 
 # Terser benchmarks
-cargo bench -p vyna-hl7-terser
+cargo bench -p vyna-hl7-terser --bench terser_bench
+cargo bench -p vyna-hl7-terser --bench cached_terser_bench
+
+# Validator and FHIR benchmarks
+cargo bench -p vyna-hl7-validator --bench validator_bench
+cargo bench -p vyna-hl7-fhir --bench fhir_bench
+
+# End-to-end pipeline and transport benchmarks (workspace root package)
+cargo bench -p vyna-hl7 --bench pipeline_bench
+cargo bench -p vyna-hl7 --bench transport_bench --features testing
 
 # All benchmarks
 cargo bench --workspace

@@ -22,9 +22,9 @@
 //! cargo run --example mllp_tls_client --features tls -- --mtls
 //! ```
 
+use std::env;
 use vyna_hl7_core::{Field, Message, Segment};
 use vyna_hl7_mllp::{MllpClient, tls::TlsClientConfig};
-use std::env;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -54,8 +54,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = MllpClient::connect_tls(
         "127.0.0.1:2575",
         "localhost", // Server name for SNI
-        tls_config
-    ).await?;
+        tls_config,
+    )
+    .await?;
     println!("✓ Connected (TLS handshake successful)\n");
 
     // Create a test HL7 message
@@ -88,7 +89,10 @@ fn create_test_message() -> Message {
     msh.fields.push(Field::from_value("SENDING_FAC"));
     msh.fields.push(Field::from_value("RECEIVING_APP"));
     msh.fields.push(Field::from_value("RECEIVING_FAC"));
-    msh.fields.push(Field::from_value(format!("{}", chrono::Utc::now().format("%Y%m%d%H%M%S"))));
+    msh.fields.push(Field::from_value(format!(
+        "{}",
+        chrono::Utc::now().format("%Y%m%d%H%M%S")
+    )));
     msh.fields.push(Field::from_value(""));
     msh.fields.push(Field::from_value("ADT^A01"));
     msh.fields.push(Field::from_value("MSG001"));
@@ -99,7 +103,10 @@ fn create_test_message() -> Message {
     // EVN segment
     let mut evn = Segment::new("EVN");
     evn.fields.push(Field::from_value("A01"));
-    evn.fields.push(Field::from_value(format!("{}", chrono::Utc::now().format("%Y%m%d%H%M%S"))));
+    evn.fields.push(Field::from_value(format!(
+        "{}",
+        chrono::Utc::now().format("%Y%m%d%H%M%S")
+    )));
     msg.segments.push(evn);
 
     // PID segment

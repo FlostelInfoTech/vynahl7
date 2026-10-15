@@ -8,9 +8,9 @@
 //!
 //! Run with: cargo run --example datetime_fields
 
-use chrono::{NaiveDateTime, NaiveDate, NaiveTime, DateTime, Utc, TimeZone};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 use vyna_hl7_core::Delimiters;
-use vyna_hl7_custom::{z_segment, CustomSegment, MessageExt};
+use vyna_hl7_custom::{CustomSegment, MessageExt, z_segment};
 use vyna_hl7_parser::parse_message;
 
 // Define a Z-segment with various date/time field types
@@ -56,20 +56,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             NaiveDate::from_ymd_opt(2025, 1, 22)
                 .unwrap()
                 .and_hms_opt(11, 0, 0)
-                .unwrap()
+                .unwrap(),
         )
         .followup_date(NaiveDate::from_ymd_opt(2025, 2, 1).unwrap())
         .surgery_time(NaiveTime::from_hms_opt(8, 0, 0).unwrap())
         .build()?;
 
     println!("   Patient ID: {}", zdt.patient_id);
-    println!("   Admission: {}", zdt.admission_datetime.format("%Y-%m-%d %H:%M:%S"));
+    println!(
+        "   Admission: {}",
+        zdt.admission_datetime.format("%Y-%m-%d %H:%M:%S")
+    );
     println!("   Birth Date: {}", zdt.birth_date.format("%Y-%m-%d"));
-    println!("   Appointment Time: {}", zdt.appointment_time.format("%H:%M:%S"));
-    println!("   Last Updated (UTC): {}", zdt.last_updated_utc.format("%Y-%m-%d %H:%M:%S %Z"));
-    println!("   Discharge: {:?}", zdt.discharge_datetime.map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string()));
-    println!("   Follow-up: {:?}", zdt.followup_date.map(|d| d.format("%Y-%m-%d").to_string()));
-    println!("   Surgery Time: {:?}", zdt.surgery_time.map(|t| t.format("%H:%M:%S").to_string()));
+    println!(
+        "   Appointment Time: {}",
+        zdt.appointment_time.format("%H:%M:%S")
+    );
+    println!(
+        "   Last Updated (UTC): {}",
+        zdt.last_updated_utc.format("%Y-%m-%d %H:%M:%S %Z")
+    );
+    println!(
+        "   Discharge: {:?}",
+        zdt.discharge_datetime
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+    );
+    println!(
+        "   Follow-up: {:?}",
+        zdt.followup_date.map(|d| d.format("%Y-%m-%d").to_string())
+    );
+    println!(
+        "   Surgery Time: {:?}",
+        zdt.surgery_time.map(|t| t.format("%H:%M:%S").to_string())
+    );
 
     // Example 2: HL7 encoding of date/time fields
     println!("\n2. HL7 encoding of date/time fields:");
@@ -101,11 +120,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(parsed_zdt) = message.get_custom_segment::<ZDT>()? {
         println!("   Successfully parsed ZDT segment:");
         println!("   - Patient: {}", parsed_zdt.patient_id);
-        println!("   - Admission: {}", parsed_zdt.admission_datetime.format("%Y-%m-%d %H:%M:%S"));
-        println!("   - Birth Date: {}", parsed_zdt.birth_date.format("%B %d, %Y"));
-        println!("   - Appointment: {}", parsed_zdt.appointment_time.format("%I:%M %p"));
-        println!("   - Discharge: {}",
-            parsed_zdt.discharge_datetime
+        println!(
+            "   - Admission: {}",
+            parsed_zdt.admission_datetime.format("%Y-%m-%d %H:%M:%S")
+        );
+        println!(
+            "   - Birth Date: {}",
+            parsed_zdt.birth_date.format("%B %d, %Y")
+        );
+        println!(
+            "   - Appointment: {}",
+            parsed_zdt.appointment_time.format("%I:%M %p")
+        );
+        println!(
+            "   - Discharge: {}",
+            parsed_zdt
+                .discharge_datetime
                 .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
                 .unwrap_or("Not set".to_string())
         );
@@ -129,10 +159,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         if let Ok(msg) = parse_message(&test_msg)
-            && let Ok(Some(seg)) = msg.get_custom_segment::<ZDT>() {
-                println!("   '{}' - {} → {}",
-                    value, desc, seg.birth_date.format("%Y-%m-%d"));
-            }
+            && let Ok(Some(seg)) = msg.get_custom_segment::<ZDT>()
+        {
+            println!(
+                "   '{}' - {} → {}",
+                value,
+                desc,
+                seg.birth_date.format("%Y-%m-%d")
+            );
+        }
     }
 
     // Example 5: Time format flexibility
@@ -152,10 +187,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         if let Ok(msg) = parse_message(&test_msg)
-            && let Ok(Some(seg)) = msg.get_custom_segment::<ZDT>() {
-                println!("   '{}' - {} → {}",
-                    value, desc, seg.appointment_time.format("%H:%M:%S"));
-            }
+            && let Ok(Some(seg)) = msg.get_custom_segment::<ZDT>()
+        {
+            println!(
+                "   '{}' - {} → {}",
+                value,
+                desc,
+                seg.appointment_time.format("%H:%M:%S")
+            );
+        }
     }
 
     // Example 6: Working with optional date/time fields
@@ -168,7 +208,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             NaiveDate::from_ymd_opt(2025, 1, 20)
                 .unwrap()
                 .and_hms_opt(9, 0, 0)
-                .unwrap()
+                .unwrap(),
         )
         .birth_date(NaiveDate::from_ymd_opt(1975, 3, 10).unwrap())
         .appointment_time(NaiveTime::from_hms_opt(14, 0, 0).unwrap())
@@ -178,7 +218,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("   Created minimal segment (required fields only):");
     println!("   - Patient ID: {}", minimal_zdt.patient_id);
-    println!("   - Admission: {}", minimal_zdt.admission_datetime.format("%Y-%m-%d %H:%M:%S"));
+    println!(
+        "   - Admission: {}",
+        minimal_zdt.admission_datetime.format("%Y-%m-%d %H:%M:%S")
+    );
     println!("   - Discharge: {:?}", minimal_zdt.discharge_datetime);
     println!("   - Follow-up: {:?}", minimal_zdt.followup_date);
     println!("   - Surgery Time: {:?}", minimal_zdt.surgery_time);
@@ -194,12 +237,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut msg = parse_message(
         "MSH|^~\\&|App|Fac|App|Fac|20250119120000||ADT^A01|MSG|P|2.5\r\
          PID|1||PAT-11111||Doe^John\r\
-         ZDT|PAT-11111|20250120100000|19850615|140000|20250120100000|||"
+         ZDT|PAT-11111|20250120100000|19850615|140000|20250120100000|||",
     )?;
 
     println!("   Original admission time:");
     if let Some(original) = msg.get_custom_segment::<ZDT>()? {
-        println!("   {}", original.admission_datetime.format("%Y-%m-%d %H:%M:%S"));
+        println!(
+            "   {}",
+            original.admission_datetime.format("%Y-%m-%d %H:%M:%S")
+        );
     }
 
     // Modify the segment - add 3 days to admission for discharge
@@ -214,14 +260,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n   After updating with calculated dates:");
     if let Some(updated) = msg.get_custom_segment::<ZDT>()? {
-        println!("   - Admission: {}", updated.admission_datetime.format("%Y-%m-%d %H:%M:%S"));
-        println!("   - Discharge: {}",
-            updated.discharge_datetime
+        println!(
+            "   - Admission: {}",
+            updated.admission_datetime.format("%Y-%m-%d %H:%M:%S")
+        );
+        println!(
+            "   - Discharge: {}",
+            updated
+                .discharge_datetime
                 .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
                 .unwrap_or("Not set".to_string())
         );
-        println!("   - Follow-up: {}",
-            updated.followup_date
+        println!(
+            "   - Follow-up: {}",
+            updated
+                .followup_date
                 .map(|d| d.format("%Y-%m-%d").to_string())
                 .unwrap_or("Not set".to_string())
         );
@@ -232,7 +285,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   ------------------------------------------");
 
     let utc_now = Utc::now();
-    println!("   Current UTC time: {}", utc_now.format("%Y-%m-%d %H:%M:%S %Z"));
+    println!(
+        "   Current UTC time: {}",
+        utc_now.format("%Y-%m-%d %H:%M:%S %Z")
+    );
     println!("   HL7 format: {}", utc_now.format("%Y%m%d%H%M%S"));
 
     println!("\n   Benefits of DateTime<Utc>:");

@@ -191,11 +191,7 @@ mod tests {
     fn test_decode_body_prefers_charset_parameter() {
         // Latin-1 bytes with no usable MSH-18 decode via the parameter.
         let body = b"MSH|^~\\&|SND\rPID|1||M\xfcller\r";
-        let text = decode_body(
-            body,
-            "x-application/hl7-v2+er7; charset=iso-8859-1",
-        )
-        .unwrap();
+        let text = decode_body(body, "x-application/hl7-v2+er7; charset=iso-8859-1").unwrap();
         assert!(text.contains("Müller"));
         // Without a parameter, MSH-18 detection applies.
         let declared =

@@ -25,8 +25,11 @@ serde = ["dep:serde", "dep:serde_json", "chrono/serde"]
 
 [dev-dependencies]
 proptest.workspace = true
-criterion = "0.8"
+criterion.workspace = true
 
 [[bench]]
 name = "core_bench"
 harness = false
+
+[lints]
+workspace = true

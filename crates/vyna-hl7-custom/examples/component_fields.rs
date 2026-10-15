@@ -12,7 +12,7 @@
 //! Run with: cargo run --example component_fields
 
 use vyna_hl7_core::Delimiters;
-use vyna_hl7_custom::{z_segment, CustomSegment, MessageExt};
+use vyna_hl7_custom::{CustomSegment, MessageExt, z_segment};
 use vyna_hl7_parser::parse_message;
 
 // Define a Z-segment with patient name as components
@@ -61,17 +61,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "John".to_string(),
             "Alexander".to_string(),
         ))
-        .emergency_contact((
-            "Doe".to_string(),
-            "Jane".to_string(),
-        ))
+        .emergency_contact(("Doe".to_string(), "Jane".to_string()))
         .build()?;
 
     println!("   Patient ID: {}", zpn.patient_id);
-    println!("   Patient Name: {} {} {}",
-        zpn.patient_name.0, zpn.patient_name.1, zpn.patient_name.2);
-    println!("   Emergency Contact: {} {}",
-        zpn.emergency_contact.0, zpn.emergency_contact.1);
+    println!(
+        "   Patient Name: {} {} {}",
+        zpn.patient_name.0, zpn.patient_name.1, zpn.patient_name.2
+    );
+    println!(
+        "   Emergency Contact: {} {}",
+        zpn.emergency_contact.0, zpn.emergency_contact.1
+    );
 
     // Example 2: HL7 encoding with ^ separator
     println!("\n2. HL7 encoding of component fields:");
@@ -97,10 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "62701".to_string(),
             "USA".to_string(),
         ))
-        .work_phone((
-            "555-1234".to_string(),
-            "5678".to_string(),
-        ))
+        .work_phone(("555-1234".to_string(), "5678".to_string()))
         .build()?;
 
     println!("   Patient ID: {}", zad.patient_id);
@@ -110,7 +108,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("     State: {}", zad.home_address.2);
     println!("     Zip: {}", zad.home_address.3);
     println!("     Country: {}", zad.home_address.4);
-    println!("   Work Phone: {} ext. {}", zad.work_phone.0, zad.work_phone.1);
+    println!(
+        "   Work Phone: {} ext. {}",
+        zad.work_phone.0, zad.work_phone.1
+    );
 
     let zad_encoded = zad.to_segment().encode(&delimiters);
     println!("\n   Encoded: {}", zad_encoded);
@@ -136,10 +137,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("     Authority: {}", zid.patient_identifier.2);
         println!("     Facility: {}", zid.patient_identifier.3);
         println!("\n   Referring Physician:");
-        println!("     Name: {} {}, {}",
-            zid.referring_physician.0,
-            zid.referring_physician.1,
-            zid.referring_physician.2);
+        println!(
+            "     Name: {} {}, {}",
+            zid.referring_physician.0, zid.referring_physician.1, zid.referring_physician.2
+        );
     }
 
     // Example 5: Destructuring components
@@ -160,21 +161,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut msg = parse_message(
         "MSH|^~\\&|App|Fac|App|Fac|20250119120000||ADT^A01|MSG|P|2.5\r\
          PID|1||PAT-00001\r\
-         ZPN|PAT-00001|Brown^Alice^Marie|White^Bob\r"
+         ZPN|PAT-00001|Brown^Alice^Marie|White^Bob\r",
     )?;
 
     println!("   Original patient name:");
     if let Some(original) = msg.get_custom_segment::<ZPN>()? {
-        println!("   {} {} {}",
-            original.patient_name.0,
-            original.patient_name.1,
-            original.patient_name.2);
+        println!(
+            "   {} {} {}",
+            original.patient_name.0, original.patient_name.1, original.patient_name.2
+        );
     }
 
     // Update the patient name
     let mut updated_zpn = msg.get_custom_segment::<ZPN>()?.unwrap();
     updated_zpn.patient_name = (
-        "Brown-Smith".to_string(),  // Married name
+        "Brown-Smith".to_string(), // Married name
         "Alice".to_string(),
         "Marie".to_string(),
     );
@@ -183,10 +184,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n   After name change:");
     if let Some(updated) = msg.get_custom_segment::<ZPN>()? {
-        println!("   {} {} {}",
-            updated.patient_name.0,
-            updated.patient_name.1,
-            updated.patient_name.2);
+        println!(
+            "   {} {} {}",
+            updated.patient_name.0, updated.patient_name.1, updated.patient_name.2
+        );
     }
 
     // Example 7: Real-world use case - healthcare provider directory
@@ -214,7 +215,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Dr".to_string(),
         ))
         .specialty((
-            "207R00000X".to_string(),  // NPI taxonomy code
+            "207R00000X".to_string(), // NPI taxonomy code
             "Internal Medicine".to_string(),
         ))
         .license((
@@ -225,12 +226,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     println!("   Provider ID: {}", provider.provider_id);
-    println!("\n   Provider Name: {} {} {} {}, {}",
-        provider.provider_name.4,  // Prefix (Dr)
-        provider.provider_name.1,  // First
-        provider.provider_name.2,  // Middle
-        provider.provider_name.0,  // Last
-        provider.provider_name.3); // Suffix (MD)
+    println!(
+        "\n   Provider Name: {} {} {} {}, {}",
+        provider.provider_name.4, // Prefix (Dr)
+        provider.provider_name.1, // First
+        provider.provider_name.2, // Middle
+        provider.provider_name.0, // Last
+        provider.provider_name.3
+    ); // Suffix (MD)
     println!("\n   Specialty:");
     println!("     Code: {}", provider.specialty.0);
     println!("     Description: {}", provider.specialty.1);
@@ -257,27 +260,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let comparison = ZCM::builder()
-        .simple_name("John Smith")  // Less structured
-        .component_name((
-            "Smith".to_string(),
-            "John".to_string(),
-        ))  // Structured, easier to query
+        .simple_name("John Smith") // Less structured
+        .component_name(("Smith".to_string(), "John".to_string())) // Structured, easier to query
         .full_name((
             "Smith".to_string(),
             "John".to_string(),
             "Alexander".to_string(),
-        ))  // Most structured
+        )) // Most structured
         .build()?;
 
     println!("   Simple field (String):");
-    println!("     \"{}\" - Hard to separate first/last programmatically",
-        comparison.simple_name);
+    println!(
+        "     \"{}\" - Hard to separate first/last programmatically",
+        comparison.simple_name
+    );
     println!("\n   Component field (2 components):");
-    println!("     Last: {}, First: {} - Easy to access individually",
-        comparison.component_name.0, comparison.component_name.1);
+    println!(
+        "     Last: {}, First: {} - Easy to access individually",
+        comparison.component_name.0, comparison.component_name.1
+    );
     println!("\n   Component field (3 components):");
-    println!("     Last: {}, First: {}, Middle: {} - Full structure",
-        comparison.full_name.0, comparison.full_name.1, comparison.full_name.2);
+    println!(
+        "     Last: {}, First: {}, Middle: {} - Full structure",
+        comparison.full_name.0, comparison.full_name.1, comparison.full_name.2
+    );
 
     // Example 9: Working with message batches
     println!("\n9. Multiple segments with components:");
@@ -287,19 +293,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "MSH|^~\\&|Lab|Hospital|EMR|Clinic|20250119120000||ORU^R01|BATCH001|P|2.5\r\
          ZPN|PAT-001|Smith^John^A|Doe^Jane\r\
          ZPN|PAT-002|Johnson^Mary^B|Johnson^Bob\r\
-         ZPN|PAT-003|Williams^David^C|White^Alice\r"
+         ZPN|PAT-003|Williams^David^C|White^Alice\r",
     )?;
 
     let all_zpns = batch_msg.get_custom_segments::<ZPN>()?;
     println!("   Found {} patient name records:", all_zpns.len());
     for (i, zpn) in all_zpns.iter().enumerate() {
-        println!("   {}. Patient {}: {} {}, Emergency: {} {}",
+        println!(
+            "   {}. Patient {}: {} {}, Emergency: {} {}",
             i + 1,
             zpn.patient_id,
-            zpn.patient_name.1,  // First
-            zpn.patient_name.0,  // Last
-            zpn.emergency_contact.1,  // Emergency first
-            zpn.emergency_contact.0); // Emergency last
+            zpn.patient_name.1,      // First
+            zpn.patient_name.0,      // Last
+            zpn.emergency_contact.1, // Emergency first
+            zpn.emergency_contact.0
+        ); // Emergency last
     }
 
     // Example 10: Optional component fields
@@ -320,27 +328,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create segment with optional fields present
     let with_optional = ZOC::builder()
         .patient_id("PAT-001")
-        .primary_physician((
-            "Smith".to_string(),
-            "John".to_string(),
-            "MD".to_string(),
-        ))
+        .primary_physician(("Smith".to_string(), "John".to_string(), "MD".to_string()))
         .secondary_physician(Some((
             "Doe".to_string(),
             "Jane".to_string(),
             "RN".to_string(),
         )))
-        .maiden_name(Some((
-            "Johnson".to_string(),
-            "Mary".to_string(),
-        )))
+        .maiden_name(Some(("Johnson".to_string(), "Mary".to_string())))
         .build()?;
 
     println!("    Patient with optional fields:");
     println!("      Patient ID: {}", with_optional.patient_id);
-    println!("      Primary: Dr. {} {}",
-        with_optional.primary_physician.1,
-        with_optional.primary_physician.0);
+    println!(
+        "      Primary: Dr. {} {}",
+        with_optional.primary_physician.1, with_optional.primary_physician.0
+    );
 
     if let Some((last, first, cred)) = &with_optional.secondary_physician {
         println!("      Secondary: {} {} {}", cred, first, last);
@@ -358,14 +360,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Sarah".to_string(),
             "DO".to_string(),
         ))
-        .build()?;  // No secondary_physician or maiden_name
+        .build()?; // No secondary_physician or maiden_name
 
     println!("\n    Patient without optional fields:");
     println!("      Patient ID: {}", without_optional.patient_id);
-    println!("      Primary: Dr. {} {}",
-        without_optional.primary_physician.1,
-        without_optional.primary_physician.0);
-    println!("      Secondary: {:?}", without_optional.secondary_physician);
+    println!(
+        "      Primary: Dr. {} {}",
+        without_optional.primary_physician.1, without_optional.primary_physician.0
+    );
+    println!(
+        "      Secondary: {:?}",
+        without_optional.secondary_physician
+    );
     println!("      Maiden name: {:?}", without_optional.maiden_name);
 
     // HL7 encoding
@@ -380,31 +386,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parsing messages with optional components
     let msg_with_optional = parse_message(
         "MSH|^~\\&|App|Fac|App|Fac|20250119120000||ADT^A01|MSG|P|2.5\r\
-         ZOC|PAT-003|Brown^Robert^MD|White^Alice^NP|Anderson^Beth\r"
+         ZOC|PAT-003|Brown^Robert^MD|White^Alice^NP|Anderson^Beth\r",
     )?;
 
     let msg_without_optional = parse_message(
         "MSH|^~\\&|App|Fac|App|Fac|20250119120000||ADT^A01|MSG|P|2.5\r\
-         ZOC|PAT-004|Taylor^David^MD||\r"
+         ZOC|PAT-004|Taylor^David^MD||\r",
     )?;
 
     println!("\n    Parsing HL7 messages:");
     if let Some(zoc) = msg_with_optional.get_custom_segment::<ZOC>()? {
-        println!("      Patient {}: Primary={} {}, Secondary={:?}, Maiden={:?}",
+        println!(
+            "      Patient {}: Primary={} {}, Secondary={:?}, Maiden={:?}",
             zoc.patient_id,
             zoc.primary_physician.1,
             zoc.primary_physician.0,
-            zoc.secondary_physician.as_ref().map(|(l, f, c)| format!("{} {} {}", c, f, l)),
-            zoc.maiden_name.as_ref().map(|(l, f)| format!("{} {}", f, l)));
+            zoc.secondary_physician
+                .as_ref()
+                .map(|(l, f, c)| format!("{} {} {}", c, f, l)),
+            zoc.maiden_name
+                .as_ref()
+                .map(|(l, f)| format!("{} {}", f, l))
+        );
     }
 
     if let Some(zoc) = msg_without_optional.get_custom_segment::<ZOC>()? {
-        println!("      Patient {}: Primary={} {}, Secondary={:?}, Maiden={:?}",
+        println!(
+            "      Patient {}: Primary={} {}, Secondary={:?}, Maiden={:?}",
             zoc.patient_id,
             zoc.primary_physician.1,
             zoc.primary_physician.0,
             zoc.secondary_physician,
-            zoc.maiden_name);
+            zoc.maiden_name
+        );
     }
 
     // Example 11: Component field benefits

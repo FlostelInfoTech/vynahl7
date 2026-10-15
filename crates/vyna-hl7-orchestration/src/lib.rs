@@ -84,9 +84,9 @@
 //! });
 //! ```
 
-pub mod routing;
-pub mod orchestration;
-pub mod filtering;
 pub mod error;
+pub mod filtering;
+pub mod orchestration;
+pub mod routing;
 
 pub use error::{OrchestrationError, Result};

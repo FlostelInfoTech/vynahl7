@@ -13,8 +13,8 @@
 
 use vyna_hl7_conformance::{
     BindingStrength, Cardinality, ComponentProfile, ConditionalUsage, ConformanceProfile,
-    ConformanceValidator, FieldProfile, MessageProfile, Predicate, ProfileMetadata,
-    SegmentProfile, Usage, ValueSetBinding,
+    ConformanceValidator, FieldProfile, MessageProfile, Predicate, ProfileMetadata, SegmentProfile,
+    Usage, ValueSetBinding,
 };
 use vyna_hl7_core::Version;
 use vyna_hl7_parser::parse_message;
@@ -26,9 +26,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let profile = create_adt_profile_with_predicates();
 
     println!("Profile created: {}", profile.metadata.name);
-    println!("  Message Type: {}^{}\n",
-        profile.message.message_type,
-        profile.message.trigger_event
+    println!(
+        "  Message Type: {}^{}\n",
+        profile.message.message_type, profile.message.trigger_event
     );
 
     // Test case 1: Message with male patient
@@ -41,7 +41,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let validator = ConformanceValidator::new(profile.clone());
     let result = validator.validate(&message);
 
-    println!("Validation result: {}", if result.is_valid() { "VALID" } else { "INVALID" });
+    println!(
+        "Validation result: {}",
+        if result.is_valid() {
+            "VALID"
+        } else {
+            "INVALID"
+        }
+    );
     if !result.is_valid() {
         println!("Errors:");
         for error in &result.errors {
@@ -59,7 +66,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let message2 = parse_message(inpatient_message)?;
     let result2 = validator.validate(&message2);
 
-    println!("Validation result: {}", if result2.is_valid() { "VALID" } else { "INVALID" });
+    println!(
+        "Validation result: {}",
+        if result2.is_valid() {
+            "VALID"
+        } else {
+            "INVALID"
+        }
+    );
     println!();
 
     // Test case 3: Message missing PV1 when patient class is Inpatient
@@ -70,7 +84,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let message3 = parse_message(invalid_message)?;
     let result3 = validator.validate(&message3);
 
-    println!("Validation result: {}", if result3.is_valid() { "VALID" } else { "INVALID" });
+    println!(
+        "Validation result: {}",
+        if result3.is_valid() {
+            "VALID"
+        } else {
+            "INVALID"
+        }
+    );
     if !result3.is_valid() {
         println!("Expected errors (PV1 might be required based on predicates):");
         for error in &result3.errors {
@@ -163,11 +184,8 @@ fn create_adt_profile_with_predicates() -> ConformanceProfile {
 
     // PV1-3: Assigned Patient Location (conditional)
     // Required if patient class is "I", otherwise optional
-    let predicate = Predicate::new(
-        "PV1-2 = 'I'".to_string(),
-        Usage::Required,
-        Usage::Optional,
-    ).with_description("Assigned location required for inpatients".to_string());
+    let predicate = Predicate::new("PV1-2 = 'I'".to_string(), Usage::Required, Usage::Optional)
+        .with_description("Assigned location required for inpatients".to_string());
 
     let mut location_field = FieldProfile::with_conditional_usage(
         3,
@@ -200,7 +218,10 @@ fn demonstrate_predicate_evaluation() -> Result<(), Box<dyn std::error::Error>> 
 
     // Example 3: Boolean logic
     let cond3 = PredicateParser::parse("PID-8 IS VALUED AND PV1-2 = 'I'")?;
-    println!("  Parsed: \"PID-8 IS VALUED AND PV1-2 = 'I'\" -> {:?}", cond3);
+    println!(
+        "  Parsed: \"PID-8 IS VALUED AND PV1-2 = 'I'\" -> {:?}",
+        cond3
+    );
 
     // Example 4: Numeric comparison
     let cond4 = PredicateParser::parse("PID-7 > 18")?;
@@ -218,7 +239,10 @@ fn demonstrate_predicate_evaluation() -> Result<(), Box<dyn std::error::Error>> 
 
     println!("  'PID-8 IS VALUED' -> {}", cond1.evaluate(&message));
     println!("  \"PV1-2 = 'I'\" -> {}", cond2.evaluate(&message));
-    println!("  'PID-8 IS VALUED AND PV1-2 = I' -> {}", cond3.evaluate(&message));
+    println!(
+        "  'PID-8 IS VALUED AND PV1-2 = I' -> {}",
+        cond3.evaluate(&message)
+    );
 
     Ok(())
 }

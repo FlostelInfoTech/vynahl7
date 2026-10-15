@@ -7,6 +7,21 @@
 //! - Encoding characters and delimiters
 //! - Error types
 //! - Common traits
+//!
+//! # Indexing conventions
+//!
+//! Two numbering schemes coexist; every accessor documents which it takes:
+//!
+//! - HL7 field numbers are 1-based (`Segment::get_field(1)` is the first
+//!   field; field 0 is the segment ID and is never a field). Terser paths
+//!   and `ErrorLocation` field/component/subcomponent numbers follow HL7.
+//! - Repetition, component, and subcomponent accessors take 0-based
+//!   storage indices into the underlying `Vec`s (`Field::get_repetition`,
+//!   `Repetition::get_component`, `Component::get_subcomponent`).
+//!   `ErrorLocation::repetition` is likewise 0-based.
+//!
+//! Mixed-index methods such as `Segment::set_component` (1-based field,
+//! 0-based repetition and component) spell out each argument's base.
 
 pub mod batch;
 pub mod builders;
@@ -187,7 +202,8 @@ impl FromStr for Version {
     type Err = Error;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        Self::from_str(s).ok_or_else(|| Error::UnsupportedVersion(format!("Unknown HL7 version: {}", s)))
+        Self::from_str(s)
+            .ok_or_else(|| Error::UnsupportedVersion(format!("Unknown HL7 version: {}", s)))
     }
 }
 

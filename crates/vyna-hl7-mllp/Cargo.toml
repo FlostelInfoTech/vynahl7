@@ -23,9 +23,9 @@ thiserror.workspace = true
 anyhow.workspace = true
 
 # Security - TLS/mTLS (optional)
-tokio-rustls = { version = "0.26", optional = true }
-rustls = { version = "0.23", optional = true }
-webpki-roots = { version = "1.0", optional = true }
+tokio-rustls = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+webpki-roots = { workspace = true, optional = true }
 
 [features]
 default = []
@@ -40,5 +40,8 @@ testing = []
 full = ["tls", "testing"]
 
 [dev-dependencies]
-uuid = { version = "1.19", features = ["v4"] }
-futures = "0.3"
+uuid.workspace = true
+futures.workspace = true
+
+[lints]
+workspace = true

@@ -3,9 +3,9 @@
 //! This example shows how to use CachedTerser for improved performance
 //! when accessing the same fields multiple times.
 
-use vyna_hl7_parser::parse_message;
-use vyna_hl7_terser::{Terser, CachedTerser};
 use std::time::Instant;
+use vyna_hl7_parser::parse_message;
+use vyna_hl7_terser::{CachedTerser, Terser};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Sample ADT message with patient demographics
@@ -106,10 +106,16 @@ OBX|3|NM|HGB^Hemoglobin^LN||14.5|g/dL|12.0-16.0|N|||F|||20240315120000";
     // Summary
     println!("=== Performance Summary ===");
     println!("Regular Terser:  {} ns/access", regular_per_access);
-    println!("Cached Terser:   {} ns/access ({:.1}x faster)",
-        cached_per_access, regular_per_access as f64 / cached_per_access as f64);
-    println!("Warmed Cache:    {} ns/access ({:.1}x faster)",
-        warmed_per_access, regular_per_access as f64 / warmed_per_access as f64);
+    println!(
+        "Cached Terser:   {} ns/access ({:.1}x faster)",
+        cached_per_access,
+        regular_per_access as f64 / cached_per_access as f64
+    );
+    println!(
+        "Warmed Cache:    {} ns/access ({:.1}x faster)",
+        warmed_per_access,
+        regular_per_access as f64 / warmed_per_access as f64
+    );
 
     println!("\n=== Sample Field Values ===");
     let mut terser = CachedTerser::new(&message);
@@ -121,15 +127,31 @@ OBX|3|NM|HGB^Hemoglobin^LN||14.5|g/dL|12.0-16.0|N|||F|||20240315120000";
     println!("Date of Birth: {}", terser.get("PID-7")?.unwrap_or("N/A"));
     println!("Gender: {}", terser.get("PID-8")?.unwrap_or("N/A"));
     println!("Patient Class: {}", terser.get("PV1-2")?.unwrap_or("N/A"));
-    println!("Attending Doctor: {}", terser.get("PV1-7")?.unwrap_or("N/A"));
+    println!(
+        "Attending Doctor: {}",
+        terser.get("PV1-7")?.unwrap_or("N/A")
+    );
 
     println!("\nObservations:");
     for i in 0..3 {
         // Use 1-based segment indexing: OBX or OBX(1) for first, OBX(2) for second, etc.
-        let path_prefix = if i == 0 { String::from("OBX") } else { format!("OBX({})", i + 1) };
-        let test_name = terser.get(&format!("{}-3-1", path_prefix))?.unwrap_or("N/A").to_string();
-        let value = terser.get(&format!("{}-5", path_prefix))?.unwrap_or("N/A").to_string();
-        let units = terser.get(&format!("{}-6", path_prefix))?.unwrap_or("").to_string();
+        let path_prefix = if i == 0 {
+            String::from("OBX")
+        } else {
+            format!("OBX({})", i + 1)
+        };
+        let test_name = terser
+            .get(&format!("{}-3-1", path_prefix))?
+            .unwrap_or("N/A")
+            .to_string();
+        let value = terser
+            .get(&format!("{}-5", path_prefix))?
+            .unwrap_or("N/A")
+            .to_string();
+        let units = terser
+            .get(&format!("{}-6", path_prefix))?
+            .unwrap_or("")
+            .to_string();
         println!("  {}: {} {}", test_name, value, units);
     }
 

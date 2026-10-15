@@ -26,7 +26,6 @@ pub mod vxu;
 use crate::{
     Version,
     charset::CharacterSet,
-    delimiters::Delimiters,
     error::Result,
     field::{Component, Field, Repetition},
     message::Message,
@@ -82,20 +81,8 @@ impl MessageBuilder {
         control_id: &str,
         processing_id: &str,
     ) -> Result<Segment> {
-        let mut msh = Segment::new("MSH");
-        let delims = Delimiters::default();
-
-        // MSH-1: Field separator (special handling)
-        msh.add_field(Field::from_value(delims.field_separator.to_string()));
-
-        // MSH-2: Encoding characters
-        msh.add_field(Field::from_value(format!(
-            "{}{}{}{}",
-            delims.component_separator,
-            delims.repetition_separator,
-            delims.escape_character,
-            delims.subcomponent_separator
-        )));
+        // MSH-1/MSH-2 delimiter placeholders are pushed by the constructor.
+        let mut msh = Segment::new_header("MSH");
 
         // MSH-3: Sending Application
         msh.add_field(Field::from_value(sending_app));

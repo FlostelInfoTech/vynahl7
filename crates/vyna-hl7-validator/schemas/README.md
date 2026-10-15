@@ -6,14 +6,14 @@ This directory contains JSON schema definitions for HL7 v2.x messages across dif
 
 ```
 schemas/
-├── v2_1/     # HL7 version 2.1 (23 messages; later types fall back to v2.3)
-├── v2_2/     # HL7 version 2.2 (27 messages; later types fall back to v2.3)
-├── v2_3/     # HL7 version 2.3 & 2.3.1
-├── v2_4/     # HL7 version 2.4
-├── v2_5/     # HL7 version 2.5 & 2.5.1
-├── v2_6/     # HL7 version 2.6
-├── v2_7/     # HL7 version 2.7 & 2.7.1
-└── v2_8/     # HL7 version 2.8, 2.8.1 & 2.8.2
+├── v2_1/     # HL7 version 2.1: 23 files (later types fall back to v2.3)
+├── v2_2/     # HL7 version 2.2: 27 files (later types fall back to v2.3)
+├── v2_3/     # HL7 version 2.3 & 2.3.1: 37 files
+├── v2_4/     # HL7 version 2.4: 47 files (adds pharmacy/laboratory)
+├── v2_5/     # HL7 version 2.5 & 2.5.1: 47 files
+├── v2_6/     # HL7 version 2.6: 47 files
+├── v2_7/     # HL7 version 2.7 & 2.7.1: 41 files (drops MFN/ORM/OUL/QRY)
+└── v2_8/     # HL7 version 2.8, 2.8.1 & 2.8.2: 41 files
 ```
 
 ## Provenance
@@ -75,62 +75,95 @@ Each schema is a JSON file with the following structure:
 
 ## Available Schemas
 
-All schemas below are available for **HL7 v2.3, v2.4, v2.5, v2.6, v2.7, and v2.8**.
-**HL7 v2.1** carries the 23 message types that existed then: ADT
-(A01–A13, A17), ACK, BAR_P01/P02, DFT_P03, ORM_O01, ORU_R01, and QRY
-(A19, Q01, Q02). **HL7 v2.2** adds ADT_A28/A31/A34 and MFN_M01 (27
-files). Keys without a legacy file (VXU, PPR, OMP, SIU, MDM, pharmacy,
-laboratory, and the rest) fall back to v2.3 at load time.
+**310 schema files on disk**: v2_1 × 23, v2_2 × 27, v2_3 × 37,
+v2_4 × 47, v2_5 × 47, v2_6 × 47, v2_7 × 41, v2_8 × 41. Every file is
+embedded in the binary (`schema_loader.rs` carries one match arm per
+file). Keys missing from v2_1/v2_2 fall back to the v2_3 structure at
+load time; keys missing from v2_7/v2_8 (MFN, ORM, OUL, QRY) have no
+fallback and are unavailable for those versions.
 
-### ADT (Admit/Discharge/Transfer) - 17 Schemas
-- ✅ ADT^A01 - Admit/Visit Notification
-- ✅ ADT^A02 - Transfer a Patient
-- ✅ ADT^A03 - Discharge/End Visit
-- ✅ ADT^A04 - Register a Patient
-- ✅ ADT^A05 - Pre-admit a Patient
-- ✅ ADT^A06 - Change Outpatient to Inpatient
-- ✅ ADT^A07 - Change Inpatient to Outpatient
-- ✅ ADT^A08 - Update Patient Information
-- ✅ ADT^A09 - Patient Departing - Tracking
-- ✅ ADT^A10 - Patient Arriving - Tracking
-- ✅ ADT^A11 - Cancel Admit/Visit Notification
-- ✅ ADT^A12 - Cancel Transfer
-- ✅ ADT^A13 - Cancel Discharge/End Visit
-- ✅ ADT^A17 - Swap Patients
-- ✅ ADT^A28 - Add Person Information
-- ✅ ADT^A31 - Update Person Information
-- ✅ ADT^A40 - Merge Patient - Patient Identifier List
+Per-key availability uses `v2_X+` for "that directory through v2_8"
+and ranges where keys were dropped again.
 
-### SIU (Scheduling Information Unsolicited) - 4 Schemas
+### ADT (Admit/Discharge/Transfer) - 18 Schemas
+- ✅ ADT^A01 - Admit/Visit Notification (all versions)
+- ✅ ADT^A02 - Transfer a Patient (all versions)
+- ✅ ADT^A03 - Discharge/End Visit (all versions)
+- ✅ ADT^A04 - Register a Patient (all versions)
+- ✅ ADT^A05 - Pre-admit a Patient (all versions)
+- ✅ ADT^A06 - Change Outpatient to Inpatient (all versions)
+- ✅ ADT^A07 - Change Inpatient to Outpatient (all versions)
+- ✅ ADT^A08 - Update Patient Information (all versions)
+- ✅ ADT^A09 - Patient Departing - Tracking (all versions)
+- ✅ ADT^A10 - Patient Arriving - Tracking (all versions)
+- ✅ ADT^A11 - Cancel Admit/Visit Notification (all versions)
+- ✅ ADT^A12 - Cancel Transfer (all versions)
+- ✅ ADT^A13 - Cancel Discharge/End Visit (all versions)
+- ✅ ADT^A17 - Swap Patients (all versions)
+- ✅ ADT^A28 - Add Person Information (v2_2+)
+- ✅ ADT^A31 - Update Person Information (v2_2+)
+- ✅ ADT^A34 - Merge Patient - Patient ID Only (v2_2+)
+- ✅ ADT^A40 - Merge Patient - Patient Identifier List (v2_3+)
+
+### SIU (Scheduling Information Unsolicited) - 4 Schemas (v2_3+)
 - ✅ SIU^S12 - Notification of New Appointment Booking
 - ✅ SIU^S13 - Notification of Appointment Rescheduling
 - ✅ SIU^S14 - Notification of Appointment Modification
 - ✅ SIU^S15 - Notification of Appointment Cancellation
 
-### MDM (Medical Document Management) - 3 Schemas
+### MDM (Medical Document Management) - 3 Schemas (v2_3+)
 - ✅ MDM^T01 - Original Document Notification
 - ✅ MDM^T02 - Original Document Notification and Content
 - ✅ MDM^T04 - Document Status Change Notification
 
 ### DFT (Detailed Financial Transaction) - 2 Schemas
-- ✅ DFT^P03 - Post Detail Financial Transaction
-- ✅ DFT^P11 - Post Detail Financial Transactions - Expanded
+- ✅ DFT^P03 - Post Detail Financial Transaction (all versions)
+- ✅ DFT^P11 - Post Detail Financial Transaction - New (v2_4+)
 
-### QRY (Query Messages) - 3 Schemas
+### QRY (Query Messages) - 3 Schemas (v2_1–v2_6)
 - ✅ QRY^A19 - Patient Query
 - ✅ QRY^Q01 - Query Sent for Immediate Response
 - ✅ QRY^Q02 - Query Sent for Deferred Response
 
-### ORU (Observation Result) - 1 Schema
+### ORU (Observation Result) - 1 Schema (all versions)
 - ✅ ORU^R01 - Unsolicited Observation Message
 
-### ORM (Order Message) - 1 Schema
+### ORM (Order Message) - 1 Schema (v2_1–v2_6)
 - ✅ ORM^O01 - General Order Message
 
-### ACK (Acknowledgment) - 1 Schema
+### ACK (Acknowledgment) - 1 Schema (all versions)
 - ✅ ACK - General Acknowledgment
 
-**Total: 43 message schemas across 6 HL7 versions (258 schema files)**
+### BAR (Billing Account Records) - 2 Schemas (all versions)
+- ✅ BAR^P01 - Add Patient Accounts
+- ✅ BAR^P02 - Purge Patient Accounts
+
+### MFN (Master File Notification) - 1 Schema (v2_2–v2_6)
+- ✅ MFN^M01 - Master File Notification - Not Otherwise Specified
+
+### PPR (Patient Problem) - 1 Schema (v2_3+)
+- ✅ PPR^PC1 - Patient Problem - Add
+
+### VXU (Vaccination Record Update) - 1 Schema (v2_3+)
+- ✅ VXU^V04 - Unsolicited Vaccination Record Update
+
+### Pharmacy/Treatment Orders - 5 Schemas (v2_4+)
+- ✅ OMP^O09 - Pharmacy/Treatment Order
+- ✅ RDE^O11 - Pharmacy/Treatment Encoded Order
+- ✅ RDS^O13 - Pharmacy/Treatment Dispense
+- ✅ RGV^O15 - Pharmacy/Treatment Give
+- ✅ RAS^O17 - Pharmacy/Treatment Administration
+
+### Pharmacy/Treatment Acknowledgments - 2 Schemas (v2_4+)
+- ✅ RRD^O14 - Pharmacy/Treatment Dispense Acknowledgment
+- ✅ RRA^O18 - Pharmacy/Treatment Administration Acknowledgment
+
+### Laboratory Orders/Results - 2 Schemas
+- ✅ OML^O21 - Laboratory Order (v2_4+)
+- ✅ OUL^R21 - Unsolicited Laboratory Observation (v2_4–v2_6)
+
+**Total: 47 distinct message keys; 310 schema files across v2_1–v2_8
+(23/27/37/47/47/47/41/41 per directory).**
 
 Each schema includes complete field definitions with component definitions for composite data types (XPN, XAD, XTN, CX, XCN, HD, CE, CWE, PL, etc.).
 

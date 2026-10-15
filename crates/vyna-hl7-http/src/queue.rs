@@ -5,13 +5,13 @@
 //! handling backpressure, and implementing retry logic.
 
 #[cfg(feature = "queue")]
-use async_channel::{bounded, unbounded, Receiver, Sender};
+use async_channel::{Receiver, Sender, bounded, unbounded};
 #[cfg(feature = "queue")]
-use vyna_hl7_core::Message;
+use std::sync::Arc;
 #[cfg(feature = "queue")]
 use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(feature = "queue")]
-use std::sync::Arc;
+use vyna_hl7_core::Message;
 
 /// Async message queue for HL7 messages
 ///

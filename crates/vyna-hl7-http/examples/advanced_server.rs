@@ -31,9 +31,9 @@
 //! - `HTTPS_PORT`: HTTPS server port (default: 8443)
 //! - `METRICS_PORT`: Metrics endpoint port (default: 9090)
 
+use std::sync::Arc;
 use vyna_hl7_core::Message;
 use vyna_hl7_http::{Error, HttpServer, MessageHandler, Result};
-use std::sync::Arc;
 
 #[cfg(feature = "logging")]
 use vyna_hl7_http::logging;
@@ -57,7 +57,7 @@ use vyna_hl7_http::batch::{BatchConfig, BatchProcessor};
 use vyna_hl7_http::webhook::{WebhookClient, WebhookConfig};
 
 #[cfg(feature = "websocket")]
-use vyna_hl7_http::websocket::{websocket_handler, WebSocketConfig};
+use vyna_hl7_http::websocket::{WebSocketConfig, websocket_handler};
 
 #[cfg(feature = "tls")]
 use vyna_hl7_http::tls::TlsServerConfig;
@@ -105,10 +105,7 @@ async fn main() -> Result<()> {
         let receiver = q.receiver();
         tokio::spawn(async move {
             while let Ok(message) = receiver.recv().await {
-                tracing::info!(
-                    "Queue processed message: {:?}",
-                    message.get_control_id()
-                );
+                tracing::info!("Queue processed message: {:?}", message.get_control_id());
             }
         });
 
@@ -235,9 +232,7 @@ async fn main() -> Result<()> {
             rate_config.requests,
             rate_config.period
         );
-        tracing::info!(
-            "   Note: Rate limiting requires manual integration with governor crate"
-        );
+        tracing::info!("   Note: Rate limiting requires manual integration with governor crate");
     }
 
     // Build HTTP server
@@ -254,9 +249,10 @@ async fn main() -> Result<()> {
     // Configure authentication
     #[cfg(feature = "auth")]
     {
-        if let (Ok(username), Ok(password)) =
-            (std::env::var("AUTH_USERNAME"), std::env::var("AUTH_PASSWORD"))
-        {
+        if let (Ok(username), Ok(password)) = (
+            std::env::var("AUTH_USERNAME"),
+            std::env::var("AUTH_PASSWORD"),
+        ) {
             http_server = http_server.with_auth(username.clone(), password);
             tracing::info!("🔐 Basic authentication enabled (user: {})", username);
         }
@@ -280,8 +276,7 @@ async fn main() -> Result<()> {
     // Spawn HTTPS server with TLS
     #[cfg(feature = "tls")]
     let https_handle = {
-        if let (Ok(cert_path), Ok(key_path)) =
-            (std::env::var("TLS_CERT"), std::env::var("TLS_KEY"))
+        if let (Ok(cert_path), Ok(key_path)) = (std::env::var("TLS_CERT"), std::env::var("TLS_KEY"))
         {
             match TlsServerConfig::new(&cert_path, &key_path) {
                 Ok(tls_config) => {
@@ -313,7 +308,7 @@ async fn main() -> Result<()> {
     // Spawn WebSocket server
     #[cfg(feature = "websocket")]
     let ws_handle = {
-        use axum::{routing::get, Router};
+        use axum::{Router, routing::get};
 
         let ws_config = WebSocketConfig::new(handler.clone())
             .with_max_message_size(2 * 1024 * 1024) // 2 MB
@@ -356,16 +351,22 @@ async fn main() -> Result<()> {
     tracing::info!("");
 
     // Wait for all services
-    http_handle.await.map_err(|e| Error::Io(std::io::Error::other(e)))?;
+    http_handle
+        .await
+        .map_err(|e| Error::Io(std::io::Error::other(e)))?;
 
     #[cfg(feature = "tls")]
     if let Some(handle) = https_handle {
-        handle.await.map_err(|e| Error::Io(std::io::Error::other(e)))?;
+        handle
+            .await
+            .map_err(|e| Error::Io(std::io::Error::other(e)))?;
     }
 
     #[cfg(feature = "websocket")]
     if let Some(handle) = ws_handle {
-        handle.await.map_err(|e| Error::Io(std::io::Error::other(e)))?;
+        handle
+            .await
+            .map_err(|e| Error::Io(std::io::Error::other(e)))?;
     }
 
     Ok(())
@@ -402,10 +403,7 @@ fn handle_siu(message: Message) -> Result<Message> {
 
 #[cfg(feature = "routing")]
 fn handle_default(message: Message) -> Result<Message> {
-    tracing::info!(
-        "📨 Handling message type: {:?}",
-        message.get_message_type()
-    );
+    tracing::info!("📨 Handling message type: {:?}", message.get_message_type());
     // Default handler for unrouted messages
     Ok(message)
 }
@@ -413,12 +411,9 @@ fn handle_default(message: Message) -> Result<Message> {
 // Metrics HTTP server
 #[cfg(feature = "metrics")]
 async fn serve_metrics(handle: metrics_exporter_prometheus::PrometheusHandle) {
-    use axum::{routing::get, Router};
+    use axum::{Router, routing::get};
 
-    let app = Router::new().route(
-        "/metrics",
-        get(|| async move { handle.render() }),
-    );
+    let app = Router::new().route("/metrics", get(|| async move { handle.render() }));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:9090")
         .await

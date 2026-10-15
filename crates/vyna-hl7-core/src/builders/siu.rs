@@ -1,7 +1,7 @@
 //! SIU (Scheduling Information Unsolicited) message builders
 
-use super::{generate_control_id, MessageBuilder};
-use crate::{error::Result, field::Field, message::Message, segment::Segment, Version};
+use super::{MessageBuilder, generate_control_id};
+use crate::{Version, error::Result, field::Field, message::Message, segment::Segment};
 
 /// Builder for SIU^S12 - Notification of New Appointment Booking
 pub struct SiuS12Builder {
@@ -120,8 +120,12 @@ impl SiuS12Builder {
 
         // SCH segment
         let mut sch = Segment::new("SCH");
-        sch.add_field(Field::from_delimited(self.placer_appointment_id.as_deref().unwrap_or("")));
-        sch.add_field(Field::from_delimited(self.filler_appointment_id.as_deref().unwrap_or("")));
+        sch.add_field(Field::from_delimited(
+            self.placer_appointment_id.as_deref().unwrap_or(""),
+        ));
+        sch.add_field(Field::from_delimited(
+            self.filler_appointment_id.as_deref().unwrap_or(""),
+        ));
         for _ in 3..6 {
             sch.add_field(Field::from_value(""));
         }

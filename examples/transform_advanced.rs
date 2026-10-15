@@ -6,8 +6,8 @@
 //! - Conditional transformations with defaults
 //! - String manipulation (prefix, suffix, regex)
 
-use vyna_hl7_core::builders::adt::AdtBuilder;
 use vyna_hl7_core::Version;
+use vyna_hl7_core::builders::adt::AdtBuilder;
 use vyna_hl7_parser::parse_message;
 use vyna_hl7_terser::Terser;
 use vyna_hl7_transform::{MessageTransformer, rule::TransformationRule, transforms};
@@ -66,15 +66,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let terser = Terser::new(&target);
 
     println!("Verification:");
-    println!("  Patient ID (with prefix): {}", terser.get("PID-3")?.unwrap_or("N/A"));
-    println!("  Date of Birth (formatted): {}", terser.get("PID-7")?.unwrap_or("N/A"));
-    println!("  Sending App (replaced): {}", terser.get("MSH-3")?.unwrap_or("N/A"));
-    println!("  Sex (default + uppercase): {}", terser.get("PID-8")?.unwrap_or("N/A"));
+    println!(
+        "  Patient ID (with prefix): {}",
+        terser.get("PID-3")?.unwrap_or("N/A")
+    );
+    println!(
+        "  Date of Birth (formatted): {}",
+        terser.get("PID-7")?.unwrap_or("N/A")
+    );
+    println!(
+        "  Sending App (replaced): {}",
+        terser.get("MSH-3")?.unwrap_or("N/A")
+    );
+    println!(
+        "  Sex (default + uppercase): {}",
+        terser.get("PID-8")?.unwrap_or("N/A")
+    );
 
     println!("\n=== Custom Transform Function Example ===\n");
 
     // Example with custom transformation function
-    fn anonymize(value: &str, _ctx: &vyna_hl7_transform::rule::TransformContext) -> vyna_hl7_transform::Result<String> {
+    fn anonymize(
+        value: &str,
+        _ctx: &vyna_hl7_transform::rule::TransformContext,
+    ) -> vyna_hl7_transform::Result<String> {
         // Replace all characters except first and last with '*'
         if value.len() <= 2 {
             return Ok("***".to_string());
@@ -92,8 +107,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let anon_target = anon_transformer.transform(&source)?;
     let anon_terser = Terser::new(&anon_target);
 
-    println!("Original Patient ID: {}", Terser::new(&source).get("PID-3")?.unwrap_or("N/A"));
-    println!("Anonymized Patient ID: {}", anon_terser.get("PID-3")?.unwrap_or("N/A"));
+    println!(
+        "Original Patient ID: {}",
+        Terser::new(&source).get("PID-3")?.unwrap_or("N/A")
+    );
+    println!(
+        "Anonymized Patient ID: {}",
+        anon_terser.get("PID-3")?.unwrap_or("N/A")
+    );
 
     Ok(())
 }

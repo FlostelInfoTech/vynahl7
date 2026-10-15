@@ -22,7 +22,7 @@
 
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use vyna_hl7_core::Delimiters;
-use vyna_hl7_custom::{z_segment, CustomSegment, CustomSegmentError, MessageExt};
+use vyna_hl7_custom::{CustomSegment, CustomSegmentError, MessageExt, z_segment};
 use vyna_hl7_parser::parse_message;
 
 // ============================================================================
@@ -166,28 +166,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .birth_time(birth_time)
         .gender("M")
         .ssn("123-45-6789")
-        .marital_status("M")  // Married
-        .race("2106-3")  // White
+        .marital_status("M") // Married
+        .race("2106-3") // White
         .primary_language("en")
         .is_deceased(false)
         // Optional fields not set will default to None
         .multiple_birth_indicator(false)
         .build()?;
 
-    println!("   Patient: {} {} {} {}, {}",
-        zpi.patient_name.4,  // Prefix: Dr
-        zpi.patient_name.1,  // First: John
-        zpi.patient_name.2,  // Middle: Alexander
-        zpi.patient_name.0,  // Last: Smith
-        zpi.patient_name.3); // Suffix: Jr
+    println!(
+        "   Patient: {} {} {} {}, {}",
+        zpi.patient_name.4, // Prefix: Dr
+        zpi.patient_name.1, // First: John
+        zpi.patient_name.2, // Middle: Alexander
+        zpi.patient_name.0, // Last: Smith
+        zpi.patient_name.3
+    ); // Suffix: Jr
 
     println!("   MRN: {}", zpi.patient_id);
-    println!("   DOB: {} at {}",
+    println!(
+        "   DOB: {} at {}",
         zpi.birth_date,
-        zpi.birth_time.map(|t| t.to_string()).unwrap_or("Unknown".to_string()));
+        zpi.birth_time
+            .map(|t| t.to_string())
+            .unwrap_or("Unknown".to_string())
+    );
     println!("   Gender: {}", zpi.gender);
     println!("   SSN: {}", zpi.ssn.as_ref().unwrap());
-    println!("   Marital Status: {}", zpi.marital_status.as_ref().unwrap());
+    println!(
+        "   Marital Status: {}",
+        zpi.marital_status.as_ref().unwrap()
+    );
     println!("   Deceased: {}", zpi.is_deceased);
 
     // ========================================================================
@@ -196,31 +205,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n2. Creating Admission Details (ZAD):");
     println!("   ----------------------------------");
 
-    let admission_dt = NaiveDate::from_ymd_opt(2025, 1, 19).unwrap()
-        .and_hms_opt(10, 30, 0).unwrap();
+    let admission_dt = NaiveDate::from_ymd_opt(2025, 1, 19)
+        .unwrap()
+        .and_hms_opt(10, 30, 0)
+        .unwrap();
 
     let zad = ZAD::builder()
         .patient_id("MRN-123456")
         .admission_datetime(admission_dt)
         // discharge_datetime omitted (still admitted - will be None)
-        .patient_class("I")  // Inpatient
+        .patient_class("I") // Inpatient
         .patient_type("SURGICAL")
-        .admitting_doctor((
-            "Johnson".to_string(),
-            "Sarah".to_string(),
-            "MD".to_string(),
-        ))
+        .admitting_doctor(("Johnson".to_string(), "Sarah".to_string(), "MD".to_string()))
         .attending_doctors(vec![
             ("Johnson".to_string(), "Sarah".to_string(), "MD".to_string()),
-            ("Williams".to_string(), "Robert".to_string(), "DO".to_string()),
+            (
+                "Williams".to_string(),
+                "Robert".to_string(),
+                "DO".to_string(),
+            ),
             ("Brown".to_string(), "Alice".to_string(), "NP".to_string()),
         ])
         .hospital_service("CARDIO")
-        .room_bed((
-            "North".to_string(),
-            "302".to_string(),
-            "A".to_string(),
-        ))
+        .room_bed(("North".to_string(), "302".to_string(), "A".to_string()))
         .admission_type("Elective")
         .readmission_indicator(false)
         .days_since_last_visit(180u32)
@@ -230,12 +237,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     println!("   Admission: {}", zad.admission_datetime);
-    println!("   Patient Class: {} ({})", zad.patient_class,
-        if zad.patient_class == "I" { "Inpatient" } else { "Other" });
-    println!("   Admitting Doctor: {} {}, {}",
-        zad.admitting_doctor.2,
-        zad.admitting_doctor.1,
-        zad.admitting_doctor.0);
+    println!(
+        "   Patient Class: {} ({})",
+        zad.patient_class,
+        if zad.patient_class == "I" {
+            "Inpatient"
+        } else {
+            "Other"
+        }
+    );
+    println!(
+        "   Admitting Doctor: {} {}, {}",
+        zad.admitting_doctor.2, zad.admitting_doctor.1, zad.admitting_doctor.0
+    );
 
     println!("   Attending Doctors ({}):", zad.attending_doctors.len());
     for (i, doctor) in zad.attending_doctors.iter().enumerate() {
@@ -243,11 +257,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if let Some((building, room, bed)) = &zad.room_bed {
-        println!("   Location: Building {}, Room {}, Bed {}", building, room, bed);
+        println!(
+            "   Location: Building {}, Room {}, Bed {}",
+            building, room, bed
+        );
     }
 
     println!("   Readmission: {}", zad.readmission_indicator);
-    println!("   Est. LOS: {} days", zad.estimated_length_of_stay.unwrap());
+    println!(
+        "   Est. LOS: {} days",
+        zad.estimated_length_of_stay.unwrap()
+    );
     println!("   Total Charges: ${:.2}", zad.total_charges.unwrap());
     println!("   Deposit: ${:.2}", zad.deposit_amount.unwrap());
 
@@ -267,19 +287,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "BC-12345".to_string(),
                 "Blue Cross PPO".to_string(),
                 "GRP-789".to_string(),
-                "1".to_string(),  // Primary
+                "1".to_string(), // Primary
             ),
             (
                 "UHC-67890".to_string(),
                 "United Healthcare".to_string(),
                 "GRP-456".to_string(),
-                "2".to_string(),  // Secondary
+                "2".to_string(), // Secondary
             ),
         ])
-        .policy_numbers(vec![
-            "POL-ABC123".to_string(),
-            "POL-XYZ789".to_string(),
-        ])
+        .policy_numbers(vec!["POL-ABC123".to_string(), "POL-XYZ789".to_string()])
         .coverage_effective_date(coverage_start)
         .coverage_expiration_date(coverage_end)
         // policy_holder_name omitted (patient is policyholder - will be None)
@@ -289,27 +306,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .out_of_pocket_max(6000)
         .out_of_pocket_met(1200)
         .is_pre_authorized(true)
-        .authorization_numbers(vec![
-            "AUTH-001".to_string(),
-            "AUTH-002".to_string(),
-        ])
+        .authorization_numbers(vec!["AUTH-001".to_string(), "AUTH-002".to_string()])
         .copay_amount(35.00)
         .build()?;
 
     println!("   Insurance Plans ({}):", zin.insurance_plans.len());
     for (i, plan) in zin.insurance_plans.iter().enumerate() {
-        println!("     {}. {} (ID: {}, Group: {}, Priority: {})",
-            i + 1, plan.1, plan.0, plan.2, plan.3);
+        println!(
+            "     {}. {} (ID: {}, Group: {}, Priority: {})",
+            i + 1,
+            plan.1,
+            plan.0,
+            plan.2,
+            plan.3
+        );
     }
 
-    println!("\n   Coverage Period: {} to {}",
+    println!(
+        "\n   Coverage Period: {} to {}",
         zin.coverage_effective_date,
-        zin.coverage_expiration_date.map(|d| d.to_string()).unwrap_or("Ongoing".to_string()));
+        zin.coverage_expiration_date
+            .map(|d| d.to_string())
+            .unwrap_or("Ongoing".to_string())
+    );
 
-    println!("   Deductible: ${} / ${} met",
-        zin.annual_deductible, zin.deductible_met);
-    println!("   Out-of-Pocket Max: ${} / ${} met",
-        zin.out_of_pocket_max, zin.out_of_pocket_met);
+    println!(
+        "   Deductible: ${} / ${} met",
+        zin.annual_deductible, zin.deductible_met
+    );
+    println!(
+        "   Out-of-Pocket Max: ${} / ${} met",
+        zin.out_of_pocket_max, zin.out_of_pocket_met
+    );
     println!("   Pre-authorized: {}", zin.is_pre_authorized);
     println!("   Authorization Numbers: {:?}", zin.authorization_numbers);
     println!("   Copay: ${:.2}", zin.copay_amount.unwrap());
@@ -320,16 +348,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n4. Creating Allergy Information (ZAL):");
     println!("   -----------------------------------");
 
-    let onset_dt = NaiveDate::from_ymd_opt(2020, 3, 15).unwrap()
-        .and_hms_opt(0, 0, 0).unwrap();
-    let verified_dt = NaiveDate::from_ymd_opt(2020, 3, 16).unwrap()
-        .and_hms_opt(9, 0, 0).unwrap();
+    let onset_dt = NaiveDate::from_ymd_opt(2020, 3, 15)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let verified_dt = NaiveDate::from_ymd_opt(2020, 3, 16)
+        .unwrap()
+        .and_hms_opt(9, 0, 0)
+        .unwrap();
 
     let zal = ZAL::builder()
         .patient_id("MRN-123456")
         .allergies(vec![
             (
-                "91935009".to_string(),    // SNOMED-CT code
+                "91935009".to_string(), // SNOMED-CT code
                 "Peanuts".to_string(),
                 "Severe".to_string(),
             ),
@@ -350,32 +382,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Hives".to_string(),
         ])
         .onset_datetime(onset_dt)
-        .verified_by((
-            "Johnson".to_string(),
-            "Sarah".to_string(),
-            "MD".to_string(),
-        ))
+        .verified_by(("Johnson".to_string(), "Sarah".to_string(), "MD".to_string()))
         .verification_datetime(verified_dt)
-        .severity_scores(vec![9, 5, 8])  // Matches allergies count
+        .severity_scores(vec![9, 5, 8]) // Matches allergies count
         .is_life_threatening(true)
         .requires_epipen(true)
         .build()?;
 
     println!("   Allergies ({}):", zal.allergies.len());
     for (i, allergy) in zal.allergies.iter().enumerate() {
-        println!("     {}. {} (Code: {}, Severity: {}, Score: {})",
+        println!(
+            "     {}. {} (Code: {}, Severity: {}, Score: {})",
             i + 1,
-            allergy.1,  // Name
-            allergy.0,  // Code
-            allergy.2,  // Severity text
-            zal.severity_scores[i]);
+            allergy.1, // Name
+            allergy.0, // Code
+            allergy.2, // Severity text
+            zal.severity_scores[i]
+        );
     }
 
     println!("\n   Reactions: {:?}", zal.reactions);
 
     if let Some(verified_by) = &zal.verified_by {
-        println!("   Verified By: {} {}, {}",
-            verified_by.2, verified_by.1, verified_by.0);
+        println!(
+            "   Verified By: {} {}, {}",
+            verified_by.2, verified_by.1, verified_by.0
+        );
     }
 
     if let Some(verified_dt) = zal.verification_datetime {
@@ -437,18 +469,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("   Successfully parsed ADT^A01 message");
 
     if let Some(parsed_zpi) = message.get_custom_segment::<ZPI>()? {
-        println!("   Patient: {} {} {} {}, {}",
+        println!(
+            "   Patient: {} {} {} {}, {}",
             parsed_zpi.patient_name.4,
             parsed_zpi.patient_name.1,
             parsed_zpi.patient_name.2,
             parsed_zpi.patient_name.0,
-            parsed_zpi.patient_name.3);
+            parsed_zpi.patient_name.3
+        );
         println!("   Deceased: {}", parsed_zpi.is_deceased);
     }
 
     if let Some(parsed_zad) = message.get_custom_segment::<ZAD>()? {
         println!("   Patient Class: {}", parsed_zad.patient_class);
-        println!("   Attending Doctors: {}", parsed_zad.attending_doctors.len());
+        println!(
+            "   Attending Doctors: {}",
+            parsed_zad.attending_doctors.len()
+        );
         println!("   Readmission: {}", parsed_zad.readmission_indicator);
     }
 
@@ -484,7 +521,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // birth_time omitted - defaults to None
         .gender("M")
         // Optional fields omitted - all default to None
-        .is_deceased(true)  // Deceased = true
+        .is_deceased(true) // Deceased = true
         // death_datetime omitted - will be None, should fail validation
         .build();
 

@@ -66,7 +66,11 @@ impl MessageTransformer {
     /// let mut transformer = MessageTransformer::new();
     /// transformer.add_mapping("PID-5-1", "PID-5-1"); // Copy family name
     /// ```
-    pub fn add_mapping<S: Into<String>, T: Into<String>>(&mut self, source_path: S, target_path: T) {
+    pub fn add_mapping<S: Into<String>, T: Into<String>>(
+        &mut self,
+        source_path: S,
+        target_path: T,
+    ) {
         let rule = TransformationRule::new(source_path, target_path);
         self.add_rule(rule);
     }
@@ -93,8 +97,7 @@ impl MessageTransformer {
         target_path: T,
         transform_fn: TransformFn,
     ) {
-        let rule = TransformationRule::new(source_path, target_path)
-            .with_transform(transform_fn);
+        let rule = TransformationRule::new(source_path, target_path).with_transform(transform_fn);
         self.add_rule(rule);
     }
 
@@ -192,7 +195,9 @@ impl MessageTransformer {
             // Get source value
             let source_value = source_terser
                 .get(&rule.source_path)
-                .map_err(|e| Error::field_access(format!("Failed to get {}: {}", rule.source_path, e)))?
+                .map_err(|e| {
+                    Error::field_access(format!("Failed to get {}: {}", rule.source_path, e))
+                })?
                 .unwrap_or_default();
 
             // Apply transformation with this rule's params overlaid
@@ -201,7 +206,9 @@ impl MessageTransformer {
                 // Set target value
                 target_terser
                     .set(&rule.target_path, &transformed_value)
-                    .map_err(|e| Error::field_access(format!("Failed to set {}: {}", rule.target_path, e)))?;
+                    .map_err(|e| {
+                        Error::field_access(format!("Failed to set {}: {}", rule.target_path, e))
+                    })?;
             }
         }
 
@@ -234,7 +241,9 @@ impl MessageTransformer {
             // Get source value
             let source_value = source_terser
                 .get(&rule.source_path)
-                .map_err(|e| Error::field_access(format!("Failed to get {}: {}", rule.source_path, e)))?
+                .map_err(|e| {
+                    Error::field_access(format!("Failed to get {}: {}", rule.source_path, e))
+                })?
                 .unwrap_or_default();
 
             // Apply transformation with this rule's params overlaid
@@ -243,7 +252,9 @@ impl MessageTransformer {
                 // Set target value
                 target_terser
                     .set(&rule.target_path, &transformed_value)
-                    .map_err(|e| Error::field_access(format!("Failed to set {}: {}", rule.target_path, e)))?;
+                    .map_err(|e| {
+                        Error::field_access(format!("Failed to set {}: {}", rule.target_path, e))
+                    })?;
             }
         }
 
@@ -299,8 +310,8 @@ impl Default for MessageTransformer {
 mod tests {
     use super::*;
     use crate::transforms;
-    use vyna_hl7_core::builders::adt::AdtBuilder;
     use vyna_hl7_core::Version;
+    use vyna_hl7_core::builders::adt::AdtBuilder;
 
     #[test]
     fn test_transformer_creation() {
@@ -325,8 +336,8 @@ mod tests {
     #[test]
     fn test_add_rule() {
         let mut transformer = MessageTransformer::new();
-        let rule = TransformationRule::new("PID-5-1", "PID-5-1")
-            .with_transform(transforms::uppercase);
+        let rule =
+            TransformationRule::new("PID-5-1", "PID-5-1").with_transform(transforms::uppercase);
         transformer.add_rule(rule);
         assert_eq!(transformer.rule_count(), 1);
     }
@@ -455,8 +466,7 @@ mod tests {
         let source = AdtBuilder::a01(Version::V2_5).build().unwrap();
 
         let mut transformer = MessageTransformer::new();
-        let rule = TransformationRule::new("PID-5-1", "PID-5-1")
-            .with_default("UNKNOWN");
+        let rule = TransformationRule::new("PID-5-1", "PID-5-1").with_default("UNKNOWN");
         transformer.add_rule(rule);
 
         let target = transformer.transform(&source).unwrap();

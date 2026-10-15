@@ -1,10 +1,10 @@
 //! Core crate benchmarks: encoding, escape sequence handling, and builder construction.
 
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use std::hint::black_box;
 use vyna_hl7_core::builders::adt::AdtA01Builder;
 use vyna_hl7_core::builders::oru::{Observation, OruR01Builder};
 use vyna_hl7_core::{Delimiters, Encoding, Message, Version};
-use std::hint::black_box;
 
 // Encode fixtures built via builders (avoids a core -> parser dev-dependency,
 // which would invert the layering and block publishing).
@@ -108,7 +108,8 @@ fn bench_escape_encode_decode(c: &mut Criterion) {
     });
 
     // Heavy escapes (~40%)
-    let heavy = "BP: 120\\S\\80 | Temp: 98.6\\S\\F | Meds: PCN\\T\\AMOX\\T\\SULFA | Notes: See \\F\\ chart";
+    let heavy =
+        "BP: 120\\S\\80 | Temp: 98.6\\S\\F | Meds: PCN\\T\\AMOX\\T\\SULFA | Notes: See \\F\\ chart";
     group.bench_function("encode_heavy_escapes", |b| {
         b.iter(|| black_box(Encoding::encode(black_box(heavy), &delimiters)));
     });

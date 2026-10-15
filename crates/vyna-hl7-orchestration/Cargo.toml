@@ -21,3 +21,6 @@ thiserror.workspace = true
 [dev-dependencies]
 vyna-hl7-parser.workspace = true
 tokio = { workspace = true, features = ["macros", "test-util"] }
+
+[lints]
+workspace = true

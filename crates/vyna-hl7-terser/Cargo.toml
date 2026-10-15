@@ -18,7 +18,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 vyna-hl7-parser.workspace = true
-criterion = "0.8"
+criterion.workspace = true
 
 [[bench]]
 name = "terser_bench"
@@ -27,3 +27,6 @@ harness = false
 [[bench]]
 name = "cached_terser_bench"
 harness = false
+
+[lints]
+workspace = true

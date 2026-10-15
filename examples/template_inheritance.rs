@@ -9,7 +9,6 @@ use vyna_hl7_templates::{
     FieldTemplate, MessageTemplate, SegmentTemplate, TemplateEngine, TemplateResolver,
 };
 
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Template Inheritance Example ===\n");
 
@@ -20,14 +19,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // MSH segment
     let mut msh = SegmentTemplate::new("MSH").required();
-    msh.add_field(3, FieldTemplate::new().required().with_placeholder("{{sending_app}}"));
-    msh.add_field(4, FieldTemplate::new().required().with_placeholder("{{sending_facility}}"));
+    msh.add_field(
+        3,
+        FieldTemplate::new()
+            .required()
+            .with_placeholder("{{sending_app}}"),
+    );
+    msh.add_field(
+        4,
+        FieldTemplate::new()
+            .required()
+            .with_placeholder("{{sending_facility}}"),
+    );
     base_adt.add_segment(msh);
 
     // PID segment
     let mut pid = SegmentTemplate::new("PID").required();
-    pid.add_field(3, FieldTemplate::new().required().with_placeholder("{{patient_id}}"));
-    pid.add_field(5, FieldTemplate::new().required().with_placeholder("{{patient_name}}"));
+    pid.add_field(
+        3,
+        FieldTemplate::new()
+            .required()
+            .with_placeholder("{{patient_id}}"),
+    );
+    pid.add_field(
+        5,
+        FieldTemplate::new()
+            .required()
+            .with_placeholder("{{patient_name}}"),
+    );
     base_adt.add_segment(pid);
 
     // Set some default variables
@@ -44,14 +63,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Add PV1 segment (visit information)
     let mut pv1 = SegmentTemplate::new("PV1").required();
     pv1.add_field(2, FieldTemplate::new().required().with_default("I")); // Inpatient
-    pv1.add_field(3, FieldTemplate::new().with_placeholder("{{assigned_location}}"));
-    pv1.add_field(7, FieldTemplate::new().with_placeholder("{{attending_doctor}}"));
+    pv1.add_field(
+        3,
+        FieldTemplate::new().with_placeholder("{{assigned_location}}"),
+    );
+    pv1.add_field(
+        7,
+        FieldTemplate::new().with_placeholder("{{attending_doctor}}"),
+    );
     inpatient_adt.add_segment(pv1);
 
     // Override a variable
     inpatient_adt.add_variable("sending_facility", "InpatientWing");
 
-    println!("  Extended template has {} segments (before resolution)\n", inpatient_adt.segments.len());
+    println!(
+        "  Extended template has {} segments (before resolution)\n",
+        inpatient_adt.segments.len()
+    );
 
     // Create a specialized ICU template extending the inpatient template
     println!("Creating ICU-specific template...");
@@ -61,20 +89,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Add DG1 segment for diagnosis
     let mut dg1 = SegmentTemplate::new("DG1").required();
-    dg1.add_field(3, FieldTemplate::new().required().with_placeholder("{{diagnosis_code}}"));
-    dg1.add_field(4, FieldTemplate::new().with_placeholder("{{diagnosis_description}}"));
+    dg1.add_field(
+        3,
+        FieldTemplate::new()
+            .required()
+            .with_placeholder("{{diagnosis_code}}"),
+    );
+    dg1.add_field(
+        4,
+        FieldTemplate::new().with_placeholder("{{diagnosis_description}}"),
+    );
     icu_adt.add_segment(dg1);
 
     // Override PV1 field for ICU location
     let mut pv1_override = SegmentTemplate::new("PV1").required();
     pv1_override.add_field(2, FieldTemplate::new().required().with_default("I"));
     pv1_override.add_field(3, FieldTemplate::new().required().with_default("ICU^1^01")); // ICU location
-    pv1_override.add_field(7, FieldTemplate::new().with_placeholder("{{attending_doctor}}"));
+    pv1_override.add_field(
+        7,
+        FieldTemplate::new().with_placeholder("{{attending_doctor}}"),
+    );
     icu_adt.add_segment(pv1_override);
 
     icu_adt.add_variable("sending_facility", "ICU");
 
-    println!("  ICU template has {} segments (before resolution)\n", icu_adt.segments.len());
+    println!(
+        "  ICU template has {} segments (before resolution)\n",
+        icu_adt.segments.len()
+    );
 
     // Create template resolver and register all templates
     println!("Resolving template hierarchy...");
@@ -119,7 +161,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Message structure:");
     for (i, segment) in message.segments.iter().enumerate() {
-        println!("  {}: {} ({} fields)", i + 1, segment.id, segment.fields.len());
+        println!(
+            "  {}: {} ({} fields)",
+            i + 1,
+            segment.id,
+            segment.fields.len()
+        );
     }
 
     // Demonstrate multi-level variable inheritance
@@ -128,8 +175,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  BaseADT: DefaultHospital (defined)");
     println!("  InpatientADT: InpatientWing (overridden)");
     println!("  ICU_ADT: ICU (overridden again)");
-    println!("  Resolved value: {}",
-        resolved_icu.variables.as_ref()
+    println!(
+        "  Resolved value: {}",
+        resolved_icu
+            .variables
+            .as_ref()
             .and_then(|v| v.get("sending_facility"))
             .unwrap_or(&"N/A".to_string())
     );

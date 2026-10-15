@@ -10,7 +10,7 @@
 //! Run with: cargo run --example repeating_fields
 
 use vyna_hl7_core::Delimiters;
-use vyna_hl7_custom::{z_segment, CustomSegment, MessageExt};
+use vyna_hl7_custom::{CustomSegment, MessageExt, z_segment};
 use vyna_hl7_parser::parse_message;
 
 // Define a Z-segment with repeating contact information
@@ -94,7 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .patient_id("PAT-67890")
         .test_ids(vec![1001, 1002, 1003, 1004])
         .glucose_readings(vec![95.5, 98.2, 102.3, 99.8])
-        .temperature_deltas(vec![-2, 0, 1, -1])  // Temperature changes from baseline
+        .temperature_deltas(vec![-2, 0, 1, -1]) // Temperature changes from baseline
         .abnormal_flags(vec![false, false, true, false])
         .build()?;
 
@@ -137,7 +137,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let minimal_zct = ZCT::builder()
         .patient_id("PAT-00001")
-        .phone_numbers(vec![])  // Empty vector - no phone numbers
+        .phone_numbers(vec![]) // Empty vector - no phone numbers
         .email_addresses(vec![])
         .emergency_contact_ids(vec![])
         .build()?;
@@ -157,7 +157,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let single_phone = ZCT::builder()
         .patient_id("PAT-00002")
-        .phone_numbers(vec!["555-1111".to_string()])  // Single value in Vec
+        .phone_numbers(vec!["555-1111".to_string()]) // Single value in Vec
         .email_addresses(vec![])
         .emergency_contact_ids(vec![])
         .build()?;
@@ -188,7 +188,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut msg = parse_message(
         "MSH|^~\\&|App|Fac|App|Fac|20250119120000||ADT^A01|MSG|P|2.5\r\
          PID|1||PAT-55555||Doe^Jane\r\
-         ZCT|PAT-55555|555-0001|jane@email.com|201\r"
+         ZCT|PAT-55555|555-0001|jane@email.com|201\r",
     )?;
 
     println!("   Original contact info:");
@@ -201,7 +201,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut updated_zct = msg.get_custom_segment::<ZCT>()?.unwrap();
     updated_zct.phone_numbers.push("555-0002".to_string());
     updated_zct.phone_numbers.push("555-0003".to_string());
-    updated_zct.email_addresses.push("jane.work@company.com".to_string());
+    updated_zct
+        .email_addresses
+        .push("jane.work@company.com".to_string());
     updated_zct.emergency_contact_ids.push(202);
 
     msg.set_custom_segment(updated_zct)?;
@@ -210,7 +212,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(updated) = msg.get_custom_segment::<ZCT>()? {
         println!("   - Phone Numbers: {:?}", updated.phone_numbers);
         println!("   - Email Addresses: {:?}", updated.email_addresses);
-        println!("   - Emergency Contact IDs: {:?}", updated.emergency_contact_ids);
+        println!(
+            "   - Emergency Contact IDs: {:?}",
+            updated.emergency_contact_ids
+        );
     }
 
     // Example 8: Real-world use case - tracking allergies
@@ -231,12 +236,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let allergies = ZAL::builder()
         .patient_id("PAT-11111")
         .allergen_codes(vec![
-            "91935009".to_string(),   // Allergy to peanuts
-            "300916003".to_string(),  // Allergy to latex
-            "419199007".to_string(),  // Allergy to penicillin
+            "91935009".to_string(),  // Allergy to peanuts
+            "300916003".to_string(), // Allergy to latex
+            "419199007".to_string(), // Allergy to penicillin
         ])
-        .severity_levels(vec![3, 2, 3])  // Severe, Moderate, Severe
-        .verified_flags(vec![true, true, false])  // First two verified
+        .severity_levels(vec![3, 2, 3]) // Severe, Moderate, Severe
+        .verified_flags(vec![true, true, false]) // First two verified
         .build()?;
 
     println!("   Patient ID: {}", allergies.patient_id);
@@ -248,9 +253,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             3 => "Severe",
             _ => "Unknown",
         };
-        let verified = if allergies.verified_flags[i] { "Verified" } else { "Unverified" };
-        println!("     * Code: {} - {} ({})",
-            allergies.allergen_codes[i], severity, verified);
+        let verified = if allergies.verified_flags[i] {
+            "Verified"
+        } else {
+            "Unverified"
+        };
+        println!(
+            "     * Code: {} - {} ({})",
+            allergies.allergen_codes[i], severity, verified
+        );
     }
 
     let allergy_encoded = allergies.to_segment().encode(&delimiters);
@@ -275,7 +286,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mixed = ZMX::builder()
         .record_id("REC-001")
-        .tags(vec!["urgent".to_string(), "reviewed".to_string(), "flagged".to_string()])
+        .tags(vec![
+            "urgent".to_string(),
+            "reviewed".to_string(),
+            "flagged".to_string(),
+        ])
         .counts(vec![5, 12, 8])
         .adjustments(vec![-3, 7, -1, 4])
         .measurements(vec![98.6, 120.5, 80.2])
@@ -299,16 +314,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let varied_msg = parse_message(
         "MSH|^~\\&|App|Fac|App|Fac|20250119120000||ADT^A01|MSG|P|2.5\r\
-         ZMX|REC-002|tag1~tag2|100|5~-2~3|12.5~13.8~14.2~15.0|Y~N\r"
+         ZMX|REC-002|tag1~tag2|100|5~-2~3|12.5~13.8~14.2~15.0|Y~N\r",
     )?;
 
     if let Some(parsed) = varied_msg.get_custom_segment::<ZMX>()? {
         println!("    Successfully parsed segment with varying repetitions:");
-        println!("    - Tags: {} values = {:?}", parsed.tags.len(), parsed.tags);
-        println!("    - Counts: {} values = {:?}", parsed.counts.len(), parsed.counts);
-        println!("    - Adjustments: {} values = {:?}", parsed.adjustments.len(), parsed.adjustments);
-        println!("    - Measurements: {} values = {:?}", parsed.measurements.len(), parsed.measurements);
-        println!("    - Flags: {} values = {:?}", parsed.flags.len(), parsed.flags);
+        println!(
+            "    - Tags: {} values = {:?}",
+            parsed.tags.len(),
+            parsed.tags
+        );
+        println!(
+            "    - Counts: {} values = {:?}",
+            parsed.counts.len(),
+            parsed.counts
+        );
+        println!(
+            "    - Adjustments: {} values = {:?}",
+            parsed.adjustments.len(),
+            parsed.adjustments
+        );
+        println!(
+            "    - Measurements: {} values = {:?}",
+            parsed.measurements.len(),
+            parsed.measurements
+        );
+        println!(
+            "    - Flags: {} values = {:?}",
+            parsed.flags.len(),
+            parsed.flags
+        );
     }
 
     println!("\n=== Example completed successfully! ===");

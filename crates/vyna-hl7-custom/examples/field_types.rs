@@ -11,7 +11,7 @@
 //! Run with: cargo run --example field_types
 
 use vyna_hl7_core::Delimiters;
-use vyna_hl7_custom::{z_segment, CustomSegment, MessageExt};
+use vyna_hl7_custom::{CustomSegment, MessageExt, z_segment};
 use vyna_hl7_parser::parse_message;
 
 // Define a comprehensive Z-segment demonstrating all field types
@@ -45,15 +45,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .patient_id("PAT-12345")
         .age(45u32)
         .weight_kg(72.5)
-        .temperature_delta(-2)              // Negative temperature change
-        .account_balance(150000i64)         // Large account balance
-        .is_active(true)                    // Boolean: patient is active
-        .insurance_verified(false)          // Boolean: insurance not yet verified
-        .bed_number(305u32)                 // Optional: has bed assignment
-        .systolic_bp(120)                   // Optional: blood pressure recorded
-        .account_id(9876543210i64)          // Optional: large account ID
-        .consent_given(true)                // Optional: consent was given
-        .notes("Regular checkup")           // Optional: notes present
+        .temperature_delta(-2) // Negative temperature change
+        .account_balance(150000i64) // Large account balance
+        .is_active(true) // Boolean: patient is active
+        .insurance_verified(false) // Boolean: insurance not yet verified
+        .bed_number(305u32) // Optional: has bed assignment
+        .systolic_bp(120) // Optional: blood pressure recorded
+        .account_id(9876543210i64) // Optional: large account ID
+        .consent_given(true) // Optional: consent was given
+        .notes("Regular checkup") // Optional: notes present
         .build()?;
 
     println!("   Patient ID: {}", zft.patient_id);
@@ -139,10 +139,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         if let Ok(msg) = parse_message(&test_msg)
-            && let Ok(Some(seg)) = msg.get_custom_segment::<ZFT>() {
-                println!("   '{}' → {} (parsed as {})",
-                    value, desc, seg.is_active);
-            }
+            && let Ok(Some(seg)) = msg.get_custom_segment::<ZFT>()
+        {
+            println!("   '{}' → {} (parsed as {})", value, desc, seg.is_active);
+        }
     }
 
     // Example 5: Using optional fields
@@ -176,10 +176,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let edge_case_zft = ZFT::builder()
         .patient_id("PAT-EDGE")
-        .age(u32::MAX)                      // Maximum u32
-        .weight_kg(f64::MAX)                // Maximum f64
-        .temperature_delta(i32::MIN)        // Minimum i32 (most negative)
-        .account_balance(i64::MIN)          // Minimum i64 (most negative)
+        .age(u32::MAX) // Maximum u32
+        .weight_kg(f64::MAX) // Maximum f64
+        .temperature_delta(i32::MIN) // Minimum i32 (most negative)
+        .account_balance(i64::MIN) // Minimum i64 (most negative)
         .is_active(true)
         .insurance_verified(false)
         .build()?;
@@ -196,7 +196,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut msg = parse_message(
         "MSH|^~\\&|App|Fac|App|Fac|20250119120000||ADT^A01|MSG|P|2.5\r\
          PID|1||PAT-11111||Smith^Jane\r\
-         ZFT|PAT-11111|25|65.5|2|100000|Y|N|||||Initial visit"
+         ZFT|PAT-11111|25|65.5|2|100000|Y|N|||||Initial visit",
     )?;
 
     println!("   Original segment:");
@@ -208,10 +208,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Modify the segment
     let mut modified_zft = msg.get_custom_segment::<ZFT>()?.unwrap();
-    modified_zft.insurance_verified = true;         // Update boolean
-    modified_zft.account_balance += 50000;          // Update large integer
-    modified_zft.temperature_delta = -1;            // Update signed integer
-    modified_zft.bed_number = Some(410);            // Add optional field
+    modified_zft.insurance_verified = true; // Update boolean
+    modified_zft.account_balance += 50000; // Update large integer
+    modified_zft.temperature_delta = -1; // Update signed integer
+    modified_zft.bed_number = Some(410); // Add optional field
 
     msg.set_custom_segment(modified_zft)?;
 

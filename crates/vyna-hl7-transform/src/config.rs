@@ -141,7 +141,7 @@ impl RuleConfig {
                     return Err(Error::config(format!(
                         "Unknown transformation function: {}",
                         transform_name
-                    )))
+                    )));
                 }
             };
             rule = rule.with_transform(transform_fn);
@@ -273,8 +273,7 @@ mod tests {
 
     #[test]
     fn test_rule_config_with_transform() {
-        let rule = RuleConfig::new("PID-5-1", "PID-5-1")
-            .with_transform("uppercase");
+        let rule = RuleConfig::new("PID-5-1", "PID-5-1").with_transform("uppercase");
         assert_eq!(rule.transform, Some("uppercase".to_string()));
     }
 
@@ -294,10 +293,7 @@ mod tests {
     #[test]
     fn test_yaml_serialization() {
         let mut config = TransformConfig::new();
-        config.add_rule(
-            RuleConfig::new("PID-5-1", "PID-5-1")
-                .with_transform("uppercase")
-        );
+        config.add_rule(RuleConfig::new("PID-5-1", "PID-5-1").with_transform("uppercase"));
 
         let yaml = config.to_yaml().unwrap();
         assert!(yaml.contains("source: PID-5-1"));
@@ -327,10 +323,7 @@ rules:
     #[test]
     fn test_json_serialization() {
         let mut config = TransformConfig::new();
-        config.add_rule(
-            RuleConfig::new("PID-5-1", "PID-5-1")
-                .with_transform("uppercase")
-        );
+        config.add_rule(RuleConfig::new("PID-5-1", "PID-5-1").with_transform("uppercase"));
 
         let json = config.to_json().unwrap();
         assert!(json.contains("\"source\": \"PID-5-1\""));
@@ -365,10 +358,7 @@ rules:
     #[test]
     fn test_build_transformer() {
         let mut config = TransformConfig::new();
-        config.add_rule(
-            RuleConfig::new("PID-5-1", "PID-5-1")
-                .with_transform("uppercase")
-        );
+        config.add_rule(RuleConfig::new("PID-5-1", "PID-5-1").with_transform("uppercase"));
         config.add_rule(RuleConfig::new("PID-3-1", "PID-3-1"));
 
         let transformer = config.build().unwrap();
@@ -388,10 +378,7 @@ rules:
         let transform_rule = rule.to_rule(&mut context).unwrap();
 
         assert!(transform_rule.transform_fn.is_some());
-        assert_eq!(
-            context.get_data("format"),
-            Some(&"YYYY-MM-DD".to_string())
-        );
+        assert_eq!(context.get_data("format"), Some(&"YYYY-MM-DD".to_string()));
     }
 
     #[test]
@@ -409,8 +396,7 @@ rules:
 
     #[test]
     fn test_unknown_transform_function() {
-        let rule = RuleConfig::new("PID-5-1", "PID-5-1")
-            .with_transform("unknown_function");
+        let rule = RuleConfig::new("PID-5-1", "PID-5-1").with_transform("unknown_function");
 
         let mut context = TransformContext::new();
         let result = rule.to_rule(&mut context);

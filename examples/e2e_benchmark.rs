@@ -9,12 +9,12 @@
 //!
 //! This provides metrics comparable to industry interface engine benchmarks.
 
-use vyna_hl7_core::{Field, Message, Segment};
-use vyna_hl7_mllp::{testing::MockMllpServer, MllpClient};
-use vyna_hl7_parser::parse_message;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
+use vyna_hl7_core::{Field, Message, Segment};
+use vyna_hl7_mllp::{MllpClient, testing::MockMllpServer};
+use vyna_hl7_parser::parse_message;
 
 // Test messages
 const ADT_SMALL: &str = "MSH|^~\\&|HIS|Hospital|RIS|Radiology|20240315143000||ADT^A01^ADT_A01|MSG00001|P|2.5|||AL|NE\r\
@@ -101,9 +101,7 @@ async fn run_single_client_benchmark(config: &BenchConfig) -> BenchResult {
     let addr = server.url();
 
     // Connect client
-    let mut client = MllpClient::connect(&addr)
-        .await
-        .expect("Failed to connect");
+    let mut client = MllpClient::connect(&addr).await.expect("Failed to connect");
 
     // Parse the test message once
     let msg = parse_message(config.message).expect("Failed to parse message");
@@ -170,9 +168,7 @@ async fn run_concurrent_benchmark(config: &BenchConfig) -> BenchResult {
 
     // Warmup with single client
     {
-        let mut client = MllpClient::connect(&addr)
-            .await
-            .expect("Failed to connect");
+        let mut client = MllpClient::connect(&addr).await.expect("Failed to connect");
         for _ in 0..config.warmup_iterations {
             let _ = client.send_message(&msg).await.expect("Warmup failed");
         }
@@ -190,9 +186,7 @@ async fn run_concurrent_benchmark(config: &BenchConfig) -> BenchResult {
         let latencies = Arc::clone(&latencies);
 
         handles.push(tokio::spawn(async move {
-            let mut client = MllpClient::connect(&addr)
-                .await
-                .expect("Failed to connect");
+            let mut client = MllpClient::connect(&addr).await.expect("Failed to connect");
 
             let mut local_latencies = Vec::with_capacity(iterations_per_client as usize);
 
@@ -264,16 +258,16 @@ impl BenchResult {
 
     fn print(&self) {
         println!("\n{}", "─".repeat(70));
-        println!("  {} ({}B, {} clients)", self.name, self.message_size, self.concurrent_clients);
+        println!(
+            "  {} ({}B, {} clients)",
+            self.name, self.message_size, self.concurrent_clients
+        );
         println!("{}", "─".repeat(70));
         println!(
             "  Iterations:    {:>10}       Total Time:  {:>10.2?}",
             self.iterations, self.total_duration
         );
-        println!(
-            "  Throughput:    {:>10.0} msg/s",
-            self.throughput()
-        );
+        println!("  Throughput:    {:>10.0} msg/s", self.throughput());
         println!();
         println!("  Latency Percentiles:");
         println!(
@@ -407,9 +401,7 @@ async fn main() {
         .expect("Failed to start server");
 
     let addr = server.url();
-    let mut client = MllpClient::connect(&addr)
-        .await
-        .expect("Failed to connect");
+    let mut client = MllpClient::connect(&addr).await.expect("Failed to connect");
     let msg = parse_message(ADT_SMALL).expect("Failed to parse message");
 
     // Warmup
@@ -425,7 +417,8 @@ async fn main() {
     }
 
     let sustained_duration = sustained_start.elapsed();
-    let sustained_throughput = sustained_count as f64 / sustained_test_start.elapsed().as_secs_f64();
+    let sustained_throughput =
+        sustained_count as f64 / sustained_test_start.elapsed().as_secs_f64();
 
     client.close().await.ok();
     server.shutdown().await.ok();

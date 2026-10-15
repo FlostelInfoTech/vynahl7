@@ -1,8 +1,8 @@
 //! Complete validation example with data type and vocabulary validation
 
-use vyna_hl7_core::{field::Field, segment::Segment, Message, Version};
-use vyna_hl7_validator::{FieldDefinition, MessageSchema, SegmentDefinition, Validator};
 use std::collections::HashMap;
+use vyna_hl7_core::{Message, Version, field::Field, segment::Segment};
+use vyna_hl7_validator::{FieldDefinition, MessageSchema, SegmentDefinition, Validator};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Complete HL7 Message Validation Example ===\n");
@@ -275,7 +275,10 @@ fn create_message_with_invalid_processing() -> Message {
     msg
 }
 
-fn validate_with_schema(message: &Message, schema: MessageSchema) -> Result<(), Box<dyn std::error::Error>> {
+fn validate_with_schema(
+    message: &Message,
+    schema: MessageSchema,
+) -> Result<(), Box<dyn std::error::Error>> {
     let validator = Validator::with_schema(Version::V2_5, schema);
     let result = validator.validate(message);
 

@@ -100,13 +100,50 @@ impl<'a> TerserQuery<'a> {
     /// # }
     /// ```
     pub fn get_if(&self, path: &str, condition: impl Fn(&Terser) -> bool) -> Option<&str> {
+        match self.try_get_if(path, condition) {
+            Ok(value) => value,
+            Err(err) => panic!("TerserQuery::get_if: invalid path {path:?}: {err}"),
+        }
+    }
+
+    /// Get a field value only if a condition is met, without panicking
+    ///
+    /// Same as [`TerserQuery::get_if`], but a malformed path (or an
+    /// out-of-range segment index) returns `Err` instead of panicking.
+    /// `Ok(None)` still means the condition failed or the addressed
+    /// value is absent.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use vyna_hl7_terser::TerserQuery;
+    /// use vyna_hl7_parser::parse_message;
+    ///
+    /// # fn main() -> vyna_hl7_core::Result<()> {
+    /// let hl7 = r"MSH|^~\&|APP|FAC|||20250115||ADT^A01|123|P|2.5
+    /// PID|1||PAT001||DOE^JOHN||19800101|M";
+    ///
+    /// let message = parse_message(hl7)?;
+    /// let query = TerserQuery::new(&message);
+    ///
+    /// let name = query.try_get_if("PID-5-1", |terser| {
+    ///     terser.get("PID-8").ok().flatten() == Some("M")
+    /// })?;
+    ///
+    /// assert_eq!(name, Some("DOE"));
+    /// assert!(query.try_get_if("OBX(0)-5", |_| true).is_err());
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn try_get_if(
+        &self,
+        path: &str,
+        condition: impl Fn(&Terser) -> bool,
+    ) -> vyna_hl7_core::Result<Option<&str>> {
         if condition(&self.terser) {
-            match self.terser.get(path) {
-                Ok(value) => value,
-                Err(err) => panic!("TerserQuery::get_if: invalid path {path:?}: {err}"),
-            }
+            self.terser.get(path)
         } else {
-            None
+            Ok(None)
         }
     }
 
@@ -237,6 +274,10 @@ impl<'a> TerserQuery<'a> {
     ///
     /// Every repetition of the field is searched: a match in any
     /// repetition selects the segment.
+    ///
+    /// Components are 1-based; `component == 0` can never match and
+    /// yields an empty result rather than an error, since filters
+    /// collect matches instead of addressing one value.
     ///
     /// # Examples
     ///
@@ -719,5 +760,34 @@ PID|1||PAT001||DOE^JOHN||19800101|M";
         // Matched via the second repetition; the collected value is
         // the result field's primary value.
         assert_eq!(query.get_values_where("OBX", 3, "GLU", 5), vec!["98"]);
+    }
+
+    #[test]
+    fn test_try_get_if_returns_error_instead_of_panicking() {
+        let hl7 = r"MSH|^~\&|APP|FAC|||20250115||ADT^A01|123|P|2.5
+PID|1||PAT001||DOE^JOHN||19800101|M";
+
+        let message = parse_message(hl7).unwrap();
+        let query = TerserQuery::new(&message);
+
+        assert_eq!(query.try_get_if("PID-5-1", |_| true).unwrap(), Some("DOE"));
+        assert_eq!(query.try_get_if("PID-99", |_| true).unwrap(), None);
+        assert_eq!(query.try_get_if("PID-5-1", |_| false).unwrap(), None);
+        assert!(query.try_get_if("PID-5-1-2-3-4", |_| true).is_err());
+        assert!(query.try_get_if("OBX(0)-5", |_| true).is_err());
+        // A false condition short-circuits without touching the path.
+        assert_eq!(query.try_get_if("PID-5-1-2-3-4", |_| false).unwrap(), None);
+    }
+
+    #[test]
+    fn test_filter_by_component_zero_matches_nothing() {
+        let hl7 = r"MSH|^~\&|APP|FAC|||20250115||ORU^R01|123|P|2.5
+OBX|1|CE|GLU^Glucose||98^mg/dL";
+
+        let message = parse_message(hl7).unwrap();
+        let query = TerserQuery::new(&message);
+
+        // Components are 1-based: 0 yields an empty result, not an error.
+        assert!(query.filter_by_component("OBX", 3, 0, "GLU").is_empty());
     }
 }

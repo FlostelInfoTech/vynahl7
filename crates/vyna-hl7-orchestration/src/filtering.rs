@@ -28,8 +28,8 @@
 //! ```
 
 use crate::error::{OrchestrationError, Result};
-use vyna_hl7_core::Message;
 use std::sync::Arc;
+use vyna_hl7_core::Message;
 
 /// Type alias for filter rule functions
 pub type FilterRule = Arc<dyn Fn(&Message) -> bool + Send + Sync>;

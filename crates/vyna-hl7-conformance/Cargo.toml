@@ -31,3 +31,6 @@ serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 vyna-hl7-parser.workspace = true
+
+[lints]
+workspace = true

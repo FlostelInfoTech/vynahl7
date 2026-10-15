@@ -5,8 +5,8 @@
 //!
 //! Run with: `cargo run --example convert_oml -p vyna-hl7-fhir`
 
-use vyna_hl7_parser::parse_message;
 use vyna_hl7_fhir::converters::SpecimenConverter;
+use vyna_hl7_parser::parse_message;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Sample OML^O21 message with multiple specimens
@@ -56,12 +56,22 @@ SPM|1|SPEC-SER-002||SER^Serum^HL70487|||ANP^Venipuncture^HL70488|RA^Right Arm^HL
             println!("Accession ID: {:?}", accession.value);
         }
 
-        println!("Specimen Type: {:?}", spec.type_.coding.as_ref()
-            .and_then(|c| c.first())
-            .and_then(|c| c.code.as_ref()));
-        println!("Specimen Type Name: {:?}", spec.type_.coding.as_ref()
-            .and_then(|c| c.first())
-            .and_then(|c| c.display.as_ref()));
+        println!(
+            "Specimen Type: {:?}",
+            spec.type_
+                .coding
+                .as_ref()
+                .and_then(|c| c.first())
+                .and_then(|c| c.code.as_ref())
+        );
+        println!(
+            "Specimen Type Name: {:?}",
+            spec.type_
+                .coding
+                .as_ref()
+                .and_then(|c| c.first())
+                .and_then(|c| c.display.as_ref())
+        );
 
         println!("Status: {:?}", spec.status);
         println!("Received Time: {:?}", spec.received_time);
@@ -70,14 +80,23 @@ SPM|1|SPEC-SER-002||SER^Serum^HL70487|||ANP^Venipuncture^HL70488|RA^Right Arm^HL
             println!("Collection Details:");
             println!("  - Collected: {:?}", collection.collected_date_time);
             if let Some(method) = &collection.method {
-                println!("  - Method: {:?}", method.coding.as_ref()
-                    .and_then(|c| c.first())
-                    .and_then(|c| c.display.as_ref()));
+                println!(
+                    "  - Method: {:?}",
+                    method
+                        .coding
+                        .as_ref()
+                        .and_then(|c| c.first())
+                        .and_then(|c| c.display.as_ref())
+                );
             }
             if let Some(site) = &collection.body_site {
-                println!("  - Body Site: {:?}", site.coding.as_ref()
-                    .and_then(|c| c.first())
-                    .and_then(|c| c.display.as_ref()));
+                println!(
+                    "  - Body Site: {:?}",
+                    site.coding
+                        .as_ref()
+                        .and_then(|c| c.first())
+                        .and_then(|c| c.display.as_ref())
+                );
             }
             if let Some(quantity) = &collection.quantity {
                 println!("  - Quantity: {:?} {:?}", quantity.value, quantity.unit);
@@ -87,9 +106,13 @@ SPM|1|SPEC-SER-002||SER^Serum^HL70487|||ANP^Venipuncture^HL70488|RA^Right Arm^HL
         if let Some(condition) = &spec.condition {
             println!("Condition:");
             for cond in condition {
-                println!("  - {:?}", cond.coding.as_ref()
-                    .and_then(|c| c.first())
-                    .and_then(|c| c.display.as_ref()));
+                println!(
+                    "  - {:?}",
+                    cond.coding
+                        .as_ref()
+                        .and_then(|c| c.first())
+                        .and_then(|c| c.display.as_ref())
+                );
             }
         }
 
@@ -97,9 +120,14 @@ SPM|1|SPEC-SER-002||SER^Serum^HL70487|||ANP^Venipuncture^HL70488|RA^Right Arm^HL
             println!("Container:");
             for cont in container {
                 if let Some(type_) = &cont.type_ {
-                    println!("  - Type: {:?}", type_.coding.as_ref()
-                        .and_then(|c| c.first())
-                        .and_then(|c| c.code.as_ref()));
+                    println!(
+                        "  - Type: {:?}",
+                        type_
+                            .coding
+                            .as_ref()
+                            .and_then(|c| c.first())
+                            .and_then(|c| c.code.as_ref())
+                    );
                 }
             }
         }
@@ -118,37 +146,47 @@ SPM|1|SPEC-SER-002||SER^Serum^HL70487|||ANP^Venipuncture^HL70488|RA^Right Arm^HL
 
     // Example: Group specimens by type
     println!("=== Specimens by Type ===");
-    let blood_specimens: Vec<_> = specimens.iter()
-        .filter(|s| s.type_.coding.as_ref()
-            .and_then(|c| c.first())
-            .and_then(|c| c.code.as_ref())
-            .map(|code| code == "BLD")
-            .unwrap_or(false))
+    let blood_specimens: Vec<_> = specimens
+        .iter()
+        .filter(|s| {
+            s.type_
+                .coding
+                .as_ref()
+                .and_then(|c| c.first())
+                .and_then(|c| c.code.as_ref())
+                .map(|code| code == "BLD")
+                .unwrap_or(false)
+        })
         .collect();
 
     println!("Blood specimens: {}", blood_specimens.len());
 
-    let serum_specimens: Vec<_> = specimens.iter()
-        .filter(|s| s.type_.coding.as_ref()
-            .and_then(|c| c.first())
-            .and_then(|c| c.code.as_ref())
-            .map(|code| code == "SER")
-            .unwrap_or(false))
+    let serum_specimens: Vec<_> = specimens
+        .iter()
+        .filter(|s| {
+            s.type_
+                .coding
+                .as_ref()
+                .and_then(|c| c.first())
+                .and_then(|c| c.code.as_ref())
+                .map(|code| code == "SER")
+                .unwrap_or(false)
+        })
         .collect();
 
     println!("Serum specimens: {}", serum_specimens.len());
 
     // Example: Check specimen status
     println!("\n=== Specimen Availability ===");
-    let available = specimens.iter()
+    let available = specimens
+        .iter()
         .filter(|s| s.status.as_deref() == Some("available"))
         .count();
     println!("Available specimens: {} / {}", available, specimens.len());
 
     // Example: Specimens with special conditions
-    let conditioned_specimens: Vec<_> = specimens.iter()
-        .filter(|s| s.condition.is_some())
-        .collect();
+    let conditioned_specimens: Vec<_> =
+        specimens.iter().filter(|s| s.condition.is_some()).collect();
 
     if !conditioned_specimens.is_empty() {
         println!("\n=== Specimens with Conditions ===");
@@ -156,9 +194,12 @@ SPM|1|SPEC-SER-002||SER^Serum^HL70487|||ANP^Venipuncture^HL70488|RA^Right Arm^HL
             if let (Some(id), Some(condition)) = (&spec.identifier, &spec.condition) {
                 println!("Specimen {:?}:", id.first().and_then(|i| i.value.as_ref()));
                 for cond in condition {
-                    if let Some(display) = cond.coding.as_ref()
+                    if let Some(display) = cond
+                        .coding
+                        .as_ref()
                         .and_then(|c| c.first())
-                        .and_then(|c| c.display.as_ref()) {
+                        .and_then(|c| c.display.as_ref())
+                    {
                         println!("  - {}", display);
                     }
                 }

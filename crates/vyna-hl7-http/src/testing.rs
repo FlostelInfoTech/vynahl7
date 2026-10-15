@@ -3,9 +3,9 @@
 //! This module provides mock servers and test helpers for integration testing.
 
 use crate::{HttpServer, Result};
-use vyna_hl7_core::Message;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
+use vyna_hl7_core::Message;
 
 /// Mock HTTP server for integration testing
 ///
@@ -86,7 +86,10 @@ impl MockHttpServer {
     where
         F: Fn(Message) -> Result<Message> + Send + Sync + 'static,
     {
-        self.http_server = self.http_server.clone().with_handler(std::sync::Arc::new(handler));
+        self.http_server = self
+            .http_server
+            .clone()
+            .with_handler(std::sync::Arc::new(handler));
         self
     }
 

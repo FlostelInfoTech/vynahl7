@@ -22,8 +22,11 @@ thiserror.workspace = true
 
 [dev-dependencies]
 vyna-hl7-parser.workspace = true
-criterion = "0.8"
+criterion.workspace = true
 
 [[bench]]
 name = "validator_bench"
 harness = false
+
+[lints]
+workspace = true

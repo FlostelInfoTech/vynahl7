@@ -1,10 +1,10 @@
 //! HL7 message structures
 
+use crate::Version;
 use crate::charset::CharacterSet;
 use crate::delimiters::Delimiters;
 use crate::error::{Error, Result};
 use crate::segment::Segment;
-use crate::Version;
 
 /// An HL7 message
 ///
@@ -104,8 +104,7 @@ impl Message {
 
     /// Get the message control ID from MSH-10
     pub fn get_control_id(&self) -> Option<&str> {
-        self.get_msh()
-            .and_then(|msh| msh.get_field_value(10))
+        self.get_msh().and_then(|msh| msh.get_field_value(10))
     }
 
     /// Get the HL7 version from MSH-12
@@ -152,6 +151,11 @@ impl Message {
     }
 
     /// Validate the message structure
+    ///
+    /// This check is structural only: non-empty segment list, MSH first,
+    /// well-formed segment IDs, valid delimiters. A message that passes
+    /// is not necessarily specification-compliant; route messages through
+    /// `vyna_hl7_validator` for data-type, table, and schema validation.
     pub fn validate(&self) -> Result<()> {
         // Check that message has at least one segment
         if self.segments.is_empty() {
@@ -163,9 +167,7 @@ impl Message {
         // Check that first segment is MSH
         let first = &self.segments[0];
         if first.id != "MSH" {
-            return Err(Error::Validation(
-                "First segment must be MSH".to_string(),
-            ));
+            return Err(Error::Validation("First segment must be MSH".to_string()));
         }
 
         // Validate all segment IDs
@@ -424,9 +426,9 @@ mod tests {
     use crate::field::Field;
 
     fn create_test_msh() -> Segment {
-        let mut msh = Segment::new("MSH");
-        msh.add_field(Field::from_value("^~\\&")); // MSH-1: encoding characters
-        msh.add_field(Field::from_value("")); // MSH-2: empty placeholder
+        // MSH-1 (field separator) and MSH-2 (encoding characters) are
+        // pushed by the header constructor; content starts at MSH-3.
+        let mut msh = Segment::new_header("MSH");
         msh.add_field(Field::from_value("SendingApp")); // MSH-3
         msh.add_field(Field::from_value("SendingFac")); // MSH-4
         msh.add_field(Field::from_value("ReceivingApp")); // MSH-5

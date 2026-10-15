@@ -501,7 +501,6 @@ impl EncounterConverter {
         }
     }
 
-
     /// Redacted bad-datetime error: field location + reason only, never the value.
     fn invalid_datetime(_datetime: &str) -> ConversionError {
         ConversionError::InvalidFormat(

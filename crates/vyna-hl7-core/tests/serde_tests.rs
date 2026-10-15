@@ -17,7 +17,8 @@ fn fixture() -> Message {
     msh.set_field(4, Field::from_value("SFAC")).unwrap();
     msh.set_field(5, Field::from_value("RECV")).unwrap();
     msh.set_field(6, Field::from_value("RFAC")).unwrap();
-    msh.set_field(7, Field::from_value("20240101120000")).unwrap();
+    msh.set_field(7, Field::from_value("20240101120000"))
+        .unwrap();
     msh.set_field(9, Field::from_delimited("ADT^A01")).unwrap();
     msh.set_field(10, Field::from_value("MSG001")).unwrap();
     msh.set_field(11, Field::from_value("P")).unwrap();
@@ -28,7 +29,8 @@ fn fixture() -> Message {
     pid.set_field(1, Field::from_value("1")).unwrap();
     pid.set_field(3, Field::from_delimited("PAT1^^^HOSP^MR~PAT2^^^CLIN^PI"))
         .unwrap();
-    pid.set_field(5, Field::from_delimited("Smith^John^A")).unwrap();
+    pid.set_field(5, Field::from_delimited("Smith^John^A"))
+        .unwrap();
     pid.set_field(7, Field::from_value("19800101")).unwrap();
     pid.set_field(8, Field::from_value("M")).unwrap();
     message.add_segment(pid);

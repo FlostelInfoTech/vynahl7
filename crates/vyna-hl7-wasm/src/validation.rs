@@ -8,14 +8,29 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 pub struct WasmValidationResult {
     is_valid: bool,
+    mode: String,
+    schema_applied: bool,
     errors: Vec<WasmValidationError>,
     warnings: Vec<WasmValidationError>,
+}
+
+impl WasmValidationResult {
+    /// Build a result that records the effective posture and whether a
+    /// message schema was applied (CLI `validate --format json` parity).
+    pub(crate) fn from_result(result: ValidationResult, mode: &str, schema_applied: bool) -> Self {
+        let mut out = Self::from(result);
+        out.mode = mode.to_string();
+        out.schema_applied = schema_applied;
+        out
+    }
 }
 
 impl From<ValidationResult> for WasmValidationResult {
     fn from(result: ValidationResult) -> Self {
         Self {
             is_valid: result.is_valid(),
+            mode: "strict".to_string(),
+            schema_applied: false,
             errors: result
                 .errors
                 .iter()
@@ -58,12 +73,26 @@ impl WasmValidationResult {
         self.warnings.len()
     }
 
+    /// Get the validation posture (`strict`, `standard`, or `lenient`)
+    pub fn mode(&self) -> String {
+        self.mode.clone()
+    }
+
+    /// Whether a message schema was applied (`false` means
+    /// structure-only validation: no schema for this message type)
+    #[wasm_bindgen(js_name = schemaApplied)]
+    pub fn schema_applied(&self) -> bool {
+        self.schema_applied
+    }
+
     /// Convert to JSON
     #[wasm_bindgen(js_name = toJson)]
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
         #[derive(Serialize)]
         struct JsonResult {
             is_valid: bool,
+            mode: String,
+            schema_applied: bool,
             errors: Vec<JsonError>,
             warnings: Vec<JsonError>,
         }
@@ -77,6 +106,8 @@ impl WasmValidationResult {
 
         let json = JsonResult {
             is_valid: self.is_valid,
+            mode: self.mode.clone(),
+            schema_applied: self.schema_applied,
             errors: self
                 .errors
                 .iter()
@@ -137,5 +168,27 @@ mod tests {
         let result = WasmValidationResult::from(validator.validate(&message));
         assert!(result.is_valid());
         assert_eq!(result.error_count(), 0);
+    }
+
+    #[test]
+    fn validate_with_mode_reports_posture_and_schema() {
+        use crate::{parse_message as parse_wasm, validate_message_with_mode};
+        let adt = parse_wasm(
+            "MSH|^~\\&|S|F|R|D|20240101||ADT^A01|M1|P|2.5\r\
+             EVN||20240101\rPID|1||7||DOE^JOHN\rPV1||I\r",
+        )
+        .unwrap();
+        for mode in ["strict", "standard", "lenient"] {
+            let result = validate_message_with_mode(&adt, mode).unwrap();
+            assert_eq!(result.mode(), mode);
+            assert!(result.schema_applied());
+            assert!(result.is_valid());
+        }
+        // A message type without a schema falls back to structure-only.
+        let custom =
+            parse_wasm("MSH|^~\\&|S|F|R|D|20240101||ZZZ^Z99|M1|P|2.5\rPID|1||7\r").unwrap();
+        let result = validate_message_with_mode(&custom, "strict").unwrap();
+        assert_eq!(result.mode(), "strict");
+        assert!(!result.schema_applied());
     }
 }

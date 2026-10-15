@@ -481,7 +481,6 @@ impl ServiceRequestConverter {
         }
     }
 
-
     /// Redacted bad-datetime error: field location + reason only, never the value.
     fn invalid_datetime_format() -> ConversionError {
         ConversionError::InvalidFormat(

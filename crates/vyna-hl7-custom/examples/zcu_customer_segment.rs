@@ -4,7 +4,7 @@
 //! The ZCU segment contains customer financial information and ensures that
 //! balances cannot be negative.
 
-use vyna_hl7_custom::{z_segment, CustomSegment, CustomSegmentError, MessageExt};
+use vyna_hl7_custom::{CustomSegment, CustomSegmentError, MessageExt, z_segment};
 use vyna_hl7_parser::parse_message;
 
 // Define the ZCU custom segment with validation
@@ -113,7 +113,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Extracted ZCU from message:");
         println!("  Customer: {}", zcu.customer_id);
         println!("  Balance: ${:.2}", zcu.balance.unwrap_or(0.0));
-        println!("  Status: {}", zcu.account_status.as_deref().unwrap_or("N/A"));
+        println!(
+            "  Status: {}",
+            zcu.account_status.as_deref().unwrap_or("N/A")
+        );
     }
 
     Ok(())

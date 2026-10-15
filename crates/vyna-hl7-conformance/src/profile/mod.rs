@@ -79,62 +79,60 @@ impl ConformanceProfile {
             // Validate field profiles
             for field in &segment.fields {
                 if field.position == 0 {
-                    return Err(crate::error::ConformanceError::InvalidProfile(
-                        format!("Field position must be >= 1 in segment '{}'", segment.name),
-                    ));
+                    return Err(crate::error::ConformanceError::InvalidProfile(format!(
+                        "Field position must be >= 1 in segment '{}'",
+                        segment.name
+                    )));
                 }
 
                 if let Some(length) = field.length
-                    && length == 0 {
-                        return Err(crate::error::ConformanceError::InvalidProfile(
-                            format!("Field {}-{} length must be > 0", segment.name, field.position),
-                        ));
-                    }
+                    && length == 0
+                {
+                    return Err(crate::error::ConformanceError::InvalidProfile(format!(
+                        "Field {}-{} length must be > 0",
+                        segment.name, field.position
+                    )));
+                }
 
                 // Validate component profiles if present
                 if let Some(ref components) = field.components {
                     for component in components {
                         if component.position == 0 {
-                            return Err(crate::error::ConformanceError::InvalidProfile(
-                                format!(
-                                    "Component position must be >= 1 in field {}-{}",
-                                    segment.name, field.position
-                                ),
-                            ));
+                            return Err(crate::error::ConformanceError::InvalidProfile(format!(
+                                "Component position must be >= 1 in field {}-{}",
+                                segment.name, field.position
+                            )));
                         }
                         if let Some(length) = component.length
-                            && length == 0 {
-                                return Err(crate::error::ConformanceError::InvalidProfile(
-                                    format!(
-                                        "Component {}-{}.{} length must be > 0",
-                                        segment.name, field.position, component.position
-                                    ),
-                                ));
-                            }
+                            && length == 0
+                        {
+                            return Err(crate::error::ConformanceError::InvalidProfile(format!(
+                                "Component {}-{}.{} length must be > 0",
+                                segment.name, field.position, component.position
+                            )));
+                        }
                     }
                 }
 
                 // Validate value set binding if present
                 if let Some(ref vs) = field.value_set
-                    && vs.value_set_id.trim().is_empty() {
-                        return Err(crate::error::ConformanceError::InvalidProfile(
-                            format!(
-                                "Value set ID must not be empty for field {}-{}",
-                                segment.name, field.position
-                            ),
-                        ));
-                    }
+                    && vs.value_set_id.trim().is_empty()
+                {
+                    return Err(crate::error::ConformanceError::InvalidProfile(format!(
+                        "Value set ID must not be empty for field {}-{}",
+                        segment.name, field.position
+                    )));
+                }
 
                 // Validate predicate condition if conditional
                 if let ConditionalUsage::Conditional(ref predicate) = field.usage
-                    && predicate.condition.trim().is_empty() {
-                        return Err(crate::error::ConformanceError::InvalidProfile(
-                            format!(
-                                "Predicate condition must not be empty for conditional field {}-{}",
-                                segment.name, field.position
-                            ),
-                        ));
-                    }
+                    && predicate.condition.trim().is_empty()
+                {
+                    return Err(crate::error::ConformanceError::InvalidProfile(format!(
+                        "Predicate condition must not be empty for conditional field {}-{}",
+                        segment.name, field.position
+                    )));
+                }
             }
         }
 
@@ -147,9 +145,10 @@ impl ConformanceProfile {
                     ));
                 }
                 if constraint.condition.trim().is_empty() {
-                    return Err(crate::error::ConformanceError::InvalidProfile(
-                        format!("Co-constraint '{}' condition must not be empty", constraint.id),
-                    ));
+                    return Err(crate::error::ConformanceError::InvalidProfile(format!(
+                        "Co-constraint '{}' condition must not be empty",
+                        constraint.id
+                    )));
                 }
             }
         }
@@ -606,11 +605,13 @@ impl Cardinality {
     /// Create new cardinality
     pub fn new(min: usize, max: Option<usize>) -> Result<Self> {
         if let Some(max_val) = max
-            && min > max_val {
-                return Err(crate::error::ConformanceError::InvalidCardinality(
-                    format!("min ({}) > max ({})", min, max_val),
-                ));
-            }
+            && min > max_val
+        {
+            return Err(crate::error::ConformanceError::InvalidCardinality(format!(
+                "min ({}) > max ({})",
+                min, max_val
+            )));
+        }
         Ok(Self { min, max })
     }
 
@@ -621,12 +622,18 @@ impl Cardinality {
 
     /// Exactly one occurrence [1..1]
     pub fn one() -> Self {
-        Self { min: 1, max: Some(1) }
+        Self {
+            min: 1,
+            max: Some(1),
+        }
     }
 
     /// Zero or one occurrence [0..1]
     pub fn zero_or_one() -> Self {
-        Self { min: 0, max: Some(1) }
+        Self {
+            min: 0,
+            max: Some(1),
+        }
     }
 
     /// Zero or more occurrences [0..*]
@@ -645,12 +652,12 @@ impl Cardinality {
             return false;
         }
         if let Some(max) = self.max
-            && count > max {
-                return false;
-            }
+            && count > max
+        {
+            return false;
+        }
         true
     }
-
 }
 
 impl std::fmt::Display for Cardinality {
@@ -739,11 +746,8 @@ mod tests {
     }
 
     fn make_valid_profile() -> ConformanceProfile {
-        let metadata = ProfileMetadata::new(
-            "Test Profile".to_string(),
-            "1.0".to_string(),
-            Version::V2_5,
-        );
+        let metadata =
+            ProfileMetadata::new("Test Profile".to_string(), "1.0".to_string(), Version::V2_5);
         let mut message = MessageProfile::new("ADT".to_string(), "A01".to_string());
         let mut msh = SegmentProfile::new("MSH".to_string(), Usage::Required, Cardinality::one());
         msh.add_field(FieldProfile::new(1, Usage::Required, Cardinality::one()));
@@ -820,12 +824,9 @@ mod tests {
     #[test]
     fn test_validate_empty_predicate_condition() {
         let mut profile = make_valid_profile();
-        profile.message.segments[0].fields[0].usage =
-            ConditionalUsage::Conditional(Predicate::new(
-                "".to_string(),
-                Usage::Required,
-                Usage::Optional,
-            ));
+        profile.message.segments[0].fields[0].usage = ConditionalUsage::Conditional(
+            Predicate::new("".to_string(), Usage::Required, Usage::Optional),
+        );
         assert!(profile.validate().is_err());
     }
 

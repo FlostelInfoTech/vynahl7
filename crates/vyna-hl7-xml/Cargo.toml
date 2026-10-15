@@ -25,3 +25,6 @@ convert = ["vyna-hl7-parser"]
 
 [dev-dependencies]
 vyna-hl7-parser.workspace = true
+
+[lints]
+workspace = true

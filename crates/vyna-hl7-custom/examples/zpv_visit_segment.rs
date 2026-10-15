@@ -3,7 +3,7 @@
 //! This example demonstrates a custom Z-segment for tracking patient visit information
 //! that extends the standard PV1 segment with organization-specific fields.
 
-use vyna_hl7_custom::{z_segment, CustomSegment, MessageExt};
+use vyna_hl7_custom::{CustomSegment, MessageExt, z_segment};
 use vyna_hl7_parser::parse_message;
 
 // Define the ZPV custom segment

@@ -5,9 +5,11 @@
 mod corpus;
 
 use corpus::*;
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use vyna_hl7_parser::{parse_batch, parse_file, parse_message, parse_message_with_config, ParserConfig};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
+use vyna_hl7_parser::{
+    ParserConfig, parse_batch, parse_file, parse_message, parse_message_with_config,
+};
 
 // ============================================================================
 // Escape Sequence Density

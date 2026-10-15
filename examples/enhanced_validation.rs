@@ -1,6 +1,6 @@
 //! Example demonstrating enhanced validation with data type checking
 
-use vyna_hl7_core::{field::Field, segment::Segment, Message, Version};
+use vyna_hl7_core::{Message, Version, field::Field, segment::Segment};
 use vyna_hl7_validator::Validator;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -218,7 +218,10 @@ fn validate_message(
     if result.is_valid() {
         println!("  ✓ Message is valid!");
     } else {
-        println!("  ✗ Message has {} validation error(s):", result.errors.len());
+        println!(
+            "  ✗ Message has {} validation error(s):",
+            result.errors.len()
+        );
         for error in &result.errors {
             println!("    - [{}] {}", error.location, error.message);
         }
