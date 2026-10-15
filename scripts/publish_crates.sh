@@ -32,7 +32,9 @@ CRATES=(
   vyna-hl7-http
   vyna-hl7-mllp
   vyna-hl7-orchestration
-  vyna-hl7-testpanel
+  # vyna-hl7-testpanel is intentionally unpublished (binary-only dev
+  # tool; install from source). vyna-hl7-cli stays: it is the
+  # user-facing tool and binaries publish fine via cargo install.
   vyna-hl7
   vyna-hl7-cli
 )
@@ -59,7 +61,7 @@ for crate in "${CRATES[@]}"; do
   fi
   echo "== publishing $crate $VERSION ($(date -u +%H:%M:%S))"
   ok=0
-  for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  for attempt in $(seq 1 20); do
     if cargo publish -p "$crate"; then ok=1; break; fi
     echo "   attempt $attempt failed, waiting 60s for index propagation..."
     sleep 60
