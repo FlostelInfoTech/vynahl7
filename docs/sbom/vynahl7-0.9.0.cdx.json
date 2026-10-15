@@ -2,9 +2,9 @@
   "bomFormat": "CycloneDX",
   "specVersion": "1.5",
   "version": 1,
-  "serialNumber": "urn:uuid:f62335da-c314-4a4c-b307-a6253c4dc2b1",
+  "serialNumber": "urn:uuid:ec34ec97-b25f-4d59-9b9b-65477576f35d",
   "metadata": {
-    "timestamp": "2026-10-13T07:33:12.715687307Z",
+    "timestamp": "2026-10-15T01:41:23.147198816Z",
     "tools": [
       {
         "vendor": "CycloneDX",
@@ -34,7 +34,7 @@
       "externalReferences": [
         {
           "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
+          "url": "https://docs.rs/vyna-hl7"
         },
         {
           "type": "website",
@@ -80,7 +80,7 @@
       "externalReferences": [
         {
           "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
+          "url": "https://docs.rs/vyna-hl7"
         },
         {
           "type": "website",
@@ -117,10 +117,6 @@
       "purl": "pkg:cargo/vyna-hl7-batch@0.9.0?download_url=file://.",
       "externalReferences": [
         {
-          "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
-        },
-        {
           "type": "website",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
         },
@@ -155,10 +151,6 @@
       "purl": "pkg:cargo/vyna-hl7-cli@0.9.0?download_url=file://.",
       "externalReferences": [
         {
-          "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
-        },
-        {
           "type": "website",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
         },
@@ -192,10 +184,6 @@
       ],
       "purl": "pkg:cargo/vyna-hl7-codegen@0.9.0?download_url=file://.",
       "externalReferences": [
-        {
-          "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
-        },
         {
           "type": "website",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
@@ -232,7 +220,7 @@
       "externalReferences": [
         {
           "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
+          "url": "https://docs.rs/vyna-hl7-conformance"
         },
         {
           "type": "website",
@@ -269,10 +257,6 @@
       "purl": "pkg:cargo/vyna-hl7-convert@0.9.0?download_url=file://.",
       "externalReferences": [
         {
-          "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
-        },
-        {
           "type": "website",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
         },
@@ -307,10 +291,6 @@
       "purl": "pkg:cargo/vyna-hl7-core@0.9.0?download_url=file://crates/vyna-hl7-core",
       "externalReferences": [
         {
-          "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
-        },
-        {
           "type": "website",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
         },
@@ -335,10 +315,6 @@
       ],
       "purl": "pkg:cargo/vyna-hl7-custom@0.9.0?download_url=file://.",
       "externalReferences": [
-        {
-          "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
-        },
         {
           "type": "website",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
@@ -374,10 +350,6 @@
       "purl": "pkg:cargo/vyna-hl7-fhir@0.9.0?download_url=file://../vyna-hl7-fhir",
       "externalReferences": [
         {
-          "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
-        },
-        {
           "type": "website",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
         },
@@ -403,10 +375,6 @@
       "purl": "pkg:cargo/vyna-hl7-http@0.9.0?download_url=file://crates/vyna-hl7-http",
       "externalReferences": [
         {
-          "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
-        },
-        {
           "type": "website",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
         },
@@ -431,10 +399,6 @@
       ],
       "purl": "pkg:cargo/vyna-hl7-macros@0.9.0?download_url=file://.",
       "externalReferences": [
-        {
-          "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
-        },
         {
           "type": "website",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
@@ -471,7 +435,7 @@
       "externalReferences": [
         {
           "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
+          "url": "https://docs.rs/vyna-hl7-mllp"
         },
         {
           "type": "website",
@@ -498,10 +462,6 @@
       ],
       "purl": "pkg:cargo/vyna-hl7-orchestration@0.9.0?download_url=file://.",
       "externalReferences": [
-        {
-          "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
-        },
         {
           "type": "website",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
@@ -537,10 +497,6 @@
       "purl": "pkg:cargo/vyna-hl7-parser@0.9.0?download_url=file://crates/vyna-hl7-parser",
       "externalReferences": [
         {
-          "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
-        },
-        {
           "type": "website",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
         },
@@ -565,10 +521,6 @@
       ],
       "purl": "pkg:cargo/vyna-hl7-queue@0.9.0?download_url=file://.",
       "externalReferences": [
-        {
-          "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
-        },
         {
           "type": "website",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
@@ -604,10 +556,6 @@
       "purl": "pkg:cargo/vyna-hl7-redact@0.9.0?download_url=file://.",
       "externalReferences": [
         {
-          "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
-        },
-        {
           "type": "website",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
         },
@@ -641,10 +589,6 @@
       ],
       "purl": "pkg:cargo/vyna-hl7-templates@0.9.0?download_url=file://.",
       "externalReferences": [
-        {
-          "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
-        },
         {
           "type": "website",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
@@ -680,10 +624,6 @@
       "purl": "pkg:cargo/vyna-hl7-terser@0.9.0?download_url=file://crates/vyna-hl7-terser",
       "externalReferences": [
         {
-          "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
-        },
-        {
           "type": "website",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
         },
@@ -708,6 +648,10 @@
       ],
       "purl": "pkg:cargo/vyna-hl7-testpanel@0.9.0?download_url=file://.",
       "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/FlostelInfoTech/vynahl7"
+        },
         {
           "type": "vcs",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
@@ -738,10 +682,6 @@
       ],
       "purl": "pkg:cargo/vyna-hl7-transform@0.9.0?download_url=file://.",
       "externalReferences": [
-        {
-          "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
-        },
         {
           "type": "website",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
@@ -777,10 +717,6 @@
       "purl": "pkg:cargo/vyna-hl7-validator@0.9.0?download_url=file://crates/vyna-hl7-validator",
       "externalReferences": [
         {
-          "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
-        },
-        {
           "type": "website",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
         },
@@ -805,10 +741,6 @@
       ],
       "purl": "pkg:cargo/vyna-hl7-wasm@0.9.0?download_url=file://.",
       "externalReferences": [
-        {
-          "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
-        },
         {
           "type": "website",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
@@ -843,10 +775,6 @@
       ],
       "purl": "pkg:cargo/vyna-hl7-xml@0.9.0?download_url=file://../vyna-hl7-xml",
       "externalReferences": [
-        {
-          "type": "documentation",
-          "url": "https://github.com/FlostelInfoTech/vynahl7"
-        },
         {
           "type": "website",
           "url": "https://github.com/FlostelInfoTech/vynahl7"
@@ -1578,6 +1506,32 @@
     },
     {
       "type": "library",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#annotate-snippets@0.12.16",
+      "name": "annotate-snippets",
+      "version": "0.12.16",
+      "description": "Format diagnostic reports, including highlighting snippets of text",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "f211a51805bc641f3ad5b7664c77d2547af685cc33b4cd8d31964027a46f13f1"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "purl": "pkg:cargo/annotate-snippets@0.12.16",
+      "externalReferences": [
+        {
+          "type": "vcs",
+          "url": "https://github.com/rust-lang/annotate-snippets-rs"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#anstream@1.0.0",
       "name": "anstream",
       "version": "1.0.0",
@@ -1826,6 +1780,41 @@
         {
           "type": "vcs",
           "url": "https://github.com/RustCrypto/password-hashes"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#arraydeque@0.5.1",
+      "author": "andylokandy",
+      "name": "arraydeque",
+      "version": "0.5.1",
+      "description": "A ring buffer with a fixed capacity, which can be stored on the stack.",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "7d902e3d592a523def97af8f317b08ce16b7ab854c1985a0c671e6f15cebc236"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "purl": "pkg:cargo/arraydeque@0.5.1",
+      "externalReferences": [
+        {
+          "type": "documentation",
+          "url": "https://docs.rs/arraydeque"
+        },
+        {
+          "type": "website",
+          "url": "https://github.com/andylokandy/arraydeque"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/andylokandy/arraydeque"
         }
       ]
     },
@@ -6626,6 +6615,37 @@
     },
     {
       "type": "library",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#encoding_rs_io@0.1.8",
+      "author": "Andrew Gallant <jamslam@gmail.com>",
+      "name": "encoding_rs_io",
+      "version": "0.1.8",
+      "description": "Streaming transcoding for encoding_rs",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "fba3fe847045ecff794b9c138293a80db914678c453ad63fbf0c6a9eb6e00b22"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "purl": "pkg:cargo/encoding_rs_io@0.1.8",
+      "externalReferences": [
+        {
+          "type": "documentation",
+          "url": "https://docs.rs/encoding_rs_io"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/BurntSushi/encoding_rs_io"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#endi@1.1.1",
       "author": "Zeeshan Ali Khan <zeenix@gmail.com>",
       "name": "endi",
@@ -8758,6 +8778,37 @@
         {
           "type": "vcs",
           "url": "https://github.com/Traverse-Research/gpu-allocator"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#granit-parser@2.0.0",
+      "author": "Ethiraric <ethiraric@gmail.com>, David Aguilar <davvid@gmail.com>, Yuheng Chen <yuhengchen@sensetime.com>, Bourumir Wyngs <bourumir-wyngs@gmail.com>",
+      "name": "granit-parser",
+      "version": "2.0.0",
+      "description": "A YAML parser with comment, tag and style support, written in pure Rust",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "da55feca5d1625466bae068f9fd4b87892caeae70c3fe671ddb0f50d41aebf37"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "purl": "pkg:cargo/granit-parser@2.0.0",
+      "externalReferences": [
+        {
+          "type": "documentation",
+          "url": "https://docs.rs/granit-parser/latest/granit_parser"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/bourumir-wyngs/granit-parser"
         }
       ]
     },
@@ -17345,15 +17396,15 @@
     },
     {
       "type": "library",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.45",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.46",
       "name": "rustls",
-      "version": "0.23.45",
+      "version": "0.23.46",
       "description": "Rustls is a modern TLS library written in Rust.",
       "scope": "required",
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+          "content": "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
         }
       ],
       "licenses": [
@@ -17361,7 +17412,7 @@
           "expression": "Apache-2.0 OR ISC OR MIT"
         }
       ],
-      "purl": "pkg:cargo/rustls@0.23.45",
+      "purl": "pkg:cargo/rustls@0.23.46",
       "externalReferences": [
         {
           "type": "website",
@@ -17852,6 +17903,36 @@
     },
     {
       "type": "library",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#serde-saphyr@2.0.0",
+      "name": "serde-saphyr",
+      "version": "2.0.0",
+      "description": "YAML (de)serializer for Serde, emphasizing panic-free parsing, fast builds and good error reporting. Supports properties, include, tag and comment capture",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "a253edfdea34032da21af84e16fcc94f4c7a6ba237f9f3bc2dbf43cea8535c44"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "purl": "pkg:cargo/serde-saphyr@2.0.0",
+      "externalReferences": [
+        {
+          "type": "documentation",
+          "url": "https://docs.rs/serde-saphyr/latest/serde-saphyr/"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/bourumir-wyngs/serde-saphyr"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#serde-wasm-bindgen@0.6.5",
       "author": "Ingvar Stepanyan <me@rreverser.com>",
       "name": "serde-wasm-bindgen",
@@ -18159,37 +18240,6 @@
         {
           "type": "vcs",
           "url": "https://github.com/nox/serde_urlencoded"
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#serde_yaml@0.9.34+deprecated",
-      "author": "David Tolnay <dtolnay@gmail.com>",
-      "name": "serde_yaml",
-      "version": "0.9.34+deprecated",
-      "description": "YAML data format for Serde",
-      "scope": "required",
-      "hashes": [
-        {
-          "alg": "SHA-256",
-          "content": "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
-        }
-      ],
-      "licenses": [
-        {
-          "expression": "MIT OR Apache-2.0"
-        }
-      ],
-      "purl": "pkg:cargo/serde_yaml@0.9.34+deprecated",
-      "externalReferences": [
-        {
-          "type": "documentation",
-          "url": "https://docs.rs/serde_yaml/"
-        },
-        {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/serde-yaml"
         }
       ]
     },
@@ -21838,37 +21888,6 @@
         {
           "type": "vcs",
           "url": "https://github.com/RustCrypto/traits"
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#unsafe-libyaml@0.2.11",
-      "author": "David Tolnay <dtolnay@gmail.com>",
-      "name": "unsafe-libyaml",
-      "version": "0.2.11",
-      "description": "libyaml transpiled to rust by c2rust",
-      "scope": "required",
-      "hashes": [
-        {
-          "alg": "SHA-256",
-          "content": "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
-        }
-      ],
-      "licenses": [
-        {
-          "expression": "MIT"
-        }
-      ],
-      "purl": "pkg:cargo/unsafe-libyaml@0.2.11",
-      "externalReferences": [
-        {
-          "type": "documentation",
-          "url": "https://docs.rs/unsafe-libyaml"
-        },
-        {
-          "type": "vcs",
-          "url": "https://github.com/dtolnay/unsafe-libyaml"
         }
       ]
     },
@@ -25676,8 +25695,8 @@
         "registry+https://github.com/rust-lang/crates.io-index#anyhow@1.0.104",
         "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
+        "registry+https://github.com/rust-lang/crates.io-index#serde-saphyr@2.0.0",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
-        "registry+https://github.com/rust-lang/crates.io-index#serde_yaml@0.9.34+deprecated",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
         "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
         "path+file:///vynahl7/crates/vyna-hl7-parser#0.9.0",
@@ -25700,7 +25719,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#metrics-exporter-prometheus@0.18.3",
         "registry+https://github.com/rust-lang/crates.io-index#rand@0.10.3",
         "registry+https://github.com/rust-lang/crates.io-index#reqwest@0.13.5",
-        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.45",
+        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.46",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
@@ -25731,7 +25750,7 @@
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#anyhow@1.0.104",
         "registry+https://github.com/rust-lang/crates.io-index#bytes@1.12.1",
-        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.45",
+        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.46",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
         "registry+https://github.com/rust-lang/crates.io-index#tokio@1.53.2",
         "registry+https://github.com/rust-lang/crates.io-index#tokio-rustls@0.26.6",
@@ -25782,8 +25801,8 @@
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#regex@1.13.1",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
+        "registry+https://github.com/rust-lang/crates.io-index#serde-saphyr@2.0.0",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
-        "registry+https://github.com/rust-lang/crates.io-index#serde_yaml@0.9.34+deprecated",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
         "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
         "path+file:///vynahl7/crates/vyna-hl7-parser#0.9.0"
@@ -25844,8 +25863,8 @@
         "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#regex@1.13.1",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
+        "registry+https://github.com/rust-lang/crates.io-index#serde-saphyr@2.0.0",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
-        "registry+https://github.com/rust-lang/crates.io-index#serde_yaml@0.9.34+deprecated",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
         "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
         "path+file:///vynahl7/crates/vyna-hl7-terser#0.9.0"
@@ -25855,8 +25874,8 @@
       "ref": "path+file:///vynahl7/crates/vyna-hl7-validator#0.9.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
+        "registry+https://github.com/rust-lang/crates.io-index#serde-saphyr@2.0.0",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.154",
-        "registry+https://github.com/rust-lang/crates.io-index#serde_yaml@0.9.34+deprecated",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
         "path+file:///vynahl7/crates/vyna-hl7-core#0.9.0",
         "path+file:///vynahl7/crates/vyna-hl7-terser#0.9.0"
@@ -26070,6 +26089,14 @@
       ]
     },
     {
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#annotate-snippets@0.12.16",
+      "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#anstyle@1.0.14",
+        "registry+https://github.com/rust-lang/crates.io-index#memchr@2.8.3",
+        "registry+https://github.com/rust-lang/crates.io-index#unicode-width@0.2.2"
+      ]
+    },
+    {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#anstream@1.0.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#anstyle@1.0.14",
@@ -26138,6 +26165,9 @@
         "registry+https://github.com/rust-lang/crates.io-index#cpufeatures@0.3.1",
         "registry+https://github.com/rust-lang/crates.io-index#password-hash@0.6.1"
       ]
+    },
+    {
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#arraydeque@0.5.1"
     },
     {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#arrayref@0.3.9"
@@ -27348,6 +27378,12 @@
       ]
     },
     {
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#encoding_rs_io@0.1.8",
+      "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#encoding_rs@0.8.42"
+      ]
+    },
+    {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#endi@1.1.1"
     },
     {
@@ -27852,6 +27888,13 @@
       ]
     },
     {
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#granit-parser@2.0.0",
+      "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#arraydeque@0.5.1",
+        "registry+https://github.com/rust-lang/crates.io-index#smallvec@1.16.3"
+      ]
+    },
+    {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#group@0.13.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#ff@0.13.1",
@@ -28008,7 +28051,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#http@1.5.0",
         "registry+https://github.com/rust-lang/crates.io-index#hyper@1.12.0",
         "registry+https://github.com/rust-lang/crates.io-index#hyper-util@0.1.21",
-        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.45",
+        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.46",
         "registry+https://github.com/rust-lang/crates.io-index#rustls-native-certs@0.8.4",
         "registry+https://github.com/rust-lang/crates.io-index#tokio@1.53.2",
         "registry+https://github.com/rust-lang/crates.io-index#tokio-rustls@0.26.6",
@@ -28436,7 +28479,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#nix@0.30.1",
         "registry+https://github.com/rust-lang/crates.io-index#prometheus@0.14.0",
         "registry+https://github.com/rust-lang/crates.io-index#proxy-protocol@0.5.0",
-        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.45",
+        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.46",
         "registry+https://github.com/rust-lang/crates.io-index#slog@2.8.2",
         "registry+https://github.com/rust-lang/crates.io-index#slog-stdlog@4.1.1",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
@@ -28549,7 +28592,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#metrics@0.24.6",
         "registry+https://github.com/rust-lang/crates.io-index#metrics-util@0.20.4",
         "registry+https://github.com/rust-lang/crates.io-index#quanta@0.12.6",
-        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.45",
+        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.46",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
         "registry+https://github.com/rust-lang/crates.io-index#tokio@1.53.2",
         "registry+https://github.com/rust-lang/crates.io-index#tracing@0.1.44"
@@ -29566,7 +29609,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#rand_pcg@0.10.2",
         "registry+https://github.com/rust-lang/crates.io-index#ring@0.17.14",
         "registry+https://github.com/rust-lang/crates.io-index#rustc-hash@2.1.3",
-        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.45",
+        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.46",
         "registry+https://github.com/rust-lang/crates.io-index#rustls-pki-types@1.15.1",
         "registry+https://github.com/rust-lang/crates.io-index#slab@0.4.12",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
@@ -29595,7 +29638,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#quinn-proto@0.11.19",
         "registry+https://github.com/rust-lang/crates.io-index#quinn-udp@0.5.16",
         "registry+https://github.com/rust-lang/crates.io-index#rustc-hash@2.1.3",
-        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.45",
+        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.46",
         "registry+https://github.com/rust-lang/crates.io-index#socket2@0.6.5",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.21",
         "registry+https://github.com/rust-lang/crates.io-index#tokio@1.53.2",
@@ -29775,7 +29818,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#percent-encoding@2.3.2",
         "registry+https://github.com/rust-lang/crates.io-index#pin-project-lite@0.2.17",
         "registry+https://github.com/rust-lang/crates.io-index#quinn@0.11.12",
-        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.45",
+        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.46",
         "registry+https://github.com/rust-lang/crates.io-index#rustls-pki-types@1.15.1",
         "registry+https://github.com/rust-lang/crates.io-index#rustls-platform-verifier@0.7.1",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
@@ -30079,7 +30122,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#jni@0.22.4",
         "registry+https://github.com/rust-lang/crates.io-index#log@0.4.34",
         "registry+https://github.com/rust-lang/crates.io-index#once_cell@1.21.4",
-        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.45",
+        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.46",
         "registry+https://github.com/rust-lang/crates.io-index#rustls-native-certs@0.8.4",
         "registry+https://github.com/rust-lang/crates.io-index#rustls-platform-verifier-android@0.2.0",
         "registry+https://github.com/rust-lang/crates.io-index#rustls-webpki@0.103.15",
@@ -30099,7 +30142,7 @@
       ]
     },
     {
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.45",
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.46",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#aws-lc-rs@1.18.1",
         "registry+https://github.com/rust-lang/crates.io-index#log@0.4.34",
@@ -30206,6 +30249,20 @@
       "ref": "registry+https://github.com/rust-lang/crates.io-index#semver@1.0.28"
     },
     {
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#serde-saphyr@2.0.0",
+      "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#annotate-snippets@0.12.16",
+        "registry+https://github.com/rust-lang/crates.io-index#base64@0.23.1",
+        "registry+https://github.com/rust-lang/crates.io-index#encoding_rs_io@0.1.8",
+        "registry+https://github.com/rust-lang/crates.io-index#granit-parser@2.0.0",
+        "registry+https://github.com/rust-lang/crates.io-index#nohash-hasher@0.2.0",
+        "registry+https://github.com/rust-lang/crates.io-index#num-traits@0.2.19",
+        "registry+https://github.com/rust-lang/crates.io-index#serde_core@1.0.229",
+        "registry+https://github.com/rust-lang/crates.io-index#smallvec@1.16.3",
+        "registry+https://github.com/rust-lang/crates.io-index#zmij@1.0.23"
+      ]
+    },
+    {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#serde-wasm-bindgen@0.6.5",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#js-sys@0.3.106",
@@ -30280,16 +30337,6 @@
         "registry+https://github.com/rust-lang/crates.io-index#itoa@1.0.18",
         "registry+https://github.com/rust-lang/crates.io-index#ryu@1.0.23",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229"
-      ]
-    },
-    {
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#serde_yaml@0.9.34+deprecated",
-      "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#indexmap@2.14.2",
-        "registry+https://github.com/rust-lang/crates.io-index#itoa@1.0.18",
-        "registry+https://github.com/rust-lang/crates.io-index#ryu@1.0.23",
-        "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
-        "registry+https://github.com/rust-lang/crates.io-index#unsafe-libyaml@0.2.11"
       ]
     },
     {
@@ -30882,7 +30929,7 @@
     {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#tokio-rustls@0.26.6",
       "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.45",
+        "registry+https://github.com/rust-lang/crates.io-index#rustls@0.23.46",
         "registry+https://github.com/rust-lang/crates.io-index#tokio@1.53.2"
       ]
     },
@@ -31194,9 +31241,6 @@
         "registry+https://github.com/rust-lang/crates.io-index#crypto-common@0.2.2",
         "registry+https://github.com/rust-lang/crates.io-index#ctutils@0.4.3"
       ]
-    },
-    {
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#unsafe-libyaml@0.2.11"
     },
     {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#untrusted@0.7.1"

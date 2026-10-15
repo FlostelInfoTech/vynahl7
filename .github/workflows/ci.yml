@@ -138,3 +138,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Check under MSRV toolchain
         run: cargo check --workspace --locked
+
+  # Supply chain: advisories, licenses, duplicate versions, and source
+  # registries per deny.toml. Fails on known vulnerabilities.
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2

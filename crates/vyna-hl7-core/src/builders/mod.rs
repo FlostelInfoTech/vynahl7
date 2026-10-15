@@ -171,9 +171,12 @@ static CONTROL_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// millisecond. `MSG<millis><seq>` stays within MSH-10's 20-character limit.
 pub fn generate_control_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
+    // A pre-1970 system clock (broken RTC/VM) must not panic ID
+    // generation: fall back to zero, uniqueness still holds via the
+    // counter and PID mix below.
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_millis();
     let pid = std::process::id() as u64;
     let seq = CONTROL_ID_COUNTER

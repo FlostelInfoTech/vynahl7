@@ -30,7 +30,11 @@ pub enum Error {
 
     /// YAML parsing error
     #[error("YAML parsing error: {0}")]
-    Yaml(#[from] serde_yaml::Error),
+    Yaml(#[from] serde_saphyr::Error),
+
+    /// YAML serialization error
+    #[error("YAML serialization error: {0}")]
+    YamlSer(#[from] serde_saphyr::SerializeError),
 
     /// JSON parsing error
     #[error("JSON parsing error: {0}")]

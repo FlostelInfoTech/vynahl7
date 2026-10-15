@@ -204,7 +204,7 @@ impl TransformConfig {
 
     /// Load configuration from a YAML string
     pub fn from_yaml(yaml: &str) -> Result<Self> {
-        serde_yaml::from_str(yaml).map_err(Error::Yaml)
+        serde_saphyr::from_str(yaml).map_err(Error::Yaml)
     }
 
     /// Load configuration from a YAML file
@@ -228,7 +228,7 @@ impl TransformConfig {
 
     /// Save configuration to a YAML string
     pub fn to_yaml(&self) -> Result<String> {
-        serde_yaml::to_string(self).map_err(Error::Yaml)
+        serde_saphyr::to_string(self).map_err(Error::YamlSer)
     }
 
     /// Save configuration to a YAML file

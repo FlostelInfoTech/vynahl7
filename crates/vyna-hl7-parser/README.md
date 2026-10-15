@@ -258,6 +258,21 @@ Run performance benchmarks:
 cargo bench -p vyna-hl7-parser
 ```
 
+## Fuzzing
+
+The byte entry point is fuzzed with [cargo-fuzz](https://rust-fuzz.github.io/book/cargo-fuzz.html)
+(libFuzzer, nightly only). Targets live in `fuzz/fuzz_targets/` (`parse`,
+`roundtrip`) with seeds in `fuzz/corpus/`:
+
+```bash
+cargo install cargo-fuzz
+rustup toolchain install nightly
+cargo +nightly fuzz run parse -- -max_total_time=300
+```
+
+A weekly scheduled CI workflow (`.github/workflows/fuzz.yml`) runs both
+targets for 10 minutes each and uploads any crash artifacts.
+
 ## Related Crates
 
 - **vyna-hl7-core**: Core data structures for parsed messages

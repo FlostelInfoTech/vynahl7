@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TerserQuery::try_get_if` returns `Err` on malformed paths instead of panicking
 - FHIR `converted_segment_ids`/`skipped_segment_ids` report which segments bundle conversion drops
 - WASM `validateMessageWithMode` (strict/standard/lenient parity with the CLI), `mode()`/`schemaApplied()` on results, receiving app/facility in message JSON
+- `fuzz/` cargo-fuzz harness (`parse` and `roundtrip` targets plus a seed corpus) with a weekly scheduled CI workflow
+- `cargo-deny` supply-chain gate (`deny.toml` + CI `supply-chain` job covering advisories, licenses, bans, sources)
 
 ### Fixed
 
@@ -26,12 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLI strips trailing paths from `mllp://` send targets; `info` average guards empty messages; `convert` failures use `bail!`
 - FHIR `convert_oru` example now converts OBR DiagnosticReports; `convert_adt` shows bundle conversion and dropped segments
 - Docs: `integration.md` CLI section lists all 7 commands with `diff` flags and the `fhir` feature gate; schemas README catalog regenerated (47 keys, 310 files with per-version availability); CONVERTERS.md discloses lossy status/gender/class/type defaults; `performance.md` lists all 13 bench targets; SBOM README clarifies 22 crates + facade; WASM README/d.ts cover the new validation API and Firefox/geckodriver test prereq
+- Supply chain: replaced unmaintained `serde_yaml`/`unsafe-libyaml` with `serde-saphyr` (RUSTSEC-2024-0449); updated `rustls` 0.23.45 → 0.23.46 (RUSTSEC-2026-0346–0349)
+- `generate_control_id` no longer panics on pre-1970 system clocks (falls back to zero; uniqueness still holds via counter+PID)
 
 ### Changed
 
 - **Breaking**: `Terser::get("PID-0")` returns `Err` (was `Ok(None)`); component/subcomponent 0 still reads `None`
 - **Breaking**: `Delimiters::from_encoding_characters`/`validate` reject non-ASCII separators (previously accepted when unique)
 - ORU `--to fhir` CLI output now includes the Patient resource when PID is present
+- templates/transform `Error` gains a `YamlSer` variant (serde-saphyr splits serialize/deserialize errors); template structs gain `PartialEq`
 
 ## [0.9.0] - 2026-10-13
 

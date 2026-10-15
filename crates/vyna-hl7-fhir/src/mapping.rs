@@ -154,7 +154,7 @@ const MAX_TARGET_DEPTH: usize = 64;
 impl Mapping {
     /// Parse and validate a mapping from YAML text.
     pub fn from_yaml(yaml: &str) -> ConversionResult<Self> {
-        let mapping: Mapping = serde_yaml::from_str(yaml)
+        let mapping: Mapping = serde_saphyr::from_str(yaml)
             .map_err(|e| ConversionError::Mapping(format!("invalid mapping YAML: {e}")))?;
         mapping.validate()?;
         Ok(mapping)

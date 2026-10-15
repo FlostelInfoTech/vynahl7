@@ -1,0 +1,43 @@
+# cargo-deny configuration: advisories, licenses, bans, sources.
+# Enforced by the `supply-chain` CI job. See `cargo deny --help`.
+[graph]
+targets = [
+    "x86_64-unknown-linux-gnu",
+]
+
+[advisories]
+ignore = [
+    # No active exceptions. Document any addition with the RUSTSEC id
+    # and why it does not apply.
+]
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "Zlib",
+    "MPL-2.0",
+    "CC0-1.0",
+    "Unlicense",
+]
+confidence-threshold = 0.8
+exceptions = [
+    # No active exceptions.
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

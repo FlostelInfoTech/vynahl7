@@ -17,7 +17,7 @@ vyna-hl7-core.workspace = true
 vyna-hl7-terser.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-serde_yaml.workspace = true
+serde-saphyr.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

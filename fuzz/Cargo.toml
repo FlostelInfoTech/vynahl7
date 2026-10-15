@@ -1,0 +1,29 @@
+[package]
+name = "vyna-hl7-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.vyna-hl7-parser]
+path = "../crates/vyna-hl7-parser"
+
+[[bin]]
+name = "parse"
+path = "fuzz_targets/parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "roundtrip"
+path = "fuzz_targets/roundtrip.rs"
+test = false
+doc = false
+
+# Standalone workspace: invisible to the parent workspace and to publishing.
+[workspace]

@@ -75,7 +75,7 @@ pub enum DeclarativeError {
 
     /// Rule file is not valid YAML
     #[error("YAML parsing error: {0}")]
-    Yaml(#[from] serde_yaml::Error),
+    Yaml(#[from] serde_saphyr::Error),
 
     /// Rule file is not valid JSON
     #[error("JSON parsing error: {0}")]
@@ -249,7 +249,7 @@ impl RuleConfig {
 
     /// Load rules from a YAML string
     pub fn from_yaml_str(content: &str) -> Result<Self> {
-        let config: RuleConfig = serde_yaml::from_str(content)?;
+        let config: RuleConfig = serde_saphyr::from_str(content)?;
         Ok(config)
     }
 

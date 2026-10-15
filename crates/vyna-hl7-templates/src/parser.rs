@@ -25,7 +25,7 @@ impl MessageTemplate {
     /// assert_eq!(template.name, "Basic ADT");
     /// ```
     pub fn from_yaml(yaml: &str) -> Result<Self> {
-        serde_yaml::from_str(yaml).map_err(Error::Yaml)
+        serde_saphyr::from_str(yaml).map_err(Error::Yaml)
     }
 
     /// Parse a template from YAML file
@@ -90,7 +90,7 @@ impl MessageTemplate {
     /// assert!(yaml.contains("name: Test"));
     /// ```
     pub fn to_yaml(&self) -> Result<String> {
-        serde_yaml::to_string(self).map_err(Error::Yaml)
+        serde_saphyr::to_string(self).map_err(Error::YamlSer)
     }
 
     /// Serialize template to YAML file
@@ -213,11 +213,14 @@ segments:
             .with_segment(SegmentTemplate::new("MSH").required());
 
         let yaml = template.to_yaml().unwrap();
-        assert!(yaml.contains("name: Test"));
-        assert!(yaml.contains("version: '2.5'"));
-        assert!(yaml.contains("message_type: ADT"));
-        assert!(yaml.contains("id: MSH"));
-        assert!(yaml.contains("required: true"));
+        // Quoting style is serializer-defined; assert content keys plus a
+        // full round trip instead of exact formatting.
+        for key in ["name:", "version:", "message_type:", "id:", "required:"] {
+            assert!(yaml.contains(key), "missing {key} in:\n{yaml}");
+        }
+        assert!(yaml.contains("2.5"));
+        let back = MessageTemplate::from_yaml(&yaml).unwrap();
+        assert_eq!(back, template);
     }
 
     #[test]

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// A complete message template
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MessageTemplate {
     /// Template name
     pub name: String,
@@ -92,7 +92,7 @@ impl MessageTemplate {
 }
 
 /// A segment template
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SegmentTemplate {
     /// Segment ID (e.g., "MSH", "PID")
     pub id: String,
@@ -161,7 +161,7 @@ impl SegmentTemplate {
 }
 
 /// A field template
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FieldTemplate {
     /// Whether the field is required
     #[serde(default)]
@@ -257,7 +257,7 @@ impl Default for FieldTemplate {
 }
 
 /// A component template (for composite fields)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ComponentTemplate {
     /// Component position (1-based)
     pub position: usize,

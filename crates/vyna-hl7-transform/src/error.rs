@@ -28,7 +28,12 @@ pub enum Error {
     /// YAML parsing error
     #[cfg(feature = "serde")]
     #[error("YAML parsing error: {0}")]
-    Yaml(#[from] serde_yaml::Error),
+    Yaml(#[from] serde_saphyr::Error),
+
+    /// YAML serialization error
+    #[cfg(feature = "serde")]
+    #[error("YAML serialization error: {0}")]
+    YamlSer(#[from] serde_saphyr::SerializeError),
 
     /// JSON parsing error
     #[cfg(feature = "serde")]
