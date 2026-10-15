@@ -10,8 +10,8 @@ fn main() {
     // Generate the ICO file from SVG if it doesn't exist or is older than the SVG.
     // OUT_DIR keeps regenerable output out of the source tree.
     let svg_path = PathBuf::from("assets/favicon.svg");
-    let ico_path = PathBuf::from(std::env::var("OUT_DIR").expect("cargo sets OUT_DIR"))
-        .join("vyna_hl7.ico");
+    let ico_path =
+        PathBuf::from(std::env::var("OUT_DIR").expect("cargo sets OUT_DIR")).join("vyna_hl7.ico");
 
     let should_generate = if ico_path.exists() {
         // Check if SVG is newer than ICO
