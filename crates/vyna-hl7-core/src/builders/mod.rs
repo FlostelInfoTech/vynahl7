@@ -19,6 +19,7 @@ pub mod pharmacy;
 pub mod ppr;
 pub mod qbp;
 pub mod qry;
+pub mod rich;
 pub mod rsp;
 pub mod siu;
 pub mod vxu;

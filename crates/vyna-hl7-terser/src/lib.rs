@@ -119,6 +119,61 @@ impl<'a> Terser<'a> {
 
         Ok(value)
     }
+
+    /// Borrow the underlying message.
+    ///
+    /// For callers that navigate beyond path notation (repetition
+    /// walks, segment scans) without giving up the terser.
+    pub fn message(&self) -> &'a Message {
+        self.message
+    }
+
+    /// Get a composite field's full value using path notation.
+    ///
+    /// Unlike [`Terser::get`], which resolves to the addressed
+    /// component, this returns every component joined by `^` when the
+    /// path names no component (e.g. `get_composite("OBX(1)-5")`).
+    /// Paths WITH a component delegate to the same resolution as
+    /// `get`, owned as a `String`.
+    pub fn get_composite(&self, path: &str) -> Result<Option<String>> {
+        let parsed_path = TerserPath::parse(path)?;
+
+        let segments = self.message.get_segments_by_id(&parsed_path.segment_id);
+        if segments.is_empty() {
+            return Ok(None);
+        }
+
+        let segment = segments.get(parsed_path.segment_index).ok_or_else(|| {
+            Error::terser_path(format!(
+                "Segment index {} out of bounds for {}",
+                parsed_path.segment_index, parsed_path.segment_id
+            ))
+        })?;
+
+        let field = match segment.get_field(parsed_path.field_index) {
+            Some(f) => f,
+            None => return Ok(None),
+        };
+
+        // Component addressed: same resolution as `get`, owned.
+        if parsed_path.component_index.is_some() {
+            return Ok(path::resolve_field_value(
+                field,
+                parsed_path.repetition_index,
+                parsed_path.component_index,
+                parsed_path.subcomponent_index,
+            )
+            .map(|s| s.to_string()));
+        }
+
+        // No component: the full composite value.
+        let repetition = match field.get_repetition(parsed_path.repetition_index) {
+            Some(r) => r,
+            None => return Ok(None),
+        };
+
+        Ok(repetition.full_value())
+    }
 }
 
 /// Maximum 1-based index [`TerserMut::set`] accepts in any single
@@ -803,5 +858,38 @@ mod tests {
         let read_terser = Terser::new(&message);
         assert_eq!(read_terser.get("OBX(100)-5").unwrap(), Some("4.2"));
         assert_eq!(message.get_segments_by_id("OBX").len(), 100);
+    }
+
+    #[test]
+    fn test_message_borrows_the_underlying_message() {
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ORU^R01|123|P|2.5\r";
+        let message = parse_message(hl7).unwrap();
+        let terser = Terser::new(&message);
+
+        assert_eq!(
+            terser.message().get_segments_by_id("MSH").len(),
+            1,
+            "the accessor must expose the parsed message for segment walks"
+        );
+    }
+
+    #[test]
+    fn test_get_composite_returns_all_components_joined() {
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ORU^R01|123|P|2.5\r";
+        let message = parse_message(hl7).unwrap();
+        let terser = Terser::new(&message);
+
+        // No component addressed: every component, joined.
+        assert_eq!(
+            terser.get_composite("MSH-9").unwrap(),
+            Some("ORU^R01".to_string())
+        );
+        // Component addressed: same resolution as `get`, owned.
+        assert_eq!(
+            terser.get_composite("MSH-9-1").unwrap(),
+            Some("ORU".to_string())
+        );
+        // Absent segment: None, not an error.
+        assert_eq!(terser.get_composite("ZZZ-1").unwrap(), None);
     }
 }
