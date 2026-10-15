@@ -1,3 +1,7 @@
 target/
 artifacts/
 *.log
+# libFuzzer writes new coverage units back into the corpus dir on every
+# run (extensionless hex names). Seeds use .hl7 and stay tracked.
+corpus/*/*
+!corpus/*/*.hl7
