@@ -129,7 +129,8 @@ jobs:
       - run: cargo fmt --check
 
   # Minimum supported Rust version: every manifest pins rust-version 1.99,
-  # so the locked workspace must at least check under that toolchain.
+  # so the workspace must at least check under that exact toolchain.
+  # No --locked: Cargo.lock is untracked, CI resolves fresh.
   msrv:
     runs-on: ubuntu-latest
     steps:
@@ -137,7 +138,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.99
       - uses: Swatinem/rust-cache@v2
       - name: Check under MSRV toolchain
-        run: cargo check --workspace --locked
+        run: cargo check --workspace
 
   # Supply chain: advisories, licenses, duplicate versions, and source
   # registries per deny.toml. Fails on known vulnerabilities.

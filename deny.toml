@@ -17,6 +17,8 @@ allow = [
     "Apache-2.0",
     "BSD-2-Clause",
     "BSD-3-Clause",
+    # Mozilla root-certificate data (webpki-roots, via rustls TLS features).
+    "CDLA-Permissive-2.0",
     "ISC",
     "Unicode-DFS-2016",
     "Unicode-3.0",
