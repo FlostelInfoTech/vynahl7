@@ -106,6 +106,15 @@ cargo bench -p vyna-hl7-terser
 
 When making changes that could affect performance, run benchmarks before and after (see `docs/performance.md`).
 
+### Fuzzing and Supply Chain
+```bash
+# Fuzz the parser (nightly + cargo-fuzz; targets in fuzz/fuzz_targets/)
+cargo +nightly fuzz run parse -- -max_total_time=300
+
+# Supply-chain gate, same as the CI supply-chain job (deny.toml)
+cargo deny check
+```
+
 ### WebAssembly
 ```bash
 # Build WASM package

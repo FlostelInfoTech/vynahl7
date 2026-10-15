@@ -168,11 +168,19 @@ pointer to the suite that proves it. Roadmap items are marked
   release review.
 - REQ-NFR-030 (supply chain): Dependencies are declared in
   `Cargo.toml`; a CycloneDX SBOM is generated per release (see
-  [SBOM](sbom/)). Verify: SBOM regeneration.
+  [SBOM](sbom/)); advisories, licenses, duplicate versions, and
+  source registries are gated by `cargo-deny` (`deny.toml`).
+  Verify: SBOM regeneration, CI `supply-chain` job.
 - REQ-NFR-040 (quality gates): `#![warn]`-clean `cargo clippy
   --workspace --all-targets` and per-area test suites are required
   before merge. Verify: `.github/workflows/ci.yml` (`check`,
-  `feature-combos`, `fmt` jobs).
+  `wasm-tests`, `feature-combos`, `fmt`, `msrv`, `supply-chain`
+  jobs).
+- REQ-NFR-050 (robustness): The parser byte entry point is fuzzed
+  (`parse` and `roundtrip` cargo-fuzz targets with a seed corpus);
+  the weekly scheduled workflow must run clean, and any crasher is
+  fixed or quarantined before release. Verify:
+  `.github/workflows/fuzz.yml`, `fuzz/corpus/`.
 
 ## 10. Verification mapping
 
@@ -183,6 +191,7 @@ pointer to the suite that proves it. Roadmap items are marked
 | Validation | `cargo test -p vyna-hl7-validator`, `site_tables.rs` |
 | Transports | mllp/http tests incl. `--features tls,testing` |
 | UX | CLI tests, testpanel tests, wasm-pack builds |
+| Robustness | cargo-fuzz parse/roundtrip (weekly scheduled CI) |
 | Full gate | `cargo test --workspace` green across default and all-features builds, clippy clean |
 
 ## 11. Roadmap (explicitly out of scope for 0.9.0)

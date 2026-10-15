@@ -144,6 +144,12 @@ validator crate to avoid a core→validator dependency cycle.
   loader resolves version sub-mapping and v2.3 fallback for types
   introduced after v2.2. Never hand-edit generated content without
   updating the pipeline (`scripts/generate_schemas.py`).
+- **Supply chain**: `deny.toml` gates advisories, licenses,
+  duplicate versions, and registries in CI (`supply-chain` job);
+  per-release CycloneDX SBOM under `docs/sbom/`.
+- **Fuzzing**: `fuzz/` holds cargo-fuzz targets over the parser
+  byte entry point (`parse`, `roundtrip`) with a seed corpus; a
+  weekly scheduled workflow runs each target 10 minutes.
 
 ## 9. Key decisions
 
