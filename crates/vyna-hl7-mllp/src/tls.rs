@@ -42,6 +42,31 @@ fn load_private_key(path: impl AsRef<Path>) -> Result<PrivateKeyDer<'static>> {
         .ok_or_else(|| Error::Network("No private key found in file".to_string()))
 }
 
+/// Parse PEM certificates from in-memory bytes (same DER-out contract as
+/// [`load_certs`], without the file read — for material sourced from a
+/// database row, KMS, or secret manager rather than disk).
+#[cfg(feature = "tls")]
+fn parse_certs_pem(pem: &[u8], what: &str) -> Result<Vec<CertificateDer<'static>>> {
+    CertificateDer::pem_slice_iter(pem)
+        .map(|item| {
+            item.map(|cert| cert.into_owned())
+                .map_err(|e| Error::Network(format!("Failed to parse {what}: {e}")))
+        })
+        .collect()
+}
+
+/// Parse the first PEM private key (PKCS#8, PKCS#1, or SEC1) from
+/// in-memory bytes. Byte-slice twin of [`load_private_key`].
+#[cfg(feature = "tls")]
+fn parse_private_key_pem(pem: &[u8]) -> Result<PrivateKeyDer<'static>> {
+    PrivateKeyDer::pem_slice_iter(pem)
+        .next()
+        .transpose()
+        .map_err(|e| Error::Network(format!("Failed to parse private key: {e}")))?
+        .map(|k| k.clone_key())
+        .ok_or_else(|| Error::Network("No private key found in PEM".to_string()))
+}
+
 /// TLS configuration for MLLP client connections
 #[cfg(feature = "tls")]
 #[derive(Clone)]
@@ -124,6 +149,50 @@ impl TlsClientConfig {
         })
     }
 
+    /// Create a TLS client configuration with a custom root CA
+    /// sourced as PEM bytes. Equivalent to [`Self::with_ca_cert`]
+    /// but accepts in-memory bytes (DB, KMS, secret manager).
+    ///
+    /// # Arguments
+    ///
+    /// * `ca_pem` - PEM-encoded CA certificate bytes
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "tls")]
+    /// # {
+    /// use vyna_hl7_mllp::tls::TlsClientConfig;
+    ///
+    /// let ca_pem = std::fs::read("ca-cert.pem").unwrap();
+    /// let config = TlsClientConfig::with_ca_cert_pem(&ca_pem).unwrap();
+    /// # }
+    /// ```
+    pub fn with_ca_cert_pem(ca_pem: &[u8]) -> Result<Self> {
+        let mut root_store = RootCertStore::empty();
+
+        let ca_certs = parse_certs_pem(ca_pem, "CA certificate")?;
+        if ca_certs.is_empty() {
+            return Err(Error::Network(
+                "No certificates found in CA certificate PEM".to_string(),
+            ));
+        }
+
+        for cert in ca_certs {
+            root_store
+                .add(cert)
+                .map_err(|e| Error::Network(format!("Failed to add CA certificate: {e}")))?;
+        }
+
+        let config = ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+
+        Ok(Self {
+            config: Arc::new(config),
+        })
+    }
+
     /// Create a TLS client configuration with mutual TLS (client certificate)
     ///
     /// # Arguments
@@ -184,6 +253,65 @@ impl TlsClientConfig {
             config: Arc::new(config),
         })
     }
+
+    /// Create a mutual-TLS client configuration from PEM bytes.
+    /// Equivalent to [`Self::with_mtls`] but accepts in-memory bytes
+    /// (DB, KMS, secret manager).
+    ///
+    /// # Arguments
+    ///
+    /// * `ca_pem` - PEM-encoded CA certificate bytes
+    /// * `client_cert_pem` - PEM-encoded client certificate bytes
+    /// * `client_key_pem` - PEM-encoded client private key bytes
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "tls")]
+    /// # {
+    /// use vyna_hl7_mllp::tls::TlsClientConfig;
+    ///
+    /// let ca_pem = std::fs::read("ca-cert.pem").unwrap();
+    /// let cert_pem = std::fs::read("client-cert.pem").unwrap();
+    /// let key_pem = std::fs::read("client-key.pem").unwrap();
+    /// let config =
+    ///     TlsClientConfig::with_mtls_pem(&ca_pem, &cert_pem, &key_pem).unwrap();
+    /// # }
+    /// ```
+    pub fn with_mtls_pem(
+        ca_pem: &[u8],
+        client_cert_pem: &[u8],
+        client_key_pem: &[u8],
+    ) -> Result<Self> {
+        let mut root_store = RootCertStore::empty();
+
+        let ca_certs = parse_certs_pem(ca_pem, "CA certificate")?;
+        if ca_certs.is_empty() {
+            return Err(Error::Network(
+                "No certificates found in CA certificate PEM".to_string(),
+            ));
+        }
+
+        for cert in ca_certs {
+            root_store
+                .add(cert)
+                .map_err(|e| Error::Network(format!("Failed to add CA certificate: {e}")))?;
+        }
+
+        let client_certs: Vec<CertificateDer> =
+            parse_certs_pem(client_cert_pem, "client certificate")?;
+
+        let client_key = parse_private_key_pem(client_key_pem)?;
+
+        let config = ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_client_auth_cert(client_certs, client_key)
+            .map_err(|e| Error::Network(format!("Failed to configure client auth: {e}")))?;
+
+        Ok(Self {
+            config: Arc::new(config),
+        })
+    }
 }
 
 /// TLS configuration for MLLP server connections
@@ -223,6 +351,44 @@ impl TlsServerConfig {
             .with_no_client_auth()
             .with_single_cert(certs, key)
             .map_err(|e| Error::Network(format!("Failed to configure server TLS: {}", e)))?;
+
+        Ok(Self {
+            config: Arc::new(config),
+        })
+    }
+
+    /// Create a TLS server configuration from PEM bytes.
+    ///
+    /// Equivalent to [`Self::new`] but takes the cert and key as
+    /// in-memory PEM buffers — useful when the material is sourced
+    /// from a database row or KMS rather than a file on disk.
+    ///
+    /// # Arguments
+    ///
+    /// * `cert_pem` - PEM-encoded server certificate bytes
+    /// * `key_pem` - PEM-encoded server private key bytes
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "tls")]
+    /// # {
+    /// use vyna_hl7_mllp::tls::TlsServerConfig;
+    ///
+    /// let cert_pem = std::fs::read("server-cert.pem").unwrap();
+    /// let key_pem = std::fs::read("server-key.pem").unwrap();
+    /// let config = TlsServerConfig::new_pem(&cert_pem, &key_pem).unwrap();
+    /// # }
+    /// ```
+    pub fn new_pem(cert_pem: &[u8], key_pem: &[u8]) -> Result<Self> {
+        let certs: Vec<CertificateDer> = parse_certs_pem(cert_pem, "server certificate")?;
+
+        let key = parse_private_key_pem(key_pem)?;
+
+        let config = ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)
+            .map_err(|e| Error::Network(format!("Failed to configure server TLS: {e}")))?;
 
         Ok(Self {
             config: Arc::new(config),
@@ -288,6 +454,65 @@ impl TlsServerConfig {
             .with_client_cert_verifier(client_cert_verifier)
             .with_single_cert(certs, key)
             .map_err(|e| Error::Network(format!("Failed to configure server TLS: {}", e)))?;
+
+        Ok(Self {
+            config: Arc::new(config),
+        })
+    }
+
+    /// Create a mutual-TLS server configuration from PEM bytes.
+    ///
+    /// Same as [`Self::with_mtls`] but sources cert / key / client
+    /// CA as in-memory PEM buffers.
+    ///
+    /// # Arguments
+    ///
+    /// * `cert_pem` - PEM-encoded server certificate bytes
+    /// * `key_pem` - PEM-encoded server private key bytes
+    /// * `ca_pem` - PEM-encoded CA certificate bytes for client verification
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "tls")]
+    /// # {
+    /// use vyna_hl7_mllp::tls::TlsServerConfig;
+    ///
+    /// let cert_pem = std::fs::read("server-cert.pem").unwrap();
+    /// let key_pem = std::fs::read("server-key.pem").unwrap();
+    /// let ca_pem = std::fs::read("ca-cert.pem").unwrap();
+    /// let config =
+    ///     TlsServerConfig::with_mtls_pem(&cert_pem, &key_pem, &ca_pem).unwrap();
+    /// # }
+    /// ```
+    pub fn with_mtls_pem(cert_pem: &[u8], key_pem: &[u8], ca_pem: &[u8]) -> Result<Self> {
+        let mut client_auth_roots = RootCertStore::empty();
+        let ca_certs = parse_certs_pem(ca_pem, "CA certificate")?;
+        if ca_certs.is_empty() {
+            return Err(Error::Network(
+                "No certificates found in CA certificate PEM".to_string(),
+            ));
+        }
+
+        for cert in ca_certs {
+            client_auth_roots
+                .add(cert)
+                .map_err(|e| Error::Network(format!("Failed to add CA certificate: {e}")))?;
+        }
+
+        let certs: Vec<CertificateDer> = parse_certs_pem(cert_pem, "server certificate")?;
+
+        let key = parse_private_key_pem(key_pem)?;
+
+        let client_cert_verifier =
+            rustls::server::WebPkiClientVerifier::builder(Arc::new(client_auth_roots))
+                .build()
+                .map_err(|e| Error::Network(format!("Failed to build client verifier: {e}")))?;
+
+        let config = ServerConfig::builder()
+            .with_client_cert_verifier(client_cert_verifier)
+            .with_single_cert(certs, key)
+            .map_err(|e| Error::Network(format!("Failed to configure server TLS: {e}")))?;
 
         Ok(Self {
             config: Arc::new(config),
@@ -374,4 +599,107 @@ mod tests {
 
     // Note: Additional tests would require test certificates
     // These should be added in integration tests
+
+    // Static self-signed fixture (CN=pem-ctor-test, 10-year expiry,
+    // generated once with openssl; test-only material, never trusted
+    // anywhere). One cert doubles as CA, server, and client identity:
+    // config construction only parses and checks key/cert consistency.
+    const FIXTURE_CERT_PEM: &str = "-----BEGIN CERTIFICATE-----\nMIIDETCCAfmgAwIBAgIUBadJx+R2ThDFVEs2iULZY3ep+zAwDQYJKoZIhvcNAQEL\nBQAwGDEWMBQGA1UEAwwNcGVtLWN0b3ItdGVzdDAeFw0yNjEwMTUwNjEyMjRaFw0z\nNjEwMTIwNjEyMjRaMBgxFjAUBgNVBAMMDXBlbS1jdG9yLXRlc3QwggEiMA0GCSqG\nSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDNpR1oubUSO9nLf8Utipi3e+SO0HYEgn2J\nKgUDcSM/PhMRRZI7/hwZh7gZ0Gx+cNwCggyQvLxNo539M131Q9wiKP6aPz8QkMJa\nAyEwAZlSDaFkj4ve4EefBqIUdZAKLefCNcz4IlH/DPfRmH1iCcsc+SzSPK3o13ed\nFIhbjmM+pGQOc2kvw9h6zGJOq9Y6uYfVAcCVyn49K5gNw8jpQ1bKLE2uTwEvDy7g\n2omPybiXcWjC3aI0mg5RF6ysd4k7p8Mb5hZ4U0hmiixOp1+49tUOhSim0Dr/ylL6\nmlEjBYwspNflAQLzfo27tbGbvcFcG+4Gx5EMDrRzkmfm5za+qJmDAgMBAAGjUzBR\nMB0GA1UdDgQWBBTlaRk4stco+I8bCPcIQfL5Da8sxzAfBgNVHSMEGDAWgBTlaRk4\nstco+I8bCPcIQfL5Da8sxzAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUA\nA4IBAQAJynfo6bLVvBtWeVIfrh/BDBBAw/oT6S0t3hBF37IAGp0OKS+hA6C/nOOl\nJfnyC87xeXnPhRf3Cf6rhiQoZfijpphkCJ7vy3l/tjzODw1x4HSHzA6qpYG4sfXy\nYRxt8PNdWZy9/9apWW/36tBrlPGMmgLRFRQFaYB9Wt6xt/zmrPTDdWN6RrS33Nvn\n1C07xWOi4Kr+G2mnsQax66SmlDGLuWHlzNpQE/P6x11d1rPYUE/O0UWgaGrxvUu6\nb45RrM6BCsr7LswJXvjii1AfgHsqh5NaCBOkTUemQY2EhY968QW6L6Dg0R2EHDwZ\nI4Ijz1YQlVbQQYlRN7NzH7Pvg2JT\n-----END CERTIFICATE-----\n";
+    const FIXTURE_KEY_PEM: &str = "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDNpR1oubUSO9nL\nf8Utipi3e+SO0HYEgn2JKgUDcSM/PhMRRZI7/hwZh7gZ0Gx+cNwCggyQvLxNo539\nM131Q9wiKP6aPz8QkMJaAyEwAZlSDaFkj4ve4EefBqIUdZAKLefCNcz4IlH/DPfR\nmH1iCcsc+SzSPK3o13edFIhbjmM+pGQOc2kvw9h6zGJOq9Y6uYfVAcCVyn49K5gN\nw8jpQ1bKLE2uTwEvDy7g2omPybiXcWjC3aI0mg5RF6ysd4k7p8Mb5hZ4U0hmiixO\np1+49tUOhSim0Dr/ylL6mlEjBYwspNflAQLzfo27tbGbvcFcG+4Gx5EMDrRzkmfm\n5za+qJmDAgMBAAECggEAWQ26TRoyqBlECUSlAkJFPRwJT7FFklFiBK6uKh3p+h6r\nCi07FQDHcWTdHEyuVxkPpYRk5Z7d2q9SoQ4ID8jZwO9IxkpCSK2vhGRbkFr45tgh\nPpeNJjCww1SPhtWcUVQsy2UaBJB0OsOGY/0puvVrwHnFZ6vAUhdQ5LS6Eg/4uWyX\nXn2eu3b2wwATTjAgIvahvvydhGSuqP/pRR74bfbvXJYtIRSsxa6oDTVaSs7gvFkz\nLp2iU4jMJ/zbMBLbNEB1Q96YvhamF6FPEuic4BxMWt7ZROFLCnkwQrKhjoL1HXbC\naTFmOReGNPvwD+FaNSM1G0s6X6ZDsCHyImxfX1HeLQKBgQDrpflDwmTBU70Nh98J\nSUeYSfxZGIClk88P4/4WSioYhBjzspDVLbWQalAIoGpBrKFO/Ry5yIbp/nIWX7K8\nnx02aaF+RpUXGAieAlMQEcDFQM94/+vGikZl3RyI6FopFSFyWqKeJZDWms1XYzb1\nc8nKp9NcSxRPbTOPQjGDz6mMxQKBgQDfZ8mEo9fXxZxcRkjCQNkgNNVnHpd/Ndjd\nbntoAZ6Kv1kvPjOXFhadQERSRY49IHUCVb7zdiLCP06nEJAARi8iKM8mRDshfwEm\nfaexKQ1QHLLNiwYQsBdIrTLpWtg9QKNJ+ZcovQt+O6o73oS65l09a+UfZkA7KH9c\nqS3jEY0BpwKBgQCJuIDLxyrXijctV0FUzg0XxfXDpHxbSN11LgxrvoCHv3xNwQjA\nbmx0sI2B3S78nwXPgkJtmfKvgtPum5N8hYmvKWEGyf2Md7Fhl34wIBAHuG8JCpkj\neeDW27k3koRPClh32ty7jLzvj51++y89mKRQ2nC+uepu2SWPDmKd5Jn0+QKBgE40\nqOjT6lVQigILYKEPznJlzGbC4MnZccdiS7UHDBcKERBmt+ymANifjMs4Kijf2dYt\naiEUM+rH+qKlO6O87fcJTirZK9H4AdEVn8R22IA466bkigUBf8UjTHVAJf6bSA43\nX2EVfJZ+EIPQy6oZxn4f7R9mzglnjd5EIxogJLp1AoGBAKs37a8A3zrFCxnIJPtF\nYl5hOtbYfuwL1+LPhmd0+FSJerEyIjMnrBht+QFJnuC06k8b63G5HSFQdreYpVh1\nc3yb+Iwb2lhW90c6u9LLakmClWzTIo1+SwS8WSKj+HNjuO4tsZOfn8rwKMS64qpP\n6A73srO5EtsGCcggPenQtouC\n-----END PRIVATE KEY-----\n";
+    const FIXTURE_OTHER_KEY_PEM: &str = "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDFqfEG+m9yBZph\nDruDhqrOa8syO0WutFZZBKbaNFT8qnFYwJlcYsJ8SPKs4IhgXtV2XGm0TPd0lTIh\nVueP2FkBwfqKNpMuWDbB0eobXlSeYlzWJ88C5ZJBtCZCMOnsNbwBVQEknrlriNPJ\nclyFRDgRIKWJCAu3GN1OHRdbRxWDzlVW36iR1s+bmxB6B1X3tpHWFYk63AMAVfNA\nFgYdmFdhFQBu8ZLYkxK8PJebo5qc4a/zI6arw402ZbAkUZw8UNLqFpUr1hBaduGm\nqzK2sy3VQTYV9x5Lg0iQFL/itiR+yajIDqm9G8A2OBD0XGrkkgALrym7yN4SFEop\nX1uxVuupAgMBAAECggEAATt38mtMW0GEBRmwUxhEyUz1MLA+mMh1aNfmS+2CPdtU\nP/wslNOaPu93kZIM+19B8cOABbb7/MfGobZ6+lR0CBzDjE5a7utvYV6a8LVE/c1m\nL3SCxCBWaLAA+tJoKp9Jm+XjuI1ryuxBRL1Fk6CRoiFPalYuJEg14dt74uGvmT//\nwKLnxl6+PpacH/XW7cSj0Qr8XlGLBLx7yNsezTlKUrKXPeFjOik/XK3F+WFWmIV9\n7934HwqLp7hkrWVoLhXzEc5rXzARy4vb7SJU3WJv289MTLEKw9+nCvpyAdS3im2C\neLP0AL7PsH9AuYhc/P9ZXTooAU8+JeE4xLHlqVhM8wKBgQD/JIAVDPtij+j2ZY3W\nnxcgES3wlxCb6LH6k8IDszlKbccIHN2jHyvPZv1B564jvhZuLe7ZCAe/xb0r5v/R\naIEoz5gBgejGiW6QclGOOrRaBhBy6arvfed9HH0Qd31doMVCS07GZi7IVDIBhTIr\ntz3xP1YGTIwF2kvDBJR2vPJQIwKBgQDGU/368CXUQfjsaFI3Yjrm2K3hCDkPpzOy\n/FeQzemdTQGUY75JtCelcT9RnSuEb3gGGg9SPkLWwHcspYWVW/CaXXnaGnTL3DIR\nfvVcyrdmhCHPWS8LSH9G6bmzYs6bEIpmg4kQVwkyxVemoCKnSsyBhzRjWmGXu/Ji\nU7fLV1orwwKBgBSzHGUY0YhUjpz27kP8Uj76xdRgHSvY/B+NP09Xig1czKn+1Yh3\nbfF8tI1VQ46IzH8R4O/gs+g+HbPjINwXc2shNH7i0ETTP5IehDlaz+kB1vHLvV+C\nwnYnCop8d0JSWc6gF3sHLUJ5ejkfWkurqS3aaptGOJH8/OqMg5MCj1IrAoGAPAlr\nBg6ydOmvr+j4knly+TS4ljmGBH4KAXGwFE6xHIQWKVR0Yx1dLxD0KQGaDdIslDRJ\nVQ0x8I58xRAqOweE80W+wE5n8tpqca9sGTXohOkUzw7hVdoRZWcVZv9PKdO9AcFp\nuX+PckYY/YDWXKwg8kj6i+TtTCCCBE/xgGWmDz8CgYAq2wJWwTXJSI6kbBaqkIOk\nRZEMn2f81FHLghXRIUZ1xIJIniW1LrejWz6uFn5nckwad3y1ZXAgcNdr73lHOI5r\nsLgD1KmYUZlIeCcaW5uk162VcOM8cf9nIRZCrUEHg1t40ruqA+iryjtIqFFHw5EW\nhd6+cELw2ZXCriD/uuHnPQ==\n-----END PRIVATE KEY-----\n";
+
+    #[test]
+    fn pem_ca_cert_rejects_bytes_without_certificates() {
+        for pem in ["not a pem file\n", ""] {
+            let err = match TlsClientConfig::with_ca_cert_pem(pem.as_bytes()) {
+                Ok(_) => panic!("expected an error for CA bytes without certificates"),
+                Err(e) => e,
+            };
+            assert!(
+                err.to_string()
+                    .contains("No certificates found in CA certificate PEM"),
+                "{}",
+                err.to_string()
+            );
+        }
+    }
+
+    #[test]
+    fn pem_client_mtls_rejects_empty_ca() {
+        let err = match TlsClientConfig::with_mtls_pem(
+            b"not a pem file\n",
+            FIXTURE_CERT_PEM.as_bytes(),
+            FIXTURE_KEY_PEM.as_bytes(),
+        ) {
+            Ok(_) => panic!("expected an error for an mTLS CA without certificates"),
+            Err(e) => e,
+        };
+        assert!(
+            err.to_string()
+                .contains("No certificates found in CA certificate PEM"),
+            "{}",
+            err.to_string()
+        );
+    }
+
+    #[test]
+    fn pem_server_mtls_rejects_empty_ca() {
+        let err = match TlsServerConfig::with_mtls_pem(
+            FIXTURE_CERT_PEM.as_bytes(),
+            FIXTURE_KEY_PEM.as_bytes(),
+            b"not a pem file\n",
+        ) {
+            Ok(_) => panic!("expected an error for an mTLS CA without certificates"),
+            Err(e) => e,
+        };
+        assert!(
+            err.to_string()
+                .contains("No certificates found in CA certificate PEM"),
+            "{}",
+            err.to_string()
+        );
+    }
+
+    #[test]
+    fn pem_constructors_accept_valid_material() {
+        let cert = FIXTURE_CERT_PEM.as_bytes();
+        let key = FIXTURE_KEY_PEM.as_bytes();
+        assert!(TlsClientConfig::with_ca_cert_pem(cert).is_ok());
+        assert!(TlsClientConfig::with_mtls_pem(cert, cert, key).is_ok());
+        assert!(TlsServerConfig::new_pem(cert, key).is_ok());
+        assert!(TlsServerConfig::with_mtls_pem(cert, key, cert).is_ok());
+    }
+
+    #[test]
+    fn pem_server_rejects_mismatched_key() {
+        let err = match TlsServerConfig::new_pem(
+            FIXTURE_CERT_PEM.as_bytes(),
+            FIXTURE_OTHER_KEY_PEM.as_bytes(),
+        ) {
+            Ok(_) => panic!("expected an error for a key that does not match the cert"),
+            Err(e) => e,
+        };
+        assert!(
+            err.to_string().contains("Failed to configure server TLS"),
+            "{}",
+            err.to_string()
+        );
+    }
+
+    #[test]
+    fn pem_client_mtls_rejects_junk_key() {
+        let err = match TlsClientConfig::with_mtls_pem(
+            FIXTURE_CERT_PEM.as_bytes(),
+            FIXTURE_CERT_PEM.as_bytes(),
+            b"not a pem file\n",
+        ) {
+            Ok(_) => panic!("expected an error for a client key without key material"),
+            Err(e) => e,
+        };
+        assert!(
+            err.to_string().contains("No private key found in PEM"),
+            "{}",
+            err.to_string()
+        );
+    }
 }
