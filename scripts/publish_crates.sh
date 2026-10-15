@@ -46,7 +46,9 @@ fi
 echo "Publishing ${#CRATES[@]} crates at v$VERSION"
 
 already_published() {
-  curl -sf -o /dev/null --max-time 20 "https://crates.io/api/v1/crates/$1/$2"
+  # crates.io rejects API requests without a User-Agent (403);
+  # without -A this check always fails and resumability breaks.
+  curl -sf -A "vynahl7-publish-script" -o /dev/null --max-time 20 "https://crates.io/api/v1/crates/$1/$2"
 }
 
 FAILED=()
@@ -55,15 +57,17 @@ for crate in "${CRATES[@]}"; do
     echo "== $crate $VERSION already published, skipping"
     continue
   fi
-  echo "== publishing $crate $VERSION"
+  echo "== publishing $crate $VERSION ($(date -u +%H:%M:%S))"
   ok=0
-  for attempt in 1 2 3 4 5 6; do
+  for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
     if cargo publish -p "$crate"; then ok=1; break; fi
-    echo "   attempt $attempt failed, waiting 30s for index propagation..."
-    sleep 30
+    echo "   attempt $attempt failed, waiting 60s for index propagation..."
+    sleep 60
   done
   if [ "$ok" -ne 1 ]; then FAILED+=("$crate"); break; fi
-  sleep 10
+  # Pace uploads: crates.io rate-limits new crates (rolling ~5 per
+  # 10 min window); 300s holds us near 2 per 10 min even mid-window.
+  sleep 300
 done
 
 if [ "${#FAILED[@]}" -ne 0 ]; then

@@ -1,14 +1,17 @@
 //! Build script for vyna-hl7-testpanel
 //!
-//! Keeps `assets/vyna_hl7.ico` fresh from the favicon SVG on every platform,
+//! Renders the favicon SVG to an ICO in OUT_DIR (never into the source
+//! tree: writing to `assets/` breaks `cargo publish` verification),
 //! and embeds the icon into the executable on Windows.
 
 fn main() {
-    use std::path::Path;
+    use std::path::PathBuf;
 
-    // Generate the ICO file from SVG if it doesn't exist or is older than the SVG
-    let svg_path = Path::new("assets/favicon.svg");
-    let ico_path = Path::new("assets/vyna_hl7.ico");
+    // Generate the ICO file from SVG if it doesn't exist or is older than the SVG.
+    // OUT_DIR keeps regenerable output out of the source tree.
+    let svg_path = PathBuf::from("assets/favicon.svg");
+    let ico_path = PathBuf::from(std::env::var("OUT_DIR").expect("cargo sets OUT_DIR"))
+        .join("vyna_hl7.ico");
 
     let should_generate = if ico_path.exists() {
         // Check if SVG is newer than ICO
@@ -22,7 +25,7 @@ fn main() {
         true
     };
 
-    if should_generate && let Err(e) = generate_ico_from_svg(svg_path, ico_path) {
+    if should_generate && let Err(e) = generate_ico_from_svg(&svg_path, &ico_path) {
         eprintln!("Warning: Failed to generate ICO from SVG: {}", e);
     }
 
@@ -30,7 +33,8 @@ fn main() {
     {
         // Embed the icon into the Windows executable
         let mut res = winresource::WindowsResource::new();
-        res.set_icon("assets/vyna_hl7.ico");
+        let ico_str = ico_path.to_string_lossy().into_owned();
+        res.set_icon(&ico_str);
         res.set("ProductName", "VynaHL7 Test Panel");
         res.set("FileDescription", "VynaHL7 HL7 v2.x Test Panel GUI");
         res.set("LegalCopyright", "Copyright © 2024-2026 Alex SHAO Fan");
