@@ -23,14 +23,10 @@ pub mod siu;
 
 use crate::{
     Version,
-    delimiters::Delimiters,
-    error::Result,
+    charset::CharacterSet,
     field::{Component, Field, Repetition},
-    message::Message,
     segment::Segment,
-    types::format_timestamp,
 };
-use chrono::Utc;
 
 /// Structured patient identifier for PID-3 / MRG-1 (CX data type).
 #[derive(Debug, Clone, Default)]
@@ -109,18 +105,7 @@ impl CodedValue {
 
     fn to_field(&self) -> Field {
         let mut field = Field::new();
-        let mut rep = Repetition::new();
-        match &self.code {
-            Some(code) => {
-                rep.add_component(Component::from_value(code));
-                rep.add_component(Component::from_value(&self.text));
-                if let Some(system) = &self.system {
-                    rep.add_component(Component::from_value(system));
-                }
-            }
-            None => rep.add_component(Component::from_value(&self.text)),
-        }
-        field.add_repetition(rep);
+        field.add_repetition(self.to_repetition());
         field
     }
 }
@@ -191,18 +176,10 @@ impl VisitInfo {
         let class = self.patient_class.as_deref()?;
         let mut pv1 = Segment::new("PV1");
 
-        // A caller-assembled `^`-delimited value rendered as components.
-        let composite = |value: &str| {
-            let mut field = Field::new();
-            let mut rep = Repetition::new();
-            for part in value.split('^') {
-                rep.add_component(Component::from_value(part));
-            }
-            field.add_repetition(rep);
-            field
-        };
+        // A caller-assembled delimited value rendered as structure, so an
+        // XCN arrives as an XCN rather than as one opaque string.
         let opt_composite = |value: &Option<String>| match value {
-            Some(v) => composite(v),
+            Some(v) => Field::from_delimited(v),
             None => Field::from_value(""),
         };
         let plain = |value: &Option<String>| Field::from_value(value.as_deref().unwrap_or(""));
@@ -325,19 +302,10 @@ impl DocumentHeader {
     pub fn to_txa_segment(&self) -> Segment {
         let mut txa = Segment::new("TXA");
 
-        // A caller-assembled `^`-delimited value rendered as components, so
-        // an XCN arrives as an XCN rather than as one opaque string.
-        let composite = |value: &str| {
-            let mut field = Field::new();
-            let mut rep = Repetition::new();
-            for part in value.split('^') {
-                rep.add_component(Component::from_value(part));
-            }
-            field.add_repetition(rep);
-            field
-        };
+        // A caller-assembled delimited value rendered as structure, so an
+        // XCN arrives as an XCN rather than as one opaque string.
         let opt_composite = |value: &Option<String>| match value {
-            Some(v) => composite(v),
+            Some(v) => Field::from_delimited(v),
             None => Field::from_value(""),
         };
         let plain = |value: &Option<String>| Field::from_value(value.as_deref().unwrap_or(""));
@@ -478,8 +446,8 @@ pub struct NextOfKin {
     /// NK1-5, primary phone. NK1-6, business phone.
     pub phone: Option<String>,
     pub phone_business: Option<String>,
-    /// NK1-7, contact role (HL7 table 0131): `EC` emergency contact,
-    /// `NOK` next of kin.
+    /// NK1-7, contact role (HL7 table 0131): `C` emergency contact,
+    /// `N` next of kin.
     pub contact_role: Option<String>,
     /// NK1-20, the contact's preferred language.
     pub primary_language: Option<CodedValue>,
@@ -587,7 +555,7 @@ pub struct PatientDemographics {
 }
 
 impl PatientDemographics {
-    /// Render the patient into a PID segment (PID-1 .. PID-13).
+    /// Render the patient into a PID segment (PID-1 .. PID-33).
     /// Positional empties between populated fields keep downstream
     /// indexers aligned.
     pub fn to_pid_segment(&self) -> Segment {
@@ -796,244 +764,32 @@ impl PatientDemographics {
     }
 }
 
-/// Base message builder with common functionality
-pub struct MessageBuilder {
-    message: Message,
+// The base builder lives one level up and is shared with the per-trigger
+// builders: `rich` configures it rather than forking it, so control-ID
+// generation and MSH/EVN construction (and their fixes) exist exactly once.
+pub(crate) use super::{MessageBuilder, generate_control_id};
+
+/// Base for every rich builder: the shared [`MessageBuilder`] declaring
+/// UTF-8 in MSH-18 and minting MSH-7/EVN-2 from UTC.
+///
+/// Used at every construction site — including variant builders that
+/// rebuild the base for another trigger — so the configuration cannot be
+/// dropped by rebuilding.
+pub(crate) fn rich_base(
     version: Version,
-    message_type: String,
-    trigger_event: String,
-    message_structure: Option<String>,
-}
-
-impl MessageBuilder {
-    /// Create a new message builder
-    pub fn new(version: Version, message_type: &str, trigger_event: &str) -> Self {
-        Self {
-            message: Message::new(),
-            version,
-            message_type: message_type.to_string(),
-            trigger_event: trigger_event.to_string(),
-            message_structure: None,
-        }
-    }
-
-    /// Set the MSH-9 message structure (third component of the MSG
-    /// data type — e.g. "ADT_A01" for an ADT^A01 message). Required
-    /// by HL7 v2.5+ and by partner systems that route on the full
-    /// triple. When unset, MSH-9 remains the two-component
-    /// `message_type^trigger_event` form.
-    pub fn message_structure(&mut self, structure: &str) -> &mut Self {
-        self.message_structure = Some(structure.to_string());
-        self
-    }
-
-    /// Override the trigger event after construction. Lets a single
-    /// specialised builder (e.g. [`super::adt::AdtA01Builder`]) emit
-    /// variant messages (A02/A03/…) without rebuilding the base.
-    pub fn set_trigger_event(&mut self, trigger: &str) -> &mut Self {
-        self.trigger_event = trigger.to_string();
-        self
-    }
-
-    /// Override the message type after construction. Symmetric to
-    /// [`Self::set_trigger_event`]; lets a single specialised builder emit
-    /// related response messages with a different MSH-9-1 (e.g. a
-    /// REF^I12 builder emitting RRI^I12 by flipping "REF" → "RRI"
-    /// while reusing all the segment-building logic).
-    pub fn set_message_type(&mut self, message_type: &str) -> &mut Self {
-        self.message_type = message_type.to_string();
-        self
-    }
-
-    /// Current trigger event (e.g. "A01"). Used by specialised
-    /// builders that create variant-specific EVN segments.
-    pub fn trigger_event_str(&self) -> &str {
-        &self.trigger_event
-    }
-
-    /// Create MSH segment with basic fields
-    pub fn create_msh(
-        &self,
-        sending_app: &str,
-        sending_facility: &str,
-        receiving_app: &str,
-        receiving_facility: &str,
-        control_id: &str,
-        processing_id: &str,
-    ) -> Result<Segment> {
-        let mut msh = Segment::new("MSH");
-        let delims = Delimiters::default();
-
-        // MSH-1: Field separator (special handling)
-        msh.add_field(Field::from_value(delims.field_separator.to_string()));
-
-        // MSH-2: Encoding characters
-        msh.add_field(Field::from_value(format!(
-            "{}{}{}{}",
-            delims.component_separator,
-            delims.repetition_separator,
-            delims.escape_character,
-            delims.subcomponent_separator
-        )));
-
-        // MSH-3: Sending Application
-        msh.add_field(Field::from_value(sending_app));
-
-        // MSH-4: Sending Facility
-        msh.add_field(Field::from_value(sending_facility));
-
-        // MSH-5: Receiving Application
-        msh.add_field(Field::from_value(receiving_app));
-
-        // MSH-6: Receiving Facility
-        msh.add_field(Field::from_value(receiving_facility));
-
-        // MSH-7: Date/Time of Message.
-        //
-        // UTC, not `Local`, for the same reason EVN-2 is: every other
-        // timestamp in the message is rendered from a `DateTime<Utc>`, and an
-        // HL7 timestamp with no offset carries no zone — so a receiver
-        // computing message age against a local-time MSH-7 was out by the
-        // sending host's offset with nothing on the wire to say so.
-        let timestamp = format_timestamp(&Utc::now().naive_utc());
-        msh.add_field(Field::from_value(&timestamp));
-
-        // MSH-8: Security (empty)
-        msh.add_field(Field::from_value(""));
-
-        // MSH-9: Message Type (MSG data type - proper component structure).
-        // Emits the third component (message structure) when the
-        // builder has it set — required by partner systems that route
-        // on the full ADT_A01 / ORM_O01 triple.
-        let mut msg_type_field = Field::new();
-        let mut rep = Repetition::new();
-        rep.add_component(Component::from_value(&self.message_type));
-        rep.add_component(Component::from_value(&self.trigger_event));
-        if let Some(structure) = &self.message_structure {
-            rep.add_component(Component::from_value(structure));
-        }
-        msg_type_field.add_repetition(rep);
-        msh.add_field(msg_type_field);
-
-        // MSH-10: Message Control ID
-        msh.add_field(Field::from_value(control_id));
-
-        // MSH-11: Processing ID
-        msh.add_field(Field::from_value(processing_id));
-
-        // MSH-12: Version ID
-        msh.add_field(Field::from_value(self.version.as_str()));
-
-        // MSH-13 .. MSH-17 — no source. Emitted EMPTY rather than omitted,
-        // because MSH-18 below has to land at position 18 for a receiver
-        // indexing by position to find it.
-        //
-        // MSH-15 / MSH-16 (accept- and application-acknowledgment type) are
-        // deliberately left empty here and NOT derived from the integration's
-        // outbound ACK policy. That is a separate change with a design
-        // question attached: `OutboundAckPolicy::HonorMsh16` would then be
-        // reading back a value this builder had just stamped, which is a
-        // category error — on an OUTBOUND message MSH-15/16 state what WE
-        // request, not what a partner told us. Left as it was so this change
-        // alters no ACK behaviour.
-        for _ in 13..=17 {
-            msh.add_field(Field::from_value(""));
-        }
-
-        // MSH-18: Character Set (HL7 table 0211).
-        //
-        // This segment used to stop at MSH-12, so every message this product
-        // has ever sent carried UTF-8 bytes while declaring no character set
-        // at all. HL7 v2.5 §2.16.9 is explicit that an absent MSH-18 means the
-        // receiver applies ITS OWN default — normally the 7-bit set — so a
-        // conformant partner was entitled to mis-decode every non-ASCII name
-        // we sent, and we had no standing to call it wrong.
-        //
-        // That is not a hypothetical for an APAC-first product: its own
-        // patients are named 李小明, 陳大文 and 田中太郎.
-        //
-        // Hard-coded rather than configurable BECAUSE it is not a preference.
-        // Rust strings are UTF-8 and the MLLP layer writes those bytes
-        // directly, so `UNICODE UTF-8` is a statement of what the encoder
-        // actually does. A configurable value could only ever be a way to
-        // declare something untrue.
-        msh.add_field(Field::from_value("UNICODE UTF-8"));
-
-        Ok(msh)
-    }
-
-    /// Create EVN segment
-    pub fn create_evn(
-        &self,
-        event_type_code: &str,
-        recorded_datetime: Option<&str>,
-    ) -> Result<Segment> {
-        let mut evn = Segment::new("EVN");
-
-        // EVN-1: Event Type Code
-        evn.add_field(Field::from_value(event_type_code));
-
-        // EVN-2: Recorded Date/Time — when the transaction was ENTERED. The
-        // standard says "most systems will default to the system date/time
-        // when the transaction was entered", which is what this does.
-        //
-        // UTC, not `Local`: every other timestamp in the message is rendered
-        // from a `DateTime<Utc>`, so a local-time EVN-2 made a message
-        // disagree with itself by the host's offset — eight hours in the
-        // deployments this product targets — and the receiver has no way to
-        // tell which fields are in which zone.
-        let timestamp = if let Some(dt) = recorded_datetime {
-            dt.to_string()
-        } else {
-            format_timestamp(&Utc::now().naive_utc())
-        };
-        evn.add_field(Field::from_value(&timestamp));
-
-        Ok(evn)
-    }
-
-    /// EVN with `EVN-6` — when the event actually OCCURRED.
-    ///
-    /// `EVN-2` answers a different question (when the transaction was
-    /// recorded) and a receiver reading it as the event time gets the moment
-    /// the message was built. Emitting nothing in `EVN-6` left every receiver
-    /// with only `EVN-2` and `PV1-44`/`PV1-45` to choose between, and our own
-    /// reader chose `EVN-2`.
-    pub fn create_evn_with_occurrence(
-        &self,
-        event_type_code: &str,
-        recorded_datetime: Option<&str>,
-        event_occurred: Option<&str>,
-    ) -> Result<Segment> {
-        let mut evn = self.create_evn(event_type_code, recorded_datetime)?;
-        // EVN-3 .. EVN-5 have no source here; EVN-6 is the point of this.
-        for _ in 3..=5 {
-            evn.add_field(Field::from_value(""));
-        }
-        evn.add_field(Field::from_value(event_occurred.unwrap_or("")));
-        Ok(evn)
-    }
-
-    /// Build the final message
-    pub fn build(self) -> Message {
-        self.message
-    }
-}
-
-/// Generate a message control ID (simple implementation)
-pub fn generate_control_id() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
-    format!("MSG{}", timestamp)
+    message_type: &str,
+    trigger_event: &str,
+) -> MessageBuilder {
+    MessageBuilder::new(version, message_type, trigger_event)
+        .with_character_set(CharacterSet::Utf8)
+        .with_utc_timestamps()
 }
 
 #[cfg(test)]
 mod timestamp_zone_tests {
     use super::*;
     use crate::Version;
+    use chrono::Utc;
 
     /// `MSH-7` and `EVN-2` are the only two timestamps this library mints
     /// itself, and they were minted from `chrono::Local` while every other
@@ -1056,7 +812,7 @@ mod timestamp_zone_tests {
     /// green CI run as evidence that this passed.
     #[test]
     fn the_timestamps_this_library_mints_itself_are_utc() {
-        let builder = MessageBuilder::new(Version::V2_5, "ADT", "A01");
+        let builder = rich_base(Version::V2_5, "ADT", "A01");
         let now = Utc::now().naive_utc();
 
         let msh = builder

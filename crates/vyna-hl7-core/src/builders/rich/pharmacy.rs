@@ -3,6 +3,7 @@
 use super::VisitInfo;
 use super::{
     MessageBuilder, PatientAddress, PatientDemographics, PatientIdentifier, generate_control_id,
+    rich_base,
 };
 use crate::{
     Version,
@@ -224,7 +225,7 @@ fn emit_orc_pharmacy(prescription: &PharmacyPrescription, order_control: &str) -
 // that filler role is internal and never crosses a wire.
 // ---------------------------------------------------------------------------
 
-pub struct OmpO09Builder {
+pub struct RichOmpO09Builder {
     base: MessageBuilder,
     sending_app: String,
     sending_facility: String,
@@ -238,9 +239,9 @@ pub struct OmpO09Builder {
     prescription: PharmacyPrescription,
 }
 
-impl OmpO09Builder {
+impl RichOmpO09Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = MessageBuilder::new(version, "OMP", "O09");
+        let mut base = rich_base(version, "OMP", "O09");
         base.message_structure("OMP_O09");
         Self {
             base,
@@ -339,7 +340,7 @@ impl OmpO09Builder {
 // RDE^O11 — Pharmacy/Treatment Encoded Order
 // ---------------------------------------------------------------------------
 
-pub struct RdeO11Builder {
+pub struct RichRdeO11Builder {
     base: MessageBuilder,
     sending_app: String,
     sending_facility: String,
@@ -353,9 +354,9 @@ pub struct RdeO11Builder {
     prescription: PharmacyPrescription,
 }
 
-impl RdeO11Builder {
+impl RichRdeO11Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = MessageBuilder::new(version, "RDE", "O11");
+        let mut base = rich_base(version, "RDE", "O11");
         base.message_structure("RDE_O11");
         Self {
             base,
@@ -503,6 +504,11 @@ impl RdeO11Builder {
         self.base
             .message
             .add_segment(emit_orc_pharmacy(&self.prescription, &self.order_control));
+        // TQ1 — required by the RDE_O11 schema; the encoded order carries
+        // no timing/quantity beyond the set ID.
+        let mut tq1 = Segment::new("TQ1");
+        tq1.add_field(Field::from_value("1"));
+        self.base.message.add_segment(tq1);
         self.base.message.add_segment(emit_rxe(&self.prescription));
 
         // RXR route.
@@ -518,7 +524,7 @@ impl RdeO11Builder {
 // RDS^O13 — Pharmacy/Treatment Dispense
 // ---------------------------------------------------------------------------
 
-/// Dispense event emitted on RXD by [`RdsO13Builder`].
+/// Dispense event emitted on RXD by [`RichRdsO13Builder`].
 #[derive(Debug, Clone, Default)]
 pub struct DispenseEvent {
     /// Order the dispense is against (ORC-2).
@@ -535,7 +541,8 @@ pub struct DispenseEvent {
     pub actual_dose_unit: String,
     /// RXD-6 actual dosage form — free-text / empty.
     pub actual_strength: Option<String>,
-    /// RXD-7 prescription number / filler order number — not used here.
+    /// RXD-7 prescription number — required by the schema.
+    pub prescription_number: Option<String>,
     /// RXR-1 actual route.
     pub actual_route: String,
     /// RXD-8 prescribed quantity dispensed.
@@ -544,7 +551,7 @@ pub struct DispenseEvent {
     pub pharmacy_notes: Option<String>,
 }
 
-pub struct RdsO13Builder {
+pub struct RichRdsO13Builder {
     base: MessageBuilder,
     sending_app: String,
     sending_facility: String,
@@ -557,7 +564,7 @@ pub struct RdsO13Builder {
     dispense: DispenseEvent,
 }
 
-impl RdsO13Builder {
+impl RichRdsO13Builder {
     /// Set the whole PID payload at once.
     ///
     /// Lets a caller assemble demographics once and hand the same struct to
@@ -569,7 +576,7 @@ impl RdsO13Builder {
         self
     }
     pub fn new(version: Version) -> Self {
-        let mut base = MessageBuilder::new(version, "RDS", "O13");
+        let mut base = rich_base(version, "RDS", "O13");
         base.message_structure("RDS_O13");
         Self {
             base,
@@ -721,7 +728,9 @@ impl RdsO13Builder {
         rxd.add_field(Field::from_value(
             d.actual_strength.as_deref().unwrap_or(""),
         )); // RXD-6
-        rxd.add_field(Field::from_value("")); // RXD-7 prescription number
+        rxd.add_field(Field::from_value(
+            d.prescription_number.as_deref().unwrap_or(""),
+        )); // RXD-7
         rxd.add_field(Field::from_value(
             d.quantity_dispensed.as_deref().unwrap_or(""),
         )); // RXD-8
@@ -741,7 +750,7 @@ impl RdsO13Builder {
 // VXU^V04 — Immunization Registry Update
 // ---------------------------------------------------------------------------
 
-/// Immunization record used by [`VxuV04Builder`].
+/// Immunization record used by [`RichVxuV04Builder`].
 #[derive(Debug, Clone, Default)]
 pub struct ImmunizationEvent {
     /// RXA-5 CVX code.
@@ -784,7 +793,7 @@ pub struct ImmunizationEvent {
 /// Builder for VXU^V04 — Unsolicited Vaccination Update.
 ///
 /// Structure: MSH · PID · ORC (RE) · RXA · RXR · OBX (dose-in-series).
-pub struct VxuV04Builder {
+pub struct RichVxuV04Builder {
     base: MessageBuilder,
     sending_app: String,
     sending_facility: String,
@@ -796,7 +805,7 @@ pub struct VxuV04Builder {
     immunization: ImmunizationEvent,
 }
 
-impl VxuV04Builder {
+impl RichVxuV04Builder {
     /// Set the whole PID payload at once.
     ///
     /// Lets a caller assemble demographics once and hand the same struct to
@@ -808,7 +817,7 @@ impl VxuV04Builder {
         self
     }
     pub fn new(version: Version) -> Self {
-        let mut base = MessageBuilder::new(version, "VXU", "V04");
+        let mut base = rich_base(version, "VXU", "V04");
         base.message_structure("VXU_V04");
         Self {
             base,
@@ -999,7 +1008,7 @@ impl VxuV04Builder {
 // never built.
 // ---------------------------------------------------------------------------
 
-/// One administration event, for [`RasO17Builder`].
+/// One administration event, for [`RichRasO17Builder`].
 #[derive(Debug, Clone, Default)]
 pub struct AdministrationEvent {
     /// ORC-2 / ORC-3 placer order number — the order this dose answers.
@@ -1056,7 +1065,7 @@ pub struct AdministrationEvent {
 /// Builder for `RAS^O17` — Pharmacy/Treatment Administration.
 ///
 /// Structure: MSH · PID · \[PV1\] · ORC · RXA · RXR.
-pub struct RasO17Builder {
+pub struct RichRasO17Builder {
     base: MessageBuilder,
     sending_app: String,
     sending_facility: String,
@@ -1069,9 +1078,9 @@ pub struct RasO17Builder {
     administration: AdministrationEvent,
 }
 
-impl RasO17Builder {
+impl RichRasO17Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = MessageBuilder::new(version, "RAS", "O17");
+        let mut base = rich_base(version, "RAS", "O17");
         base.message_structure("RAS_O17");
         Self {
             base,
@@ -1197,23 +1206,17 @@ impl RasO17Builder {
             rxa10.add_repetition(rep);
         }
         rxa.add_field(rxa10); // RXA-10
-        // RXA-11 rendered as COMPONENTS, never as the joined string it arrives
+        // RXA-11 rendered as STRUCTURE, never as the joined string it arrives
         // as: `Field::from_value` escapes `^` to `\S\`, which would turn eight
-        // location components into one unparseable blob. That defect has
-        // reached this wire twice already (ORC-12, then RXA-10), and PV1-3
-        // splits for the same reason.
-        let mut rxa11 = Field::new();
-        if let Some(pl) = a
+        // location components into one unparseable blob.
+        let rxa11 = match a
             .administered_at_location
             .as_deref()
             .filter(|s| !s.is_empty())
         {
-            let mut rep = Repetition::new();
-            for part in pl.split('^') {
-                rep.add_component(Component::from_value(part));
-            }
-            rxa11.add_repetition(rep);
-        }
+            Some(pl) => Field::from_delimited(pl),
+            None => Field::from_value(""),
+        };
         rxa.add_field(rxa11); // RXA-11
         for _ in 12..=17 {
             rxa.add_field(Field::from_value(""));

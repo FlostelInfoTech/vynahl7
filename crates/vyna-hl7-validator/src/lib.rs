@@ -666,7 +666,20 @@ impl Validator {
                     let Some(value) = repetition.value() else {
                         continue;
                     };
-                    if let Some(data_type) = DataType::from_str(&field_def.data_type) {
+                    // Table membership first: a value its table accepts is
+                    // governed by the table, which defines the value space.
+                    // Several standard tables hold values outside the generic
+                    // datatype pattern (table 0211: "UNICODE UTF-8",
+                    // "KS X 1001", "ISO IR14"), so running the pattern check
+                    // regardless would reject values the table allows.
+                    let vocab = field_def.table_id.as_ref().and_then(|table_id| {
+                        field_table_code(f, rep_idx, field_def)
+                            .map(|code| self.table_registry.validate(table_id, code))
+                    });
+                    let table_accepts = vocab.as_ref().is_some_and(|v| v.is_valid());
+                    if !table_accepts
+                        && let Some(data_type) = DataType::from_str(&field_def.data_type)
+                    {
                         let validation = datatype::validate_data_type(value, data_type);
                         if !validation.is_valid() {
                             self.emit(
@@ -683,20 +696,16 @@ impl Validator {
                     }
 
                     // Validate vocabulary/code set
-                    if let Some(table_id) = &field_def.table_id
-                        && let Some(code) = field_table_code(f, rep_idx, field_def)
+                    if let Some(vocab_validation) = vocab
+                        && !vocab_validation.is_valid()
+                        && let Some(err_msg) = vocab_validation.error_message()
                     {
-                        let vocab_validation = self.table_registry.validate(table_id, code);
-                        if !vocab_validation.is_valid()
-                            && let Some(err_msg) = vocab_validation.error_message()
-                        {
-                            self.emit(
-                                result,
-                                field_location.clone(),
-                                err_msg.to_string(),
-                                ValidationErrorType::InvalidValue,
-                            );
-                        }
+                        self.emit(
+                            result,
+                            field_location.clone(),
+                            err_msg.to_string(),
+                            ValidationErrorType::InvalidValue,
+                        );
                     }
                 }
 
@@ -782,8 +791,18 @@ impl Validator {
                         );
                     }
 
+                    // Table membership first: as for fields, a value its
+                    // table accepts is governed by the table.
+                    let comp_vocab = comp_def
+                        .table_id
+                        .as_ref()
+                        .map(|table_id| self.table_registry.validate(table_id, comp_value));
+                    let comp_table_accepts = comp_vocab.as_ref().is_some_and(|v| v.is_valid());
+
                     // Validate component data type
-                    if let Some(data_type) = DataType::from_str(&comp_def.data_type) {
+                    if !comp_table_accepts
+                        && let Some(data_type) = DataType::from_str(&comp_def.data_type)
+                    {
                         let validation = datatype::validate_data_type(comp_value, data_type);
                         if !validation.is_valid() {
                             self.emit(
@@ -802,18 +821,16 @@ impl Validator {
                     }
 
                     // Validate component vocabulary/code set
-                    if let Some(table_id) = &comp_def.table_id {
-                        let vocab_validation = self.table_registry.validate(table_id, comp_value);
-                        if !vocab_validation.is_valid()
-                            && let Some(err_msg) = vocab_validation.error_message()
-                        {
-                            self.emit(
-                                result,
-                                comp_location.clone(),
-                                err_msg.to_string(),
-                                ValidationErrorType::InvalidValue,
-                            );
-                        }
+                    if let Some(vocab_validation) = comp_vocab
+                        && !vocab_validation.is_valid()
+                        && let Some(err_msg) = vocab_validation.error_message()
+                    {
+                        self.emit(
+                            result,
+                            comp_location.clone(),
+                            err_msg.to_string(),
+                            ValidationErrorType::InvalidValue,
+                        );
                     }
                 }
             }
@@ -1735,6 +1752,32 @@ mod tests {
         msg.add_segment(pid);
 
         msg
+    }
+
+    #[test]
+    fn test_table_member_outside_id_pattern_passes_datatype_check() {
+        // Table 0211 holds values outside the generic ID pattern
+        // ("UNICODE UTF-8", "KS X 1001"): table membership governs, so a
+        // schema-validated message declaring UTF-8 raises no MSH-18
+        // datatype error. (The fixture omits EVN/PV1, so other errors
+        // remain; none may be MSH-18.)
+        let validator = Validator::for_message_type(Version::V2_5, "ADT", "A01").unwrap();
+        let msg = message_with_charset(Some("UNICODE UTF-8"), "Muller");
+        let result = validator.validate(&msg);
+        assert!(
+            result.errors.iter().all(|e| e.location != "MSH[0]-18"),
+            "table value must not raise a datatype error: {:?}",
+            result.errors
+        );
+
+        // A value in NEITHER the table NOR the pattern still errors there.
+        let bad = message_with_charset(Some("!!!"), "Muller");
+        let result = validator.validate(&bad);
+        assert!(
+            result.errors.iter().any(|e| e.location == "MSH[0]-18"),
+            "non-table value must still error at MSH-18: {:?}",
+            result.errors
+        );
     }
 
     #[test]

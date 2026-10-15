@@ -13,6 +13,7 @@
 use super::VisitInfo;
 use super::{
     MessageBuilder, PatientAddress, PatientDemographics, PatientIdentifier, generate_control_id,
+    rich_base,
 };
 use crate::{
     Version,
@@ -152,7 +153,7 @@ fn emit_tq1(o: &LabOrder) -> Segment {
 /// opposite of what both builders did, and the claim of consistency was the
 /// only thing holding the wrong order in place.
 ///
-/// Corrected here because it costs nothing: `OmlO21Builder` had no production
+/// Corrected here because it costs nothing: `RichOmlO21Builder` had no production
 /// caller when this was fixed.
 fn emit_obr(o: &LabOrder) -> Segment {
     let mut obr = Segment::new("OBR");
@@ -185,7 +186,7 @@ fn emit_obr(o: &LabOrder) -> Segment {
     obr
 }
 
-pub struct OmlO21Builder {
+pub struct RichOmlO21Builder {
     base: MessageBuilder,
     order_control: String,
     sending_app: String,
@@ -200,9 +201,9 @@ pub struct OmlO21Builder {
     specimen: Option<SpecimenInfo>,
 }
 
-impl OmlO21Builder {
+impl RichOmlO21Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = MessageBuilder::new(version, "OML", "O21");
+        let mut base = rich_base(version, "OML", "O21");
         base.message_structure("OML_O21");
         Self {
             base,
@@ -378,7 +379,7 @@ impl OmlO21Builder {
 /// into silence; defaulting means it gets a valid general order instead.
 ///
 /// Its acknowledgment is `ORG^O20`.
-pub struct OmgO19Builder {
+pub struct RichOmgO19Builder {
     base: MessageBuilder,
     order_control: String,
     sending_app: String,
@@ -392,9 +393,9 @@ pub struct OmgO19Builder {
     order: LabOrder,
 }
 
-impl OmgO19Builder {
+impl RichOmgO19Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = MessageBuilder::new(version, "OMG", "O19");
+        let mut base = rich_base(version, "OMG", "O19");
         base.message_structure("OMG_O19");
         Self {
             base,
@@ -489,7 +490,7 @@ impl OmgO19Builder {
 ///
 /// Carries `IPC`, the imaging procedure control, which is what distinguishes it
 /// from a general order the way the specimen group distinguishes `OML`.
-pub struct OmiO23Builder {
+pub struct RichOmiO23Builder {
     base: MessageBuilder,
     order_control: String,
     sending_app: String,
@@ -504,9 +505,9 @@ pub struct OmiO23Builder {
     modality: Option<String>,
 }
 
-impl OmiO23Builder {
+impl RichOmiO23Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = MessageBuilder::new(version, "OMI", "O23");
+        let mut base = rich_base(version, "OMI", "O23");
         base.message_structure("OMI_O23");
         Self {
             base,

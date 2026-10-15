@@ -1,15 +1,16 @@
 //! SIU (Scheduling Information Unsolicited) message builders.
 //!
-//! One canonical builder — `SiuS12Builder` — carries all the SCH /
+//! One canonical builder — `RichSiuS12Builder` — carries all the SCH /
 //! PV1 / RGS / AIP / AIL fields our outbound flows populate. Variants
 //! (S13 reschedule / S14 modify / S15 cancel / S26 no-show) share the
 //! same structure per HL7 v2.5 (all use the ADT_S12 / SIU_S12 message
-//! structure); the variant is expressed via [`SiuS12Builder::trigger_event`]
+//! structure); the variant is expressed via [`RichSiuS12Builder::trigger_event`]
 //! and the SCH-6 event reason.
 
 use super::VisitInfo;
 use super::{
     MessageBuilder, PatientAddress, PatientDemographics, PatientIdentifier, generate_control_id,
+    rich_base,
 };
 use crate::{
     Version,
@@ -33,7 +34,7 @@ pub struct AppointmentResource {
     pub location: Option<String>,
 }
 
-pub struct SiuS12Builder {
+pub struct RichSiuS12Builder {
     base: MessageBuilder,
     sending_app: String,
     sending_facility: String,
@@ -51,6 +52,10 @@ pub struct SiuS12Builder {
     appointment_end_datetime: Option<String>,
     duration_minutes: Option<i32>,
     filler_status_code: Option<String>,
+    /// SCH-16 filler contact person (XCN) — required by the schema.
+    filler_contact: Option<String>,
+    /// SCH-20 entered-by person (XCN) — required by the schema.
+    entered_by: Option<String>,
     // PID
     demographics: PatientDemographics,
     // PV1 — minimal by default; visit_number/admit fields opt-in when
@@ -60,9 +65,9 @@ pub struct SiuS12Builder {
     resources: Vec<AppointmentResource>,
 }
 
-impl SiuS12Builder {
+impl RichSiuS12Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = MessageBuilder::new(version, "SIU", "S12");
+        let mut base = rich_base(version, "SIU", "S12");
         // Every SIU variant shares the SIU_S12 message structure per v2.5.
         base.message_structure("SIU_S12");
         Self {
@@ -82,6 +87,8 @@ impl SiuS12Builder {
             appointment_end_datetime: None,
             duration_minutes: None,
             filler_status_code: None,
+            filler_contact: None,
+            entered_by: None,
             demographics: PatientDemographics::default(),
             visit: VisitInfo::default(),
             resources: Vec::new(),
@@ -170,6 +177,18 @@ impl SiuS12Builder {
     /// S15 messages).
     pub fn filler_status_code(mut self, code: &str) -> Self {
         self.filler_status_code = Some(code.to_string());
+        self
+    }
+    /// SCH-16 filler contact person as an XCN (`id^family^given`).
+    /// Required by the SIU_S12 schema.
+    pub fn filler_contact(mut self, contact: &str) -> Self {
+        self.filler_contact = Some(contact.to_string());
+        self
+    }
+    /// SCH-20 entered-by person as an XCN (`id^family^given`).
+    /// Required by the SIU_S12 schema.
+    pub fn entered_by(mut self, person: &str) -> Self {
+        self.entered_by = Some(person.to_string());
         self
     }
 
@@ -286,13 +305,13 @@ impl SiuS12Builder {
         for _ in 3..=5 {
             sch.add_field(Field::from_value(""));
         }
-        sch.add_field(Field::from_value(
+        sch.add_field(Field::from_delimited(
             self.event_reason.as_deref().unwrap_or(""),
         )); // SCH-6
-        sch.add_field(Field::from_value(
+        sch.add_field(Field::from_delimited(
             self.appointment_reason.as_deref().unwrap_or(""),
         )); // SCH-7
-        sch.add_field(Field::from_value(
+        sch.add_field(Field::from_delimited(
             self.appointment_type.as_deref().unwrap_or(""),
         )); // SCH-8
         sch.add_field(Field::from_value("")); // SCH-9 duration (we use SCH-11 quantity)
@@ -329,7 +348,19 @@ impl SiuS12Builder {
         }
         timing.add_repetition(tq);
         sch.add_field(timing);
-        for _ in 12..=24 {
+        for _ in 12..=15 {
+            sch.add_field(Field::from_value(""));
+        }
+        sch.add_field(Field::from_delimited(
+            self.filler_contact.as_deref().unwrap_or(""),
+        )); // SCH-16
+        for _ in 17..=19 {
+            sch.add_field(Field::from_value(""));
+        }
+        sch.add_field(Field::from_delimited(
+            self.entered_by.as_deref().unwrap_or(""),
+        )); // SCH-20
+        for _ in 21..=24 {
             sch.add_field(Field::from_value(""));
         }
         sch.add_field(Field::from_value(

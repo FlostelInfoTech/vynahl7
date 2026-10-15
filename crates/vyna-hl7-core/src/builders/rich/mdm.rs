@@ -1,16 +1,16 @@
 //! MDM (Medical Document Management) message builders.
 //!
-//! One canonical builder — `MdmT02Builder` — carries the MSH / EVN /
+//! One canonical builder — `RichMdmT02Builder` — carries the MSH / EVN /
 //! PID / PV1 / TXA / OBX fields our outbound documentation flows
 //! populate. Every MDM variant (T01 original-without-content, T04
 //! status change, T06 addendum, T10 replacement, T11 cancel …) shares
 //! the MDM_T02 message structure and is expressed via
-//! [`MdmT02Builder::trigger_event`].
+//! [`RichMdmT02Builder::trigger_event`].
 
 use super::VisitInfo;
 use super::{
     DocumentHeader, MessageBuilder, PatientAddress, PatientDemographics, PatientIdentifier,
-    generate_control_id,
+    generate_control_id, rich_base,
 };
 use crate::{
     Version,
@@ -20,7 +20,7 @@ use crate::{
     segment::Segment,
 };
 
-pub struct MdmT02Builder {
+pub struct RichMdmT02Builder {
     base: MessageBuilder,
     sending_app: String,
     sending_facility: String,
@@ -40,9 +40,9 @@ pub struct MdmT02Builder {
     document_content: Option<String>,
 }
 
-impl MdmT02Builder {
+impl RichMdmT02Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = MessageBuilder::new(version, "MDM", "T02");
+        let mut base = rich_base(version, "MDM", "T02");
         base.message_structure("MDM_T02");
         Self {
             base,
@@ -240,7 +240,7 @@ impl MdmT02Builder {
         self.base.message.add_segment(msh);
 
         let evn = self.base.create_evn(
-            self.base.trigger_event_str().to_string().as_str(),
+            self.base.trigger_event().to_string().as_str(),
             self.event_datetime.as_deref(),
         )?;
         self.base.message.add_segment(evn);

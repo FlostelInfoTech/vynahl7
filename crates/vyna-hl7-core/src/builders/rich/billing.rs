@@ -4,6 +4,7 @@ use super::VisitInfo;
 use super::referral::{Diagnosis, emit_dg1};
 use super::{
     MessageBuilder, PatientAddress, PatientDemographics, PatientIdentifier, generate_control_id,
+    rich_base,
 };
 use crate::{
     Version,
@@ -30,6 +31,8 @@ pub struct InsuranceInfo {
     pub guarantor_relationship: Option<String>,
     /// GT1-6 guarantor home phone.
     pub guarantor_phone: Option<String>,
+    /// IN1-3 insurance company ID (CX) — required by the schema.
+    pub company_id: Option<String>,
     /// IN1-4 insurance company name (payer).
     pub payer_name: Option<String>,
     /// IN1-2 insurance plan ID, text component. The plan's NAME
@@ -58,7 +61,7 @@ pub struct InsuranceInfo {
     pub coverage_end_date: Option<String>,
 }
 
-pub struct BarP01Builder {
+pub struct RichBarP01Builder {
     base: MessageBuilder,
     sending_app: String,
     sending_facility: String,
@@ -74,9 +77,9 @@ pub struct BarP01Builder {
     insurance: InsuranceInfo,
 }
 
-impl BarP01Builder {
+impl RichBarP01Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = MessageBuilder::new(version, "BAR", "P01");
+        let mut base = rich_base(version, "BAR", "P01");
         base.message_structure("BAR_P01");
         Self {
             base,
@@ -295,7 +298,10 @@ impl BarP01Builder {
             }
             _ => in1.add_field(Field::from_value("")),
         }
-        in1.add_field(Field::from_value("")); // IN1-3
+        // IN1-3 Insurance Company ID (CX) — required by the schema.
+        in1.add_field(Field::from_delimited(
+            ins.company_id.as_deref().unwrap_or(""),
+        ));
         in1.add_field(Field::from_value(ins.payer_name.as_deref().unwrap_or(""))); // IN1-4
         for _ in 5..=7 {
             in1.add_field(Field::from_value(""));

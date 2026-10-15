@@ -1,6 +1,6 @@
 //! ADT (Admit/Discharge/Transfer) message builders
 
-use super::{MessageBuilder, generate_control_id};
+use super::{MessageBuilder, generate_control_id, rich_base};
 use crate::{
     Version,
     error::Result,
@@ -10,107 +10,107 @@ use crate::{
 };
 
 /// Builder for ADT messages
-pub struct AdtBuilder {
+pub struct RichAdtBuilder {
     #[allow(dead_code)]
     base: MessageBuilder,
 }
 
-impl AdtBuilder {
+impl RichAdtBuilder {
     /// Create a new ADT message builder
     pub fn new(version: Version, trigger_event: &str) -> Self {
         Self {
-            base: MessageBuilder::new(version, "ADT", trigger_event),
+            base: rich_base(version, "ADT", trigger_event),
         }
     }
 
     /// Create ADT^A01 - Admit/Visit Notification
-    pub fn a01(version: Version) -> AdtA01Builder {
-        AdtA01Builder::new(version)
+    pub fn a01(version: Version) -> RichAdtA01Builder {
+        RichAdtA01Builder::new(version)
     }
 
     /// Create ADT^A02 - Transfer a Patient
-    pub fn a02(version: Version) -> AdtA02Builder {
-        AdtA02Builder::new(version)
+    pub fn a02(version: Version) -> RichAdtA02Builder {
+        RichAdtA02Builder::new(version)
     }
 
     /// Create ADT^A03 - Discharge/End Visit
-    pub fn a03(version: Version) -> AdtA03Builder {
-        AdtA03Builder::new(version)
+    pub fn a03(version: Version) -> RichAdtA03Builder {
+        RichAdtA03Builder::new(version)
     }
 
     /// Create ADT^A04 - Register a Patient
-    pub fn a04(version: Version) -> AdtA04Builder {
-        AdtA04Builder::new(version)
+    pub fn a04(version: Version) -> RichAdtA04Builder {
+        RichAdtA04Builder::new(version)
     }
 
     /// Create ADT^A05 - Pre-admit a Patient
-    pub fn a05(version: Version) -> AdtA05Builder {
-        AdtA05Builder::new(version)
+    pub fn a05(version: Version) -> RichAdtA05Builder {
+        RichAdtA05Builder::new(version)
     }
 
     /// Create ADT^A06 - Change Outpatient to Inpatient
-    pub fn a06(version: Version) -> AdtA06Builder {
-        AdtA06Builder::new(version)
+    pub fn a06(version: Version) -> RichAdtA06Builder {
+        RichAdtA06Builder::new(version)
     }
 
     /// Create ADT^A07 - Change Inpatient to Outpatient
-    pub fn a07(version: Version) -> AdtA07Builder {
-        AdtA07Builder::new(version)
+    pub fn a07(version: Version) -> RichAdtA07Builder {
+        RichAdtA07Builder::new(version)
     }
 
     /// Create ADT^A08 - Update Patient Information
-    pub fn a08(version: Version) -> AdtA08Builder {
-        AdtA08Builder::new(version)
+    pub fn a08(version: Version) -> RichAdtA08Builder {
+        RichAdtA08Builder::new(version)
     }
 
     /// Create ADT^A11 - Cancel Admit/Visit Notification
-    pub fn a11(version: Version) -> AdtA11Builder {
-        AdtA11Builder::new(version)
+    pub fn a11(version: Version) -> RichAdtA11Builder {
+        RichAdtA11Builder::new(version)
     }
 
     /// Create ADT^A12 - Cancel Transfer
-    pub fn a12(version: Version) -> AdtA12Builder {
-        AdtA12Builder::new(version)
+    pub fn a12(version: Version) -> RichAdtA12Builder {
+        RichAdtA12Builder::new(version)
     }
 
     /// Create ADT^A13 - Cancel Discharge/End Visit
-    pub fn a13(version: Version) -> AdtA13Builder {
-        AdtA13Builder::new(version)
+    pub fn a13(version: Version) -> RichAdtA13Builder {
+        RichAdtA13Builder::new(version)
     }
 
     /// Create ADT^A09 - Patient Departing - Tracking
-    pub fn a09(version: Version) -> AdtA09Builder {
-        AdtA09Builder::new(version)
+    pub fn a09(version: Version) -> RichAdtA09Builder {
+        RichAdtA09Builder::new(version)
     }
 
     /// Create ADT^A10 - Patient Arriving - Tracking
-    pub fn a10(version: Version) -> AdtA10Builder {
-        AdtA10Builder::new(version)
+    pub fn a10(version: Version) -> RichAdtA10Builder {
+        RichAdtA10Builder::new(version)
     }
 
     /// Create ADT^A17 - Swap Patients
-    pub fn a17(version: Version) -> AdtA17Builder {
-        AdtA17Builder::new(version)
+    pub fn a17(version: Version) -> RichAdtA17Builder {
+        RichAdtA17Builder::new(version)
     }
 
     /// Create ADT^A28 - Add Person Information
-    pub fn a28(version: Version) -> AdtA28Builder {
-        AdtA28Builder::new(version)
+    pub fn a28(version: Version) -> RichAdtA28Builder {
+        RichAdtA28Builder::new(version)
     }
 
     /// Create ADT^A31 - Update Person Information
-    pub fn a31(version: Version) -> AdtA31Builder {
-        AdtA31Builder::new(version)
+    pub fn a31(version: Version) -> RichAdtA31Builder {
+        RichAdtA31Builder::new(version)
     }
 
     /// Create ADT^A40 - Merge Patient - Patient Identifier List
-    pub fn a40(version: Version) -> AdtA40Builder {
-        AdtA40Builder::new(version)
+    pub fn a40(version: Version) -> RichAdtA40Builder {
+        RichAdtA40Builder::new(version)
     }
 }
 
 /// Builder for ADT^A01 - Admit/Visit Notification
-pub struct AdtA01Builder {
+pub struct RichAdtA01Builder {
     base: MessageBuilder,
     sending_app: String,
     sending_facility: String,
@@ -146,11 +146,11 @@ pub struct AdtA01Builder {
 pub use super::{CodedValue, NextOfKin, PatientAddress, PatientAllergy, PatientIdentifier};
 use super::{PatientDemographics, VisitInfo};
 
-impl AdtA01Builder {
+impl RichAdtA01Builder {
     /// Create a new ADT^A01 builder
     pub fn new(version: Version) -> Self {
         Self {
-            base: MessageBuilder::new(version, "ADT", "A01"),
+            base: rich_base(version, "ADT", "A01"),
             sending_app: String::new(),
             sending_facility: String::new(),
             receiving_app: String::new(),
@@ -497,9 +497,9 @@ impl AdtA01Builder {
         self.base.message.add_segment(msh);
 
         // Create EVN segment — mirrors the builder's current trigger
-        // so a single AdtA01Builder instance can emit any variant
+        // so a single RichAdtA01Builder instance can emit any variant
         // (A02/A03/…) via [`Self::trigger_event`].
-        let trigger = self.base.trigger_event_str().to_string();
+        let trigger = self.base.trigger_event().to_string();
         // EVN-6 carries WHEN THE EVENT HAPPENED. `create_evn` alone emits only
         // EVN-2 — the RECORDED time, which defaults to now — so a receiver
         // reading EVN-2 as the event instant got the moment this message was
@@ -555,6 +555,9 @@ impl AdtA01Builder {
             rep.add_component(Component::from_value(
                 ident.assigning_authority.as_deref().unwrap_or(""),
             ));
+            if let Some(type_code) = &ident.identifier_type_code {
+                rep.add_component(Component::from_value(type_code));
+            }
             mrg1.add_repetition(rep);
             mrg.add_field(mrg1);
             for _ in 2..=6 {
@@ -576,18 +579,18 @@ impl AdtA01Builder {
 }
 
 /// Builder for ADT^A02 - Transfer a Patient
-pub struct AdtA02Builder {
-    base: AdtA01Builder,
+pub struct RichAdtA02Builder {
+    base: RichAdtA01Builder,
 }
 
-impl AdtA02Builder {
+impl RichAdtA02Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = AdtA01Builder::new(version);
-        base.base = MessageBuilder::new(version, "ADT", "A02");
+        let mut base = RichAdtA01Builder::new(version);
+        base.base = rich_base(version, "ADT", "A02");
         Self { base }
     }
 
-    // Delegate all methods to AdtA01Builder
+    // Delegate all methods to RichAdtA01Builder
     pub fn sending_application(mut self, app: &str) -> Self {
         self.base = self.base.sending_application(app);
         self
@@ -634,14 +637,14 @@ impl AdtA02Builder {
 }
 
 /// Builder for ADT^A03 - Discharge/End Visit
-pub struct AdtA03Builder {
-    base: AdtA01Builder,
+pub struct RichAdtA03Builder {
+    base: RichAdtA01Builder,
 }
 
-impl AdtA03Builder {
+impl RichAdtA03Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = AdtA01Builder::new(version);
-        base.base = MessageBuilder::new(version, "ADT", "A03");
+        let mut base = RichAdtA01Builder::new(version);
+        base.base = rich_base(version, "ADT", "A03");
         Self { base }
     }
 
@@ -686,14 +689,14 @@ impl AdtA03Builder {
 }
 
 /// Builder for ADT^A04 - Register a Patient
-pub struct AdtA04Builder {
-    base: AdtA01Builder,
+pub struct RichAdtA04Builder {
+    base: RichAdtA01Builder,
 }
 
-impl AdtA04Builder {
+impl RichAdtA04Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = AdtA01Builder::new(version);
-        base.base = MessageBuilder::new(version, "ADT", "A04");
+        let mut base = RichAdtA01Builder::new(version);
+        base.base = rich_base(version, "ADT", "A04");
         Self { base }
     }
 
@@ -734,6 +737,11 @@ impl AdtA04Builder {
 
     pub fn sex(mut self, sex: &str) -> Self {
         self.base = self.base.sex(sex);
+        self
+    }
+
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.base = self.base.patient_class(class);
         self
     }
 
@@ -743,14 +751,14 @@ impl AdtA04Builder {
 }
 
 /// Builder for ADT^A08 - Update Patient Information
-pub struct AdtA08Builder {
-    base: AdtA01Builder,
+pub struct RichAdtA08Builder {
+    base: RichAdtA01Builder,
 }
 
-impl AdtA08Builder {
+impl RichAdtA08Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = AdtA01Builder::new(version);
-        base.base = MessageBuilder::new(version, "ADT", "A08");
+        let mut base = RichAdtA01Builder::new(version);
+        base.base = rich_base(version, "ADT", "A08");
         Self { base }
     }
 
@@ -794,20 +802,25 @@ impl AdtA08Builder {
         self
     }
 
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.base = self.base.patient_class(class);
+        self
+    }
+
     pub fn build(self) -> Result<Message> {
         self.base.build()
     }
 }
 
 /// Builder for ADT^A05 - Pre-admit a Patient
-pub struct AdtA05Builder {
-    base: AdtA01Builder,
+pub struct RichAdtA05Builder {
+    base: RichAdtA01Builder,
 }
 
-impl AdtA05Builder {
+impl RichAdtA05Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = AdtA01Builder::new(version);
-        base.base = MessageBuilder::new(version, "ADT", "A05");
+        let mut base = RichAdtA01Builder::new(version);
+        base.base = rich_base(version, "ADT", "A05");
         Self { base }
     }
 
@@ -862,14 +875,14 @@ impl AdtA05Builder {
 }
 
 /// Builder for ADT^A06 - Change Outpatient to Inpatient
-pub struct AdtA06Builder {
-    base: AdtA01Builder,
+pub struct RichAdtA06Builder {
+    base: RichAdtA01Builder,
 }
 
-impl AdtA06Builder {
+impl RichAdtA06Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = AdtA01Builder::new(version);
-        base.base = MessageBuilder::new(version, "ADT", "A06");
+        let mut base = RichAdtA01Builder::new(version);
+        base.base = rich_base(version, "ADT", "A06");
         Self { base }
     }
 
@@ -919,14 +932,14 @@ impl AdtA06Builder {
 }
 
 /// Builder for ADT^A07 - Change Inpatient to Outpatient
-pub struct AdtA07Builder {
-    base: AdtA01Builder,
+pub struct RichAdtA07Builder {
+    base: RichAdtA01Builder,
 }
 
-impl AdtA07Builder {
+impl RichAdtA07Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = AdtA01Builder::new(version);
-        base.base = MessageBuilder::new(version, "ADT", "A07");
+        let mut base = RichAdtA01Builder::new(version);
+        base.base = rich_base(version, "ADT", "A07");
         Self { base }
     }
 
@@ -971,14 +984,14 @@ impl AdtA07Builder {
 }
 
 /// Builder for ADT^A11 - Cancel Admit/Visit Notification
-pub struct AdtA11Builder {
-    base: AdtA01Builder,
+pub struct RichAdtA11Builder {
+    base: RichAdtA01Builder,
 }
 
-impl AdtA11Builder {
+impl RichAdtA11Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = AdtA01Builder::new(version);
-        base.base = MessageBuilder::new(version, "ADT", "A11");
+        let mut base = RichAdtA01Builder::new(version);
+        base.base = rich_base(version, "ADT", "A11");
         Self { base }
     }
 
@@ -1009,6 +1022,11 @@ impl AdtA11Builder {
 
     pub fn patient_name(mut self, family: &str, given: &str) -> Self {
         self.base = self.base.patient_name(family, given);
+        self
+    }
+
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.base = self.base.patient_class(class);
         self
     }
 
@@ -1018,14 +1036,14 @@ impl AdtA11Builder {
 }
 
 /// Builder for ADT^A12 - Cancel Transfer
-pub struct AdtA12Builder {
-    base: AdtA01Builder,
+pub struct RichAdtA12Builder {
+    base: RichAdtA01Builder,
 }
 
-impl AdtA12Builder {
+impl RichAdtA12Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = AdtA01Builder::new(version);
-        base.base = MessageBuilder::new(version, "ADT", "A12");
+        let mut base = RichAdtA01Builder::new(version);
+        base.base = rich_base(version, "ADT", "A12");
         Self { base }
     }
 
@@ -1056,6 +1074,11 @@ impl AdtA12Builder {
 
     pub fn patient_name(mut self, family: &str, given: &str) -> Self {
         self.base = self.base.patient_name(family, given);
+        self
+    }
+
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.base = self.base.patient_class(class);
         self
     }
 
@@ -1065,14 +1088,14 @@ impl AdtA12Builder {
 }
 
 /// Builder for ADT^A13 - Cancel Discharge/End Visit
-pub struct AdtA13Builder {
-    base: AdtA01Builder,
+pub struct RichAdtA13Builder {
+    base: RichAdtA01Builder,
 }
 
-impl AdtA13Builder {
+impl RichAdtA13Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = AdtA01Builder::new(version);
-        base.base = MessageBuilder::new(version, "ADT", "A13");
+        let mut base = RichAdtA01Builder::new(version);
+        base.base = rich_base(version, "ADT", "A13");
         Self { base }
     }
 
@@ -1106,20 +1129,25 @@ impl AdtA13Builder {
         self
     }
 
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.base = self.base.patient_class(class);
+        self
+    }
+
     pub fn build(self) -> Result<Message> {
         self.base.build()
     }
 }
 
 /// Builder for ADT^A09 - Patient Departing - Tracking
-pub struct AdtA09Builder {
-    base: AdtA01Builder,
+pub struct RichAdtA09Builder {
+    base: RichAdtA01Builder,
 }
 
-impl AdtA09Builder {
+impl RichAdtA09Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = AdtA01Builder::new(version);
-        base.base = MessageBuilder::new(version, "ADT", "A09");
+        let mut base = RichAdtA01Builder::new(version);
+        base.base = rich_base(version, "ADT", "A09");
         Self { base }
     }
 
@@ -1169,14 +1197,14 @@ impl AdtA09Builder {
 }
 
 /// Builder for ADT^A10 - Patient Arriving - Tracking
-pub struct AdtA10Builder {
-    base: AdtA01Builder,
+pub struct RichAdtA10Builder {
+    base: RichAdtA01Builder,
 }
 
-impl AdtA10Builder {
+impl RichAdtA10Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = AdtA01Builder::new(version);
-        base.base = MessageBuilder::new(version, "ADT", "A10");
+        let mut base = RichAdtA01Builder::new(version);
+        base.base = rich_base(version, "ADT", "A10");
         Self { base }
     }
 
@@ -1226,14 +1254,14 @@ impl AdtA10Builder {
 }
 
 /// Builder for ADT^A17 - Swap Patients
-pub struct AdtA17Builder {
-    base: AdtA01Builder,
+pub struct RichAdtA17Builder {
+    base: RichAdtA01Builder,
 }
 
-impl AdtA17Builder {
+impl RichAdtA17Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = AdtA01Builder::new(version);
-        base.base = MessageBuilder::new(version, "ADT", "A17");
+        let mut base = RichAdtA01Builder::new(version);
+        base.base = rich_base(version, "ADT", "A17");
         Self { base }
     }
 
@@ -1264,6 +1292,11 @@ impl AdtA17Builder {
 
     pub fn patient_name(mut self, family: &str, given: &str) -> Self {
         self.base = self.base.patient_name(family, given);
+        self
+    }
+
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.base = self.base.patient_class(class);
         self
     }
 
@@ -1273,14 +1306,14 @@ impl AdtA17Builder {
 }
 
 /// Builder for ADT^A28 - Add Person Information
-pub struct AdtA28Builder {
-    base: AdtA01Builder,
+pub struct RichAdtA28Builder {
+    base: RichAdtA01Builder,
 }
 
-impl AdtA28Builder {
+impl RichAdtA28Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = AdtA01Builder::new(version);
-        base.base = MessageBuilder::new(version, "ADT", "A28");
+        let mut base = RichAdtA01Builder::new(version);
+        base.base = rich_base(version, "ADT", "A28");
         Self { base }
     }
 
@@ -1321,6 +1354,11 @@ impl AdtA28Builder {
 
     pub fn sex(mut self, sex: &str) -> Self {
         self.base = self.base.sex(sex);
+        self
+    }
+
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.base = self.base.patient_class(class);
         self
     }
 
@@ -1330,14 +1368,14 @@ impl AdtA28Builder {
 }
 
 /// Builder for ADT^A31 - Update Person Information
-pub struct AdtA31Builder {
-    base: AdtA01Builder,
+pub struct RichAdtA31Builder {
+    base: RichAdtA01Builder,
 }
 
-impl AdtA31Builder {
+impl RichAdtA31Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = AdtA01Builder::new(version);
-        base.base = MessageBuilder::new(version, "ADT", "A31");
+        let mut base = RichAdtA01Builder::new(version);
+        base.base = rich_base(version, "ADT", "A31");
         Self { base }
     }
 
@@ -1381,20 +1419,25 @@ impl AdtA31Builder {
         self
     }
 
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.base = self.base.patient_class(class);
+        self
+    }
+
     pub fn build(self) -> Result<Message> {
         self.base.build()
     }
 }
 
 /// Builder for ADT^A40 - Merge Patient - Patient Identifier List
-pub struct AdtA40Builder {
-    base: AdtA01Builder,
+pub struct RichAdtA40Builder {
+    base: RichAdtA01Builder,
 }
 
-impl AdtA40Builder {
+impl RichAdtA40Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = AdtA01Builder::new(version);
-        base.base = MessageBuilder::new(version, "ADT", "A40");
+        let mut base = RichAdtA01Builder::new(version);
+        base.base = rich_base(version, "ADT", "A40");
         Self { base }
     }
 
@@ -1425,6 +1468,24 @@ impl AdtA40Builder {
 
     pub fn patient_name(mut self, family: &str, given: &str) -> Self {
         self.base = self.base.patient_name(family, given);
+        self
+    }
+
+    pub fn patient_class(mut self, class: &str) -> Self {
+        self.base = self.base.patient_class(class);
+        self
+    }
+
+    /// Set the retired (source) patient identifier for MRG-1 — required
+    /// by the ADT_A40 schema.
+    pub fn prior_patient_identifier(mut self, identifier: PatientIdentifier) -> Self {
+        self.base = self.base.prior_patient_identifier(identifier);
+        self
+    }
+
+    /// Set the retired (source) patient name for MRG-7.
+    pub fn prior_patient_name(mut self, family: &str, given: &str) -> Self {
+        self.base = self.base.prior_patient_name(family, given);
         self
     }
 

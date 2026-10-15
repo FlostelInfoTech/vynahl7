@@ -45,11 +45,19 @@ pointer to the suite that proves it. Roadmap items are marked
 - REQ-CORE-050: Every message builder with a schema shall produce output
   that validates clean at v2.5 as built and after a strict parse
   round-trip, with composite inputs encoded as literal delimiters
-  (never `\S\`/`\T\`/`\R\`). Verify: `builder_conformance.rs` (56 tests).
+  (never `\S\`/`\T\`/`\R\`). Verify: `builder_conformance.rs` (84 tests).
 - REQ-CORE-060: Character-set handling shall support MSH-18 declared
   charsets for encode/decode paths. Verify: charset tests.
 - REQ-CORE-070: Errors shall use typed `thiserror` errors with a
   `Result<T>` alias per crate. Verify: API review, `cargo doc`.
+- REQ-CORE-080: A rich clinical builder layer (`builders::rich`,
+  `Rich*` builders) shall carry full payloads (demographics, visit,
+  allergies, contacts) for the ADT, SIU, DFT, ORU, MDM, pharmacy
+  (OMP/RDE/RDS/RAS/VXU), laboratory (OML/OMG/OMI), billing (BAR),
+  and referral (REF/RRI) families, sharing one `MessageBuilder`
+  base with the per-trigger builders and declaring UTF-8 in MSH-18
+  with UTC-minted MSH-7/EVN-2. Verify: `builder_conformance.rs`
+  rich tests, `rich_smoke.rs`.
 
 ## 3. Validation (vyna-hl7-validator)
 
@@ -70,7 +78,10 @@ pointer to the suite that proves it. Roadmap items are marked
 - REQ-VAL-050: Vocabulary validation shall enforce HL7-defined tables
   from the registry and skip user-defined tables (`USER_TABLES`
   allowlist); every schema-referenced table shall be registered or
-  allowlisted. Verify: registry coverage test.
+  allowlisted. Table membership shall govern over generic datatype
+  patterns (table 0211 values such as `UNICODE UTF-8` validate
+  despite the ID pattern). Verify: registry coverage test,
+  table-governance unit test.
 - REQ-VAL-060: Sites shall be able to extend standard tables with local
   codes without replacing them (`table_registry_mut` +
   `get_table_mut`/`add_value`). Verify: `site_tables.rs`, rustdoc example.
@@ -187,7 +198,7 @@ pointer to the suite that proves it. Roadmap items are marked
 | Area | Primary suites |
 |---|---|
 | Parsing | `cargo test -p vyna-hl7-parser` |
-| Core/builders | `cargo test -p vyna-hl7-core`, `builder_conformance.rs` (56) |
+| Core/builders | `cargo test -p vyna-hl7-core`, `builder_conformance.rs` (84) |
 | Validation | `cargo test -p vyna-hl7-validator`, `site_tables.rs` |
 | Transports | mllp/http tests incl. `--features tls,testing` |
 | UX | CLI tests, testpanel tests, wasm-pack builds |

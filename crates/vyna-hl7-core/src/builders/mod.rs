@@ -33,7 +33,7 @@ use crate::{
     segment::Segment,
     types::format_timestamp,
 };
-use chrono::Local;
+use chrono::{Local, Utc};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Base message builder with common functionality
@@ -43,6 +43,8 @@ pub struct MessageBuilder {
     message_type: String,
     trigger_event: String,
     charset: Option<CharacterSet>,
+    message_structure: Option<String>,
+    utc_timestamps: bool,
 }
 
 impl MessageBuilder {
@@ -54,6 +56,8 @@ impl MessageBuilder {
             message_type: message_type.to_string(),
             trigger_event: trigger_event.to_string(),
             charset: None,
+            message_structure: None,
+            utc_timestamps: false,
         }
     }
 
@@ -70,6 +74,42 @@ impl MessageBuilder {
     /// The trigger event this builder constructs (e.g. `A01`).
     pub fn trigger_event(&self) -> &str {
         &self.trigger_event
+    }
+
+    /// Mint MSH-7 and default EVN-2 from UTC instead of local time.
+    ///
+    /// Opt-in because the per-trigger builders' wire output is frozen:
+    /// flipping the default would move every MSH-7 they emit. The
+    /// [`rich`](crate::builders::rich) layer enables this, since an HL7
+    /// timestamp carries no zone and every other timestamp in a rich
+    /// message is rendered from UTC.
+    pub fn with_utc_timestamps(mut self) -> Self {
+        self.utc_timestamps = true;
+        self
+    }
+
+    /// Set the MSH-9 message structure (third component of the MSG data
+    /// type — e.g. `ADT_A01`). Required by HL7 v2.5+ and by partners that
+    /// route on the full triple. When unset, MSH-9 stays two-component.
+    pub fn message_structure(&mut self, structure: &str) -> &mut Self {
+        self.message_structure = Some(structure.to_string());
+        self
+    }
+
+    /// Override the trigger event after construction, so one specialised
+    /// builder can emit variant messages (A02/A03/…) without rebuilding
+    /// the base.
+    pub fn set_trigger_event(&mut self, trigger: &str) -> &mut Self {
+        self.trigger_event = trigger.to_string();
+        self
+    }
+
+    /// Override the message type after construction, so one specialised
+    /// builder can emit a related response (e.g. a REF builder emitting
+    /// RRI) while reusing its segment logic.
+    pub fn set_message_type(&mut self, message_type: &str) -> &mut Self {
+        self.message_type = message_type.to_string();
+        self
     }
 
     /// Create MSH segment with basic fields
@@ -97,18 +137,29 @@ impl MessageBuilder {
         // MSH-6: Receiving Facility
         msh.add_field(Field::from_value(receiving_facility));
 
-        // MSH-7: Date/Time of Message
-        let timestamp = format_timestamp(&Local::now().naive_local());
+        // MSH-7: Date/Time of Message. Local by default (wire-frozen for
+        // the per-trigger builders); UTC when opted in via
+        // `with_utc_timestamps`, matching every other timestamp in the
+        // message.
+        let timestamp = if self.utc_timestamps {
+            format_timestamp(&Utc::now().naive_utc())
+        } else {
+            format_timestamp(&Local::now().naive_local())
+        };
         msh.add_field(Field::from_value(&timestamp));
 
         // MSH-8: Security (empty)
         msh.add_field(Field::from_value(""));
 
-        // MSH-9: Message Type (MSG data type - proper component structure)
+        // MSH-9: Message Type (MSG data type - proper component structure),
+        // with the message structure third component when set.
         let mut msg_type_field = Field::new();
         let mut rep = Repetition::new();
         rep.add_component(Component::from_value(&self.message_type));
         rep.add_component(Component::from_value(&self.trigger_event));
+        if let Some(structure) = &self.message_structure {
+            rep.add_component(Component::from_value(structure));
+        }
         msg_type_field.add_repetition(rep);
         msh.add_field(msg_type_field);
 
@@ -146,11 +197,33 @@ impl MessageBuilder {
         // EVN-2: Recorded Date/Time
         let timestamp = if let Some(dt) = recorded_datetime {
             dt.to_string()
+        } else if self.utc_timestamps {
+            format_timestamp(&Utc::now().naive_utc())
         } else {
             format_timestamp(&Local::now().naive_local())
         };
         evn.add_field(Field::from_value(&timestamp));
 
+        Ok(evn)
+    }
+
+    /// EVN with `EVN-6` — when the event actually OCCURRED.
+    ///
+    /// `EVN-2` answers a different question (when the transaction was
+    /// recorded); a receiver reading it as the event time gets the moment
+    /// the message was built.
+    pub fn create_evn_with_occurrence(
+        &self,
+        event_type_code: &str,
+        recorded_datetime: Option<&str>,
+        event_occurred: Option<&str>,
+    ) -> Result<Segment> {
+        let mut evn = self.create_evn(event_type_code, recorded_datetime)?;
+        // EVN-3 .. EVN-5 have no source here; EVN-6 is the point of this.
+        for _ in 3..=5 {
+            evn.add_field(Field::from_value(""));
+        }
+        evn.add_field(Field::from_value(event_occurred.unwrap_or("")));
         Ok(evn)
     }
 

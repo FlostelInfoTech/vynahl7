@@ -104,10 +104,18 @@ Fluent per-trigger builders (`AdtBuilder::a01`, `BarP01Builder`,
 - Free-text fields (NTE, descriptions) always stay literal.
 
 Conformance over codegen: instead of generating builders from schemas,
-`builder_conformance.rs` (56 tests) proves every message builder with a
+`builder_conformance.rs` (84 tests) proves every message builder with a
 schema validates clean at v2.5 as built and after a strict parse
 round-trip, with a wire-escape regression check. The suite lives in the
 validator crate to avoid a core→validator dependency cycle.
+
+A rich clinical layer (`builders::rich`, `Rich*` builders) carries full
+payloads — demographics, visits, allergies, contacts — for the ADT, SIU,
+DFT, ORU, MDM, pharmacy, laboratory, billing, and referral families. It
+configures the one shared `MessageBuilder` base (UTF-8 charset, UTC
+timestamps, MSH-9 structure) rather than forking it, so wire-affecting
+fixes exist exactly once. Per-trigger output stays frozen: local
+timestamps and no MSH-18 unless `with_character_set` opts in.
 
 ## 6. Transports
 

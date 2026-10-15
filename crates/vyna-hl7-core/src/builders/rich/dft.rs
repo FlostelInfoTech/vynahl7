@@ -1,13 +1,14 @@
 //! DFT (Detailed Financial Transaction) message builders.
 //!
-//! One canonical builder — `DftP03Builder` — carries the MSH / EVN /
+//! One canonical builder — `RichDftP03Builder` — carries the MSH / EVN /
 //! PID / PV1 / FT1 fields our outbound billing flows populate. Variants
 //! (P11) share the same structure per HL7 v2.5 and can be expressed
-//! via [`DftP03Builder::trigger_event`].
+//! via [`RichDftP03Builder::trigger_event`].
 
 use super::VisitInfo;
 use super::{
     MessageBuilder, PatientAddress, PatientDemographics, PatientIdentifier, generate_control_id,
+    rich_base,
 };
 use crate::{
     Version,
@@ -17,7 +18,7 @@ use crate::{
     segment::Segment,
 };
 
-pub struct DftP03Builder {
+pub struct RichDftP03Builder {
     base: MessageBuilder,
     sending_app: String,
     sending_facility: String,
@@ -45,9 +46,9 @@ pub struct DftP03Builder {
     performed_by_name: Option<String>,
 }
 
-impl DftP03Builder {
+impl RichDftP03Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = MessageBuilder::new(version, "DFT", "P03");
+        let mut base = rich_base(version, "DFT", "P03");
         base.message_structure("DFT_P03");
         Self {
             base,
@@ -250,7 +251,7 @@ impl DftP03Builder {
         self.base.message.add_segment(msh);
 
         let evn = self.base.create_evn(
-            self.base.trigger_event_str().to_string().as_str(),
+            self.base.trigger_event().to_string().as_str(),
             self.event_datetime.as_deref(),
         )?;
         self.base.message.add_segment(evn);

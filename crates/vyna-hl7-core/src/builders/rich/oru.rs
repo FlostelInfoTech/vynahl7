@@ -4,6 +4,7 @@ use super::VisitInfo;
 use super::laboratory::{SpecimenInfo, spm_segment};
 use super::{
     MessageBuilder, PatientAddress, PatientDemographics, PatientIdentifier, generate_control_id,
+    rich_base,
 };
 use crate::{
     Version,
@@ -62,7 +63,7 @@ pub struct Observation {
 }
 
 /// Builder for ORU^R01 — Unsolicited Observation Message.
-pub struct OruR01Builder {
+pub struct RichOruR01Builder {
     base: MessageBuilder,
     sending_app: String,
     sending_facility: String,
@@ -88,10 +89,10 @@ pub struct OruR01Builder {
     specimens: Vec<SpecimenInfo>,
 }
 
-impl OruR01Builder {
+impl RichOruR01Builder {
     pub fn new(version: Version) -> Self {
         Self {
-            base: MessageBuilder::new(version, "ORU", "R01"),
+            base: rich_base(version, "ORU", "R01"),
             sending_app: String::new(),
             sending_facility: String::new(),
             receiving_app: String::new(),

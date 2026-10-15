@@ -5,6 +5,10 @@
 - `builders::rich` completeness layer in vyna-hl7-core: rich clinical builders ported from the retired rs7 workspace (ADT, SIU, DFT, ORU, MDM, pharmacy, laboratory, billing, referral) with full demographics/visit/allergy/NK1 payloads, so existing senders keep byte-identical wire output; per-trigger builders stay the recommended entry point for simple needs
 - `Terser::message` accessor and `Terser::get_composite` (full `^`-joined composite for component-less paths)
 
+### Fixed
+
+- Strict validation no longer rejects table-defined values that fall outside the generic datatype pattern: table membership governs, so the canonical MSH-18 declaration `UNICODE UTF-8` (table 0211) validates instead of raising an ID-format error
+
 ## [0.9.1] - 2026-10-15
 
 ### Added

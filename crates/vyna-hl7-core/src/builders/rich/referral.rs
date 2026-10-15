@@ -2,6 +2,7 @@
 
 use super::{
     MessageBuilder, PatientAddress, PatientDemographics, PatientIdentifier, generate_control_id,
+    rich_base,
 };
 use crate::{
     Version,
@@ -44,7 +45,8 @@ pub struct Diagnosis {
     /// as a fallback when `code` is None so partners that only read
     /// the description still get something.
     pub description: Option<String>,
-    /// DG1-2 / DG1-3.3 coding method (defaults to "I10").
+    /// DG1-2 / DG1-3.3 coding method. DG1-2 is emitted only when set
+    /// (the schema caps it at 2 chars); DG1-3.3 defaults to "I10".
     pub coding_method: Option<String>,
     /// DG1-6 diagnosis type. Defaults to "A" (admitting).
     pub diagnosis_type: Option<String>,
@@ -52,7 +54,7 @@ pub struct Diagnosis {
     pub datetime: Option<String>,
 }
 
-pub struct RefI12Builder {
+pub struct RichRefI12Builder {
     base: MessageBuilder,
     sending_app: String,
     sending_facility: String,
@@ -67,9 +69,9 @@ pub struct RefI12Builder {
     diagnosis: Option<Diagnosis>,
 }
 
-impl RefI12Builder {
+impl RichRefI12Builder {
     pub fn new(version: Version) -> Self {
-        let mut base = MessageBuilder::new(version, "REF", "I12");
+        let mut base = rich_base(version, "REF", "I12");
         base.message_structure("REF_I12");
         Self {
             base,
@@ -192,7 +194,7 @@ impl RefI12Builder {
     /// Ch 11). The receiver distinguishes them by MSH-9 together with the RF1
     /// status and identifiers, which is why one builder can serve all three.
     ///
-    /// Same shape as `SiuS12Builder::trigger_event`, for the same reason.
+    /// Same shape as `RichSiuS12Builder::trigger_event`, for the same reason.
     pub fn trigger_event(mut self, trigger: &str) -> Self {
         self.base.set_trigger_event(trigger);
         self
@@ -264,7 +266,11 @@ pub fn emit_dg1(diagnosis: &Diagnosis) -> Segment {
     let coding_method = diagnosis.coding_method.as_deref().unwrap_or("I10");
     let mut dg1 = Segment::new("DG1");
     dg1.add_field(Field::from_value("1")); // DG1-1 set ID
-    dg1.add_field(Field::from_value(coding_method)); // DG1-2
+    // DG1-2 only when the caller asserts a coding method: the schema caps
+    // it at 2 chars, so the "I10" default cannot go here.
+    dg1.add_field(Field::from_value(
+        diagnosis.coding_method.as_deref().unwrap_or(""),
+    )); // DG1-2
     // DG1-3 diagnosis code (CWE: code^description^coding_method).
     let mut dg1_3 = Field::new();
     let mut rep = Repetition::new();

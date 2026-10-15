@@ -135,6 +135,10 @@ impl<'a> Terser<'a> {
     /// path names no component (e.g. `get_composite("OBX(1)-5")`).
     /// Paths WITH a component delegate to the same resolution as
     /// `get`, owned as a `String`.
+    ///
+    /// Only the first subcomponent of each component is included
+    /// (`A&B^C&D` yields `A^C`); use field encoding when the
+    /// wire-complete value is needed.
     pub fn get_composite(&self, path: &str) -> Result<Option<String>> {
         let parsed_path = TerserPath::parse(path)?;
 
