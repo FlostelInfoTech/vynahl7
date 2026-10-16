@@ -878,7 +878,7 @@ mod tests {
             .unwrap()
             .unwrap()
             .clone_key();
-        let config = rustls::ServerConfig::builder()
+        let config = crate::tls::server_config_builder()
             .with_no_client_auth()
             .with_single_cert(certs, key)
             .unwrap();
@@ -942,7 +942,7 @@ mod tests {
             .unwrap()
             .unwrap()
             .clone_key();
-        let config = rustls::ServerConfig::builder()
+        let config = crate::tls::server_config_builder()
             .with_no_client_auth()
             .with_single_cert(certs, key)
             .unwrap();

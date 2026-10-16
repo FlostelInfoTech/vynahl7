@@ -1,5 +1,10 @@
 ## [Unreleased]
 
+### Fixed
+
+- TLS configurations no longer infer the rustls `CryptoProvider`: the `TlsClientConfig`/`TlsServerConfig` constructors in vyna-hl7-mllp and vyna-hl7-http build on an explicit provider (an installed process default wins, else `aws-lc-rs`), so downstream builds enabling both `aws-lc-rs` and `ring` no longer panic at construction
+- MSH-18 multibyte declarations decode again: `SHIFT_JIS` (plus `SHIFT-JIS`/`SJIS`), `EUC-JP`, `EUC-KR` (plus `KS X 1001`), `GB 18030-2000` (plus `GB18030`), `BIG-5` (plus `BIG5`), and `ISO IR14`/`ISO IR87`/`ISO IR159` (via ISO-2022-JP); `ISO IR6` parses as UTF-8
+
 ## [0.10.0] - 2026-10-15
 
 ### Added

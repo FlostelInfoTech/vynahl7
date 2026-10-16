@@ -42,6 +42,10 @@ full = ["tls", "testing"]
 [dev-dependencies]
 uuid.workspace = true
 futures.workspace = true
+# Dual-provider test builds (see tls.rs): `ring` alongside the default
+# `aws-lc-rs`, reproducing downstream builds that enable both — the
+# configuration under which inferred providers panic.
+rustls = { workspace = true, features = ["ring"] }
 
 [lints]
 workspace = true

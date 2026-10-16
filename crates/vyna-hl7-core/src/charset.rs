@@ -2,7 +2,8 @@
 //!
 //! HL7 messages declare their wire encoding in MSH-18. [`CharacterSet`] maps
 //! that declaration to a text encoding so inbound wire bytes can be decoded
-//! and outbound messages encoded in anything from ASCII to ISO-8859-16:
+//! and outbound messages encoded in anything from ASCII to ISO-8859-16 to
+//! the multibyte East-Asian encodings APAC senders declare:
 //!
 //! ```rust
 //! use vyna_hl7_core::charset::CharacterSet;
@@ -22,24 +23,44 @@ use std::str::FromStr;
 use crate::error::{Error, Result};
 
 /// Suffix listing every supported MSH-18 value, shared by error messages.
-const SUPPORTED_SETS: &str = "supported: ASCII, UNICODE UTF-8, 8859/1-8859/11, 8859/13-8859/16";
+const SUPPORTED_SETS: &str = "supported: ASCII, UNICODE UTF-8, 8859/1-8859/11, 8859/13-8859/16, \
+     SHIFT_JIS, EUC-JP, EUC-KR, GB 18030-2000, BIG-5, ISO IR87";
 
 /// HL7 character set from MSH-18 (HL7 table 0211).
 ///
-/// Only single-byte encodings plus UTF-8 are supported. `UNICODE` (UTF-16)
-/// is rejected because MLLP framing is byte-oriented and cannot frame
-/// UTF-16 payloads; peers must send `UNICODE UTF-8` instead.
+/// Single-byte encodings, UTF-8, and the multibyte East-Asian encodings
+/// APAC senders declare. `UNICODE` (UTF-16) is rejected because MLLP
+/// framing is byte-oriented and cannot frame UTF-16 payloads; peers must
+/// send `UNICODE UTF-8` instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CharacterSet {
     /// 7-bit ASCII (`ASCII`).
     Ascii,
-    /// UTF-8 (`UNICODE UTF-8`). Also the default when MSH-18 is empty.
+    /// UTF-8 (`UNICODE UTF-8`). Also the default when MSH-18 is empty, and
+    /// what the table's other name for ASCII (`ISO IR6`) parses to: UTF-8
+    /// decoding is byte-identical on ASCII input, and tolerates the UTF-8
+    /// senders who declare the ASCII name in practice.
     Utf8,
     /// ISO-8859-N single-byte encoding (`8859/N`).
     ///
     /// `N` must be 1-11 or 13-16; anything else fails conversion with an
     /// unsupported-character-set error instead of panicking.
     Iso8859(u8),
+    /// Shift_JIS (`SHIFT_JIS`, also `SHIFT-JIS` / `SJIS`).
+    ShiftJis,
+    /// EUC-JP (`EUC-JP`).
+    EucJp,
+    /// EUC-KR (`EUC-KR`, also the table spelling `KS X 1001`).
+    EucKr,
+    /// GB18030 (`GB 18030-2000`, also `GB18030`).
+    Gb18030,
+    /// Big5 (`BIG-5`, also `BIG5`).
+    Big5,
+    /// ISO-2022-JP (`ISO IR87`, also `ISO IR14` / `ISO IR159`).
+    ///
+    /// The IR values name a character SET carried with ISO-2022 escape
+    /// sequences, so ISO-2022-JP is the decoder — not a flat 8-bit table.
+    Iso2022Jp,
 }
 
 impl CharacterSet {
@@ -48,8 +69,8 @@ impl CharacterSet {
     /// Matching is case-insensitive, surrounding whitespace is ignored, and
     /// only the first repetition is used when MSH-18 repeats. An empty value
     /// means the sender declared nothing and returns the default (UTF-8).
-    /// Common aliases (`UTF-8`, `ISO-8859-1`, `WINDOWS-1252`, ...) are
-    /// accepted alongside the canonical table 0211 values.
+    /// Common aliases (`UTF-8`, `ISO-8859-1`, `WINDOWS-1252`, `SHIFT-JIS`,
+    /// ...) are accepted alongside the canonical table 0211 values.
     pub fn from_msh18(value: &str) -> Result<Self> {
         let first = value.split('~').next().unwrap_or("").trim();
         if first.is_empty() {
@@ -60,15 +81,24 @@ impl CharacterSet {
         let normalized = words.join(" ");
         match normalized.as_str() {
             "ASCII" => Ok(Self::Ascii),
+            // The table's other name for ASCII decodes as UTF-8: identical
+            // on ASCII input, and the tolerant reading for UTF-8 senders.
+            "ISO IR6" => Ok(Self::Utf8),
             "UNICODE UTF-8" | "UTF-8" | "UTF8" => Ok(Self::Utf8),
+            // The JIS character sets ride ISO-2022 escape sequences, so one
+            // decoder serves all three IR declarations (plus the encoding's
+            // own name, which senders use as well).
+            "ISO IR14" | "ISO IR87" | "ISO IR159" | "ISO-2022-JP" => Ok(Self::Iso2022Jp),
+            "GB 18030-2000" | "GB18030" => Ok(Self::Gb18030),
+            "KS X 1001" => Ok(Self::EucKr),
+            "BIG-5" | "BIG5" => Ok(Self::Big5),
+            "SHIFT_JIS" | "SHIFT-JIS" | "SJIS" => Ok(Self::ShiftJis),
+            "EUC-JP" => Ok(Self::EucJp),
+            "EUC-KR" => Ok(Self::EucKr),
             "UNICODE" => Err(Error::Decoding(
                 "character set 'UNICODE' (UTF-16) is not supported; use 'UNICODE UTF-8' or a single-byte encoding instead"
                     .to_string(),
             )),
-            "ISO IR87" | "ISO IR159" => Err(Error::Decoding(format!(
-                "character set '{}' is not supported ({SUPPORTED_SETS})",
-                truncate_declaration(first)
-            ))),
             "WINDOWS-1252" | "WINDOWS1252" => Ok(Self::Iso8859(1)),
             _ => {
                 if let Some(number) = parse_8859_number(&normalized) {
@@ -137,15 +167,10 @@ impl CharacterSet {
                 let encoding = single_byte_encoding(number).ok_or_else(|| {
                     Error::Decoding(unsupported_8859_message(number))
                 })?;
-                encoding
-                    .decode_without_bom_handling_and_without_replacement(bytes)
-                    .map(|text| text.into_owned())
-                    .ok_or_else(|| {
-                        Error::Decoding(format!(
-                            "message bytes cannot be decoded as 8859/{number}"
-                        ))
-                    })
+                decode_with_encoding(encoding, bytes, &format!("8859/{number}"))
             }
+            Self::ShiftJis | Self::EucJp | Self::EucKr | Self::Gb18030 | Self::Big5
+            | Self::Iso2022Jp => decode_with_encoding(multibyte_encoding(self), bytes, &self.msh18()),
         }
     }
 
@@ -168,19 +193,15 @@ impl CharacterSet {
             Self::Iso8859(number) => {
                 let encoding = single_byte_encoding(number)
                     .ok_or_else(|| Error::Encoding(unsupported_8859_message(number)))?;
-                let (bytes, _, had_errors) = encoding.encode(text);
-                if !had_errors {
-                    return Ok(bytes.into_owned());
-                }
-                match Self::Iso8859(number).find_unmappable(text) {
-                    Some(offender) => Err(Error::Encoding(format!(
-                        "character U+{:04X} cannot be encoded in 8859/{number}",
-                        offender as u32
-                    ))),
-                    None => Err(Error::Encoding(format!(
-                        "message text cannot be encoded in 8859/{number}"
-                    ))),
-                }
+                encode_with_encoding(encoding, text, &format!("8859/{number}"), self)
+            }
+            Self::ShiftJis
+            | Self::EucJp
+            | Self::EucKr
+            | Self::Gb18030
+            | Self::Big5
+            | Self::Iso2022Jp => {
+                encode_with_encoding(multibyte_encoding(self), text, &self.msh18(), self)
             }
         }
     }
@@ -193,24 +214,29 @@ impl CharacterSet {
         match self {
             Self::Ascii => text.chars().find(|c| !c.is_ascii()),
             Self::Utf8 => None,
-            Self::Iso8859(number) => {
-                let encoding = single_byte_encoding(number)?;
-                let mut buffer = [0u8; 4];
-                text.chars().find(|c| {
-                    let encoded = c.encode_utf8(&mut buffer);
-                    let (_, _, failed) = encoding.encode(encoded);
-                    failed
-                })
-            }
+            Self::Iso8859(number) => find_unmappable_with(single_byte_encoding(number)?, text),
+            Self::ShiftJis
+            | Self::EucJp
+            | Self::EucKr
+            | Self::Gb18030
+            | Self::Big5
+            | Self::Iso2022Jp => find_unmappable_with(multibyte_encoding(self), text),
         }
     }
 
-    /// Canonical HL7 table 0211 value for MSH-18.
+    /// Canonical MSH-18 declaration for this set: the HL7 table 0211 value
+    /// where the table names one, otherwise the spelling senders use.
     pub fn msh18(self) -> String {
         match self {
             Self::Ascii => "ASCII".to_string(),
             Self::Utf8 => "UNICODE UTF-8".to_string(),
             Self::Iso8859(number) => format!("8859/{number}"),
+            Self::ShiftJis => "SHIFT_JIS".to_string(),
+            Self::EucJp => "EUC-JP".to_string(),
+            Self::EucKr => "EUC-KR".to_string(),
+            Self::Gb18030 => "GB 18030-2000".to_string(),
+            Self::Big5 => "BIG-5".to_string(),
+            Self::Iso2022Jp => "ISO IR87".to_string(),
         }
     }
 
@@ -221,6 +247,12 @@ impl CharacterSet {
             Self::Ascii => "us-ascii".to_string(),
             Self::Utf8 => "utf-8".to_string(),
             Self::Iso8859(number) => format!("iso-8859-{number}"),
+            Self::ShiftJis => "shift_jis".to_string(),
+            Self::EucJp => "euc-jp".to_string(),
+            Self::EucKr => "euc-kr".to_string(),
+            Self::Gb18030 => "gb18030".to_string(),
+            Self::Big5 => "big5".to_string(),
+            Self::Iso2022Jp => "iso-2022-jp".to_string(),
         }
     }
 
@@ -274,6 +306,77 @@ fn parse_8859_number(normalized: &str) -> Option<u8> {
         }
     }
     None
+}
+
+/// The `encoding_rs` encoding for a multibyte [`CharacterSet`].
+///
+/// Total over the six multibyte sets: each has a registered encoding, so
+/// unlike [`single_byte_encoding`] this cannot return `None`. The three
+/// non-multibyte arms are unreachable by construction — [`decode`](CharacterSet::decode),
+/// [`encode`](CharacterSet::encode) and
+/// [`find_unmappable`](CharacterSet::find_unmappable) only call this for the
+/// six — and a newly added set is a compile error here, which is the point:
+/// it forces the author to choose that set's decoder deliberately.
+fn multibyte_encoding(set: CharacterSet) -> &'static encoding_rs::Encoding {
+    use encoding_rs::{BIG5, EUC_JP, EUC_KR, GB18030, ISO_2022_JP, SHIFT_JIS};
+    match set {
+        CharacterSet::ShiftJis => SHIFT_JIS,
+        CharacterSet::EucJp => EUC_JP,
+        CharacterSet::EucKr => EUC_KR,
+        CharacterSet::Gb18030 => GB18030,
+        CharacterSet::Big5 => BIG5,
+        CharacterSet::Iso2022Jp => ISO_2022_JP,
+        CharacterSet::Ascii | CharacterSet::Utf8 | CharacterSet::Iso8859(_) => {
+            unreachable!("multibyte_encoding called for a non-multibyte set")
+        }
+    }
+}
+
+/// Decode through an `encoding_rs` encoding. Malformed input is an error
+/// naming the declared set — never a silent replacement.
+fn decode_with_encoding(
+    encoding: &'static encoding_rs::Encoding,
+    bytes: &[u8],
+    label: &str,
+) -> Result<String> {
+    encoding
+        .decode_without_bom_handling_and_without_replacement(bytes)
+        .map(|text| text.into_owned())
+        .ok_or_else(|| Error::Decoding(format!("message bytes cannot be decoded as {label}")))
+}
+
+/// Encode through an `encoding_rs` encoding. Unmappable characters are an
+/// error naming the offender's codepoint (never echoing patient data);
+/// nothing is silently replaced or dropped.
+fn encode_with_encoding(
+    encoding: &'static encoding_rs::Encoding,
+    text: &str,
+    label: &str,
+    set: CharacterSet,
+) -> Result<Vec<u8>> {
+    let (bytes, _, had_errors) = encoding.encode(text);
+    if !had_errors {
+        return Ok(bytes.into_owned());
+    }
+    match set.find_unmappable(text) {
+        Some(offender) => Err(Error::Encoding(format!(
+            "character U+{:04X} cannot be encoded in {label}",
+            offender as u32
+        ))),
+        None => Err(Error::Encoding(format!(
+            "message text cannot be encoded in {label}"
+        ))),
+    }
+}
+
+/// First character with no representation under an `encoding_rs` encoding.
+fn find_unmappable_with(encoding: &'static encoding_rs::Encoding, text: &str) -> Option<char> {
+    let mut buffer = [0u8; 4];
+    text.chars().find(|c| {
+        let encoded = c.encode_utf8(&mut buffer);
+        let (_, _, failed) = encoding.encode(encoded);
+        failed
+    })
 }
 
 /// Map an 8859 part number to its `encoding_rs` encoding.
@@ -351,10 +454,20 @@ fn decode_ascii(bytes: &[u8]) -> Result<String> {
 
 /// Extract the raw MSH-18 value from wire bytes without decoding them.
 ///
-/// Only ASCII bytes are inspected: field separators below 0x80 can never
-/// occur inside multibyte sequences, so the scan is safe in every supported
-/// encoding. Returns `None` when the bytes do not start with an MSH segment
-/// or MSH-18 is absent or non-ASCII.
+/// MSH-18 is *inside* the message whose encoding it declares, so finding it
+/// means scanning bytes before knowing how to read them. `0x7C` (`|`) is a
+/// legal trail byte in Shift_JIS, Big5 and GB18030, so a naive split can land
+/// inside a multi-byte character when MSH-3/4/5/6 carry non-ASCII text.
+///
+/// That is tolerated rather than solved, because it degrades safely: only an
+/// entirely ASCII value is even considered, so a mis-split either yields
+/// non-ASCII bytes (no declaration found — [`detect`](CharacterSet::detect)
+/// falls back to UTF-8) or an unknown token (a loud refusal). Either way
+/// nothing is silently mis-decoded, and a partner can never be made *worse*
+/// off by the scan going wrong.
+///
+/// Returns `None` when the bytes do not start with an MSH segment or MSH-18
+/// is absent or non-ASCII.
 fn extract_msh18(bytes: &[u8]) -> Option<&str> {
     let scanned = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
     let end = scanned
@@ -394,6 +507,23 @@ mod tests {
             ("ISO-8859-3", CharacterSet::Iso8859(3)),
             ("iso_8859-4", CharacterSet::Iso8859(4)),
             ("WINDOWS-1252", CharacterSet::Iso8859(1)),
+            // The table's other name for ASCII decodes as UTF-8.
+            ("ISO IR6", CharacterSet::Utf8),
+            // Multibyte East-Asian declarations.
+            ("SHIFT_JIS", CharacterSet::ShiftJis),
+            ("shift-jis", CharacterSet::ShiftJis),
+            ("SJIS", CharacterSet::ShiftJis),
+            ("EUC-JP", CharacterSet::EucJp),
+            ("EUC-KR", CharacterSet::EucKr),
+            ("KS X 1001", CharacterSet::EucKr),
+            ("GB 18030-2000", CharacterSet::Gb18030),
+            ("gb18030", CharacterSet::Gb18030),
+            ("BIG-5", CharacterSet::Big5),
+            ("big5", CharacterSet::Big5),
+            ("ISO IR14", CharacterSet::Iso2022Jp),
+            ("ISO IR87", CharacterSet::Iso2022Jp),
+            ("ISO IR159", CharacterSet::Iso2022Jp),
+            ("iso-2022-jp", CharacterSet::Iso2022Jp),
             // First repetition wins; empty means undeclared.
             ("8859/1~8859/2", CharacterSet::Iso8859(1)),
             ("", CharacterSet::Utf8),
@@ -416,8 +546,8 @@ mod tests {
             "8859/0",
             "8859/17",
             "UNICODE",
-            "ISO IR87",
-            "ISO IR159",
+            "CNS 11643-1992",
+            "UNICODE UTF-32",
             "UTF-16",
         ] {
             assert!(
@@ -443,6 +573,12 @@ mod tests {
             CharacterSet::Iso8859(11),
             CharacterSet::Iso8859(15),
             CharacterSet::Iso8859(16),
+            CharacterSet::ShiftJis,
+            CharacterSet::EucJp,
+            CharacterSet::EucKr,
+            CharacterSet::Gb18030,
+            CharacterSet::Big5,
+            CharacterSet::Iso2022Jp,
         ];
         for set in sets {
             assert_eq!(CharacterSet::from_msh18(&set.msh18()).unwrap(), set);
@@ -451,6 +587,12 @@ mod tests {
         assert_eq!(CharacterSet::Ascii.msh18(), "ASCII");
         assert_eq!(CharacterSet::Utf8.msh18(), "UNICODE UTF-8");
         assert_eq!(CharacterSet::Iso8859(1).msh18(), "8859/1");
+        assert_eq!(CharacterSet::ShiftJis.msh18(), "SHIFT_JIS");
+        assert_eq!(CharacterSet::EucJp.msh18(), "EUC-JP");
+        assert_eq!(CharacterSet::EucKr.msh18(), "EUC-KR");
+        assert_eq!(CharacterSet::Gb18030.msh18(), "GB 18030-2000");
+        assert_eq!(CharacterSet::Big5.msh18(), "BIG-5");
+        assert_eq!(CharacterSet::Iso2022Jp.msh18(), "ISO IR87");
     }
 
     #[test]
@@ -490,11 +632,40 @@ mod tests {
     }
 
     #[test]
+    fn multibyte_encodings_round_trip() {
+        let cases = [
+            // One patient name per script, in the encoding its sender uses.
+            (CharacterSet::ShiftJis, "田中太郎"),
+            (CharacterSet::EucJp, "田中太郎"),
+            (CharacterSet::Iso2022Jp, "田中太郎"),
+            (CharacterSet::EucKr, "홍길동"),
+            (CharacterSet::Gb18030, "李小明"),
+            (CharacterSet::Big5, "陳大文"),
+        ];
+        for (set, text) in cases {
+            let bytes = set.encode(text).unwrap();
+            assert_eq!(set.decode(&bytes).unwrap(), text, "charset {set}");
+        }
+    }
+
+    #[test]
     fn known_characters_map_to_expected_bytes() {
         // Spot checks cross-verified against Python's codecs module.
         let cases = [
             (CharacterSet::Iso8859(1), "é", vec![0xE9]),
             (CharacterSet::Iso8859(1), "€", vec![0x80]),
+            // A round trip alone cannot catch two swapped encodings, so each
+            // multibyte set pins one character's exact wire bytes.
+            (CharacterSet::ShiftJis, "あ", vec![0x82, 0xA0]),
+            (CharacterSet::EucJp, "あ", vec![0xA4, 0xA2]),
+            (CharacterSet::EucKr, "가", vec![0xB0, 0xA1]),
+            (CharacterSet::Gb18030, "中", vec![0xD6, 0xD0]),
+            (CharacterSet::Big5, "中", vec![0xA4, 0xA4]),
+            (
+                CharacterSet::Iso2022Jp,
+                "あ",
+                vec![0x1B, 0x24, 0x42, 0x24, 0x22, 0x1B, 0x28, 0x42],
+            ),
             (
                 CharacterSet::Iso8859(2),
                 "Łódź",
@@ -532,6 +703,12 @@ mod tests {
         assert!(latin1.to_string().contains("U+5317"));
         // No silent numeric character references may leak into output.
         assert!(CharacterSet::Iso8859(2).encode("€").is_err());
+        // Thai has no representation in Shift_JIS; GB18030 covers it, which
+        // is the contrast that proves the error is about the ENCODING.
+        let thai = CharacterSet::ShiftJis.encode("ก").unwrap_err();
+        assert!(thai.to_string().contains("U+0E01"), "{thai}");
+        assert!(thai.to_string().contains("SHIFT_JIS"), "{thai}");
+        assert!(CharacterSet::Gb18030.encode("ก").is_ok());
     }
 
     #[test]
@@ -621,6 +798,21 @@ mod tests {
     }
 
     #[test]
+    fn decode_message_honours_a_shift_jis_declaration() {
+        // MSH line is ASCII (as it must be for the MSH-18 scan); the PID
+        // carries Shift_JIS bytes for 田中 (verified against Python codecs).
+        let mut wire =
+            b"MSH|^~\\&|SND|FAC|RCV|RFAC|20240115120000||ADT^A01|1|P|2.5.1||||||SHIFT_JIS\rPID|1||1||".to_vec();
+        wire.extend_from_slice(&[0x93, 0x63, 0x92, 0x86]);
+        wire.extend_from_slice(b"\r");
+        let text = CharacterSet::decode_message(&wire).unwrap();
+        assert!(
+            text.contains("田中"),
+            "Shift_JIS PID must decode to 田中, got {text:?}"
+        );
+    }
+
+    #[test]
     fn default_character_set_is_utf8() {
         assert_eq!(CharacterSet::default(), CharacterSet::Utf8);
     }
@@ -635,6 +827,12 @@ mod tests {
             ("iso-8859-1", CharacterSet::Iso8859(1)),
             ("\"ISO-8859-15\"", CharacterSet::Iso8859(15)),
             ("windows-1252", CharacterSet::Iso8859(1)),
+            ("shift_jis", CharacterSet::ShiftJis),
+            ("euc-jp", CharacterSet::EucJp),
+            ("euc-kr", CharacterSet::EucKr),
+            ("gb18030", CharacterSet::Gb18030),
+            ("big5", CharacterSet::Big5),
+            ("iso-2022-jp", CharacterSet::Iso2022Jp),
         ];
         for (name, expected) in cases {
             assert_eq!(CharacterSet::from_iana(name).unwrap(), expected);

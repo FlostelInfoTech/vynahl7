@@ -105,6 +105,10 @@ full = ["tls", "auth", "oauth", "websocket", "retry", "logging", "metrics", "rat
 tokio-test = "0.4"
 tracing-subscriber.workspace = true
 vyna-hl7-terser.workspace = true
+# Dual-provider test builds (see tls.rs): `ring` alongside the default
+# `aws-lc-rs`, reproducing downstream builds that enable both — the
+# configuration under which inferred providers panic.
+rustls = { workspace = true, features = ["ring"] }
 
 [lints]
 workspace = true

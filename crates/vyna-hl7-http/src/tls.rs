@@ -12,9 +12,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 #[cfg(feature = "tls")]
+use rustls::crypto::CryptoProvider;
+#[cfg(feature = "tls")]
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 #[cfg(feature = "tls")]
-use rustls::{ClientConfig, RootCertStore, ServerConfig};
+use rustls::{ClientConfig, ConfigBuilder, RootCertStore, ServerConfig, WantsVerifier};
 /// Context wrapper preserving the file path (when any) alongside the
 /// underlying TLS failure so errors report *what* failed, not just how.
 #[cfg(feature = "tls")]
@@ -161,6 +163,52 @@ fn parse_private_key_pem(pem: &[u8], what: &str) -> Result<PrivateKeyDer<'static
         })
 }
 
+/// The rustls [`CryptoProvider`] this crate builds its TLS configurations with.
+///
+/// rustls' `ClientConfig::builder()`, `ServerConfig::builder()` and
+/// `WebPkiClientVerifier::builder()` all resolve a *process-level* provider, and
+/// **panic** when the crate features name more than one:
+/// `CryptoProvider::from_crate_features()` returns `None` for an ambiguous feature
+/// set, and its caller `expect`s.
+///
+/// That is not hypothetical. This crate compiles `aws-lc-rs` in (a rustls
+/// default feature), and any downstream build that additionally enables `ring` —
+/// an application linking reqwest alongside ldap3, say — makes every TLS-enabled
+/// configuration panic the moment it is constructed.
+///
+/// So choose explicitly rather than infer. An application that deliberately
+/// installed a provider — a FIPS build, say — still wins; otherwise take
+/// `aws-lc-rs`, which this crate's own rustls dependency guarantees is compiled
+/// in (it is a rustls default feature) and which rustls itself prefers.
+#[cfg(feature = "tls")]
+pub(crate) fn crypto_provider() -> Arc<CryptoProvider> {
+    CryptoProvider::get_default()
+        .cloned()
+        .unwrap_or_else(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
+}
+
+/// Begin a client configuration on [`crypto_provider`].
+///
+/// Equivalent to `ClientConfig::builder()`, which is itself
+/// `builder_with_provider(..).with_protocol_versions(DEFAULT_VERSIONS).unwrap()`,
+/// except that the provider is chosen instead of inferred. The `expect` is
+/// unreachable for the same reason rustls' own is: it fires only if the provider
+/// supports none of the default protocol versions.
+#[cfg(feature = "tls")]
+pub(crate) fn client_config_builder() -> ConfigBuilder<ClientConfig, WantsVerifier> {
+    ClientConfig::builder_with_provider(crypto_provider())
+        .with_safe_default_protocol_versions()
+        .expect("the rustls provider supports none of the default TLS protocol versions")
+}
+
+/// Begin a server configuration on [`crypto_provider`]. See [`client_config_builder`].
+#[cfg(feature = "tls")]
+pub(crate) fn server_config_builder() -> ConfigBuilder<ServerConfig, WantsVerifier> {
+    ServerConfig::builder_with_provider(crypto_provider())
+        .with_safe_default_protocol_versions()
+        .expect("the rustls provider supports none of the default TLS protocol versions")
+}
+
 /// TLS configuration for client connections
 #[cfg(feature = "tls")]
 #[derive(Clone)]
@@ -190,7 +238,7 @@ impl TlsClientConfig {
             root_store.roots.push(cert.clone());
         }
 
-        let config = ClientConfig::builder()
+        let config = client_config_builder()
             .with_root_certificates(root_store)
             .with_no_client_auth();
 
@@ -238,7 +286,7 @@ impl TlsClientConfig {
                 .map_err(|e| config_error("Failed to add CA certificate", e))?;
         }
 
-        let config = ClientConfig::builder()
+        let config = client_config_builder()
             .with_root_certificates(root_store)
             .with_no_client_auth();
 
@@ -284,7 +332,7 @@ impl TlsClientConfig {
                 .map_err(|e| config_error("Failed to add CA certificate", e))?;
         }
 
-        let config = ClientConfig::builder()
+        let config = client_config_builder()
             .with_root_certificates(root_store)
             .with_no_client_auth();
 
@@ -348,7 +396,7 @@ impl TlsClientConfig {
         // Load client private key
         let client_key = load_private_key(client_key_path, "private key")?;
 
-        let config = ClientConfig::builder()
+        let config = client_config_builder()
             .with_root_certificates(root_store)
             .with_client_auth_cert(client_certs, client_key)
             .map_err(|e| config_error("Failed to configure client auth", e))?;
@@ -409,7 +457,7 @@ impl TlsClientConfig {
 
         let client_key = parse_private_key_pem(client_key_pem, "private key")?;
 
-        let config = ClientConfig::builder()
+        let config = client_config_builder()
             .with_root_certificates(root_store)
             .with_client_auth_cert(client_certs, client_key)
             .map_err(|e| config_error("Failed to configure client auth", e))?;
@@ -453,7 +501,7 @@ impl TlsServerConfig {
         // Load server private key
         let key = load_private_key(key_path, "private key")?;
 
-        let config = ServerConfig::builder()
+        let config = server_config_builder()
             .with_no_client_auth()
             .with_single_cert(certs, key)
             .map_err(|e| config_error("Failed to configure server TLS", e))?;
@@ -491,7 +539,7 @@ impl TlsServerConfig {
 
         let key = parse_private_key_pem(key_pem, "private key")?;
 
-        let config = ServerConfig::builder()
+        let config = server_config_builder()
             .with_no_client_auth()
             .with_single_cert(certs, key)
             .map_err(|e| config_error("Failed to configure server TLS", e))?;
@@ -555,12 +603,14 @@ impl TlsServerConfig {
         // Load server private key
         let key = load_private_key(key_path, "private key")?;
 
-        let client_cert_verifier =
-            rustls::server::WebPkiClientVerifier::builder(Arc::new(client_auth_roots))
-                .build()
-                .map_err(|e| config_error("Failed to build client verifier", e))?;
+        let client_cert_verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(
+            Arc::new(client_auth_roots),
+            crypto_provider(),
+        )
+        .build()
+        .map_err(|e| config_error("Failed to build client verifier", e))?;
 
-        let config = ServerConfig::builder()
+        let config = server_config_builder()
             .with_client_cert_verifier(client_cert_verifier)
             .with_single_cert(certs, key)
             .map_err(|e| config_error("Failed to configure server TLS", e))?;
@@ -616,12 +666,14 @@ impl TlsServerConfig {
 
         let key = parse_private_key_pem(key_pem, "private key")?;
 
-        let client_cert_verifier =
-            rustls::server::WebPkiClientVerifier::builder(Arc::new(client_auth_roots))
-                .build()
-                .map_err(|e| config_error("Failed to build client verifier", e))?;
+        let client_cert_verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(
+            Arc::new(client_auth_roots),
+            crypto_provider(),
+        )
+        .build()
+        .map_err(|e| config_error("Failed to build client verifier", e))?;
 
-        let config = ServerConfig::builder()
+        let config = server_config_builder()
             .with_client_cert_verifier(client_cert_verifier)
             .with_single_cert(certs, key)
             .map_err(|e| config_error("Failed to configure server TLS", e))?;
@@ -952,6 +1004,40 @@ hd6+cELw2ZXCriD/uuHnPQ==
         assert!(TlsClientConfig::with_mtls_pem(cert, cert, key1).is_ok());
         assert!(TlsServerConfig::new_pem(cert, key8).is_ok());
         assert!(TlsServerConfig::with_mtls_pem(cert, key8, cert).is_ok());
+    }
+
+    /// Every constructor builds under DUAL providers (`aws-lc-rs` + `ring`).
+    ///
+    /// The dev-dependencies enable `ring` on top of rustls' default
+    /// `aws-lc-rs`, reproducing downstream builds that carry both — the
+    /// configuration under which inferring the provider panics.
+    /// Referencing both providers directly keeps this honest: if either
+    /// feature ever drops off, the test fails to COMPILE rather than
+    /// passing over a single-provider build.
+    #[test]
+    fn tls_constructors_build_under_dual_providers() {
+        // Compile guards: both providers must be present for this test to
+        // mean anything. (Values unused — only their existence matters.)
+        let _ = rustls::crypto::ring::default_provider();
+        let _ = rustls::crypto::aws_lc_rs::default_provider();
+
+        let cert = TEST_CERT_PEM.as_bytes();
+        let key8 = TEST_KEY_PKCS8_PEM.as_bytes();
+        assert!(TlsClientConfig::new().is_ok());
+        assert!(TlsClientConfig::with_ca_cert_pem(cert).is_ok());
+        assert!(TlsClientConfig::with_mtls_pem(cert, cert, key8).is_ok());
+        assert!(TlsServerConfig::new_pem(cert, key8).is_ok());
+        assert!(TlsServerConfig::with_mtls_pem(cert, key8, cert).is_ok());
+
+        // The path-taking twins, through temp files.
+        let cert_path = write_fixture("dual-cert.pem", TEST_CERT_PEM);
+        let key_path = write_fixture("dual-key.pem", TEST_KEY_PKCS8_PEM);
+        assert!(TlsClientConfig::with_ca_cert(&cert_path).is_ok());
+        assert!(TlsClientConfig::with_mtls(&cert_path, &cert_path, &key_path).is_ok());
+        assert!(TlsServerConfig::new(&cert_path, &key_path).is_ok());
+        assert!(TlsServerConfig::with_mtls(&cert_path, &key_path, &cert_path).is_ok());
+        let _ = std::fs::remove_file(&cert_path);
+        let _ = std::fs::remove_file(&key_path);
     }
 
     #[test]
