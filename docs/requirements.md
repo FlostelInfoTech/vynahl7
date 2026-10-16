@@ -1,6 +1,6 @@
 # Software Requirements Specification — VynaHL7
 
-Version: 0.10.0 (this document tracks the workspace; update per
+Version: 0.11.0 (this document tracks the workspace; update per
 [docs rules](README.md)). VynaHL7 is a Rust workspace (23 crates) for
 parsing, validating, building, converting, and transporting HL7 v2.x
 healthcare messages.
@@ -209,7 +209,7 @@ pointer to the suite that proves it. Roadmap items are marked
 | Robustness | cargo-fuzz parse/roundtrip (weekly scheduled CI) |
 | Full gate | `cargo test --workspace` green across default and all-features builds, clippy clean |
 
-## 11. Roadmap (explicitly out of scope for 0.10.0)
+## 11. Roadmap (explicitly out of scope for 0.11.0)
 
 - QBP/RSP/batch message schemas (validator falls back honestly today).
 - Full CVX (0292) registry refresh from the CDC source (covers 01–122,

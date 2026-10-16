@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-16
+
 ### Fixed
 
 - TLS configurations no longer infer the rustls `CryptoProvider`: the `TlsClientConfig`/`TlsServerConfig` constructors in vyna-hl7-mllp and vyna-hl7-http build on an explicit provider (an installed process default wins, else `aws-lc-rs`), so downstream builds enabling both `aws-lc-rs` and `ring` no longer panic at construction
@@ -234,7 +236,8 @@
 - Initial VynaHL7 release (Vyna Healthcare product family library), forked from rs7 1.6.1 with versioning restarted at 0.1.0
 - Renamed project from rs7 to VynaHL7: all crates renamed from `rs7-*` to `vyna-hl7-*`, Rust paths from `rs7_*` to `vyna_hl7_*`, CLI binary to `vynahl7`, and documentation updated accordingly
 
-[Unreleased]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/FlostelInfoTech/vynahl7/compare/v0.8.0...v0.9.0

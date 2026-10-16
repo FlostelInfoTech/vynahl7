@@ -1,6 +1,6 @@
 # Integration Guide — VynaHL7
 
-How to embed VynaHL7 (0.10.0) in a Rust service. Every Rust snippet below
+How to embed VynaHL7 (0.11.0) in a Rust service. Every Rust snippet below
 is executed as a test before release; shell snippets mirror the CLI's
 own integration tests.
 
