@@ -1,9 +1,9 @@
 ## [Unreleased]
 
+## [0.11.2] - 2026-10-27
+
 ### Added
 
-- `TerserMut::set_composite` (port of the rs7 API dropped in the move): whole-field paths replace the entire field decoding `^`/`&` separators, the write mirror of `get_composite`; component-scoped paths delegate to `set`
-- `MllpConnection::into_split` with `MllpReadHalf`/`MllpWriteHalf` for full-duplex use (read half keeps the persistent receive buffer incl. bytes already past the last frame; `receive_message_opt` treats timeout as idle), and `MllpConfig::post_accept_hook` (`PostAcceptHook`, `with_post_accept_hook`) run on the raw `TcpStream` before the TLS handshake for socket options such as keep-alive
 - `Debug` for `MllpServer`, `MllpClient` and `MllpConnection` (vyna-hl7-mllp), so downstream tests can assert bind/connect errors with `unwrap_err`
 - `is_tls` and `peer_certificate` channel introspection on `MllpClient`/`MllpConnection`: the server side observes the mTLS client leaf certificate for audit-actor identity; `tls::CertificateDer` re-exported for the return type
 - `TlsClientConfig::builder` / `TlsServerConfig::builder` with optional `crypto_provider` pinning, so applications can select a rustls `CryptoProvider` per connection without installing a process-global default (`tls::CryptoProvider` re-exported)
@@ -11,6 +11,13 @@
 ### Fixed
 
 - Documented the TLS 1.3 handshake timing on `MllpClient::connect_tls` / `connect_tls_with_config`: `Ok` means the client's handshake flight completed, so against an mTLS server a missing or rejected client certificate surfaces on the first `send_message`, not at connect time
+
+## [0.11.1] - 2026-10-27
+
+### Added
+
+- `TerserMut::set_composite` (port of the rs7 API dropped in the move): whole-field paths replace the entire field decoding `^`/`&` separators, the write mirror of `get_composite`; component-scoped paths delegate to `set`
+- `MllpConnection::into_split` with `MllpReadHalf`/`MllpWriteHalf` for full-duplex use (read half keeps the persistent receive buffer incl. bytes already past the last frame; `receive_message_opt` treats timeout as idle), and `MllpConfig::post_accept_hook` (`PostAcceptHook`, `with_post_accept_hook`) run on the raw `TcpStream` before the TLS handshake for socket options such as keep-alive
 
 ## [0.11.0] - 2026-10-16
 
