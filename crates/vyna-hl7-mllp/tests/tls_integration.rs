@@ -6,12 +6,24 @@
 
 use vyna_hl7_core::{Field, Message, Segment};
 use vyna_hl7_mllp::{
-    MllpClient,
+    MllpClient, MllpServer,
     testing::MockMllpServer,
-    tls::{TlsClientConfig, TlsServerConfig},
+    tls::{CertificateDer, TlsClientConfig, TlsServerConfig},
 };
 
 mod test_certs;
+
+/// First certificate from a PEM file, as DER bytes.
+fn first_cert_der(path: &str) -> Vec<u8> {
+    use rustls::pki_types::pem::PemObject;
+    let pem = std::fs::read(path).expect("read PEM fixture");
+    CertificateDer::pem_slice_iter(&pem)
+        .next()
+        .expect("PEM file holds a certificate")
+        .expect("PEM parses")
+        .as_ref()
+        .to_vec()
+}
 
 #[tokio::test]
 async fn test_tls_basic_connection() {
@@ -380,5 +392,71 @@ async fn test_tls_concurrent_connections() {
 
     // Cleanup
     server.shutdown().await.expect("Failed to shutdown server");
+    certs.cleanup();
+}
+
+/// ENH-003, TLS side: over mTLS both ends report `is_tls()`, the server
+/// sees the client leaf certificate and the client sees the server leaf.
+#[tokio::test]
+async fn test_mtls_channel_introspection() {
+    let certs = test_certs::generate_test_certs_with_client().await;
+
+    let expected_client_der = first_cert_der(&certs.client_cert_path);
+    let expected_server_der = first_cert_der(&certs.server_cert_path);
+
+    let server_config = TlsServerConfig::with_mtls(
+        &certs.server_cert_path,
+        &certs.server_key_path,
+        &certs.ca_cert_path,
+    )
+    .expect("Failed to create mTLS server config");
+
+    // Raw server (not the mock): the test needs the accepted connection.
+    let server = MllpServer::bind_tls("127.0.0.1:0", server_config)
+        .await
+        .expect("Failed to bind TLS server");
+    let addr = server.local_addr().expect("local addr").to_string();
+
+    let server_task = tokio::spawn(async move {
+        let mut conn = server.accept().await.expect("accept");
+        assert!(conn.is_tls());
+        let rendered = format!("{conn:?}");
+        assert!(rendered.contains("tls: true"), "{rendered}");
+        let peer = conn.peer_certificate().expect("mTLS client cert");
+        assert_eq!(peer.as_ref(), expected_client_der.as_slice());
+
+        // Echo one message so the client exchange completes.
+        let msg = conn.receive_message().await.expect("receive");
+        conn.send_message(&msg).await.expect("echo");
+    });
+
+    let client_config = TlsClientConfig::with_mtls(
+        &certs.ca_cert_path,
+        &certs.client_cert_path,
+        &certs.client_key_path,
+    )
+    .expect("Failed to create mTLS client config");
+
+    let mut client = MllpClient::connect_tls(&addr, "localhost", client_config)
+        .await
+        .expect("Failed to connect with mTLS");
+    assert!(client.is_tls());
+    let peer = client.peer_certificate().expect("server cert");
+    assert_eq!(peer.as_ref(), expected_server_der.as_slice());
+
+    let mut msg = Message::default();
+    let mut msh = Segment::new("MSH");
+    msh.fields.push(Field::from_value("|"));
+    msh.fields.push(Field::from_value("^~\\&"));
+    msg.segments.push(msh);
+
+    let response = client
+        .send_message(&msg)
+        .await
+        .expect("Failed to send message");
+    assert_eq!(msg.encode(), response.encode());
+
+    client.close().await.expect("close");
+    server_task.await.expect("server task");
     certs.cleanup();
 }

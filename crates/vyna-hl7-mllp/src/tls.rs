@@ -12,11 +12,15 @@ use std::path::Path;
 use std::sync::Arc;
 
 #[cfg(feature = "tls")]
-use rustls::crypto::CryptoProvider;
-#[cfg(feature = "tls")]
-use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
+use rustls::pki_types::{PrivateKeyDer, pem::PemObject};
 #[cfg(feature = "tls")]
 use rustls::{ClientConfig, ConfigBuilder, RootCertStore, ServerConfig, WantsVerifier};
+// Re-exported so downstream callers can name the provider and peer-cert
+// types without pinning their own rustls version to this crate's.
+#[cfg(feature = "tls")]
+pub use rustls::crypto::CryptoProvider;
+#[cfg(feature = "tls")]
+pub use rustls::pki_types::CertificateDer;
 /// Load PEM certificates via `rustls::pki_types` (replaces the
 /// unmaintained rustls-pemfile crate; same file-in, DER-out contract).
 #[cfg(feature = "tls")]
@@ -93,7 +97,7 @@ pub(crate) fn crypto_provider() -> Arc<CryptoProvider> {
         .unwrap_or_else(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
 }
 
-/// Begin a client configuration on [`crypto_provider`].
+/// Begin a client configuration on an explicit provider.
 ///
 /// Equivalent to `ClientConfig::builder()`, which is itself
 /// `builder_with_provider(..).with_protocol_versions(DEFAULT_VERSIONS).unwrap()`,
@@ -101,18 +105,30 @@ pub(crate) fn crypto_provider() -> Arc<CryptoProvider> {
 /// unreachable for the same reason rustls' own is: it fires only if the provider
 /// supports none of the default protocol versions.
 #[cfg(feature = "tls")]
-pub(crate) fn client_config_builder() -> ConfigBuilder<ClientConfig, WantsVerifier> {
-    ClientConfig::builder_with_provider(crypto_provider())
+pub(crate) fn client_config_builder_with(
+    provider: Arc<CryptoProvider>,
+) -> ConfigBuilder<ClientConfig, WantsVerifier> {
+    ClientConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .expect("the rustls provider supports none of the default TLS protocol versions")
 }
 
-/// Begin a server configuration on [`crypto_provider`]. See [`client_config_builder`].
+/// Begin a server configuration on an explicit provider. See
+/// [`client_config_builder_with`].
 #[cfg(feature = "tls")]
-pub(crate) fn server_config_builder() -> ConfigBuilder<ServerConfig, WantsVerifier> {
-    ServerConfig::builder_with_provider(crypto_provider())
+pub(crate) fn server_config_builder_with(
+    provider: Arc<CryptoProvider>,
+) -> ConfigBuilder<ServerConfig, WantsVerifier> {
+    ServerConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .expect("the rustls provider supports none of the default TLS protocol versions")
+}
+
+/// Resolve the provider for a build: the explicit one when given,
+/// otherwise [`crypto_provider`].
+#[cfg(feature = "tls")]
+pub(crate) fn resolve_provider(provider: Option<Arc<CryptoProvider>>) -> Arc<CryptoProvider> {
+    provider.unwrap_or_else(crypto_provider)
 }
 
 /// TLS configuration for MLLP client connections
@@ -137,6 +153,12 @@ impl TlsClientConfig {
     /// # }
     /// ```
     pub fn new() -> Result<Self> {
+        Self::build_with_provider(None)
+    }
+
+    /// [`new`](Self::new) on an explicit provider (`None` resolves via
+    /// [`resolve_provider`]).
+    fn build_with_provider(provider: Option<Arc<CryptoProvider>>) -> Result<Self> {
         let mut root_store = RootCertStore::empty();
 
         // Add system root certificates
@@ -144,7 +166,7 @@ impl TlsClientConfig {
             root_store.roots.push(cert.clone());
         }
 
-        let config = client_config_builder()
+        let config = client_config_builder_with(resolve_provider(provider))
             .with_root_certificates(root_store)
             .with_no_client_auth();
 
@@ -170,7 +192,15 @@ impl TlsClientConfig {
     /// # }
     /// ```
     pub fn with_ca_cert(ca_cert_path: impl AsRef<Path>) -> Result<Self> {
-        let ca_cert_path = ca_cert_path.as_ref();
+        Self::build_with_ca_cert(ca_cert_path.as_ref(), None)
+    }
+
+    /// [`with_ca_cert`](Self::with_ca_cert) on an explicit provider
+    /// (`None` resolves via [`resolve_provider`]).
+    fn build_with_ca_cert(
+        ca_cert_path: &Path,
+        provider: Option<Arc<CryptoProvider>>,
+    ) -> Result<Self> {
         let mut root_store = RootCertStore::empty();
 
         // Load CA certificate
@@ -188,7 +218,7 @@ impl TlsClientConfig {
                 .map_err(|e| Error::Network(format!("Failed to add CA certificate: {}", e)))?;
         }
 
-        let config = client_config_builder()
+        let config = client_config_builder_with(resolve_provider(provider))
             .with_root_certificates(root_store)
             .with_no_client_auth();
 
@@ -217,6 +247,15 @@ impl TlsClientConfig {
     /// # }
     /// ```
     pub fn with_ca_cert_pem(ca_pem: &[u8]) -> Result<Self> {
+        Self::build_with_ca_cert_pem(ca_pem, None)
+    }
+
+    /// [`with_ca_cert_pem`](Self::with_ca_cert_pem) on an explicit provider
+    /// (`None` resolves via [`resolve_provider`]).
+    fn build_with_ca_cert_pem(
+        ca_pem: &[u8],
+        provider: Option<Arc<CryptoProvider>>,
+    ) -> Result<Self> {
         let mut root_store = RootCertStore::empty();
 
         let ca_certs = parse_certs_pem(ca_pem, "CA certificate")?;
@@ -232,7 +271,7 @@ impl TlsClientConfig {
                 .map_err(|e| Error::Network(format!("Failed to add CA certificate: {e}")))?;
         }
 
-        let config = client_config_builder()
+        let config = client_config_builder_with(resolve_provider(provider))
             .with_root_certificates(root_store)
             .with_no_client_auth();
 
@@ -268,7 +307,22 @@ impl TlsClientConfig {
         client_cert_path: impl AsRef<Path>,
         client_key_path: impl AsRef<Path>,
     ) -> Result<Self> {
-        let ca_cert_path = ca_cert_path.as_ref();
+        Self::build_with_mtls(
+            ca_cert_path.as_ref(),
+            client_cert_path.as_ref(),
+            client_key_path.as_ref(),
+            None,
+        )
+    }
+
+    /// [`with_mtls`](Self::with_mtls) on an explicit provider (`None`
+    /// resolves via [`resolve_provider`]).
+    fn build_with_mtls(
+        ca_cert_path: &Path,
+        client_cert_path: &Path,
+        client_key_path: &Path,
+        provider: Option<Arc<CryptoProvider>>,
+    ) -> Result<Self> {
         let mut root_store = RootCertStore::empty();
 
         // Load CA certificate
@@ -292,7 +346,7 @@ impl TlsClientConfig {
         // Load client private key
         let client_key = load_private_key(client_key_path)?;
 
-        let config = client_config_builder()
+        let config = client_config_builder_with(resolve_provider(provider))
             .with_root_certificates(root_store)
             .with_client_auth_cert(client_certs, client_key)
             .map_err(|e| Error::Network(format!("Failed to configure client auth: {}", e)))?;
@@ -331,6 +385,17 @@ impl TlsClientConfig {
         client_cert_pem: &[u8],
         client_key_pem: &[u8],
     ) -> Result<Self> {
+        Self::build_with_mtls_pem(ca_pem, client_cert_pem, client_key_pem, None)
+    }
+
+    /// [`with_mtls_pem`](Self::with_mtls_pem) on an explicit provider
+    /// (`None` resolves via [`resolve_provider`]).
+    fn build_with_mtls_pem(
+        ca_pem: &[u8],
+        client_cert_pem: &[u8],
+        client_key_pem: &[u8],
+        provider: Option<Arc<CryptoProvider>>,
+    ) -> Result<Self> {
         let mut root_store = RootCertStore::empty();
 
         let ca_certs = parse_certs_pem(ca_pem, "CA certificate")?;
@@ -351,7 +416,7 @@ impl TlsClientConfig {
 
         let client_key = parse_private_key_pem(client_key_pem)?;
 
-        let config = client_config_builder()
+        let config = client_config_builder_with(resolve_provider(provider))
             .with_root_certificates(root_store)
             .with_client_auth_cert(client_certs, client_key)
             .map_err(|e| Error::Network(format!("Failed to configure client auth: {e}")))?;
@@ -359,6 +424,90 @@ impl TlsClientConfig {
         Ok(Self {
             config: Arc::new(config),
         })
+    }
+
+    /// Start a builder for configurations on an explicit [`CryptoProvider`].
+    ///
+    /// Without [`crypto_provider`](TlsClientConfigBuilder::crypto_provider)
+    /// the builder behaves exactly like the plain constructors.
+    pub fn builder() -> TlsClientConfigBuilder {
+        TlsClientConfigBuilder::new()
+    }
+}
+
+/// Builder for [`TlsClientConfig`] with an optional explicit [`CryptoProvider`].
+///
+/// The plain constructors resolve the provider per [`crypto_provider`]
+/// (installed process default, else `aws-lc-rs`). Use this builder when the
+/// application must pin a provider per connection — a `ring` deployment, say —
+/// without touching the process-global default and without risking the
+/// mixed-provider panic a second `install_default` would cause.
+///
+/// Each terminal mirrors the same-named [`TlsClientConfig`] constructor.
+#[cfg(feature = "tls")]
+#[derive(Debug, Default)]
+pub struct TlsClientConfigBuilder {
+    provider: Option<Arc<CryptoProvider>>,
+}
+
+#[cfg(feature = "tls")]
+impl TlsClientConfigBuilder {
+    /// Start a builder resolving the provider per [`crypto_provider`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Pin the [`CryptoProvider`] the built configuration uses.
+    ///
+    /// The provider must be usable for both TLS protocol versions and
+    /// certificate verification; either rustls default
+    /// (`aws_lc_rs::default_provider()` or `ring::default_provider()`)
+    /// qualifies.
+    pub fn crypto_provider(mut self, provider: Arc<CryptoProvider>) -> Self {
+        self.provider = Some(provider);
+        self
+    }
+
+    /// Build with system root certificates. Mirrors [`TlsClientConfig::new`].
+    pub fn build(self) -> Result<TlsClientConfig> {
+        TlsClientConfig::build_with_provider(self.provider)
+    }
+
+    /// Build with a custom root CA. Mirrors [`TlsClientConfig::with_ca_cert`].
+    pub fn build_with_ca_cert(self, ca_cert_path: impl AsRef<Path>) -> Result<TlsClientConfig> {
+        TlsClientConfig::build_with_ca_cert(ca_cert_path.as_ref(), self.provider)
+    }
+
+    /// Build with a custom root CA from PEM bytes.
+    /// Mirrors [`TlsClientConfig::with_ca_cert_pem`].
+    pub fn build_with_ca_cert_pem(self, ca_pem: &[u8]) -> Result<TlsClientConfig> {
+        TlsClientConfig::build_with_ca_cert_pem(ca_pem, self.provider)
+    }
+
+    /// Build with mutual TLS. Mirrors [`TlsClientConfig::with_mtls`].
+    pub fn build_with_mtls(
+        self,
+        ca_cert_path: impl AsRef<Path>,
+        client_cert_path: impl AsRef<Path>,
+        client_key_path: impl AsRef<Path>,
+    ) -> Result<TlsClientConfig> {
+        TlsClientConfig::build_with_mtls(
+            ca_cert_path.as_ref(),
+            client_cert_path.as_ref(),
+            client_key_path.as_ref(),
+            self.provider,
+        )
+    }
+
+    /// Build with mutual TLS from PEM bytes.
+    /// Mirrors [`TlsClientConfig::with_mtls_pem`].
+    pub fn build_with_mtls_pem(
+        self,
+        ca_pem: &[u8],
+        client_cert_pem: &[u8],
+        client_key_pem: &[u8],
+    ) -> Result<TlsClientConfig> {
+        TlsClientConfig::build_with_mtls_pem(ca_pem, client_cert_pem, client_key_pem, self.provider)
     }
 }
 
@@ -389,13 +538,23 @@ impl TlsServerConfig {
     /// # }
     /// ```
     pub fn new(cert_path: impl AsRef<Path>, key_path: impl AsRef<Path>) -> Result<Self> {
+        Self::build_new(cert_path.as_ref(), key_path.as_ref(), None)
+    }
+
+    /// [`new`](Self::new) on an explicit provider (`None` resolves via
+    /// [`resolve_provider`]).
+    fn build_new(
+        cert_path: &Path,
+        key_path: &Path,
+        provider: Option<Arc<CryptoProvider>>,
+    ) -> Result<Self> {
         // Load server certificate
         let certs: Vec<CertificateDer> = load_certs(cert_path, "server certificate")?;
 
         // Load server private key
         let key = load_private_key(key_path)?;
 
-        let config = server_config_builder()
+        let config = server_config_builder_with(resolve_provider(provider))
             .with_no_client_auth()
             .with_single_cert(certs, key)
             .map_err(|e| Error::Network(format!("Failed to configure server TLS: {}", e)))?;
@@ -429,11 +588,21 @@ impl TlsServerConfig {
     /// # }
     /// ```
     pub fn new_pem(cert_pem: &[u8], key_pem: &[u8]) -> Result<Self> {
+        Self::build_new_pem(cert_pem, key_pem, None)
+    }
+
+    /// [`new_pem`](Self::new_pem) on an explicit provider (`None` resolves
+    /// via [`resolve_provider`]).
+    fn build_new_pem(
+        cert_pem: &[u8],
+        key_pem: &[u8],
+        provider: Option<Arc<CryptoProvider>>,
+    ) -> Result<Self> {
         let certs: Vec<CertificateDer> = parse_certs_pem(cert_pem, "server certificate")?;
 
         let key = parse_private_key_pem(key_pem)?;
 
-        let config = server_config_builder()
+        let config = server_config_builder_with(resolve_provider(provider))
             .with_no_client_auth()
             .with_single_cert(certs, key)
             .map_err(|e| Error::Network(format!("Failed to configure server TLS: {e}")))?;
@@ -470,7 +639,22 @@ impl TlsServerConfig {
         key_path: impl AsRef<Path>,
         ca_cert_path: impl AsRef<Path>,
     ) -> Result<Self> {
-        let ca_cert_path = ca_cert_path.as_ref();
+        Self::build_with_mtls(
+            cert_path.as_ref(),
+            key_path.as_ref(),
+            ca_cert_path.as_ref(),
+            None,
+        )
+    }
+
+    /// [`with_mtls`](Self::with_mtls) on an explicit provider (`None`
+    /// resolves via [`resolve_provider`]).
+    fn build_with_mtls(
+        cert_path: &Path,
+        key_path: &Path,
+        ca_cert_path: &Path,
+        provider: Option<Arc<CryptoProvider>>,
+    ) -> Result<Self> {
         // Load CA certificate for client verification
         let mut client_auth_roots = RootCertStore::empty();
         let ca_certs = load_certs(ca_cert_path, "CA certificate")?;
@@ -493,14 +677,17 @@ impl TlsServerConfig {
         // Load server private key
         let key = load_private_key(key_path)?;
 
+        // The verifier and the server config share one provider so the
+        // signature schemes always agree.
+        let provider = resolve_provider(provider);
         let client_cert_verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(
             Arc::new(client_auth_roots),
-            crypto_provider(),
+            provider.clone(),
         )
         .build()
         .map_err(|e| Error::Network(format!("Failed to build client verifier: {}", e)))?;
 
-        let config = server_config_builder()
+        let config = server_config_builder_with(provider)
             .with_client_cert_verifier(client_cert_verifier)
             .with_single_cert(certs, key)
             .map_err(|e| Error::Network(format!("Failed to configure server TLS: {}", e)))?;
@@ -536,6 +723,17 @@ impl TlsServerConfig {
     /// # }
     /// ```
     pub fn with_mtls_pem(cert_pem: &[u8], key_pem: &[u8], ca_pem: &[u8]) -> Result<Self> {
+        Self::build_with_mtls_pem(cert_pem, key_pem, ca_pem, None)
+    }
+
+    /// [`with_mtls_pem`](Self::with_mtls_pem) on an explicit provider
+    /// (`None` resolves via [`resolve_provider`]).
+    fn build_with_mtls_pem(
+        cert_pem: &[u8],
+        key_pem: &[u8],
+        ca_pem: &[u8],
+        provider: Option<Arc<CryptoProvider>>,
+    ) -> Result<Self> {
         let mut client_auth_roots = RootCertStore::empty();
         let ca_certs = parse_certs_pem(ca_pem, "CA certificate")?;
         if ca_certs.is_empty() {
@@ -554,14 +752,17 @@ impl TlsServerConfig {
 
         let key = parse_private_key_pem(key_pem)?;
 
+        // The verifier and the server config share one provider so the
+        // signature schemes always agree.
+        let provider = resolve_provider(provider);
         let client_cert_verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(
             Arc::new(client_auth_roots),
-            crypto_provider(),
+            provider.clone(),
         )
         .build()
         .map_err(|e| Error::Network(format!("Failed to build client verifier: {e}")))?;
 
-        let config = server_config_builder()
+        let config = server_config_builder_with(provider)
             .with_client_cert_verifier(client_cert_verifier)
             .with_single_cert(certs, key)
             .map_err(|e| Error::Network(format!("Failed to configure server TLS: {e}")))?;
@@ -569,6 +770,88 @@ impl TlsServerConfig {
         Ok(Self {
             config: Arc::new(config),
         })
+    }
+
+    /// Start a builder for configurations on an explicit [`CryptoProvider`].
+    ///
+    /// Without [`crypto_provider`](TlsServerConfigBuilder::crypto_provider)
+    /// the builder behaves exactly like the plain constructors.
+    pub fn builder() -> TlsServerConfigBuilder {
+        TlsServerConfigBuilder::new()
+    }
+}
+
+/// Builder for [`TlsServerConfig`] with an optional explicit [`CryptoProvider`].
+///
+/// The plain constructors resolve the provider per [`crypto_provider`]
+/// (installed process default, else `aws-lc-rs`). Use this builder when the
+/// application must pin a provider per listener — a `ring` deployment, say —
+/// without touching the process-global default and without risking the
+/// mixed-provider panic a second `install_default` would cause.
+///
+/// Each terminal mirrors the same-named [`TlsServerConfig`] constructor.
+#[cfg(feature = "tls")]
+#[derive(Debug, Default)]
+pub struct TlsServerConfigBuilder {
+    provider: Option<Arc<CryptoProvider>>,
+}
+
+#[cfg(feature = "tls")]
+impl TlsServerConfigBuilder {
+    /// Start a builder resolving the provider per [`crypto_provider`].
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Pin the [`CryptoProvider`] the built configuration uses.
+    ///
+    /// The same provider feeds both the client-certificate verifier and
+    /// the server config, so their signature schemes always agree. Either
+    /// rustls default (`aws_lc_rs::default_provider()` or
+    /// `ring::default_provider()`) qualifies.
+    pub fn crypto_provider(mut self, provider: Arc<CryptoProvider>) -> Self {
+        self.provider = Some(provider);
+        self
+    }
+
+    /// Build from cert/key files. Mirrors [`TlsServerConfig::new`].
+    pub fn build(
+        self,
+        cert_path: impl AsRef<Path>,
+        key_path: impl AsRef<Path>,
+    ) -> Result<TlsServerConfig> {
+        TlsServerConfig::build_new(cert_path.as_ref(), key_path.as_ref(), self.provider)
+    }
+
+    /// Build from PEM bytes. Mirrors [`TlsServerConfig::new_pem`].
+    pub fn build_pem(self, cert_pem: &[u8], key_pem: &[u8]) -> Result<TlsServerConfig> {
+        TlsServerConfig::build_new_pem(cert_pem, key_pem, self.provider)
+    }
+
+    /// Build with mutual TLS. Mirrors [`TlsServerConfig::with_mtls`].
+    pub fn build_with_mtls(
+        self,
+        cert_path: impl AsRef<Path>,
+        key_path: impl AsRef<Path>,
+        ca_cert_path: impl AsRef<Path>,
+    ) -> Result<TlsServerConfig> {
+        TlsServerConfig::build_with_mtls(
+            cert_path.as_ref(),
+            key_path.as_ref(),
+            ca_cert_path.as_ref(),
+            self.provider,
+        )
+    }
+
+    /// Build with mutual TLS from PEM bytes.
+    /// Mirrors [`TlsServerConfig::with_mtls_pem`].
+    pub fn build_with_mtls_pem(
+        self,
+        cert_pem: &[u8],
+        key_pem: &[u8],
+        ca_pem: &[u8],
+    ) -> Result<TlsServerConfig> {
+        TlsServerConfig::build_with_mtls_pem(cert_pem, key_pem, ca_pem, self.provider)
     }
 }
 
@@ -787,5 +1070,95 @@ mod tests {
         assert!(TlsServerConfig::with_mtls(&cert_path, &key_path, &cert_path).is_ok());
         let _ = std::fs::remove_file(&cert_path);
         let _ = std::fs::remove_file(&key_path);
+    }
+
+    /// ENH-004: every builder terminal accepts an explicit provider.
+    ///
+    /// Runs under dual providers (`aws-lc-rs` + `ring`, see above) with no
+    /// process default installed: the explicit `ring` provider must carry
+    /// every terminal without inference and without `install_default`.
+    /// Builder-without-provider must match the plain constructors.
+    #[test]
+    fn tls_builders_accept_explicit_provider() {
+        let ring = Arc::new(rustls::crypto::ring::default_provider());
+        let cert = FIXTURE_CERT_PEM.as_bytes();
+        let key = FIXTURE_KEY_PEM.as_bytes();
+
+        assert!(
+            TlsClientConfig::builder()
+                .crypto_provider(ring.clone())
+                .build()
+                .is_ok()
+        );
+        assert!(
+            TlsClientConfig::builder()
+                .crypto_provider(ring.clone())
+                .build_with_ca_cert_pem(cert)
+                .is_ok()
+        );
+        assert!(
+            TlsClientConfig::builder()
+                .crypto_provider(ring.clone())
+                .build_with_mtls_pem(cert, cert, key)
+                .is_ok()
+        );
+        assert!(
+            TlsServerConfig::builder()
+                .crypto_provider(ring.clone())
+                .build_pem(cert, key)
+                .is_ok()
+        );
+        assert!(
+            TlsServerConfig::builder()
+                .crypto_provider(ring.clone())
+                .build_with_mtls_pem(cert, key, cert)
+                .is_ok()
+        );
+
+        let cert_path = write_temp_file("provider-cert.pem", FIXTURE_CERT_PEM);
+        let key_path = write_temp_file("provider-key.pem", FIXTURE_KEY_PEM);
+        assert!(
+            TlsClientConfig::builder()
+                .crypto_provider(ring.clone())
+                .build_with_ca_cert(&cert_path)
+                .is_ok()
+        );
+        assert!(
+            TlsClientConfig::builder()
+                .crypto_provider(ring.clone())
+                .build_with_mtls(&cert_path, &cert_path, &key_path)
+                .is_ok()
+        );
+        assert!(
+            TlsServerConfig::builder()
+                .crypto_provider(ring.clone())
+                .build(&cert_path, &key_path)
+                .is_ok()
+        );
+        assert!(
+            TlsServerConfig::builder()
+                .crypto_provider(ring)
+                .build_with_mtls(&cert_path, &key_path, &cert_path)
+                .is_ok()
+        );
+        let _ = std::fs::remove_file(&cert_path);
+        let _ = std::fs::remove_file(&key_path);
+
+        // No explicit provider: identical to the plain constructors,
+        // including the same rejection of junk material.
+        assert!(TlsClientConfig::builder().build().is_ok());
+        assert!(
+            TlsClientConfig::builder()
+                .build_with_ca_cert_pem(b"not a pem file\n")
+                .is_err()
+        );
+        assert!(
+            TlsServerConfig::builder()
+                .build_pem(
+                    FIXTURE_CERT_PEM.as_bytes(),
+                    FIXTURE_OTHER_KEY_PEM.as_bytes()
+                )
+                .is_err()
+        );
     }
 }
