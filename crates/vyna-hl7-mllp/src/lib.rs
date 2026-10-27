@@ -92,6 +92,30 @@ impl MllpStream {
             MllpStream::TlsServer(stream) => stream.shutdown().await,
         }
     }
+
+    fn is_tls(&self) -> bool {
+        match self {
+            MllpStream::Plain(_) => false,
+            #[cfg(feature = "tls")]
+            MllpStream::TlsClient(_) => true,
+            #[cfg(feature = "tls")]
+            MllpStream::TlsServer(_) => true,
+        }
+    }
+
+    /// Leaf certificate presented by the TLS peer, if any.
+    ///
+    /// On a server-side stream this is the mTLS client certificate; on a
+    /// client-side stream it is the server certificate.
+    #[cfg(feature = "tls")]
+    fn peer_certificate(&self) -> Option<rustls::pki_types::CertificateDer<'static>> {
+        let chain = match self {
+            MllpStream::Plain(_) => return None,
+            MllpStream::TlsClient(stream) => stream.get_ref().1.peer_certificates(),
+            MllpStream::TlsServer(stream) => stream.get_ref().1.peer_certificates(),
+        };
+        chain.and_then(|chain| chain.first().cloned())
+    }
 }
 
 // All variants wrap types that are `Unpin` (TcpStream, and tokio-rustls
@@ -413,6 +437,19 @@ pub struct MllpClient {
     pending: Vec<u8>,
 }
 
+impl std::fmt::Debug for MllpClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MllpClient")
+            .field("tls", &self.stream.is_tls())
+            .field("max_message_size", &self.max_message_size)
+            .field("read_timeout", &self.read_timeout)
+            .field("write_timeout", &self.write_timeout)
+            .field("charset_override", &self.charset_override)
+            .field("pending_len", &self.pending.len())
+            .finish()
+    }
+}
+
 impl MllpClient {
     /// Connect to an MLLP server with default settings
     pub async fn connect(addr: &str) -> Result<Self> {
@@ -447,6 +484,17 @@ impl MllpClient {
     }
 
     /// Connect to an MLLP server with TLS encryption
+    ///
+    /// # TLS 1.3 handshake timing
+    ///
+    /// A successful return means the client's handshake flight completed,
+    /// not that the server accepted the peer: under TLS 1.3 the client
+    /// finishes its flight before the server's abort for a missing or
+    /// rejected client certificate arrives. Against an mTLS server, a
+    /// certificate problem therefore surfaces on the first
+    /// [`send_message`](Self::send_message) instead of here. Treat the
+    /// first successful message exchange — not this call — as proof the
+    /// server admitted the connection.
     ///
     /// # Arguments
     ///
@@ -493,6 +541,13 @@ impl MllpClient {
     }
 
     /// Connect to an MLLP server with TLS encryption and custom configuration
+    ///
+    /// # TLS 1.3 handshake timing
+    ///
+    /// See [`connect_tls`](Self::connect_tls): `Ok` means the client's
+    /// handshake flight completed, not that an mTLS server admitted the
+    /// peer — a certificate problem surfaces on the first
+    /// [`send_message`](Self::send_message) instead.
     ///
     /// # Arguments
     ///
@@ -588,6 +643,23 @@ impl MllpClient {
     /// Pass `None` to decode per MSH-18 again.
     pub fn set_charset_override(&mut self, charset: Option<CharacterSet>) {
         self.charset_override = charset;
+    }
+
+    /// Whether this connection runs over TLS.
+    ///
+    /// Always `false` when the `tls` feature is disabled.
+    pub fn is_tls(&self) -> bool {
+        self.stream.is_tls()
+    }
+
+    /// Leaf certificate presented by the TLS peer, if any.
+    ///
+    /// On a client this is the server certificate the handshake verified.
+    /// Returns `None` for plain connections, and on the server side when
+    /// the peer presented no certificate (non-mTLS).
+    #[cfg(feature = "tls")]
+    pub fn peer_certificate(&self) -> Option<rustls::pki_types::CertificateDer<'static>> {
+        self.stream.peer_certificate()
     }
 
     /// Test-only probe for the underlying TCP `TCP_NODELAY` state.
@@ -717,6 +789,16 @@ pub struct MllpServer {
     config: MllpConfig,
     #[cfg(feature = "tls")]
     tls_acceptor: Option<TlsAcceptor>,
+}
+
+impl std::fmt::Debug for MllpServer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MllpServer")
+            .field("local_addr", &self.listener.local_addr().ok())
+            .field("config", &self.config)
+            .field("tls", &self.tls_enabled())
+            .finish()
+    }
 }
 
 impl MllpServer {
@@ -875,6 +957,18 @@ impl MllpServer {
             .local_addr()
             .map_err(|e| Error::Network(format!("Failed to get local addr: {}", e)))
     }
+
+    /// Whether accepted connections run over TLS.
+    fn tls_enabled(&self) -> bool {
+        #[cfg(feature = "tls")]
+        {
+            self.tls_acceptor.is_some()
+        }
+        #[cfg(not(feature = "tls"))]
+        {
+            false
+        }
+    }
 }
 
 /// An MLLP connection
@@ -888,7 +982,38 @@ pub struct MllpConnection {
     pending: Vec<u8>,
 }
 
+impl std::fmt::Debug for MllpConnection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MllpConnection")
+            .field("tls", &self.stream.is_tls())
+            .field("max_message_size", &self.max_message_size)
+            .field("read_timeout", &self.read_timeout)
+            .field("write_timeout", &self.write_timeout)
+            .field("charset_override", &self.charset_override)
+            .field("pending_len", &self.pending.len())
+            .finish()
+    }
+}
+
 impl MllpConnection {
+    /// Whether this connection runs over TLS.
+    ///
+    /// Always `false` when the `tls` feature is disabled.
+    pub fn is_tls(&self) -> bool {
+        self.stream.is_tls()
+    }
+
+    /// Leaf certificate presented by the TLS peer, if any.
+    ///
+    /// On a server-side connection this is the mTLS client certificate,
+    /// suitable as an audit-actor identity signal. Returns `None` for
+    /// plain connections, and when the peer presented no certificate
+    /// (non-mTLS).
+    #[cfg(feature = "tls")]
+    pub fn peer_certificate(&self) -> Option<rustls::pki_types::CertificateDer<'static>> {
+        self.stream.peer_certificate()
+    }
+
     /// Receive a message with timeout and size limit
     pub async fn receive_message(&mut self) -> Result<Message> {
         tokio::time::timeout(self.read_timeout, self.receive_message_internal())
@@ -1829,5 +1954,45 @@ mod tests {
         let (first, second) = server_task.await.unwrap();
         assert_eq!(first.get_control_id(), Some("M1"));
         assert_eq!(second.get_control_id(), Some("M2"));
+    }
+
+    /// ENH-001: downstream `bind_tls` error assertions need `MllpServer:
+    /// Debug` for `unwrap_err` (E0277 without it).
+    #[tokio::test]
+    async fn test_server_bind_error_supports_unwrap_err() {
+        let first = MllpServer::bind("127.0.0.1:0").await.unwrap();
+        let addr = first.local_addr().unwrap();
+        let err = MllpServer::bind(&addr.to_string()).await.unwrap_err();
+        assert!(err.to_string().contains("Failed to bind"), "{err}");
+    }
+
+    /// ENH-001/ENH-003, plain side: server, client and connection all
+    /// render with `Debug`, report `is_tls() == false`, and expose no
+    /// peer certificate.
+    #[tokio::test]
+    async fn test_debug_and_plain_channel_introspection() {
+        let server = MllpServer::bind("127.0.0.1:0").await.unwrap();
+        let addr = server.local_addr().unwrap();
+        let rendered = format!("{server:?}");
+        assert!(rendered.contains("MllpServer"), "{rendered}");
+        assert!(rendered.contains("tls: false"), "{rendered}");
+
+        let accept_task = tokio::spawn(async move {
+            let conn = server.accept().await.unwrap();
+            assert!(!conn.is_tls());
+            let rendered = format!("{conn:?}");
+            assert!(rendered.contains("MllpConnection"), "{rendered}");
+            #[cfg(feature = "tls")]
+            assert!(conn.peer_certificate().is_none());
+        });
+
+        let client = MllpClient::connect(&addr.to_string()).await.unwrap();
+        assert!(!client.is_tls());
+        let rendered = format!("{client:?}");
+        assert!(rendered.contains("MllpClient"), "{rendered}");
+        #[cfg(feature = "tls")]
+        assert!(client.peer_certificate().is_none());
+
+        accept_task.await.unwrap();
     }
 }
