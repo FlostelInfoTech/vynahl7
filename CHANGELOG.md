@@ -1,5 +1,10 @@
 ## [Unreleased]
 
+### Added
+
+- `TerserMut::set_composite` (port of the rs7 API dropped in the move): whole-field paths replace the entire field decoding `^`/`&` separators, the write mirror of `get_composite`; component-scoped paths delegate to `set`
+- `MllpConnection::into_split` with `MllpReadHalf`/`MllpWriteHalf` for full-duplex use (read half keeps the persistent receive buffer incl. bytes already past the last frame; `receive_message_opt` treats timeout as idle), and `MllpConfig::post_accept_hook` (`PostAcceptHook`, `with_post_accept_hook`) run on the raw `TcpStream` before the TLS handshake for socket options such as keep-alive
+
 ## [0.11.0] - 2026-10-16
 
 ### Fixed
