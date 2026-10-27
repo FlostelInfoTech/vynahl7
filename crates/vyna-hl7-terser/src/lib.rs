@@ -309,6 +309,59 @@ impl<'a> TerserMut<'a> {
         Ok(())
     }
 
+    /// Set the FULL composite value of a field — the write mirror of
+    /// [`Terser::get_composite`].
+    ///
+    /// When the path has NO component index, this replaces the **entire** field
+    /// value, decoding `value` on the component (`^`) and subcomponent (`&`)
+    /// separators. This differs from [`set`](Self::set), whose no-component case
+    /// stores the value literally as a single component (so `set("PID-3", x)`
+    /// on `MRN^^^FAC^MR` would keep the old structure readable beside it).
+    /// When a component index IS specified, it delegates to `set`
+    /// (component-scoped, sibling components untouched).
+    pub fn set_composite(&mut self, path: &str, value: &str) -> Result<()> {
+        use vyna_hl7_core::field::{Component, Repetition, SubComponent};
+
+        let parsed_path = TerserPath::parse(path)?;
+
+        // Component-scoped path: identical semantics to set().
+        if parsed_path.component_index.is_some() {
+            return self.set(path, value);
+        }
+
+        // Copy the separators before borrowing the message mutably (char: Copy).
+        let comp_sep = self.message.delimiters.component_separator;
+        let sub_sep = self.message.delimiters.subcomponent_separator;
+
+        let segment_index =
+            self.ensure_segment(&parsed_path.segment_id, parsed_path.segment_index)?;
+        let segment = &mut self.message.segments[segment_index];
+
+        while segment.fields.len() < parsed_path.field_index {
+            segment.add_field(Field::new());
+        }
+        let field = segment
+            .get_field_mut(parsed_path.field_index)
+            .ok_or_else(|| Error::terser_path("Failed to set composite field"))?;
+
+        // Decode `value` into a single fresh repetition, mirroring how
+        // get_composite() joins the full value back with the separators.
+        let mut repetition = Repetition::new();
+        for comp_str in value.split(comp_sep) {
+            let mut component = Component::new();
+            for sub_str in comp_str.split(sub_sep) {
+                component.add_subcomponent(SubComponent::new(sub_str));
+            }
+            repetition.add_component(component);
+        }
+
+        // Replace the field wholesale — no leftover components from the old value.
+        field.repetitions.clear();
+        field.add_repetition(repetition);
+
+        Ok(())
+    }
+
     /// Ensure the `index`-th (0-based internal) occurrence exists
     ///
     /// Returns the message position of exactly that occurrence. Missing
@@ -895,5 +948,57 @@ mod tests {
         );
         // Absent segment: None, not an error.
         assert_eq!(terser.get_composite("ZZZ-1").unwrap(), None);
+    }
+
+    #[test]
+    fn test_set_composite_replaces_entire_field() {
+        // set() on a whole-field path stores the value literally; set_composite()
+        // must replace the ENTIRE field, decoding separators — the write mirror
+        // of get_composite().
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\rPID|||MRN-001^^^HOSPA^MR\r";
+        let mut message = parse_message(hl7).unwrap();
+
+        // Sanity: get_composite sees the full field.
+        assert_eq!(
+            Terser::new(&message).get_composite("PID-3").unwrap(),
+            Some("MRN-001^^^HOSPA^MR".to_string())
+        );
+
+        // Overwrite the whole field with a single value (no components).
+        TerserMut::new(&mut message)
+            .set_composite("PID-3", "CIPHERTOKEN")
+            .unwrap();
+        assert_eq!(
+            Terser::new(&message).get_composite("PID-3").unwrap(),
+            Some("CIPHERTOKEN".to_string())
+        );
+        // The old assigning-authority/id-type components must be gone.
+        assert!(!message.encode().contains("HOSPA"));
+
+        // And a composite value must be decoded back into components.
+        TerserMut::new(&mut message)
+            .set_composite("PID-3", "MRN-001^^^HOSPA^MR")
+            .unwrap();
+        assert_eq!(
+            Terser::new(&message).get_composite("PID-3").unwrap(),
+            Some("MRN-001^^^HOSPA^MR".to_string())
+        );
+        assert_eq!(Terser::new(&message).get("PID-3-4").unwrap(), Some("HOSPA"));
+    }
+
+    #[test]
+    fn test_set_composite_with_component_index_delegates_to_set() {
+        // With an explicit component index, set_composite behaves like set()
+        // (component-scoped), leaving sibling components untouched.
+        let hl7 = "MSH|^~\\&|APP|FAC|||20250115||ADT^A01|123|P|2.5\rPID|||||SMITH^JOHN\r";
+        let mut message = parse_message(hl7).unwrap();
+
+        TerserMut::new(&mut message)
+            .set_composite("PID-5-1", "JONES")
+            .unwrap();
+
+        let terser = Terser::new(&message);
+        assert_eq!(terser.get("PID-5-1").unwrap(), Some("JONES"));
+        assert_eq!(terser.get("PID-5-2").unwrap(), Some("JOHN"));
     }
 }

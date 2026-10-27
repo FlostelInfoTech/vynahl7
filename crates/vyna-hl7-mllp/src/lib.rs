@@ -23,9 +23,12 @@ pub mod tls;
 #[cfg(feature = "testing")]
 pub mod testing;
 
+use std::pin::Pin;
+use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf, ReadHalf, WriteHalf},
     net::{TcpListener, TcpStream},
 };
 use vyna_hl7_core::{
@@ -91,6 +94,61 @@ impl MllpStream {
     }
 }
 
+// All variants wrap types that are `Unpin` (TcpStream, and tokio-rustls
+// streams over TcpStream), so delegating through `Pin::new` is sound and
+// `tokio::io::split` can be used on the enum directly.
+impl AsyncRead for MllpStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        match self.get_mut() {
+            MllpStream::Plain(stream) => Pin::new(stream).poll_read(cx, buf),
+            #[cfg(feature = "tls")]
+            MllpStream::TlsClient(stream) => Pin::new(stream).poll_read(cx, buf),
+            #[cfg(feature = "tls")]
+            MllpStream::TlsServer(stream) => Pin::new(stream).poll_read(cx, buf),
+        }
+    }
+}
+
+impl AsyncWrite for MllpStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        match self.get_mut() {
+            MllpStream::Plain(stream) => Pin::new(stream).poll_write(cx, buf),
+            #[cfg(feature = "tls")]
+            MllpStream::TlsClient(stream) => Pin::new(stream).poll_write(cx, buf),
+            #[cfg(feature = "tls")]
+            MllpStream::TlsServer(stream) => Pin::new(stream).poll_write(cx, buf),
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        match self.get_mut() {
+            MllpStream::Plain(stream) => Pin::new(stream).poll_flush(cx),
+            #[cfg(feature = "tls")]
+            MllpStream::TlsClient(stream) => Pin::new(stream).poll_flush(cx),
+            #[cfg(feature = "tls")]
+            MllpStream::TlsServer(stream) => Pin::new(stream).poll_flush(cx),
+        }
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        match self.get_mut() {
+            MllpStream::Plain(stream) => Pin::new(stream).poll_shutdown(cx),
+            #[cfg(feature = "tls")]
+            MllpStream::TlsClient(stream) => Pin::new(stream).poll_shutdown(cx),
+            #[cfg(feature = "tls")]
+            MllpStream::TlsServer(stream) => Pin::new(stream).poll_shutdown(cx),
+        }
+    }
+}
+
 // Re-export pool types
 pub use pool::{MllpPool, PoolConfig, PoolStats};
 
@@ -114,8 +172,15 @@ pub const DEFAULT_WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Default connection timeout (10 seconds)
 pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Hook called on each accepted TCP stream before any TLS handshake.
+///
+/// The hook receives the raw [`TcpStream`] so the caller can apply socket
+/// options (e.g. TCP keep-alive via `socket2::SockRef`). An error fails
+/// the accept.
+pub type PostAcceptHook = Arc<dyn Fn(&TcpStream) -> Result<()> + Send + Sync>;
+
 /// Configuration for MLLP client and server
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MllpConfig {
     /// Maximum message size in bytes (default: 10 MB)
     pub max_message_size: usize,
@@ -132,6 +197,25 @@ pub struct MllpConfig {
     /// Set this only for peers that misdeclare their encoding;
     /// `None` (default) decodes per MSH-18.
     pub charset_override: Option<CharacterSet>,
+    /// Optional hook called on each accepted TCP stream before any TLS
+    /// handshake. Intended for applying socket options (e.g. TCP keep-alive).
+    pub post_accept_hook: Option<PostAcceptHook>,
+}
+
+impl std::fmt::Debug for MllpConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MllpConfig")
+            .field("max_message_size", &self.max_message_size)
+            .field("read_timeout", &self.read_timeout)
+            .field("write_timeout", &self.write_timeout)
+            .field("connect_timeout", &self.connect_timeout)
+            .field("charset_override", &self.charset_override)
+            .field(
+                "post_accept_hook",
+                &self.post_accept_hook.as_ref().map(|_| "<hook>"),
+            )
+            .finish()
+    }
 }
 
 impl Default for MllpConfig {
@@ -142,6 +226,7 @@ impl Default for MllpConfig {
             write_timeout: DEFAULT_WRITE_TIMEOUT,
             connect_timeout: DEFAULT_CONNECT_TIMEOUT,
             charset_override: None,
+            post_accept_hook: None,
         }
     }
 }
@@ -182,6 +267,14 @@ impl MllpConfig {
     /// messages are always encoded in their own MSH-18 declaration.
     pub fn with_charset_override(mut self, charset: CharacterSet) -> Self {
         self.charset_override = Some(charset);
+        self
+    }
+
+    /// Install a post-accept hook invoked on each accepted TCP stream before
+    /// any TLS handshake. Typical use: apply `SO_KEEPALIVE` and related socket
+    /// options via `socket2::SockRef`.
+    pub fn with_post_accept_hook(mut self, hook: PostAcceptHook) -> Self {
+        self.post_accept_hook = Some(hook);
         self
     }
 }
@@ -730,7 +823,9 @@ impl MllpServer {
     /// Accept a connection and return an MllpConnection with the server's configuration
     ///
     /// If the server was created with `bind_tls()` or `bind_tls_with_config()`, this will
-    /// perform TLS handshake on the accepted connection.
+    /// perform TLS handshake on the accepted connection. If a `post_accept_hook` is
+    /// installed on the config, it is called before the handshake so the caller can
+    /// apply socket options (e.g. TCP keep-alive) on the raw `TcpStream`.
     pub async fn accept(&self) -> Result<MllpConnection> {
         let (tcp_stream, _addr) = self
             .listener
@@ -742,6 +837,10 @@ impl MllpServer {
         tcp_stream
             .set_nodelay(true)
             .map_err(|e| Error::Network(format!("Failed to set TCP_NODELAY: {}", e)))?;
+
+        if let Some(hook) = self.config.post_accept_hook.as_ref() {
+            hook(&tcp_stream)?;
+        }
 
         #[cfg(feature = "tls")]
         let stream = if let Some(ref acceptor) = self.tls_acceptor {
@@ -862,6 +961,172 @@ impl MllpConnection {
     /// Close the connection
     pub async fn close(mut self) -> Result<()> {
         self.stream
+            .shutdown()
+            .await
+            .map_err(|e| Error::Network(format!("Failed to close: {}", e)))
+    }
+
+    /// Split the connection into independent read and write halves for
+    /// full-duplex use.
+    ///
+    /// The read half can block in [`MllpReadHalf::receive_message`] while the
+    /// write half concurrently pushes messages (e.g. deferred Application
+    /// ACKs) through [`MllpWriteHalf::send_message`]. Both halves inherit the
+    /// connection's timeouts, maximum message size and charset override, and
+    /// bytes already buffered past the last delivered frame move into the
+    /// read half.
+    pub fn into_split(self) -> (MllpReadHalf, MllpWriteHalf) {
+        let (reader, writer) = tokio::io::split(self.stream);
+        (
+            MllpReadHalf {
+                reader,
+                max_message_size: self.max_message_size,
+                read_timeout: self.read_timeout,
+                charset_override: self.charset_override,
+                buffer: self.pending,
+            },
+            MllpWriteHalf {
+                writer,
+                write_timeout: self.write_timeout,
+                max_message_size: self.max_message_size,
+            },
+        )
+    }
+}
+
+/// Read half of a split [`MllpConnection`] (see [`MllpConnection::into_split`]).
+///
+/// Unlike the request-response [`MllpConnection`], the read half keeps a
+/// persistent receive buffer: bytes read from the socket but not yet consumed
+/// as a complete MLLP frame (a pipelined next frame, or a partially delivered
+/// frame) are retained across `receive_message*` calls.
+pub struct MllpReadHalf {
+    reader: ReadHalf<MllpStream>,
+    max_message_size: usize,
+    read_timeout: Duration,
+    charset_override: Option<CharacterSet>,
+    /// Bytes received but not yet consumed as a complete frame. Survives
+    /// across calls so pipelined frames (two frames in one read) and
+    /// timed-out mid-frame receives are never lost.
+    buffer: Vec<u8>,
+}
+
+impl MllpReadHalf {
+    /// Receive a message with timeout and size limit.
+    ///
+    /// Same MLLP framing rules as [`MllpConnection::receive_message`]
+    /// (0x0B start scan, size cap, 0x1C 0x0D end detection), but backed by
+    /// the half's persistent buffer, so back-to-back frames delivered in a
+    /// single read are all received by consecutive calls.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel-safe: if it is dropped (e.g. it times out, or
+    /// loses a `select!`) while a frame is partially read, the bytes already
+    /// received remain in the internal buffer and the next call resumes
+    /// frame reassembly exactly where it left off — no bytes are lost and
+    /// the stream does not desynchronize.
+    pub async fn receive_message(&mut self) -> Result<Message> {
+        match self.receive_message_opt().await? {
+            Some(message) => Ok(message),
+            None => Err(Error::Network(format!(
+                "Read timeout after {:?}",
+                self.read_timeout
+            ))),
+        }
+    }
+
+    /// Receive a message, treating the read timeout as idle rather than
+    /// as an error.
+    ///
+    /// Returns `Ok(Some(message))` when a message arrives, `Ok(None)` when
+    /// the read timeout elapses with no complete message (idle), and `Err`
+    /// on real failures (connection closed, I/O error, oversized or invalid
+    /// frame). This lets a duplex reader loop keep looping on idle without
+    /// string-matching error messages.
+    ///
+    /// # Cancel safety
+    ///
+    /// Cancel-safe with the same guarantee as [`Self::receive_message`]:
+    /// an idle `Ok(None)` return (or an outright drop) mid-frame leaves the
+    /// partially received bytes buffered for the next call.
+    pub async fn receive_message_opt(&mut self) -> Result<Option<Message>> {
+        match tokio::time::timeout(self.read_timeout, self.receive_buffered()).await {
+            Ok(result) => result.map(Some),
+            Err(_elapsed) => Ok(None),
+        }
+    }
+
+    /// Buffered frame reassembly: drain a complete frame from the internal
+    /// buffer if one is present, otherwise read more bytes from the socket.
+    ///
+    /// The only await point is the socket read, and bytes are appended to
+    /// `self.buffer` synchronously after it completes — which is what makes
+    /// the public receive methods cancel-safe.
+    async fn receive_buffered(&mut self) -> Result<Message> {
+        loop {
+            if let Some(frame) = take_complete_frame(&mut self.buffer, self.max_message_size)? {
+                let hl7_text = unwrap_received(&frame, self.charset_override)?;
+                return parse_message(&hl7_text);
+            }
+
+            let mut chunk = [0u8; 4096];
+            let n = self
+                .reader
+                .read(&mut chunk)
+                .await
+                .map_err(|e| Error::Network(format!("Failed to read: {}", e)))?;
+
+            if n == 0 {
+                if self.buffer.is_empty() {
+                    return Err(Error::Network("Connection closed".to_string()));
+                }
+                return Err(Error::Mllp(
+                    "connection closed mid-frame (truncated frame)".to_string(),
+                ));
+            }
+
+            self.buffer.extend_from_slice(&chunk[..n]);
+        }
+    }
+}
+
+/// Write half of a split [`MllpConnection`] (see [`MllpConnection::into_split`]).
+pub struct MllpWriteHalf {
+    writer: WriteHalf<MllpStream>,
+    write_timeout: Duration,
+    max_message_size: usize,
+}
+
+impl MllpWriteHalf {
+    /// Send a message with timeout.
+    ///
+    /// Mirrors [`MllpConnection::send_message`]: encode in the message's
+    /// MSH-18 character set, wrap in MLLP framing, enforce the size limit,
+    /// write + flush under the write timeout.
+    pub async fn send_message(&mut self, message: &Message) -> Result<()> {
+        let hl7_bytes = message.encode_bytes()?;
+        let framed = MllpFrame::wrap_bytes(&hl7_bytes);
+
+        if framed.len() > self.max_message_size {
+            return Err(Error::Mllp(format!(
+                "Message exceeds maximum size of {} bytes",
+                self.max_message_size
+            )));
+        }
+
+        tokio::time::timeout(self.write_timeout, async {
+            self.writer.write_all(&framed).await?;
+            self.writer.flush().await
+        })
+        .await
+        .map_err(|_| Error::Network(format!("Write timeout after {:?}", self.write_timeout)))?
+        .map_err(|e| Error::Network(format!("Failed to send: {}", e)))
+    }
+
+    /// Shut down the write side of the connection.
+    pub async fn close(mut self) -> Result<()> {
+        self.writer
             .shutdown()
             .await
             .map_err(|e| Error::Network(format!("Failed to close: {}", e)))
@@ -1481,5 +1746,88 @@ mod tests {
             "unexpected: {err}"
         );
         server_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_post_accept_hook_runs_on_accepted_stream() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let calls_clone = calls.clone();
+
+        let hook: PostAcceptHook = Arc::new(move |stream: &TcpStream| {
+            // Verify we can read the peer address from the raw stream, then
+            // bump a counter so the test can observe the hook ran.
+            stream
+                .peer_addr()
+                .map_err(|e| Error::Network(format!("peer_addr failed: {e}")))?;
+            calls_clone.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        });
+
+        let config = MllpConfig::default().with_post_accept_hook(hook);
+        let server = MllpServer::bind_with_config("127.0.0.1:0", config)
+            .await
+            .expect("bind should succeed");
+        let addr = server.local_addr().expect("local_addr");
+
+        let accept_task = tokio::spawn(async move {
+            let _ = server.accept().await;
+        });
+
+        let _client = TcpStream::connect(addr).await.expect("client connect");
+        // Give the accept task a chance to run the hook.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        accept_task.abort();
+        let _ = accept_task.await;
+    }
+
+    /// Split halves duplex independently: the read half delivers two
+    /// pipelined frames from one TCP write, and the write half sends an
+    /// ACK the peer reads back.
+    #[tokio::test]
+    async fn test_into_split_duplex_with_pipelined_frames() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let server = MllpServer::bind("127.0.0.1:0").await.unwrap();
+        let addr = server.local_addr().unwrap();
+
+        let server_task = tokio::spawn(async move {
+            let conn = server.accept().await.unwrap();
+            let (mut read_half, mut write_half) = conn.into_split();
+            let first = read_half.receive_message().await.unwrap();
+            let second = read_half.receive_message().await.unwrap();
+            let ack = parse_message("MSH|^~\\&|R|F|S|F|20240115||ACK^A01^ACK|A1|P|2.5\rMSA|AA|1\r")
+                .unwrap();
+            write_half.send_message(&ack).await.unwrap();
+            (first, second)
+        });
+
+        let mut sock = TcpStream::connect(addr).await.unwrap();
+        let f1 = MllpFrame::wrap("MSH|^~\\&|S|F|R|F|20240115||ADT^A01|M1|P|2.5\r");
+        let f2 = MllpFrame::wrap("MSH|^~\\&|S|F|R|F|20240115||ADT^A01|M2|P|2.5\r");
+        let mut both = f1;
+        both.extend_from_slice(&f2);
+        sock.write_all(&both).await.unwrap();
+
+        let mut buf = Vec::new();
+        let mut chunk = [0u8; 1024];
+        loop {
+            let n = sock.read(&mut chunk).await.unwrap();
+            assert!(n > 0, "server closed before ACK");
+            buf.extend_from_slice(&chunk[..n]);
+            if buf.ends_with(&[END_OF_BLOCK, CARRIAGE_RETURN]) {
+                break;
+            }
+        }
+        let ack_text = MllpFrame::unwrap(&buf).unwrap();
+        assert!(ack_text.contains("MSA|AA|1"));
+
+        let (first, second) = server_task.await.unwrap();
+        assert_eq!(first.get_control_id(), Some("M1"));
+        assert_eq!(second.get_control_id(), Some("M2"));
     }
 }
